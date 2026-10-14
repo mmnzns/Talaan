@@ -37,7 +37,7 @@ export const defaultSettings: Settings = {
   byokProvider: "claude",
   byokKeySet: false,
   calendarConnected: false,
-  notion: { connected: false },
+  notion: { connected: true, workspace: "Miguel" },
   retention: "7d",
   onboardingDone: true,
 };

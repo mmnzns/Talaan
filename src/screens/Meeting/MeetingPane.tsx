@@ -1,7 +1,9 @@
 import { useEffect, useState } from "react";
 import { useMeeting } from "../../data/hooks";
+import { copyText, toEmail, toSlack } from "../../lib/share";
 import { useStore } from "../../data/StoreProvider";
 import type { Meeting, Ms } from "../../data/types";
+import { ExportSheet } from "./ExportSheet";
 import { MeetingHeader } from "./MeetingHeader";
 import { StatusBanner } from "./StatusBanner";
 import { SummaryCard } from "./SummaryCard";
@@ -42,6 +44,8 @@ function MeetingView({ meeting, jumpTo }: { meeting: Meeting; jumpTo?: Ms }) {
   const [activeAt, setActiveAt] = useState<Ms | undefined>(jumpTo);
   const [jumpSeq, setJumpSeq] = useState(0);
   const [playing, setPlaying] = useState(false);
+  const [copied, setCopied] = useState<"slack" | "email">();
+  const [exporting, setExporting] = useState(false);
 
   const jump = (at: Ms) => {
     setActiveAt(at);
@@ -67,6 +71,12 @@ function MeetingView({ meeting, jumpTo }: { meeting: Meeting; jumpTo?: Ms }) {
     return () => clearInterval(timer);
   }, [playing, meeting.durationMs]);
 
+  const copy = async (kind: "slack" | "email") => {
+    await copyText(kind === "slack" ? toSlack(meeting) : toEmail(meeting));
+    setCopied(kind);
+    setTimeout(() => setCopied(undefined), 2000);
+  };
+
   const canRevert = Boolean(meeting.summary?.edited) || meeting.transcript.some((l) => l.edited);
 
   return (
@@ -77,8 +87,9 @@ function MeetingView({ meeting, jumpTo }: { meeting: Meeting; jumpTo?: Ms }) {
         canRevert={canRevert}
         onToggleEdit={() => setEditing((e) => !e)}
         onRevert={() => store.revertEdits(meeting.id)}
-        onCopy={() => {}}
-        onExport={() => {}}
+        onCopy={copy}
+        onExport={() => setExporting(true)}
+        copied={copied}
       />
       <StatusBanner meeting={meeting} />
       <div className="grid flex-1 grid-cols-1 items-start gap-4 px-6 pb-6 min-[1000px]:min-h-0 min-[1000px]:grid-cols-2 min-[1000px]:items-stretch">
@@ -93,6 +104,7 @@ function MeetingView({ meeting, jumpTo }: { meeting: Meeting; jumpTo?: Ms }) {
           onJump={jump}
         />
       </div>
+      <ExportSheet open={exporting} meeting={meeting} onClose={() => setExporting(false)} />
     </div>
   );
 }
