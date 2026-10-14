@@ -4,6 +4,8 @@
 #![allow(dead_code)]
 
 pub mod download;
+pub mod echo;
 pub mod engine;
+pub mod merge;
 pub mod models;
 pub mod vad;
