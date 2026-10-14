@@ -3,6 +3,10 @@
 pub mod io;
 pub mod model;
 pub mod paths;
+pub mod retention;
+pub mod store;
+
+pub use store::{Filter, Storage};
 
 use serde::Serialize;
 
