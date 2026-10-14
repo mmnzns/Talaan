@@ -23,13 +23,14 @@ interface Props {
 const BARS = 10;
 
 /** Turns one level (0..1) into a row of bars that moves like a meter. */
-function useBars(level: number, active: boolean) {
+function useBars(level: number, active: boolean, frame: unknown) {
   const history = useRef<number[]>(Array(BARS).fill(0));
   const [bars, setBars] = useState<number[]>(history.current);
   useEffect(() => {
     history.current = active ? [level, ...history.current.slice(0, BARS - 1)] : Array(BARS).fill(0);
     setBars([...history.current]);
-  }, [level, active]);
+    // `frame` changes with every levels event, so a steady level (e.g. silence) still scrolls the meter.
+  }, [level, active, frame]);
   return bars;
 }
 
@@ -54,8 +55,8 @@ export function RecordingPopover({ state, levels, notice, app = "Call", onPause,
   const [note, setNote] = useState("");
   const [confirmDiscard, setConfirmDiscard] = useState(false);
   const paused = state.state === "paused";
-  const me = useBars(levels.me, !paused);
-  const them = useBars(levels.them, !paused);
+  const me = useBars(levels.me, !paused, levels);
+  const them = useBars(levels.them, !paused, levels);
 
   const text = settings?.recordingNotice ?? "";
   const info = [

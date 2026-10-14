@@ -266,6 +266,8 @@ pub fn setup(app: &AppHandle) {
         let mut last_state = Instant::now();
         let mut silent_since: Option<Instant> = None;
         let mut warned = false;
+        // A blocked tap delivers zeros from the first sample. Once any sound came through, it isn't blocked.
+        let mut heard_them = false;
         loop {
             std::thread::sleep(Duration::from_millis(100));
             let rec = app.state::<RecorderState>();
@@ -273,6 +275,7 @@ pub fn setup(app: &AppHandle) {
             if !engine.is_active() {
                 silent_since = None;
                 warned = false;
+                heard_them = false;
                 continue;
             }
             let (me, them) = engine.levels();
@@ -280,9 +283,12 @@ pub fn setup(app: &AppHandle) {
             drop(engine);
             let _ = app.emit(LEVELS, Levels { me, them });
 
-            // Digital silence from the tap while something plays = system audio is blocked.
+            heard_them |= them > 0.0;
+
+            // Digital silence from the tap since the start while something plays = system audio is blocked.
+            // (Apps keep output streams running while quiet, so silence after real sound means nothing.)
             #[cfg(target_os = "macos")]
-            {
+            if !heard_them {
                 let playing = platform::macos::devices::others_playing();
                 if them == 0.0 && playing && !paused {
                     let since = *silent_since.get_or_insert_with(Instant::now);
@@ -290,7 +296,7 @@ pub fn setup(app: &AppHandle) {
                         warned = true;
                         notice(&app, "No call audio is coming through. If the other people are talking, allow Talaan under Screen & System Audio Recording.".into(), "warning", Some("system-audio"));
                     }
-                } else if them > 0.0 || paused || !playing {
+                } else if paused || !playing {
                     silent_since = None;
                 }
             }
