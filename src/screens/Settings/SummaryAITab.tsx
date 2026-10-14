@@ -1,7 +1,8 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { describeError } from "../../data/errors";
 import { useSettingsStore } from "../../data/StoreProvider";
 import type { ByokProvider, SummaryEngineKind } from "../../data/settings";
-import { Button, Chip, Field, Label, Select, cn } from "../../ui";
+import { Button, Chip, Field, Label, Select, cn, useToast } from "../../ui";
 import { Group, Row, SectionIntro } from "./parts";
 import type { TabProps } from "./tabProps";
 
@@ -51,19 +52,7 @@ export function SummaryAITab({ settings: s, update }: TabProps) {
           })}
         </div>
 
-        {s.summaryEngine === "local" && (
-          <Group>
-            <Row title="Local model" desc="Downloaded once. Runs on the Mac's GPU. A 1-hour call takes about 1 to 2 minutes.">
-              <Select label="Local model" wrapperClassName="w-52" value={s.localModel} onChange={(e) => update({ localModel: e.target.value as "recommended" | "larger" })}>
-                <option value="recommended">Recommended · 2.5 GB</option>
-                <option value="larger">Larger, better · 5 GB</option>
-              </Select>
-            </Row>
-            <Row title="Status" desc="Ready. Works with Wi-Fi off.">
-              <Chip tone="lime">Installed</Chip>
-            </Row>
-          </Group>
-        )}
+        {s.summaryEngine === "local" && <LocalPanel {...{ settings: s, update }} />}
         {s.summaryEngine === "ollama" && <OllamaPanel {...{ settings: s, update }} />}
         {s.summaryEngine === "byok" && <ByokPanel {...{ settings: s, update }} />}
       </div>
@@ -84,9 +73,14 @@ export function SummaryAITab({ settings: s, update }: TabProps) {
             ))}
           </div>
           <Row title="Summary language">
-            <Select label="Summary language" wrapperClassName="w-44" value={s.summaryLanguage} onChange={(e) => update({ summaryLanguage: e.target.value as "meeting" | "en" })}>
+            <Select label="Summary language" wrapperClassName="w-44" value={s.summaryLanguage} onChange={(e) => update({ summaryLanguage: e.target.value })}>
               <option value="meeting">Same as meeting</option>
-              <option value="en">Always English</option>
+              <option value="en">English</option>
+              <option value="tl">Filipino</option>
+              <option value="es">Spanish</option>
+              <option value="fr">French</option>
+              <option value="de">German</option>
+              <option value="pt">Portuguese</option>
             </Select>
           </Row>
         </Group>
@@ -95,17 +89,91 @@ export function SummaryAITab({ settings: s, update }: TabProps) {
   );
 }
 
-function OllamaPanel({ settings: s, update }: TabProps) {
+const gb = (mb: number) => `${(mb / 1000).toFixed(1)} GB`;
+
+function LocalPanel({ settings: s, update }: TabProps) {
+  const store = useSettingsStore();
+  const toast = useToast();
+  const run = (p: Promise<void>) => p.catch((e) => toast(describeError(e)));
+  const model = s.localModels.find((m) => m.choice === s.localModel) ?? s.localModels[0];
+  const pct = Math.round((model?.progress ?? 0) * 100);
   return (
     <Group>
-      <Row title="Connection" desc="Uses a model you already run in Ollama or LM Studio on this Mac.">
-        <Field label="Address" value={s.ollamaAddress} onChange={(e) => update({ ollamaAddress: e.target.value })} wrapperClassName="w-60" />
+      <Row title="Local model" desc="Downloaded once. Runs on the Mac's GPU, with Wi-Fi off too.">
+        <Select label="Local model" wrapperClassName="w-60" value={s.localModel} onChange={(e) => update({ localModel: e.target.value as "recommended" | "larger" })}>
+          {s.localModels.map((m) => (
+            <option key={m.id} value={m.choice}>
+              {m.choice === "recommended" ? "Recommended" : "Larger"} · {m.name} · {gb(m.sizeMb)}
+            </option>
+          ))}
+        </Select>
       </Row>
-      <Row title="Model" desc="Detected from the running app.">
+      {model && (
+        <Row title="Status" desc={model.note}>
+          {model.state === "downloaded" && (
+            <span className="flex items-center gap-2">
+              <Chip tone="lime">Installed</Chip>
+              <button type="button" className="cursor-pointer border-0 bg-transparent p-0 text-xs text-subtle underline" onClick={() => run(store.deleteModel(model.id))}>
+                Delete
+              </button>
+            </span>
+          )}
+          {model.state === "not_downloaded" && <Button onClick={() => run(store.downloadModel(model.id))}>Download {gb(model.sizeMb)}</Button>}
+          {model.state === "downloading" && (
+            <span className="flex w-36 flex-col items-end gap-1">
+              <span className="h-[5px] w-full overflow-hidden rounded-full bg-line">
+                <span className="block h-full bg-ink" style={{ width: `${pct}%` }} />
+              </span>
+              <span className="font-mono text-[11px] text-subtle">{pct}%</span>
+              <button type="button" className="cursor-pointer border-0 bg-transparent p-0 text-xs text-subtle underline" onClick={() => run(store.cancelModelDownload(model.id))}>
+                Cancel
+              </button>
+            </span>
+          )}
+        </Row>
+      )}
+    </Group>
+  );
+}
+
+function OllamaPanel({ settings: s, update }: TabProps) {
+  const store = useSettingsStore();
+  const [models, setModels] = useState<string[]>();
+  const [problem, setProblem] = useState<string>();
+
+  useEffect(() => {
+    let live = true;
+    const timer = setTimeout(() => {
+      store
+        .localServerModels(s.ollamaAddress)
+        .then((m) => live && (setModels(m), setProblem(undefined)))
+        .catch((e) => live && (setModels(undefined), setProblem(describeError(e))));
+    }, 400);
+    return () => {
+      live = false;
+      clearTimeout(timer);
+    };
+  }, [store, s.ollamaAddress]);
+
+  return (
+    <Group>
+      <Row title="Connection" desc="Ollama (port 11434) or LM Studio (port 1234) on this Mac.">
+        <Field label="Address" value={s.ollamaAddress} onChange={(e) => update({ ollamaAddress: e.target.value })} wrapperClassName="w-60" />
+        {problem && (
+          <div role="status" className="basis-full text-xs font-semibold text-danger">
+            {problem}
+          </div>
+        )}
+      </Row>
+      <Row title="Model" desc={models ? `${models.length} available.` : "Detected from the running app."}>
         <Select label="Model" wrapperClassName="w-52" value={s.ollamaModel ?? ""} onChange={(e) => update({ ollamaModel: e.target.value || undefined })}>
-          <option value="">Pick a running model</option>
-          <option value="llama3.2:3b">llama3.2:3b</option>
-          <option value="qwen2.5:7b">qwen2.5:7b</option>
+          <option value="">First available</option>
+          {s.ollamaModel && !models?.includes(s.ollamaModel) && <option value={s.ollamaModel}>{s.ollamaModel}</option>}
+          {models?.map((m) => (
+            <option key={m} value={m}>
+              {m}
+            </option>
+          ))}
         </Select>
       </Row>
     </Group>
@@ -121,31 +189,43 @@ function ByokPanel({ settings: s, update }: TabProps) {
   const test = async () => {
     setTesting(true);
     setResult(undefined);
-    const r = await store.testApiKey(s.byokProvider, key);
-    setTesting(false);
-    setResult(r);
-    if (r.ok) {
-      setKey("");
-      update({ byokKeySet: true });
+    try {
+      const r = await store.testApiKey(s.byokProvider, key);
+      setResult(r);
+      if (r.ok) setKey("");
+    } catch (e) {
+      setResult({ ok: false, message: describeError(e) });
+    } finally {
+      setTesting(false);
     }
   };
 
   return (
     <Group>
       <Row title="Provider" desc="Only the transcript text is sent, never the audio.">
-        <Select label="Provider" wrapperClassName="w-52" value={s.byokProvider} onChange={(e) => update({ byokProvider: e.target.value as ByokProvider })}>
+        <Select label="Provider" wrapperClassName="w-52" value={s.byokProvider} onChange={(e) => (setResult(undefined), update({ byokProvider: e.target.value as ByokProvider }))}>
           <option value="claude">Claude</option>
           <option value="openai">OpenAI</option>
           <option value="gemini">Google Gemini</option>
           <option value="compatible">Other (OpenAI-compatible)</option>
         </Select>
       </Row>
-      <Row title="API key" desc={s.byokKeySet ? "A key is saved in the Mac's Keychain." : "Stored in the Mac's Keychain."}>
+      {s.byokProvider === "compatible" && (
+        <Row title="Server address" desc="The API's base URL, for example https://api.example.com/v1.">
+          <Field label="Server address" value={s.byokBaseUrl ?? ""} onChange={(e) => update({ byokBaseUrl: e.target.value })} wrapperClassName="w-60" />
+        </Row>
+      )}
+      <Row title="API key" desc={s.byokKeySet ? "A key is saved in the Mac's Keychain." : "Checked, then stored in the Mac's Keychain."}>
         <div className="flex items-center gap-2">
           <Field label="API key" type="password" placeholder={s.byokKeySet ? "••••••••••••" : "Paste key"} value={key} onChange={(e) => setKey(e.target.value)} wrapperClassName="w-52" />
           <Button onClick={test} disabled={testing || !key.trim()}>
             {testing ? "Testing…" : "Test"}
           </Button>
+          {s.byokKeySet && (
+            <button type="button" className="cursor-pointer border-0 bg-transparent p-0 text-xs text-subtle underline" onClick={() => void store.clearApiKey(s.byokProvider).then(() => setResult(undefined))}>
+              Remove
+            </button>
+          )}
         </div>
         {result && (
           <div role="status" className={cn("basis-full text-xs font-semibold", result.ok ? "text-ok" : "text-danger")}>
@@ -153,10 +233,14 @@ function ByokPanel({ settings: s, update }: TabProps) {
           </div>
         )}
       </Row>
-      <Row title="Model" desc="The provider's recommended model is preselected.">
-        <Select label="Model" wrapperClassName="w-52" value={s.byokModel} onChange={(e) => update({ byokModel: e.target.value })}>
-          <option value="recommended">Recommended</option>
-        </Select>
+      <Row title="Model" desc="Leave empty to use the provider's newest fast model.">
+        <Field
+          label="Model"
+          placeholder="Recommended"
+          value={s.byokModel === "recommended" ? "" : s.byokModel}
+          onChange={(e) => update({ byokModel: e.target.value.trim() || "recommended" })}
+          wrapperClassName="w-52"
+        />
       </Row>
     </Group>
   );

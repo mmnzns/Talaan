@@ -89,6 +89,8 @@ export interface Meeting extends MeetingListItem {
   pauses: PauseGap[];
   /** Why processing failed (status "failed"). `no_model`: no speech model downloaded yet. */
   error?: { code: string; message: string };
+  /** Why there is no summary (status "ready", transcript only). `no_engine`: no summary AI set up; `failed`: it failed. */
+  summaryError?: { code: string; message: string };
 }
 
 export interface Folder {

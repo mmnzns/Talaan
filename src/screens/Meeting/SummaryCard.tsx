@@ -2,6 +2,7 @@ import { Sparkles } from "lucide-react";
 import { useStore } from "../../data/StoreProvider";
 import type { Meeting, Ms, Summary } from "../../data/types";
 import { describeError } from "../../data/errors";
+import { openSettings } from "../../lib/windows";
 import { Button, Checkbox, Chip, Editable, Label, Timestamp, cn, useToast } from "../../ui";
 
 interface Props {
@@ -98,10 +99,13 @@ export function SummaryCard({ meeting, activeAt, editing, onJump }: Props) {
         ) : meeting.transcript.length > 0 ? (
           <div className="flex flex-col items-start gap-2 py-2">
             <span className="text-[15px] font-extrabold tracking-tight">No summary yet</span>
-            <p className="m-0 text-[13px] text-subtle">The transcript is saved. Write the summary whenever you’re ready.</p>
-            <Button variant="primary" onClick={() => store.generateSummary(meeting.id).catch((e) => toast(describeError(e)))}>
-              <Sparkles size={14} aria-hidden="true" /> Generate summary
-            </Button>
+            <p className="m-0 text-[13px] text-subtle">{meeting.summaryError?.message ?? "The transcript is saved. Write the summary whenever you’re ready."}</p>
+            <span className="flex flex-wrap gap-2">
+              <Button variant="primary" onClick={() => store.generateSummary(meeting.id).catch((e) => toast(describeError(e)))}>
+                <Sparkles size={14} aria-hidden="true" /> Generate summary
+              </Button>
+              {meeting.summaryError?.code === "no_engine" && <Button onClick={() => void openSettings("ai")}>Open Summary AI</Button>}
+            </span>
           </div>
         ) : (
           <p className="m-0 py-2 text-[13px] text-subtle">Nothing to summarize yet.</p>

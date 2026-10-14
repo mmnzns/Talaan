@@ -1,8 +1,7 @@
 import { defaultSettings } from "../defaultSettings";
-import type { ByokProvider, Settings, SettingsStore, SpeechModel } from "../settings";
+import type { ByokProvider, LocalModel, Settings, SettingsStore, SpeechModel } from "../settings";
 import { call, onEvent } from "./invoke";
 
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 /**
  * SettingsStore backed by `settings.json`. Speech models are not stored there: their list and state come from
@@ -12,6 +11,7 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 export class TauriSettingsStore implements SettingsStore {
   private state?: Settings;
   private models?: SpeechModel[];
+  private localModels?: LocalModel[];
   private listeners = new Set<() => void>();
 
   constructor() {
@@ -21,11 +21,12 @@ export class TauriSettingsStore implements SettingsStore {
     });
     onEvent("models-changed", () => {
       this.models = undefined;
+      this.localModels = undefined;
       this.emit();
     });
     onEvent<{ id: string; progress: number }>("model-download", ({ id, progress }) => {
-      if (!this.models) return;
-      this.models = this.models.map((m) => (m.id === id ? { ...m, state: "downloading", progress } : m));
+      this.models = this.models?.map((m) => (m.id === id ? { ...m, state: "downloading", progress } : m));
+      this.localModels = this.localModels?.map((m) => (m.id === id ? { ...m, state: "downloading", progress } : m));
       this.emit();
     });
   }
@@ -33,6 +34,11 @@ export class TauriSettingsStore implements SettingsStore {
   private async loadModels(): Promise<SpeechModel[]> {
     if (!this.models) this.models = await call<SpeechModel[]>("models_list");
     return this.models;
+  }
+
+  private async loadLocalModels(): Promise<LocalModel[]> {
+    if (!this.localModels) this.localModels = await call<LocalModel[]>("llm_models_list");
+    return this.localModels;
   }
 
   private emit() {
@@ -49,19 +55,19 @@ export class TauriSettingsStore implements SettingsStore {
   }
 
   async get(): Promise<Settings> {
-    const [s, speechModels] = await Promise.all([this.load(), this.loadModels()]);
+    const [s, speechModels, localModels] = await Promise.all([this.load(), this.loadModels(), this.loadLocalModels()]);
     // A model id that no longer exists (older builds used other ids) means the default, as Rust does.
     const activeSpeechModel = speechModels.some((m) => m.id === s.activeSpeechModel) ? s.activeSpeechModel : defaultSettings.activeSpeechModel;
-    return structuredClone({ ...s, speechModels, activeSpeechModel });
+    return structuredClone({ ...s, speechModels, localModels, activeSpeechModel });
   }
 
   async update(patch: Partial<Settings>): Promise<Settings> {
     const next = { ...(await this.load()), ...patch };
     this.state = next;
-    const { speechModels: _ignored, ...stored } = next;
+    const { speechModels: _speech, localModels: _local, ...stored } = next;
     await call<void>("settings_set", { value: stored });
     this.emit();
-    return structuredClone({ ...next, speechModels: await this.loadModels() });
+    return structuredClone({ ...next, speechModels: await this.loadModels(), localModels: await this.loadLocalModels() });
   }
 
   downloadModel(id: string): Promise<void> {
@@ -76,11 +82,20 @@ export class TauriSettingsStore implements SettingsStore {
     return call<void>("models_delete", { id });
   }
 
-  async testApiKey(_provider: ByokProvider, key: string) {
-    await sleep(700);
-    return key.trim().length >= 12
-      ? { ok: true, message: "Connected. The key works." }
-      : { ok: false, message: "That key didn’t work. Check it and try again." };
+  async testApiKey(provider: ByokProvider, key: string) {
+    const s = await this.load();
+    const r = await call<{ ok: boolean; message: string; model?: string }>("keys_save", { provider, key, baseUrl: s.byokBaseUrl ?? null });
+    if (r.ok) await this.update({ byokKeySet: true });
+    return r;
+  }
+
+  async clearApiKey(provider: ByokProvider): Promise<void> {
+    await call<void>("keys_clear", { provider });
+    await this.update({ byokKeySet: false });
+  }
+
+  localServerModels(address: string): Promise<string[]> {
+    return call<string[]>("local_server_models", { address });
   }
 
   dataInfo(): Promise<{ path: string; bytes: number }> {

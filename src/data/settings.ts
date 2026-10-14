@@ -36,6 +36,17 @@ export interface SpeechModel {
   progress?: number; // 0..1 while downloading
 }
 
+/** A local summary AI model (downloaded once, runs on this Mac). */
+export interface LocalModel {
+  id: string;
+  choice: "recommended" | "larger";
+  name: string;
+  note: string;
+  sizeMb: number;
+  state: "not_downloaded" | "downloading" | "downloaded";
+  progress?: number;
+}
+
 export interface Settings {
   // General
   theme: ThemePreference;
@@ -56,13 +67,18 @@ export interface Settings {
   useGpu: boolean;
   // Summary AI
   summaryEngine: SummaryEngineKind;
-  summaryLanguage: "meeting" | "en";
+  /** "meeting" = the meeting's own language, or an ISO code. */
+  summaryLanguage: string;
   localModel: "recommended" | "larger";
+  /** From disk in the app (like speechModels); never stored in settings.json. */
+  localModels: LocalModel[];
   ollamaAddress: string;
   ollamaModel?: string;
   byokProvider: ByokProvider;
   byokKeySet: boolean;
   byokModel: string;
+  /** Base URL for "Other (OpenAI-compatible)". */
+  byokBaseUrl?: string;
   // Connections
   calendarConnected: boolean;
   tabDetection: boolean;
@@ -85,8 +101,12 @@ export interface SettingsStore {
   cancelModelDownload(id: string): Promise<void>;
   /** Deletes Talaan's own copy of a model (models reused from another app are never touched). */
   deleteModel(id: string): Promise<void>;
-  /** Checks an API key with the provider. The key itself is never stored in settings. */
-  testApiKey(provider: ByokProvider, key: string): Promise<{ ok: boolean; message: string }>;
+  /** Checks an API key with the provider and, if it works, saves it in the Keychain (never in settings). */
+  testApiKey(provider: ByokProvider, key: string): Promise<{ ok: boolean; message: string; model?: string }>;
+  /** Removes a saved key from the Keychain. */
+  clearApiKey(provider: ByokProvider): Promise<void>;
+  /** Models a local server (Ollama, LM Studio) offers at an address. Throws when it can't be reached. */
+  localServerModels(address: string): Promise<string[]>;
   /** Where the data lives and how much space it uses. */
   dataInfo(): Promise<{ path: string; bytes: number }>;
   /** "Delete all Talaan data": meetings, audio, models, settings and keys. */

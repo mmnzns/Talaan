@@ -45,6 +45,11 @@ export const defaultSettings: Settings = {
   summaryEngine: "local",
   summaryLanguage: "meeting",
   localModel: "recommended",
+  // Mirrors the Rust catalog (src-tauri/src/summarizer/models.rs). In the app the states come from disk.
+  localModels: [
+    { id: "qwen3.5-4b", choice: "recommended", name: "Qwen3.5 4B", note: "Recommended. Accurate decisions and action items, about 30 s for a short call.", sizeMb: 2741, state: "downloaded" },
+    { id: "qwen3.5-9b", choice: "larger", name: "Qwen3.5 9B", note: "Larger. The most complete action items; needs 16 GB of memory and takes longer.", sizeMb: 5681, state: "not_downloaded" },
+  ],
   ollamaAddress: "http://localhost:11434",
   byokProvider: "claude",
   byokKeySet: false,

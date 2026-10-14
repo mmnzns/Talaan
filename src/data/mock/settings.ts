@@ -58,8 +58,12 @@ export class MockSettingsStore implements SettingsStore {
 
   private timers = new Map<string, ReturnType<typeof setInterval>>();
 
-  private setModel(id: string, patch: Partial<Settings["speechModels"][number]>) {
-    this.state = { ...this.state, speechModels: this.state.speechModels.map((m) => (m.id === id ? { ...m, ...patch } : m)) };
+  private setModel(id: string, patch: { state: "not_downloaded" | "downloading" | "downloaded"; progress?: number } | { progress: number }) {
+    this.state = {
+      ...this.state,
+      speechModels: this.state.speechModels.map((m) => (m.id === id ? { ...m, ...patch } : m)),
+      localModels: this.state.localModels.map((m) => (m.id === id ? { ...m, ...patch } : m)),
+    };
     this.save();
   }
 
@@ -93,9 +97,20 @@ export class MockSettingsStore implements SettingsStore {
   async testApiKey(_provider: ByokProvider, key: string) {
     await sleep(700);
     return key.trim().length >= 12
-      ? { ok: true, message: "Connected. The key works." }
+      ? { ok: true, message: "Connected. Summaries will use the recommended model." }
       : { ok: false, message: "That key didn’t work. Check it and try again." };
   }
+
+  async clearApiKey(_provider: ByokProvider): Promise<void> {
+    this.state = { ...this.state, byokKeySet: false };
+    this.save();
+  }
+
+  async localServerModels(_address: string): Promise<string[]> {
+    await sleep(300);
+    return ["llama3.2:3b", "qwen3.5:4b"];
+  }
+
 
   async dataInfo() {
     return { path: "~/Library/Application Support/Talaan", bytes: 1_200_000_000 };

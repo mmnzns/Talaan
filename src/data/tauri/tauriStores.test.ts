@@ -19,6 +19,8 @@ function backend(...settings: unknown[]) {
   invoke.mockImplementation((cmd: string) => {
     if (cmd === "settings_get") return Promise.resolve(settings.length > 1 ? settings.shift() : settings[0]);
     if (cmd === "models_list") return Promise.resolve(structuredClone(MODELS));
+    if (cmd === "llm_models_list") return Promise.resolve([{ id: "qwen3.5-4b", choice: "recommended", name: "Qwen3.5 4B", note: "", sizeMb: 2741, state: "not_downloaded" }]);
+    if (cmd === "keys_save") return Promise.resolve({ ok: true, message: "Connected." });
     return Promise.resolve(undefined);
   });
 }
@@ -114,6 +116,18 @@ describe("TauriSettingsStore", () => {
     expect((await store.get()).theme).toBe("light");
     fire("settings-changed");
     expect((await store.get()).theme).toBe("dark");
+  });
+
+  it("a working key is saved through the Keychain command, never in settings", async () => {
+    backend({ byokProvider: "openai" });
+    const store = new TauriSettingsStore();
+    const r = await store.testApiKey("openai", "sk-live");
+    expect(r.ok).toBe(true);
+    expect(invoke).toHaveBeenCalledWith("keys_save", { provider: "openai", key: "sk-live", baseUrl: null });
+    const saved = invoke.mock.calls.filter((c) => c[0] === "settings_set").map((c) => JSON.stringify(c[1]));
+    expect(saved.some((v) => v.includes("sk-live"))).toBe(false);
+    expect((await store.get()).byokKeySet).toBe(true);
+    expect((await store.get()).localModels[0].id).toBe("qwen3.5-4b");
   });
 
   it("an unknown active model id falls back to the default", async () => {
