@@ -4743,6 +4743,7 @@ dependencies = [
  "serde_json",
  "sha2",
  "strsim",
+ "talaan-llm-protocol",
  "tauri",
  "tauri-build",
  "tauri-plugin-opener",

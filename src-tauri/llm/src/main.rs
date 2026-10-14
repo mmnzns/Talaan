@@ -126,8 +126,9 @@ fn complete(backend: &LlamaBackend, loaded: &mut Option<(String, LlamaModel)>, c
     let mut written = 0u32;
     let mut truncated = true;
     while written < c.max_tokens {
+        // `sample` also accepts the token into the samplers (grammar state included); accepting it again
+        // would push the grammar past it.
         let token = sampler.sample(&ctx, batch.n_tokens() - 1);
-        sampler.accept(token);
         if vocab.is_eog(token) {
             truncated = false;
             break;

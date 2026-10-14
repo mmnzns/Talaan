@@ -42,6 +42,7 @@ reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"
 sha2 = "0.10.9"
 strsim = "0.11.1"
 whatlang = "0.18.0"
+talaan-llm-protocol = { path = "llm-protocol" }
 
 
 # Read the optimization guideline for more details: https://tauri.app/concept/size/#cargo-configuration
