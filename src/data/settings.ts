@@ -27,7 +27,7 @@ export interface SpeechModel {
   name: string;
   maker: string;
   note: string;
-  engine: "whisper" | "parakeet" | "nemotron";
+  engine: "whisper" | "parakeet";
   sizeMb: number;
   speed: 1 | 2 | 3;
   accuracy: 1 | 2 | 3;
@@ -81,6 +81,10 @@ export interface SettingsStore {
   update(patch: Partial<Settings>): Promise<Settings>;
   /** Starts (or simulates) a model download; progress arrives through `subscribe`. */
   downloadModel(id: string): Promise<void>;
+  /** Stops a download. The part already downloaded is kept, so Download resumes. */
+  cancelModelDownload(id: string): Promise<void>;
+  /** Deletes Talaan's own copy of a model (models reused from another app are never touched). */
+  deleteModel(id: string): Promise<void>;
   /** Checks an API key with the provider. The key itself is never stored in settings. */
   testApiKey(provider: ByokProvider, key: string): Promise<{ ok: boolean; message: string }>;
   /** Where the data lives and how much space it uses. */

@@ -26,6 +26,8 @@ export function describeError(e: unknown): string {
       return `${err.message}. Coming in a later build.`;
     case "not_found":
       return "That meeting is gone.";
+    case "refused":
+      return err.message;
     case "unsupported_schema":
       return "This meeting was saved by a newer version of Talaan.";
     default:

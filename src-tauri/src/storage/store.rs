@@ -178,7 +178,7 @@ impl Storage {
             transcript,
             marks: file.marks.clone(),
             pauses: file.pauses.clone(),
-            error: file.error.as_ref().map(|e| e.message.clone()),
+            error: file.error.clone(),
             item: list_item(&file),
         })
     }

@@ -33,12 +33,12 @@ export const defaultSettings: Settings = {
     { name: "Voice Memos", why: "built in" },
   ],
   speechModels: [
-    { id: "parakeet", name: "Parakeet", maker: "NVIDIA", note: "Fast and accurate. 25 European languages.", engine: "parakeet", sizeMb: 600, speed: 3, accuracy: 2, languages: "25 European languages", state: "on_this_mac" },
-    { id: "nemotron", name: "Nemotron", maker: "NVIDIA", note: "Newest and most accurate on long calls. English.", engine: "nemotron", sizeMb: 2400, speed: 2, accuracy: 3, languages: "English only", state: "downloading", progress: 0.38 },
-    { id: "whisper-large", name: "Whisper Large", maker: "OpenAI", note: "Widest language support, including Filipino.", engine: "whisper", sizeMb: 1600, speed: 1, accuracy: 3, languages: "99 languages", state: "on_this_mac" },
-    { id: "whisper-small", name: "Whisper Small", maker: "OpenAI", note: "Light and quick on older Macs. Lower accuracy.", engine: "whisper", sizeMb: 500, speed: 3, accuracy: 1, languages: "99 languages", state: "not_downloaded" },
+    // Mirrors the Rust catalog (src-tauri/src/transcriber/models.rs). In the app the list and states come from Rust.
+    { id: "whisper-turbo", name: "Whisper Large Turbo", maker: "OpenAI", note: "Recommended. Most accurate, 99 languages including Filipino.", engine: "whisper", sizeMb: 575, speed: 2, accuracy: 3, languages: "99 languages", state: "downloaded" },
+    { id: "parakeet-v3", name: "Parakeet", maker: "NVIDIA", note: "Fastest. Good for quick notes in 25 European languages.", engine: "parakeet", sizeMb: 671, speed: 3, accuracy: 1, languages: "25 European languages", state: "on_this_mac" },
+    { id: "whisper-small", name: "Whisper Small", maker: "OpenAI", note: "Light and quick on older Macs. Lower accuracy.", engine: "whisper", sizeMb: 488, speed: 3, accuracy: 1, languages: "99 languages", state: "not_downloaded" },
   ],
-  activeSpeechModel: "parakeet",
+  activeSpeechModel: "whisper-turbo",
   reuseModels: true,
   meetingLanguage: "auto",
   useGpu: true,

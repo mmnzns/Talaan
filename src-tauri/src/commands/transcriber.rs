@@ -33,7 +33,7 @@ impl TranscriberState {
 }
 
 fn err(message: String) -> StorageError {
-    StorageError::NotYetAvailable(message)
+    StorageError::Refused(message)
 }
 
 /// Starts the worker and queues every meeting left `transcribing` (a crash or quit mid-way).

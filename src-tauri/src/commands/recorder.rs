@@ -76,7 +76,7 @@ fn notice(app: &AppHandle, text: String, kind: &'static str, settings_pane: Opti
 }
 
 fn err(e: String) -> StorageError {
-    StorageError::NotYetAvailable(e)
+    StorageError::Refused(e)
 }
 
 fn system_source() -> Box<dyn crate::recorder::source::AudioSource> {

@@ -1,12 +1,17 @@
 import { defaultSettings } from "../defaultSettings";
-import type { ByokProvider, Settings, SettingsStore } from "../settings";
+import type { ByokProvider, Settings, SettingsStore, SpeechModel } from "../settings";
 import { call, onEvent } from "./invoke";
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-/** SettingsStore backed by `settings.json`. Model downloads and key tests stay simulated until M4/M5. */
+/**
+ * SettingsStore backed by `settings.json`. Speech models are not stored there: their list and state come from
+ * what is on disk (`models_list`), so a settings file can never claim a model that isn't there.
+ * Key tests stay simulated until M5.
+ */
 export class TauriSettingsStore implements SettingsStore {
   private state?: Settings;
+  private models?: SpeechModel[];
   private listeners = new Set<() => void>();
 
   constructor() {
@@ -14,6 +19,20 @@ export class TauriSettingsStore implements SettingsStore {
       this.state = undefined; // another window changed it: reload on next read
       this.emit();
     });
+    onEvent("models-changed", () => {
+      this.models = undefined;
+      this.emit();
+    });
+    onEvent<{ id: string; progress: number }>("model-download", ({ id, progress }) => {
+      if (!this.models) return;
+      this.models = this.models.map((m) => (m.id === id ? { ...m, state: "downloading", progress } : m));
+      this.emit();
+    });
+  }
+
+  private async loadModels(): Promise<SpeechModel[]> {
+    if (!this.models) this.models = await call<SpeechModel[]>("models_list");
+    return this.models;
   }
 
   private emit() {
@@ -30,28 +49,29 @@ export class TauriSettingsStore implements SettingsStore {
   }
 
   async get(): Promise<Settings> {
-    return structuredClone(await this.load());
+    const [s, speechModels] = await Promise.all([this.load(), this.loadModels()]);
+    return structuredClone({ ...s, speechModels });
   }
 
   async update(patch: Partial<Settings>): Promise<Settings> {
     const next = { ...(await this.load()), ...patch };
     this.state = next;
-    await call<void>("settings_set", { value: next });
+    const { speechModels: _ignored, ...stored } = next;
+    await call<void>("settings_set", { value: stored });
     this.emit();
-    return structuredClone(next);
+    return structuredClone({ ...next, speechModels: await this.loadModels() });
   }
 
-  async downloadModel(id: string): Promise<void> {
-    const set = async (p: Partial<Settings["speechModels"][number]>) => {
-      const s = await this.load();
-      await this.update({ speechModels: s.speechModels.map((m) => (m.id === id ? { ...m, ...p } : m)) });
-    };
-    await set({ state: "downloading", progress: 0 });
-    let p = 0;
-    const timer = setInterval(() => {
-      p += 0.1;
-      void (p >= 1 ? (clearInterval(timer), set({ state: "downloaded", progress: undefined })) : set({ progress: p }));
-    }, 500);
+  downloadModel(id: string): Promise<void> {
+    return call<void>("models_download", { id });
+  }
+
+  cancelModelDownload(id: string): Promise<void> {
+    return call<void>("models_cancel", { id });
+  }
+
+  deleteModel(id: string): Promise<void> {
+    return call<void>("models_delete", { id });
   }
 
   async testApiKey(_provider: ByokProvider, key: string) {

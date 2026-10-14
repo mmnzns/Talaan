@@ -195,9 +195,9 @@ pub struct Meeting {
     pub transcript: Vec<TranscriptLine>,
     pub marks: Vec<Mark>,
     pub pauses: Vec<PauseGap>,
-    /// Why processing failed, in words for the banner.
+    /// Why processing failed (status `failed`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub error: Option<String>,
+    pub error: Option<ProcessingError>,
 }
 
 #[cfg(test)]

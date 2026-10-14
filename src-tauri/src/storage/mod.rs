@@ -26,6 +26,9 @@ pub enum StorageError {
     NotFound(String),
     #[error("{0}")]
     NotYetAvailable(String),
+    /// The action can't be done right now; the message says why, in words for the user.
+    #[error("{0}")]
+    Refused(String),
     #[error("meeting {id} was written by a newer Talaan (schema {found})")]
     UnsupportedSchema { id: String, found: u32 },
     #[error("invalid id: {0}")]
@@ -41,6 +44,7 @@ impl StorageError {
         match self {
             Self::NotFound(_) | Self::InvalidId(_) => "not_found",
             Self::NotYetAvailable(_) => "not_yet_available",
+            Self::Refused(_) => "refused",
             Self::UnsupportedSchema { .. } => "unsupported_schema",
             Self::Io(_) | Self::Json(_) => "io",
         }

@@ -1,3 +1,4 @@
+import { describeError } from "../../data/errors";
 import { useSettingsStore } from "../../data/StoreProvider";
 import type { SpeechModel } from "../../data/settings";
 import { Button, Chip, Radio, Select, Switch, cn, useToast } from "../../ui";
@@ -17,6 +18,11 @@ const installed = (m: SpeechModel) => m.state === "on_this_mac" || m.state === "
 export function ModelsTab({ settings: s, update }: TabProps) {
   const store = useSettingsStore();
   const toast = useToast();
+  const run = (p: Promise<void>) => p.catch((e) => toast(describeError(e)));
+  const reused = s.speechModels.filter((m) => m.state === "on_this_mac");
+  const reuseDesc = reused.length
+    ? `Found ${reused.length} downloaded by another speech app. Used read-only, so that app keeps working. Saves about ${size(reused.reduce((a, m) => a + m.sizeMb, 0))}.`
+    : "Talaan looks for speech models other apps already downloaded and uses them read-only instead of downloading again. None found on this Mac.";
 
   return (
     <div className="flex flex-col gap-6">
@@ -59,7 +65,7 @@ export function ModelsTab({ settings: s, update }: TabProps) {
                 </div>
                 <div className="flex min-w-24 flex-col items-end gap-1">
                   <span className="font-mono text-[11px] text-subtle">{size(m.sizeMb)}</span>
-                  {m.state === "not_downloaded" && <Button onClick={() => store.downloadModel(m.id)}>Download</Button>}
+                  {m.state === "not_downloaded" && <Button onClick={() => run(store.downloadModel(m.id))}>Download</Button>}
                   {m.state === "downloading" && (
                     <span className="flex w-28 flex-col items-end gap-1">
                       <span className="h-[5px] w-full overflow-hidden rounded-full bg-line">
@@ -68,7 +74,15 @@ export function ModelsTab({ settings: s, update }: TabProps) {
                       <span className="font-mono text-[11px] text-subtle">
                         {pct}% · {minutes} min left
                       </span>
+                      <button type="button" className="cursor-pointer border-0 bg-transparent p-0 text-xs text-subtle underline" onClick={() => run(store.cancelModelDownload(m.id))}>
+                        Cancel
+                      </button>
                     </span>
+                  )}
+                  {m.state === "downloaded" && !on && (
+                    <button type="button" className="cursor-pointer border-0 bg-transparent p-0 text-xs text-subtle underline" onClick={() => run(store.deleteModel(m.id))}>
+                      Delete
+                    </button>
                   )}
                 </div>
               </div>
@@ -78,16 +92,18 @@ export function ModelsTab({ settings: s, update }: TabProps) {
       </div>
 
       <Group>
-        <Row title="Reuse models already on this Mac" desc="Found 2 downloaded by other speech apps. Used read-only, so those apps keep working. Saves about 2.2 GB.">
+        <Row title="Reuse models already on this Mac" desc={reuseDesc}>
           <Switch aria-label="Reuse models already on this Mac" checked={s.reuseModels} onChange={(v) => update({ reuseModels: v })} />
         </Row>
-        <Row title="Meeting language" desc="Detected per meeting. English-only models are greyed out for other languages.">
+        <Row title="Meeting language" desc="Detected per meeting. Whisper knows 99 languages; Parakeet knows 25 European ones.">
           <Select label="Meeting language" wrapperClassName="w-40" value={s.meetingLanguage} onChange={(e) => update({ meetingLanguage: e.target.value })}>
             <option value="auto">Auto-detect</option>
             <option value="en">English</option>
+            <option value="tl">Filipino</option>
             <option value="es">Spanish</option>
-            <option value="fil">Filipino</option>
             <option value="fr">French</option>
+            <option value="de">German</option>
+            <option value="pt">Portuguese</option>
           </Select>
         </Row>
         <Row title="Use the GPU" desc="Faster transcription on Apple silicon (Metal).">

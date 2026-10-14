@@ -87,6 +87,8 @@ export interface Meeting extends MeetingListItem {
   transcript: TranscriptLine[];
   marks: Mark[];
   pauses: PauseGap[];
+  /** Why processing failed (status "failed"). `no_model`: no speech model downloaded yet. */
+  error?: { code: string; message: string };
 }
 
 export interface Folder {

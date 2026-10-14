@@ -59,7 +59,7 @@ impl Storage {
             engine: m.summary.as_ref().map(|s| s.engine.clone()),
             audio_deleted: !m.has_audio,
             progress: m.item.progress,
-            error: m.error.as_ref().map(|e| ProcessingError { code: "failed".into(), message: e.clone() }),
+            error: m.error.clone(),
             transcription: None,
             extra: Default::default(),
         };

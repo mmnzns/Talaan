@@ -336,7 +336,7 @@ mod tests {
         wait(&worker);
         let m = storage.lock().unwrap().get_meeting(&id).unwrap();
         assert_eq!(m.item.status, MeetingStatus::Failed);
-        assert_eq!(m.error.as_deref(), Some("engine broke"));
+        assert_eq!(m.error.unwrap().message, "engine broke");
     }
 
     #[test]

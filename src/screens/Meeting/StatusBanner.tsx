@@ -2,6 +2,7 @@ import { AlertTriangle } from "lucide-react";
 import { useStore } from "../../data/StoreProvider";
 import type { Meeting } from "../../data/types";
 import { navigate, routes } from "../../lib/router";
+import { openSettings } from "../../lib/windows";
 import { describeError } from "../../data/errors";
 import { Button, useToast } from "../../ui";
 
@@ -26,9 +27,16 @@ export function StatusBanner({ meeting }: { meeting: Meeting }) {
       </Banner>
     );
   }
+  if (meeting.status === "failed" && meeting.error?.code === "no_model") {
+    return (
+      <Banner title="No speech model yet" text="Download one in Settings. This call is transcribed as soon as it finishes.">
+        <Button variant="primary" onClick={() => void openSettings("models")}>Open Speech models</Button>
+      </Banner>
+    );
+  }
   if (meeting.status === "failed") {
     return (
-      <Banner title="Processing failed" text="The audio is safe on this Mac. Try again, or delete the meeting.">
+      <Banner title="Processing failed" text={`${meeting.error ? `${meeting.error.message} ` : ""}The audio is safe on this Mac. Try again, or delete the meeting.`}>
         <Button variant="primary" onClick={() => run(store.retryProcessing(meeting.id))}>Try again</Button>
         <Button onClick={leave}>Delete</Button>
       </Banner>

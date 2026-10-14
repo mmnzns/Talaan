@@ -56,22 +56,38 @@ export class MockSettingsStore implements SettingsStore {
     return structuredClone(this.state);
   }
 
+  private timers = new Map<string, ReturnType<typeof setInterval>>();
+
+  private setModel(id: string, patch: Partial<Settings["speechModels"][number]>) {
+    this.state = { ...this.state, speechModels: this.state.speechModels.map((m) => (m.id === id ? { ...m, ...patch } : m)) };
+    this.save();
+  }
+
   async downloadModel(id: string): Promise<void> {
-    const set = (patch: Partial<Settings["speechModels"][number]>) => {
-      this.state = { ...this.state, speechModels: this.state.speechModels.map((m) => (m.id === id ? { ...m, ...patch } : m)) };
-      this.save();
-    };
-    set({ state: "downloading", progress: 0 });
+    if (this.timers.has(id)) return;
+    this.setModel(id, { state: "downloading", progress: 0 });
     let p = 0;
     const timer = setInterval(() => {
       p += 0.1;
       if (p >= 1) {
         clearInterval(timer);
-        set({ state: "downloaded", progress: undefined });
+        this.timers.delete(id);
+        this.setModel(id, { state: "downloaded", progress: undefined });
       } else {
-        set({ progress: p });
+        this.setModel(id, { progress: p });
       }
     }, 500);
+    this.timers.set(id, timer);
+  }
+
+  async cancelModelDownload(id: string): Promise<void> {
+    clearInterval(this.timers.get(id));
+    this.timers.delete(id);
+    this.setModel(id, { state: "not_downloaded", progress: undefined });
+  }
+
+  async deleteModel(id: string): Promise<void> {
+    this.setModel(id, { state: "not_downloaded", progress: undefined });
   }
 
   async testApiKey(_provider: ByokProvider, key: string) {

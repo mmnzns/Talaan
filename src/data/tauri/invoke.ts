@@ -10,9 +10,9 @@ export async function call<T>(command: string, args?: Record<string, unknown>): 
   }
 }
 
-/** Calls `listener` whenever the backend emits `event`. Returns an unsubscribe function. */
-export function onEvent(event: string, listener: () => void): () => void {
-  const pending = listen(event, () => listener());
+/** Calls `listener` with the payload whenever the backend emits `event`. Returns an unsubscribe function. */
+export function onEvent<T = void>(event: string, listener: (payload: T) => void): () => void {
+  const pending = listen<T>(event, (e) => listener(e.payload));
   return () => {
     pending.then((off) => off()).catch(() => {});
   };

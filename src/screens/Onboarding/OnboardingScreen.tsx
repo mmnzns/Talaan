@@ -176,29 +176,29 @@ type StepProps = { settings: Settings; update: (p: Partial<Settings>) => Promise
 
 function ModelStep({ settings: s, update }: StepProps) {
   const store = useSettingsStore();
-  const options = s.speechModels.filter((m) => ["parakeet", "whisper-large", "nemotron"].includes(m.id));
-  const info: Record<string, string> = {
-    parakeet: "Fast and accurate, 25 European languages. Already on this Mac, no download.",
-    "whisper-large": "Widest language support, including Filipino. Already on this Mac.",
-    nemotron: "Most accurate on long English calls. 2.4 GB download.",
+  const status = (m: Settings["speechModels"][number]) => {
+    if (m.state === "on_this_mac") return "Already on this Mac, no download.";
+    if (m.state === "downloaded") return "Downloaded.";
+    if (m.state === "downloading") return `Downloading ${Math.round((m.progress ?? 0) * 100)}%…`;
+    return `${(m.sizeMb / 1000).toFixed(1)} GB download.`;
   };
   return (
     <>
       <h1 className={h1}>Choose a speech model</h1>
       <p className={desc}>Turns audio into text on this Mac. You can change it later.</p>
       <div role="radiogroup" aria-label="Speech model" className="flex flex-col gap-2">
-        {options.map((m) => (
+        {s.speechModels.map((m) => (
           <Option
             key={m.id}
             on={s.activeSpeechModel === m.id}
             title={m.name}
-            tag={m.id === "parakeet" ? "recommended" : undefined}
+            tag={m.id === "whisper-turbo" ? "recommended" : undefined}
             onClick={() => {
               update({ activeSpeechModel: m.id });
               if (m.state === "not_downloaded") store.downloadModel(m.id);
             }}
           >
-            {m.state === "downloading" ? `${info[m.id]} Downloading ${Math.round((m.progress ?? 0) * 100)}%…` : info[m.id]}
+            {m.note} {status(m)}
           </Option>
         ))}
       </div>
