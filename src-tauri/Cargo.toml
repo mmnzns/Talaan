@@ -27,6 +27,10 @@ chrono = { version = "0.4.45", features = ["serde"] }
 dirs = "7.0.0"
 rand = "0.10.3"
 thiserror = "2.0.21"
+cpal = "0.18.2"
+rtrb = "0.4.0"
+rubato = "5.0.1"
+hound = "3.5.1"
 
 
 # Read the optimization guideline for more details: https://tauri.app/concept/size/#cargo-configuration
@@ -39,3 +43,13 @@ strip = true
 
 [dev-dependencies]
 tempfile = "3.27.0"
+
+[target.'cfg(target_os = "macos")'.dependencies]
+block2 = "0.6.2"
+objc2 = "0.6.5"
+objc2-app-kit = "0.3.2"
+objc2-av-foundation = "0.3.2"
+objc2-core-audio = "0.3.2"
+objc2-core-audio-types = "0.3.2"
+objc2-core-foundation = "0.3.2"
+objc2-foundation = "0.3.2"
