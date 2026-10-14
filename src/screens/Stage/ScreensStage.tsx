@@ -4,12 +4,15 @@ import { navigate, routes } from "../../lib/router";
 import { Button, Label } from "../../ui";
 import { KitGallery } from "./KitGallery";
 
-const SECTIONS: { id: string; label: string }[] = [{ id: "kit", label: "UI kit" }];
+const SECTIONS: { id: string; label: string }[] = [
+  { id: "onboarding", label: "Onboarding" },
+  { id: "kit", label: "UI kit" },
+];
 
 /** Dev-only stage: every surface that is not a normal window (menu bar, banners, prompts), plus the UI kit. */
 export function ScreensStage({ which }: { which?: string }) {
   const { settings, update } = useSettings();
-  const current = which ?? "kit";
+  const current = which ?? "onboarding";
 
   return (
     <div className="flex h-full flex-col bg-paper">
@@ -40,7 +43,26 @@ export function ScreensStage({ which }: { which?: string }) {
             </button>
           ))}
         </nav>
-        <main className="min-w-0 flex-1 overflow-auto p-6">{current === "kit" ? <KitGallery /> : null}</main>
+        <main className="min-w-0 flex-1 overflow-auto p-6">
+          {current === "kit" && <KitGallery />}
+          {current === "onboarding" && (
+            <div className="flex max-w-md flex-col gap-3">
+              <h2 className="m-0 text-lg font-extrabold">Onboarding</h2>
+              <p className="m-0 text-[13px] text-subtle">Shows the 7-step first-run flow again in the main window. Finishing it brings you back to Talaan.</p>
+              <div>
+                <Button
+                  variant="primary"
+                  onClick={async () => {
+                    await update({ onboardingDone: false });
+                    navigate(routes.meetings());
+                  }}
+                >
+                  Restart onboarding
+                </Button>
+              </div>
+            </div>
+          )}
+        </main>
       </div>
     </div>
   );

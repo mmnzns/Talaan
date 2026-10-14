@@ -13,6 +13,9 @@
   --color-hover: var(--t-hover);
   --color-strong: var(--t-strong-bg);
   --color-strong-fg: var(--t-strong-fg);
+  --color-aside: var(--t-aside);
+  --color-aside-fg: var(--t-aside-fg);
+  --color-aside-muted: var(--t-aside-muted);
   --color-mark: var(--t-mark);
   --color-sp1: var(--t-sp1-bg); --color-sp1-fg: var(--t-sp1-fg); --color-sp1-line: var(--t-sp1-line);
   --color-sp2: var(--t-sp2-bg); --color-sp2-fg: var(--t-sp2-fg); --color-sp2-line: var(--t-sp2-line);

@@ -27,6 +27,9 @@
   --t-hover: #E0DED5;        /* row and nav hover */
   --t-strong-bg: #141416;    /* selected nav row, toggled button */
   --t-strong-fg: #B5E61D;
+  --t-aside: #141416;        /* dark side panels (onboarding) */
+  --t-aside-fg: #F3F2EE;
+  --t-aside-muted: #7F7D75;
   --t-mark: #FFF6C9;         /* marked moments in the transcript */
   --t-sp1-bg: #DDEBFF; --t-sp1-fg: #1D4E9E; --t-sp1-line: #8DB4F0;  /* Them 1 */
   --t-sp2-bg: #FCE3CF; --t-sp2-fg: #8A4310; --t-sp2-line: #EDA772;  /* Them 2 */
@@ -68,6 +71,9 @@
   --t-hover: #1E1E22;
   --t-strong-bg: #B5E61D;
   --t-strong-fg: #141416;
+  --t-aside: #0E0E10;
+  --t-aside-fg: #F3F2EE;
+  --t-aside-muted: #A5A49D;
   --t-mark: #3A3414;
   --t-sp1-bg: #1B2A44; --t-sp1-fg: #9CC2FF; --t-sp1-line: #3C5F96;
   --t-sp2-bg: #43271A; --t-sp2-fg: #FFB98A; --t-sp2-line: #8A5636;
