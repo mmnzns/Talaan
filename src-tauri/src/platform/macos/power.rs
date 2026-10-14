@@ -17,7 +17,7 @@ impl SleepWatcher {
     /// `on_change(true)` before sleep, `on_change(false)` after wake.
     pub fn new(on_change: impl Fn(bool) + Send + Sync + 'static) -> Self {
         let on_change = std::sync::Arc::new(on_change);
-        let center = unsafe { NSWorkspace::sharedWorkspace().notificationCenter() };
+        let center = NSWorkspace::sharedWorkspace().notificationCenter();
         let mut observers = vec![];
         for (name, sleeping) in [(unsafe { NSWorkspaceWillSleepNotification }, true), (unsafe { NSWorkspaceDidWakeNotification }, false)] {
             let cb = on_change.clone();
@@ -31,7 +31,7 @@ impl SleepWatcher {
 
 impl Drop for SleepWatcher {
     fn drop(&mut self) {
-        let center = unsafe { NSWorkspace::sharedWorkspace().notificationCenter() };
+        let center = NSWorkspace::sharedWorkspace().notificationCenter();
         for o in &self.observers {
             unsafe { center.removeObserver(AsRef::<objc2::runtime::AnyObject>::as_ref(&**o)) };
         }

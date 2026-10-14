@@ -21,6 +21,7 @@ pub struct FeedProducer {
 pub struct FeedConsumer {
     headers: rtrb::Consumer<Header>,
     samples: rtrb::Consumer<f32>,
+    #[allow(dead_code)] // read by diagnostics and tests
     dropped: Arc<AtomicU64>,
 }
 
@@ -64,6 +65,7 @@ impl FeedConsumer {
         self.headers.slots() == 0
     }
 
+    #[allow(dead_code)]
     pub fn dropped(&self) -> u64 {
         self.dropped.load(Ordering::Relaxed)
     }

@@ -51,10 +51,6 @@ pub fn default_output_device() -> Result<AudioObjectID, String> {
     get::<AudioObjectID>(kAudioObjectSystemObject as u32, kAudioHardwarePropertyDefaultOutputDevice, kAudioObjectPropertyScopeGlobal)
 }
 
-pub fn default_input_device() -> Result<AudioObjectID, String> {
-    get::<AudioObjectID>(kAudioObjectSystemObject as u32, kAudioHardwarePropertyDefaultInputDevice, kAudioObjectPropertyScopeGlobal)
-}
-
 pub fn device_uid(device: AudioObjectID) -> Result<String, String> {
     get_string(device, kAudioDevicePropertyDeviceUID, kAudioObjectPropertyScopeGlobal)
 }

@@ -2,7 +2,7 @@
 //! items, so adding Windows means adding `windows/` and one `cfg` line here.
 
 #[cfg(target_os = "macos")]
-mod macos;
+pub mod macos;
 #[cfg(target_os = "macos")]
 pub use macos::*;
 

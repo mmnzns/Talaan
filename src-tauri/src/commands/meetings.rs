@@ -98,11 +98,6 @@ pub fn tags_list(state: State<AppState>) -> CmdResult<Vec<String>> {
 
 // These need the transcriber (M4) and summarizer (M5). Until then the UI shows a short notice.
 #[tauri::command]
-pub fn meetings_recover(_id: String) -> CmdResult<()> {
-    Err(StorageError::NotYetAvailable("Recovering a recording needs the transcriber (M4)".into()))
-}
-
-#[tauri::command]
 pub fn meetings_retry(_id: String) -> CmdResult<()> {
     Err(StorageError::NotYetAvailable("Retrying needs the transcriber (M4)".into()))
 }

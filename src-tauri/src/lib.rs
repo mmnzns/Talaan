@@ -3,6 +3,7 @@ mod platform;
 mod recorder;
 mod storage;
 
+use commands::recorder as rec_cmd;
 use commands::{dev, meetings, settings, AppState, MEETINGS_CHANGED};
 use std::time::Duration;
 use tauri::Manager;
@@ -24,6 +25,7 @@ pub fn run() {
             store.scan_for_interrupted()?;
             store.apply_retention(chrono::Utc::now())?;
             app.manage(AppState::new(store));
+            rec_cmd::setup(app.handle());
 
             let handle = app.handle().clone();
             std::thread::spawn(move || loop {
@@ -52,7 +54,17 @@ pub fn run() {
             meetings::folders_list,
             meetings::folders_create,
             meetings::tags_list,
-            meetings::meetings_recover,
+            rec_cmd::meetings_recover,
+            rec_cmd::recorder_start,
+            rec_cmd::recorder_pause,
+            rec_cmd::recorder_resume,
+            rec_cmd::recorder_mark,
+            rec_cmd::recorder_stop,
+            rec_cmd::recorder_discard,
+            rec_cmd::recorder_status,
+            rec_cmd::permissions_status,
+            rec_cmd::permissions_request_mic,
+            rec_cmd::permissions_open_settings,
             meetings::meetings_retry,
             meetings::meetings_generate_summary,
             settings::settings_get,
@@ -62,6 +74,11 @@ pub fn run() {
             dev::dev_seed,
             dev::dev_wipe,
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running Talaan");
+        .build(tauri::generate_context!())
+        .expect("error while building Talaan")
+        .run(|app, event| {
+            if let tauri::RunEvent::ExitRequested { .. } = event {
+                rec_cmd::stop_on_exit(app);
+            }
+        });
 }

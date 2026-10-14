@@ -82,10 +82,6 @@ impl<S: SampleSink> TrackPipeline<S> {
         self.meter.take()
     }
 
-    pub fn sink_mut(&mut self) -> &mut S {
-        self.timeline.sink_mut()
-    }
-
     pub fn into_sink(self) -> S {
         self.timeline.into_sink()
     }

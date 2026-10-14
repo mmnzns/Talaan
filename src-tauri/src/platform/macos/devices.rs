@@ -21,14 +21,6 @@ pub fn on_builtin_speakers() -> bool {
     }
 }
 
-pub fn default_input_name() -> String {
-    default_input_device().map(device_name).unwrap_or_else(|_| "No microphone".into())
-}
-
-pub fn default_output_name() -> String {
-    default_output_device().map(device_name).unwrap_or_else(|_| "No output".into())
-}
-
 /// Something is playing through the default output (used to tell "silent call" from "blocked tap").
 pub fn output_is_running() -> bool {
     default_output_device()
@@ -86,8 +78,6 @@ mod tests {
     fn device_queries_do_not_fail() {
         let _ = on_builtin_speakers();
         let _ = output_is_running();
-        assert!(!default_input_name().is_empty());
-        assert!(!default_output_name().is_empty());
     }
 
     #[test]

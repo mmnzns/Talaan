@@ -29,14 +29,6 @@ impl<S: SampleSink> TimelineWriter<S> {
         self.written
     }
 
-    pub fn sink(&self) -> &S {
-        &self.sink
-    }
-
-    pub fn sink_mut(&mut self) -> &mut S {
-        &mut self.sink
-    }
-
     pub fn into_sink(self) -> S {
         self.sink
     }
