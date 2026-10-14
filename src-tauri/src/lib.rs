@@ -21,6 +21,7 @@ fn platform_name() -> &'static str {
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
             let root = commands::resolve_data_dir(std::env::var("TALAAN_DATA_DIR").ok(), dirs::data_dir());
             let mut store = storage::Storage::new(root.clone())?;
@@ -73,6 +74,10 @@ pub fn run() {
             meetings::folders_list,
             meetings::folders_create,
             meetings::tags_list,
+            meetings::meetings_playback,
+            meetings::meetings_delete_audio,
+            meetings::meetings_reveal,
+            meetings::export_write,
             rec_cmd::meetings_recover,
             commands::calls::calls_prompt,
             commands::calls::calls_accept,

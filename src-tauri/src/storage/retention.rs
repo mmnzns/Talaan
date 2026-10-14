@@ -6,7 +6,7 @@
 
 use super::io::write_json_atomic;
 use super::model::MeetingStatus;
-use super::paths::{is_valid_id, meetings_dir, ME_WAV, META, THEM_WAV};
+use super::paths::{is_valid_id, meetings_dir, ME_WAV, META, PLAYBACK_WAV, THEM_WAV};
 use super::{Result, Storage};
 use chrono::{DateTime, Duration, Utc};
 use std::fs;
@@ -98,7 +98,7 @@ impl Storage {
             };
             if expired && !file.audio_deleted {
                 let mut removed = false;
-                for name in [ME_WAV, THEM_WAV] {
+                for name in [ME_WAV, THEM_WAV, PLAYBACK_WAV] {
                     match fs::remove_file(entry.path().join(name)) {
                         Ok(()) => removed = true,
                         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}

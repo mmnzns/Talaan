@@ -48,6 +48,21 @@ export class TauriMeetingStore implements MeetingStore {
     return call<void>("meetings_generate_summary", { id });
   }
 
+  async playbackUrl(id: MeetingId) {
+    const path = await call<string | null>("meetings_playback", { id });
+    if (!path) return undefined;
+    const { convertFileSrc } = await import("@tauri-apps/api/core");
+    return convertFileSrc(path);
+  }
+
+  deleteAudio(id: MeetingId) {
+    return call<void>("meetings_delete_audio", { id });
+  }
+
+  revealMeeting(id: MeetingId) {
+    return call<void>("meetings_reveal", { id });
+  }
+
   renameSpeaker(id: MeetingId, speaker: Speaker, name: string) {
     return call<void>("meetings_rename_speaker", { id, speaker, name });
   }

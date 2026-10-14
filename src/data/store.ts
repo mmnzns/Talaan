@@ -31,6 +31,12 @@ export interface MeetingStore {
   retryProcessing(id: MeetingId): Promise<void>;
   /** Transcript-only meeting: write the summary now (M5). */
   generateSummary(id: MeetingId): Promise<void>;
+  /** A URL to play the meeting's audio (both sides mixed), or undefined when there is none (or in the browser). */
+  playbackUrl(id: MeetingId): Promise<string | undefined>;
+  /** Deletes the audio now; transcript and summary stay. */
+  deleteAudio(id: MeetingId): Promise<void>;
+  /** Shows the meeting's folder in Finder. */
+  revealMeeting(id: MeetingId): Promise<void>;
   renameSpeaker(id: MeetingId, speaker: Speaker, name: string): Promise<void>;
   setTags(id: MeetingId, tags: string[]): Promise<void>;
   moveToFolder(id: MeetingId, folderId?: string): Promise<void>;

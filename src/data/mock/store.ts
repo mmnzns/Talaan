@@ -166,6 +166,20 @@ export class MockMeetingStore implements MeetingStore {
     this.simulate(id, "transcribing", this.finishTranscription);
   }
 
+  // The browser preview has no audio files: the player simulates the playhead.
+  async playbackUrl(_id: MeetingId): Promise<string | undefined> {
+    return undefined;
+  }
+
+  async deleteAudio(id: MeetingId) {
+    this.mutate(id, (m) => {
+      m.audioKeptUntil = undefined;
+      m.hasAudio = false;
+    });
+  }
+
+  async revealMeeting(_id: MeetingId) {}
+
   async generateSummary(id: MeetingId) {
     this.simulate(id, "summarizing", (m) => {
       m.status = "ready";

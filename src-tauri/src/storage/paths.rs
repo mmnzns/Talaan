@@ -7,6 +7,8 @@ pub const MEETINGS_DIR: &str = "meetings";
 pub const META: &str = "meeting.json";
 pub const ME_WAV: &str = "me.wav";
 pub const THEM_WAV: &str = "them.wav";
+/// Both tracks mixed for listening; made on first Play, deleted with the audio.
+pub const PLAYBACK_WAV: &str = "playback.wav";
 pub const TRANSCRIPT: &str = "transcript.json";
 pub const TRANSCRIPT_EDITS: &str = "transcript.edits.json";
 pub const TRANSCRIPT_MD: &str = "transcript.md";

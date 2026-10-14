@@ -6,6 +6,7 @@ pub mod feed;
 pub mod levels;
 pub mod mic;
 pub mod pipeline;
+pub mod playback;
 pub mod recovery;
 pub mod resample;
 pub mod session;

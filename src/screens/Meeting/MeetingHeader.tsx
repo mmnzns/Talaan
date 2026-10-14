@@ -1,11 +1,12 @@
-import { Calendar, MessageCircle, MoreHorizontal, Pin, Trash2, X } from "lucide-react";
+import { Calendar, FolderOpen, MessageCircle, MoreHorizontal, Pin, Sparkles, Trash2, VolumeX, X } from "lucide-react";
 import { useState } from "react";
 import { useFolders } from "../../data/hooks";
 import { useStore } from "../../data/StoreProvider";
 import type { Meeting } from "../../data/types";
 import { formatClock, formatDate, formatDuration } from "../../lib/format";
 import { navigate, routes } from "../../lib/router";
-import { Button, Chip, Field, Label, MenuItem, Popover, Select, Sheet } from "../../ui";
+import { Button, Chip, Field, Label, MenuItem, Popover, Select, Sheet, useToast } from "../../ui";
+import { describeError } from "../../data/errors";
 
 interface Props {
   meeting: Meeting;
@@ -28,6 +29,7 @@ const languageName = (code: string) => {
 
 export function MeetingHeader({ meeting, editing, canRevert, onToggleEdit, onRevert, onCopy, onExport, copied }: Props) {
   const store = useStore();
+  const toast = useToast();
   const folders = useFolders();
   const [addingTag, setAddingTag] = useState(false);
   const [tagDraft, setTagDraft] = useState("");
@@ -182,6 +184,35 @@ export function MeetingHeader({ meeting, editing, canRevert, onToggleEdit, onRev
                     }}
                   >
                     <Pin size={14} aria-hidden="true" /> {meeting.pinned ? "Stop keeping audio" : "Keep audio"}
+                  </MenuItem>
+                  <MenuItem
+                    disabled={meeting.transcript.length === 0}
+                    onClick={() => {
+                      store.generateSummary(meeting.id).catch((e) => toast(describeError(e)));
+                      close();
+                    }}
+                  >
+                    <Sparkles size={14} aria-hidden="true" /> {meeting.summary ? "Write the summary again" : "Generate summary"}
+                  </MenuItem>
+                  <MenuItem
+                    disabled={!meeting.hasAudio || meeting.pinned}
+                    onClick={() => {
+                      store
+                        .deleteAudio(meeting.id)
+                        .then(() => toast("Audio deleted. The transcript and summary stay."))
+                        .catch((e) => toast(describeError(e)));
+                      close();
+                    }}
+                  >
+                    <VolumeX size={14} aria-hidden="true" /> Delete audio now
+                  </MenuItem>
+                  <MenuItem
+                    onClick={() => {
+                      store.revealMeeting(meeting.id).catch((e) => toast(describeError(e)));
+                      close();
+                    }}
+                  >
+                    <FolderOpen size={14} aria-hidden="true" /> Show in Finder
                   </MenuItem>
                   <MenuItem
                     className="text-danger"

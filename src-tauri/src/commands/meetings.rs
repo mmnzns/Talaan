@@ -98,4 +98,28 @@ pub fn tags_list(state: State<AppState>) -> CmdResult<Vec<String>> {
     state.lock().list_tags()
 }
 
+/// The file to play for a meeting (both tracks mixed, made on first use), or None when the audio is gone.
+#[tauri::command]
+pub fn meetings_playback(state: State<AppState>, id: String) -> CmdResult<Option<String>> {
+    let dir = state.lock().dir(&id)?;
+    Ok(crate::recorder::playback::ensure(&dir)?.map(|p| p.to_string_lossy().into_owned()))
+}
 
+/// Delete audio now: the transcript and summary stay.
+#[tauri::command]
+pub fn meetings_delete_audio(app: AppHandle, state: State<AppState>, id: String) -> CmdResult<()> {
+    changed(&app, state.lock().delete_audio(&id))
+}
+
+/// Show the meeting's folder in Finder.
+#[tauri::command]
+pub fn meetings_reveal(state: State<AppState>, id: String) -> CmdResult<()> {
+    let dir = state.lock().dir(&id)?;
+    tauri_plugin_opener::reveal_item_in_dir(dir.join(crate::storage::paths::META)).map_err(|e| StorageError::Refused(format!("Couldn't open Finder: {e}")))
+}
+
+/// Writes an exported file where the user chose in the save dialog.
+#[tauri::command]
+pub fn export_write(path: String, contents: String) -> CmdResult<()> {
+    std::fs::write(&path, contents).map_err(|e| StorageError::Refused(format!("Couldn't save the file: {e}")))
+}

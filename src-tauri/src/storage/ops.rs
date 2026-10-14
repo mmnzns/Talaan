@@ -1,7 +1,7 @@
 //! Simple edits to a meeting's metadata, and deletion.
 
 use super::model::MeetingStatus;
-use super::paths::is_valid_id;
+use super::paths::{is_valid_id, ME_WAV, PLAYBACK_WAV, THEM_WAV};
 use super::{Result, Storage, StorageError};
 use std::fs;
 
@@ -68,11 +68,30 @@ impl Storage {
         fs::remove_dir_all(dir)?;
         Ok(())
     }
+
+    /// Deletes a meeting's audio now (both tracks and the playback mix). Transcript and summary stay.
+    /// Refused while the audio is still needed (recording, transcribing, waiting for recovery).
+    pub fn delete_audio(&self, id: &str) -> Result<()> {
+        let file = self.read_meeting_file(id)?;
+        if matches!(file.status, MeetingStatus::Recording | MeetingStatus::Transcribing | MeetingStatus::NeedsRecovery) {
+            return Err(StorageError::Refused("The audio is still needed for the transcript.".into()));
+        }
+        let dir = self.dir(id)?;
+        for name in [ME_WAV, THEM_WAV, PLAYBACK_WAV] {
+            match fs::remove_file(dir.join(name)) {
+                Ok(()) => {}
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+                Err(e) => return Err(e.into()),
+            }
+        }
+        self.update_meeting_file(id, |f| f.audio_deleted = true)?;
+        Ok(())
+    }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::super::store::tests::{at, storage};
+    use super::super::store::tests::{at, line, storage};
     use super::super::paths::{META, MEETINGS_DIR};
     use super::*;
 
@@ -162,5 +181,23 @@ mod tests {
         let id = make(&s);
         s.set_status(&id, MeetingStatus::Ready).unwrap();
         assert_eq!(s.get_meeting(&id).unwrap().item.status, MeetingStatus::Ready);
+    }
+
+    #[test]
+    fn delete_audio_keeps_the_words() {
+        let (_d, s) = storage();
+        let f = s.create_meeting("zoom", "Zoom", at("2026-10-14T14:30:00-07:00")).unwrap();
+        let dir = s.dir(&f.id).unwrap();
+        fs::write(dir.join(ME_WAV), b"x").unwrap();
+        fs::write(dir.join(PLAYBACK_WAV), b"x").unwrap();
+        s.save_transcript(&f.id, &[line("l0", 0, "Hello.")]).unwrap();
+        // Still recording: refused.
+        assert!(matches!(s.delete_audio(&f.id), Err(StorageError::Refused(_))));
+        s.update_meeting_file(&f.id, |m| m.status = MeetingStatus::Ready).unwrap();
+        s.delete_audio(&f.id).unwrap();
+        assert!(!dir.join(ME_WAV).exists() && !dir.join(PLAYBACK_WAV).exists());
+        let m = s.get_meeting(&f.id).unwrap();
+        assert!(!m.has_audio);
+        assert_eq!(m.transcript.len(), 1);
     }
 }

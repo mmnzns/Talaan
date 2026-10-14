@@ -3,6 +3,7 @@ import { useMeeting, useMeetings } from "../../data/hooks";
 import { copyText, toEmail, toShareText } from "../../lib/share";
 import { useStore } from "../../data/StoreProvider";
 import type { Meeting, Ms } from "../../data/types";
+import { usePlayer } from "./usePlayer";
 import { ExportSheet } from "./ExportSheet";
 import { Button } from "../../ui";
 import { useStartRecording } from "../Shell/RecordingPanel";
@@ -60,33 +61,23 @@ function MeetingView({ meeting, jumpTo }: { meeting: Meeting; jumpTo?: Ms }) {
   const [editing, setEditing] = useState(false);
   const [activeAt, setActiveAt] = useState<Ms | undefined>(jumpTo);
   const [jumpSeq, setJumpSeq] = useState(0);
-  const [playing, setPlaying] = useState(false);
+  const player = usePlayer(meeting, (at) => setActiveAt(at));
   const [copied, setCopied] = useState<"text" | "email">();
   const [exporting, setExporting] = useState(false);
 
+  // Clicking a time jumps the transcript there and plays from it while the audio is kept.
   const jump = (at: Ms) => {
     setActiveAt(at);
     setJumpSeq((n) => n + 1);
+    if (player.canPlay) void player.playFrom(at);
   };
 
+  // Opening a meeting at a time (from Ask or a notification) shows that line; it doesn't start playing.
   useEffect(() => {
-    if (jumpTo !== undefined) jump(jumpTo);
+    if (jumpTo === undefined) return;
+    setActiveAt(jumpTo);
+    setJumpSeq((n) => n + 1);
   }, [jumpTo]);
-
-  useEffect(() => {
-    if (!playing) return;
-    const timer = setInterval(() => {
-      setActiveAt((a) => {
-        const next = (a ?? 0) + 500;
-        if (next >= meeting.durationMs) {
-          setPlaying(false);
-          return meeting.durationMs;
-        }
-        return next;
-      });
-    }, 500);
-    return () => clearInterval(timer);
-  }, [playing, meeting.durationMs]);
 
   const copy = async (kind: "text" | "email") => {
     await copyText(kind === "text" ? toShareText(meeting) : toEmail(meeting));
@@ -116,8 +107,8 @@ function MeetingView({ meeting, jumpTo }: { meeting: Meeting; jumpTo?: Ms }) {
           activeAt={activeAt}
           jumpSeq={jumpSeq}
           editing={editing}
-          playing={playing}
-          onTogglePlay={() => setPlaying((p) => !p)}
+          playing={player.playing}
+          onTogglePlay={() => void player.toggle(activeAt ?? 0)}
           onJump={jump}
         />
       </div>
