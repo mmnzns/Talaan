@@ -139,7 +139,7 @@ mod tests {
 
 #[cfg(test)]
 mod pass_tests {
-    use super::super::store::tests::{at, storage};
+    use super::super::store::tests::storage;
     use super::*;
     use std::path::PathBuf;
 

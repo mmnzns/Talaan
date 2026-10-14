@@ -1,4 +1,7 @@
 //! Meeting storage: plain folders on disk, readable without Talaan. No Tauri types in here.
+//!
+//! Some of the API (create, save_transcript, save_summary, set_status) is only called from M3 onward.
+#![allow(dead_code)]
 
 pub mod edits;
 pub mod io;
@@ -9,6 +12,7 @@ pub mod ops;
 pub mod paths;
 pub mod recovery;
 pub mod retention;
+pub mod settings;
 pub mod store;
 
 pub use store::{Filter, Storage};
