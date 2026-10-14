@@ -2,11 +2,14 @@ import { AlertTriangle } from "lucide-react";
 import { useStore } from "../../data/StoreProvider";
 import type { Meeting } from "../../data/types";
 import { navigate, routes } from "../../lib/router";
-import { Button } from "../../ui";
+import { describeError } from "../../data/errors";
+import { Button, useToast } from "../../ui";
 
 /** Shown above the meeting when it needs the user: interrupted recording or failed processing. */
 export function StatusBanner({ meeting }: { meeting: Meeting }) {
   const store = useStore();
+  const toast = useToast();
+  const run = (p: Promise<void>) => p.catch((e) => toast(describeError(e)));
   const leave = async () => {
     navigate(routes.meetings());
     await store.deleteMeeting(meeting.id);
@@ -18,7 +21,7 @@ export function StatusBanner({ meeting }: { meeting: Meeting }) {
         title="This recording was interrupted"
         text="Talaan closed or the Mac slept before the call was saved. Recover what was captured, or discard it."
       >
-        <Button variant="primary" onClick={() => store.recoverMeeting(meeting.id)}>Recover</Button>
+        <Button variant="primary" onClick={() => run(store.recoverMeeting(meeting.id))}>Recover</Button>
         <Button onClick={leave}>Discard</Button>
       </Banner>
     );
@@ -26,7 +29,7 @@ export function StatusBanner({ meeting }: { meeting: Meeting }) {
   if (meeting.status === "failed") {
     return (
       <Banner title="Processing failed" text="The audio is safe on this Mac. Try again, or delete the meeting.">
-        <Button variant="primary" onClick={() => store.retryProcessing(meeting.id)}>Try again</Button>
+        <Button variant="primary" onClick={() => run(store.retryProcessing(meeting.id))}>Try again</Button>
         <Button onClick={leave}>Delete</Button>
       </Banner>
     );

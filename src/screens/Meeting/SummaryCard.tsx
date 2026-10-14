@@ -1,7 +1,8 @@
 import { Sparkles } from "lucide-react";
 import { useStore } from "../../data/StoreProvider";
 import type { Meeting, Ms, Summary } from "../../data/types";
-import { Button, Checkbox, Chip, Editable, Label, Timestamp, cn } from "../../ui";
+import { describeError } from "../../data/errors";
+import { Button, Checkbox, Chip, Editable, Label, Timestamp, cn, useToast } from "../../ui";
 
 interface Props {
   meeting: Meeting;
@@ -15,6 +16,7 @@ const hit = "bg-lime-soft outline-[1.5px] outline-edge";
 
 export function SummaryCard({ meeting, activeAt, editing, onJump }: Props) {
   const store = useStore();
+  const toast = useToast();
   const { summary, status } = meeting;
   const busy = status === "summarizing" || status === "transcribing";
 
@@ -97,7 +99,7 @@ export function SummaryCard({ meeting, activeAt, editing, onJump }: Props) {
           <div className="flex flex-col items-start gap-2 py-2">
             <span className="text-[15px] font-extrabold tracking-tight">No summary yet</span>
             <p className="m-0 text-[13px] text-subtle">The transcript is saved. Write the summary whenever you’re ready.</p>
-            <Button variant="primary" onClick={() => store.generateSummary(meeting.id)}>
+            <Button variant="primary" onClick={() => store.generateSummary(meeting.id).catch((e) => toast(describeError(e)))}>
               <Sparkles size={14} aria-hidden="true" /> Generate summary
             </Button>
           </div>
