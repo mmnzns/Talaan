@@ -1,9 +1,11 @@
 import { useEffect, useState } from "react";
-import { useMeeting } from "../../data/hooks";
+import { useMeeting, useMeetings } from "../../data/hooks";
 import { copyText, toEmail, toSlack } from "../../lib/share";
 import { useStore } from "../../data/StoreProvider";
 import type { Meeting, Ms } from "../../data/types";
 import { ExportSheet } from "./ExportSheet";
+import { navigate, routes } from "../../lib/router";
+import { Button } from "../../ui";
 import { MeetingHeader } from "./MeetingHeader";
 import { StatusBanner } from "./StatusBanner";
 import { SummaryCard } from "./SummaryCard";
@@ -12,18 +14,7 @@ import { TranscriptCard } from "./TranscriptCard";
 export function MeetingPane({ id, jumpTo }: { id?: string; jumpTo?: Ms }) {
   const { meeting, loading } = useMeeting(id);
 
-  if (!id) {
-    return (
-      <div className="grid flex-1 place-items-center p-8 text-center">
-        <div className="flex max-w-sm flex-col gap-2">
-          <span className="text-lg font-extrabold tracking-tight">Select a meeting</span>
-          <p className="m-0 text-[13px] text-subtle">
-            Pick a call from the list to read its summary and transcript, or press Record to start a new one.
-          </p>
-        </div>
-      </div>
-    );
-  }
+  if (!id) return <EmptyPane />;
   if (loading) return null;
   if (!meeting) {
     return (
@@ -36,6 +27,31 @@ export function MeetingPane({ id, jumpTo }: { id?: string; jumpTo?: Ms }) {
     );
   }
   return <MeetingView key={meeting.id} meeting={meeting} jumpTo={jumpTo} />;
+}
+
+function EmptyPane() {
+  const { meetings, loading } = useMeetings();
+  if (loading) return null;
+  const first = meetings.length === 0;
+  return (
+    <div className="grid flex-1 place-items-center p-8 text-center">
+      <div className="flex max-w-sm flex-col items-center gap-2">
+        <span className="text-lg font-extrabold tracking-tight">{first ? "Your meetings will show up here" : "Select a meeting"}</span>
+        <p className="m-0 text-[13px] text-subtle">
+          {first
+            ? "Start a call and Talaan asks before it records. Or press Record, or import a Voice Memo. Each one gets a transcript, a summary and action items."
+            : "Pick a call from the list to read its summary and transcript, or press Record to start a new one."}
+        </p>
+        {first && (
+          <div className="mt-2 flex gap-2">
+            <Button variant="primary" raised onClick={() => navigate(routes.screens("recording"))}>
+              Record a call
+            </Button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
 }
 
 function MeetingView({ meeting, jumpTo }: { meeting: Meeting; jumpTo?: Ms }) {

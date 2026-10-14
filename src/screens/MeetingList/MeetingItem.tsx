@@ -26,10 +26,12 @@ export function MeetingItem({ meeting, selected }: { meeting: MeetingListItem; s
       <button type="button" onClick={go} className={cn(base, "gap-1.5", tone)} aria-current={selected ? "page" : undefined}>
         <span className="font-semibold">{meeting.title}</span>
         <span className="flex items-center gap-2">
-          <span className="h-[5px] flex-1 overflow-hidden rounded-full bg-line">
-            <span className="block h-full bg-ink" style={{ width: `${Math.round((meeting.progress ?? 0) * 100)}%` }} />
+          <span className={cn("h-[5px] flex-1 overflow-hidden rounded-full", selected ? "bg-strong-fg/30" : "bg-line")}>
+            <span className={cn("block h-full", selected ? "bg-strong-fg" : "bg-ink")} style={{ width: `${Math.round((meeting.progress ?? 0) * 100)}%` }} />
           </span>
-          <span className="font-mono text-[11px] text-subtle">{PROCESSING[meeting.status as keyof typeof PROCESSING]}</span>
+          <span className={cn("font-mono text-[11px]", selected ? "text-strong-fg" : "text-subtle")}>
+            {PROCESSING[meeting.status as keyof typeof PROCESSING]}
+          </span>
         </span>
       </button>
     );
