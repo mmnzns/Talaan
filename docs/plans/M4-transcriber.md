@@ -73,3 +73,30 @@ TDD for every pure piece (segments math, merge, echo dedupe, progress, catalog, 
 ## Out of scope for M4
 
 Summaries (M5), named speakers / Sortformer (M8), import audio (M7), "Try again with Whisper" button (M7), echo cancellation on the mic (v1.1).
+
+## Outcome (2026-10-14)
+
+Tasks 1–9 done; task 10 checked on the signed debug app except the UI click-through (the screen was locked). 161 Rust tests (8 ignored smoke tests), 73 TS tests.
+
+Measured on the 3.5-minute Zoom recording (M3 Pro, both tracks, ~4 min of detected speech):
+
+| Model | Time | Notes |
+|---|---|---|
+| Whisper Large Turbo (q5, Metal + flash attention) | 11.7 s (~13x real time per track) | Complete, punctuated, numbers as digits |
+| Parakeet v3 (int8, CPU) | ~7 s (~40x) | Skipped stretches and misheard more ("Ta la an", "How did it need to be that") |
+
+Decisions and findings:
+
+- **Default model is Whisper Turbo**, not Parakeet: more accurate and complete on a real call, covers Filipino, same download size (575 MB). An hour-long call takes a few minutes. Parakeet stays as the fast option.
+- **Parakeet quirks** (parakeet-rs 0.3.8 + ONNX): it can stop decoding partway through a chunk or return nothing when audio starts right on speech. Fixes: 0.5 s of silence on both sides of every chunk, resume from the last word when output stops more than 2 s early, and a pipeline-level retry of any detected speech of 1 s+ that got no words (applies to every engine).
+- **Whisper speed:** one reused state, flash attention, and chunks packed up to its 30 s window (5 calls instead of 13) took it from 4x to 13x real time.
+- **Echo removal** dropped 14 echoed Me lines on that call (Miguel was on the speakers); the transcript reads like the real conversation. The test was both ends in one room, so some leak went the other way too.
+- **Language** is settled once on the longest chunk (Whisper), or detected from the text (Parakeet), so a meeting never switches language halfway.
+- **No models were on this Mac**; downloads verified by sha256 (1.25 GB in 51 s). Reuse looks in Parlato's Mac folders by exact file name and size.
+- **Nemotron hidden in v1.** Its license (OpenMDW-1.1) is permissive, but it's a 2.6 GB streaming model, the ONNX export is an undocumented third-party one, and Whisper Turbo already beats Parakeet. Revisit in v1.1.
+- **ort pinned to 2.0.0-rc.13**: parakeet-rs 0.3.8 doesn't build against rc.14.
+- **Debug builds optimize dependencies** (`[profile.dev.package."*"] opt-level = 3`), otherwise whisper.cpp and the mel features are 10x slower in the signed debug app.
+- Crash during transcription: `kill -9` at 22% → relaunch resumes and finishes.
+- Fixed along the way: recorder and retry errors showed "Coming in a later build" (new `refused` error code).
+
+Left for Miguel: a fresh call end to end in the app (Stop → progress in the list → transcript), the Settings › Speech models tab (download, cancel, delete).

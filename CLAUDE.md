@@ -37,7 +37,7 @@ Mac first (Apple silicon, built on Miguel's MacBook). Windows port is v1.1, buil
 - Tauri 2. Rust backend in focused modules (storage, recorder, transcriber, summarizer, call detection) behind Tauri commands. React + TypeScript + Vite + Tailwind 4 frontend talks only to those commands.
 - **Platform folders:** all OS-specific code lives in `src-tauri/src/platform/macos/`. `platform/mod.rs` re-exports the active platform; the Windows port adds `platform/windows/` plus one `cfg` line, without touching Mac code. Frontend platform differences follow the same rule.
 - Frontend data comes from one `MeetingStore` interface (mock in M1, real in M2), so screens never change when data sources do.
-- Stack: whisper.cpp (Whisper), ONNX runtime (Parakeet, Nemotron), llama.cpp (local summary AI), Core Audio process taps (macOS 14.4+, no ScreenCaptureKit fallback), macOS Keychain, GitHub Actions.
+- Stack: whisper.cpp via whisper-rs with Metal (Whisper, default model Whisper Large Turbo), ONNX Runtime via parakeet-rs (Parakeet), llama.cpp (local summary AI), Core Audio process taps (macOS 14.4+, no ScreenCaptureKit fallback), macOS Keychain, GitHub Actions.
 
 ```
 src/
@@ -80,6 +80,14 @@ src-tauri/src/
     resample.rs wav.rs levels.rs  rubato to 16 kHz mono, hound WAV with 2 s flush + repair_wav, RMS levels
     feed.rs source.rs   rtrb SPSC feed from audio callbacks, AudioSource trait
     mic.rs recovery.rs  cpal mic source, crash recovery (repair WAVs, duration)
+  commands/transcriber.rs  worker setup, meetings_retry, models_list / download / cancel / delete
+  transcriber/          speech to text (no Tauri types)
+    models.rs download.rs  catalog (pinned revisions, sizes, sha256), reuse "On this Mac", resumable verified downloads
+    vad.rs              read tracks, Silero VAD, chunk shaping per engine (pad, join, split at quiet points, pack)
+    engine.rs           Engine trait; Parakeet (silence padding, resume when it stops early) and Whisper (Metal)
+    pipeline.rs         tracks -> chunks -> engine -> retry skipped speech -> echo -> merge -> language
+    echo.rs merge.rs    drop Me lines the mic heard from the speakers; interleave and join into lines
+    worker.rs           one background thread, queue rebuilt from `transcribing` at launch, idle unload
   platform/mod.rs       picks the OS module
   platform/macos/       Mac-only code
     system_tap.rs       Core Audio global process tap (excludes Talaan) + private aggregate device + IOProc
@@ -103,7 +111,8 @@ settings.json   library.json   meetings/<YYYY-MM-DD_HHMM_xxxx>/
 - Ticking an action item is stored in `summary.done.json` and does not count as an edit.
 - Writes are atomic (temp file + rename). Unknown JSON fields are preserved. A meeting written by a newer schema is listed as failed and never touched.
 - Pinned meetings and meetings that still need their audio (recording, needs recovery, processing) are never touched by retention.
-- `recover`, `retry` and `generate_summary` return `not_yet_available` until M4 / M5; the UI shows a short notice.
+- Stop and Recover put a meeting in `transcribing`; the worker writes `transcript.json` and sets `ready` (M5: `summarizing`). Failures keep `error {code, message}`; `no_model` meetings are re-queued when a model finishes downloading. `generate_summary` returns `not_yet_available` until M5.
+- Speech models live in `<data>/models/<id>/`; their state comes from disk (`models_list`), never from `settings.json`.
 - In the Tauri app the stores talk to Rust (`src/data/tauri/`); in a plain browser the sample data is used. Debug builds have **Screens → Dev data** to load the sample meetings onto disk.
 - Frontend and Rust share `fixtures/meeting.sample.json`: Rust round-trips it, TS checks its shape.
 
@@ -146,6 +155,7 @@ npm run tauri dev                                  # run the app (real storage)
 npm run dev                                        # same UI in a browser with sample data
 npm test                                           # frontend tests (Vitest)
 cargo test --manifest-path src-tauri/Cargo.toml    # Rust tests
+TALAAN_SMOKE_MEETING=<meeting dir> cargo test --release --manifest-path src-tauri/Cargo.toml pipeline_smoke -- --ignored --nocapture   # real models on a real call
 npm run build                                      # type-check + build frontend
 scripts/build-signed-debug.sh                      # signed debug .app (needed for real mic/system-audio permissions)
 ```
