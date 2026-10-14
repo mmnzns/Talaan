@@ -6,7 +6,7 @@ let store: MockMeetingStore;
 
 beforeEach(() => {
   vi.useRealTimers();
-  store = new MockMeetingStore(NOW);
+  store = new MockMeetingStore(NOW, { askDelayMs: 0 });
 });
 
 describe("listMeetings", () => {

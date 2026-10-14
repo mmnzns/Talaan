@@ -37,11 +37,13 @@ export class MockMeetingStore implements MeetingStore {
   private originals = new Map<MeetingId, { summary?: Summary; lines: Map<string, string> }>();
   private folders = seedFolders.map((f) => ({ ...f }));
   private listeners = new Set<() => void>();
+  private askDelayMs: number;
 
   constructor(
     private now: Date = new Date(),
-    options: { empty?: boolean } = {},
+    options: { empty?: boolean; askDelayMs?: number } = {},
   ) {
+    this.askDelayMs = options.askDelayMs ?? 700;
     for (const m of options.empty ? [] : seedMeetings(now)) {
       this.meetings.set(m.id, m);
       this.originals.set(m.id, {
@@ -206,6 +208,7 @@ export class MockMeetingStore implements MeetingStore {
   }
 
   async ask(question: string, scope: AskScope): Promise<AskAnswer> {
+    await new Promise((r) => setTimeout(r, this.askDelayMs));
     return mockAsk(question, scope, this.now);
   }
 

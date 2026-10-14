@@ -13,8 +13,8 @@ export function mockAsk(question: string, scope: AskScope, now: Date): AskAnswer
       text: "Pricing work moved to early Q1 so the onboarding revamp could ship first. Nobody objected in the roadmap sync.",
       points: [
         {
-          text: "Pricing work moved to early Q1 so the onboarding revamp could ship first.",
-          citation: { meetingId: "m-q4", meetingTitle: "Q4 roadmap sync", date: fmt(0), at: 48_000 },
+          text: "Decision: pricing moves to Q1 after onboarding ships.",
+          citation: { meetingId: "m-q4", meetingTitle: "Q4 roadmap sync", date: fmt(0), at: 21_000 },
         },
         {
           text: "You: share the Q1 pricing brief with design after the onboarding launch.",

@@ -1,4 +1,4 @@
-import { Calendar, MoreHorizontal, Pin, Trash2, X } from "lucide-react";
+import { Calendar, MessageCircle, MoreHorizontal, Pin, Trash2, X } from "lucide-react";
 import { useState } from "react";
 import { useFolders } from "../../data/hooks";
 import { useStore } from "../../data/StoreProvider";
@@ -162,6 +162,14 @@ export function MeetingHeader({ meeting, editing, canRevert, onToggleEdit, onRev
                     }}
                   >
                     {copied === "email" ? "Copied for email" : "Copy for email"}
+                  </MenuItem>
+                  <MenuItem
+                    onClick={() => {
+                      navigate(routes.ask(meeting.id));
+                      close();
+                    }}
+                  >
+                    <MessageCircle size={14} aria-hidden="true" /> Ask about this meeting
                   </MenuItem>
                   <MenuItem
                     disabled={!meeting.audioKeptUntil}
