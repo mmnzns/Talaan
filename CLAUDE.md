@@ -40,15 +40,40 @@ Mac first (Apple silicon, built on Miguel's MacBook). Windows port is v1.1, buil
 - Stack: whisper.cpp (Whisper), ONNX runtime (Parakeet, Nemotron), llama.cpp (local summary AI), Core Audio process taps with ScreenCaptureKit fallback, macOS Keychain, GitHub Actions.
 
 ```
-src/                    React app
-  styles/tokens.css     Talaan design tokens (light + dark)
-  lib/                  shared frontend logic (theme, ...)
+src/
+  main.tsx, App.tsx     providers, theme, route switch (main | settings | screens | onboarding)
+  styles/tokens.css     Talaan design tokens (light + dark); index.css maps them to Tailwind colors
+  brand/                logo (the only place with raw colors besides tokens)
+  data/                 the contract between screens and data
+    types.ts            Meeting, Summary, TranscriptLine, ...
+    store.ts            MeetingStore interface (mock now, real in M2)
+    settings.ts         Settings + SettingsStore interface
+    StoreProvider.tsx   React context; hooks.ts = useMeetings/useMeeting/useSettings (live, subscribe-based)
+    index.ts            the only place the mock stores are wired in
+    mock/               sample data, MockMeetingStore, MockSettingsStore (localStorage)
+  lib/                  format, router (hash), share (Slack/email/Markdown/text), transcript, theme, windows
+  ui/                   Talaan's component kit (Button, Chip, Sheet, Popover, Toast, ...) - no hex colors
+  screens/
+    Shell/              toolbar + main window layout
+    MeetingList/        left column (search, folders, tags, day groups)
+    Meeting/            header, summary, transcript, speakers, export sheet, status banners
+    Ask/  Settings/  Onboarding/
+    Recording/          menu bar popovers, recording popover, call prompts (mounted for real in M6)
+    Stage/              dev-only `#/screens` stage that hosts the non-window surfaces
 src-tauri/src/
   lib.rs                Tauri builder + commands
   platform/mod.rs       picks the OS module
   platform/macos/       Mac-only code
 docs/plans/             per-milestone task plans
+docs/screens/M1/        light + dark screenshots from the M1 checkpoint
 ```
+
+### Data layer rules
+
+- Screens get data only through `useStore()` / `useSettingsStore()` (and the hooks). They never import from `data/mock`.
+- To go real in M2, replace the two lines in `data/index.ts`. The interface may grow, but changes are additive.
+- No raw hex colors in `src/ui` or `src/screens` (use the token classes: `bg-paper`, `text-subtle`, `shadow-hard`, ...). Check: `grep -rn "#[0-9A-Fa-f]\{6\}" src/ui src/screens`.
+- Routes are hash routes: `#/`, `#/meeting/:id?t=ms`, `#/ask?m=id`, `#/settings/:tab`, `#/screens/:section`.
 
 ## Design language
 

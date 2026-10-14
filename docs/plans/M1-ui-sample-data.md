@@ -139,3 +139,15 @@ Commit after each task once `npm test` and `npm run build` pass. Message prefix 
 - Every screen reachable by clicking (Screens stage for the M6 surfaces), in light and dark.
 - No hex colors in `src/screens` or `src/ui` (`grep -rn "#[0-9A-Fa-f]\{6\}" src/screens src/ui` returns nothing).
 - No screen imports from `src/data/mock` directly.
+
+## Outcome (2026-10-14)
+
+All 13 tasks done. The contract grew in these additive ways while building the screens:
+
+- `MeetingStore`: `createFolder`, `recoverMeeting`, `retryProcessing`, `generateSummary`.
+- `MeetingListItem` carries `pinned` (so the list can show the pin without loading each meeting).
+- `SettingsStore`: `downloadModel`, `testApiKey`, `deleteAllData`.
+- `Settings` expanded to match the Settings and Onboarding designs (recording notice, microphone, per-model details, Ollama address, transcript retention, browser states, Notion default destination, ...).
+- Mock-only helpers: `?mock=empty` URL flag, simulated progress for recover / retry / summary / model download.
+
+Not built (by design): real audio, real files, real native windows for the menu bar surfaces. Those arrive with M2 and M6.
