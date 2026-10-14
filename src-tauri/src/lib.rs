@@ -2,6 +2,7 @@ mod commands;
 mod platform;
 mod recorder;
 mod storage;
+mod transcriber;
 
 use commands::recorder as rec_cmd;
 use commands::{dev, meetings, settings, AppState, MEETINGS_CHANGED};
