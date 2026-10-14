@@ -330,13 +330,14 @@ mod tests {
         let data = dirs::data_dir().unwrap().join("Talaan");
         let store = ModelStore::new(&data, false);
         let mut vad = Vad::load(&data.join("models/vad/ggml-silero-v6.2.0.bin")).unwrap();
-        for m in CATALOG {
+        let only = std::env::var("TALAAN_SMOKE_MODEL").ok();
+        for m in CATALOG.iter().filter(|m| only.as_deref().is_none_or(|o| o == m.id)) {
             let Some(d) = store.locate(m).dir().map(|d| d.to_path_buf()) else { continue };
             let mut engine = crate::transcriber::engine::load(m, &d, true).unwrap();
             let t = std::time::Instant::now();
             let out = run(&dir, engine.as_mut(), &mut vad, None, &AtomicBool::new(false), &mut |_| {}).unwrap();
             eprintln!("== {}: {:.1}s, {} lines, {} echo removed, language {:?}, {:.0}s speech", m.id, t.elapsed().as_secs_f32(), out.lines.len(), out.echo_removed, out.language, out.speech_ms as f32 / 1000.0);
-            for l in &out.lines {
+            for l in out.lines.iter().take(std::env::var("TALAAN_SMOKE_LINES").ok().and_then(|n| n.parse().ok()).unwrap_or(usize::MAX)) {
                 eprintln!("   {:>6.1} {:<6} {}", l.at as f32 / 1000.0, l.speaker, l.text);
             }
         }
