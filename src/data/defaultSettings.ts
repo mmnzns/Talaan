@@ -70,3 +70,14 @@ export const defaultSettings: Settings = {
   transcriptRetention: "forever",
   onboardingDone: true,
 };
+
+/** Stored settings over the defaults. Lists that later versions add to (call apps) keep the user's entries and
+ *  gain the new defaults, so a new call app shows up without resetting anyone's rules. */
+export function withDefaults(stored: Partial<Settings>): Settings {
+  const merged = { ...structuredClone(defaultSettings), ...stored };
+  if (stored.callApps) {
+    const known = new Set(stored.callApps.map((a) => a.id));
+    merged.callApps = [...stored.callApps, ...defaultSettings.callApps.filter((a) => !known.has(a.id))];
+  }
+  return merged;
+}

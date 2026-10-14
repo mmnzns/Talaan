@@ -59,7 +59,8 @@ src/
     MeetingList/        left column (search, folders, tags, day groups)
     Meeting/            header, summary, transcript, speakers, export sheet, status banners
     Ask/  Settings/  Onboarding/
-    Recording/          menu bar popovers, recording popover, call prompts (mounted for real in M6)
+    Recording/          menu bar popover, recording popover, call prompts (components)
+    MenuBar/            the real windows: TrayWindow (#/tray) and PromptWindow (#/prompt)
     Stage/              dev-only `#/screens` stage that hosts the non-window surfaces
 src-tauri/src/
   lib.rs                Tauri builder, startup (scan for interrupted meetings, retention), command list
@@ -97,6 +98,9 @@ src-tauri/src/
     local.rs models.rs  client for the talaan-llm helper; local model catalog (Qwen3.5 4B / 9B)
     worker.rs           summarizing -> ready (with summary_error when there's no engine or it failed)
   keys.rs               API keys in the Keychain
+  calls/                call detection (pure): apps.rs bundle-id tables (call apps, ignored apps), rules.rs state machine
+  commands/calls.rs     1 Hz loop: mic users -> rules -> recordings and the prompt window (nudge, banner, call ended)
+  commands/tray.rs      menu bar icon + timer, popover window, window_fit, main window hides on close
   llm/ llm-protocol/    the talaan-llm helper (own llama.cpp + Metal) and its stdin/stdout protocol
   platform/mod.rs       picks the OS module
   platform/macos/       Mac-only code
@@ -104,6 +108,7 @@ src-tauri/src/
     coreaudio.rs clock.rs  property helpers, mach host clock in ns
     permissions.rs devices.rs power.rs  mic permission + deep links, built-in speakers / device watcher, sleep auto-pause
     notify.rs thread.rs  Summary ready notifications (click opens the meeting), background thread priority
+    mic_users.rs        which processes are using the mic (Core Audio process objects)
 docs/plans/             per-milestone task plans
 docs/screens/M1/        light + dark screenshots from the M1 checkpoint
 ```

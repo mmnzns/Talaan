@@ -116,6 +116,33 @@ fn clock(ms: u64) -> String {
     if s >= 3600 { format!("{}:{:02}:{:02}", s / 3600, (s / 60) % 60, s % 60) } else { format!("{:02}:{:02}", s / 60, s % 60) }
 }
 
+/// A floating window sizes itself to its content. The call prompt also places itself under Talaan's menu bar
+/// icon (away from the corner where macOS shows its own notifications); the popover keeps its place.
+#[tauri::command]
+pub fn window_fit(window: tauri::WebviewWindow, width: f64, height: f64) {
+    let _ = window.set_size(tauri::LogicalSize::new(width, height));
+    if window.label() == super::calls::PROMPT_WINDOW {
+        place_under_icon(&window, width);
+    }
+}
+
+/// Centers a window under the menu bar icon, kept on screen. Falls back to the top right.
+pub fn place_under_icon(window: &tauri::WebviewWindow, width: f64) {
+    let Ok(Some(m)) = window.current_monitor().or_else(|_| window.primary_monitor()) else { return };
+    let scale = m.scale_factor();
+    let screen_w = m.size().width as f64 / scale;
+    let icon = window.app_handle().tray_by_id(TRAY_ID).and_then(|t| t.rect().ok().flatten());
+    let (x, y) = match icon {
+        Some(r) => {
+            let pos = r.position.to_logical::<f64>(scale);
+            let size = r.size.to_logical::<f64>(scale);
+            (pos.x + size.width / 2.0 - width / 2.0, pos.y + size.height + 4.0)
+        }
+        None => (screen_w - width - 12.0, 34.0),
+    };
+    let _ = window.set_position(tauri::LogicalPosition::new(x.clamp(8.0, (screen_w - width - 8.0).max(8.0)), y));
+}
+
 #[tauri::command]
 pub fn tray_toggle(app: AppHandle) {
     toggle_popover(&app, None);

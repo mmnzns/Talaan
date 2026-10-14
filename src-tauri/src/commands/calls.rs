@@ -72,12 +72,7 @@ fn show_prompt(app: &AppHandle, prompt: Prompt) {
         },
     };
     let _ = window.set_size(tauri::LogicalSize::new(w, h));
-    // Top right, just under the menu bar.
-    if let Ok(Some(m)) = window.primary_monitor() {
-        let scale = m.scale_factor();
-        let screen_w = m.size().width as f64 / scale;
-        let _ = window.set_position(tauri::LogicalPosition::new(screen_w - w - 12.0, 34.0));
-    }
+    super::tray::place_under_icon(&window, w);
     let _ = window.show();
     let _ = app.emit(PROMPT_EVENT, Some(prompt));
 }

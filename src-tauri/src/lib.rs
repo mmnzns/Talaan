@@ -54,6 +54,7 @@ pub fn run() {
         .on_window_event(commands::tray::on_window_event)
         .invoke_handler(tauri::generate_handler![
             commands::tray::tray_toggle,
+            commands::tray::window_fit,
             commands::tray::tray_hide,
             commands::tray::app_show_main,
             commands::tray::app_quit,

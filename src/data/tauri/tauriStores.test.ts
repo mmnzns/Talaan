@@ -130,6 +130,14 @@ describe("TauriSettingsStore", () => {
     expect((await store.get()).localModels[0].id).toBe("qwen3.5-4b");
   });
 
+  it("call apps added in a later version join the user's list without touching their rules", async () => {
+    backend({ callApps: [{ id: "zoom", name: "Zoom", note: "", rule: "never" }] });
+    const apps = (await new TauriSettingsStore().get()).callApps;
+    expect(apps[0]).toMatchObject({ id: "zoom", rule: "never" });
+    expect(apps.map((a) => a.id)).toContain("discord");
+    expect(apps.filter((a) => a.id === "zoom")).toHaveLength(1);
+  });
+
   it("an unknown active model id falls back to the default", async () => {
     backend({ activeSpeechModel: "parakeet" });
     expect((await new TauriSettingsStore().get()).activeSpeechModel).toBe("whisper-turbo");

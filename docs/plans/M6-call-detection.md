@@ -44,3 +44,17 @@
 ## Out of scope
 
 Browser tab detection and Always for browser calls (M9), launch at login (M10), user-added call apps by picking an app (M7/M9 if time).
+
+## Outcome (2026-10-14)
+
+All tasks done. 220 Rust tests, 75 TS tests. Checked in the signed app with a debug-only hook (`dev-mic-users.txt` in the data folder adds pretend mic users by bundle id):
+
+- **Slack (Ask):** nudge after ~2 s, gone when Slack let go of the mic.
+- **Zoom (Always, via `us.zoom.caphost`):** recording started by itself as "Call, Zoom, Oct 14, 4:42 PM", banner "Recording Zoom automatically" with the live timer, timer in the menu bar. Zoom let go → "Call ended" after 3 s → stopped by itself ~30 s later → transcribing.
+- **Discord:** detected as a call app (added to the defaults with WhatsApp).
+- **Parlato and VoiceInk on the mic:** nothing at all.
+- **Menu bar popover:** opens under the icon, idle menu with Start recording, recent meetings, Open Talaan / Settings / Quit; closes when clicking elsewhere.
+
+Fixes along the way: the prompt window's fit-to-content ran before the card existed (now re-runs when the content changes) and is done in Rust (`window_fit`); prompts sit under Talaan's menu bar icon instead of the top-right corner, where macOS notifications cover them; call apps added in later versions are merged into stored settings without touching the user's rules.
+
+Not verified with real calls (needs Miguel): a real Zoom/Slack/Meet call, the menu bar popover while recording, Keep recording.

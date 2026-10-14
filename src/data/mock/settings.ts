@@ -1,4 +1,4 @@
-import { defaultSettings } from "../defaultSettings";
+import { defaultSettings, withDefaults } from "../defaultSettings";
 import type { ByokProvider, Settings, SettingsStore } from "../settings";
 
 export { defaultSettings };
@@ -8,7 +8,7 @@ const KEY = "talaan.mock.settings";
 function load(): Settings {
   try {
     const raw = localStorage.getItem(KEY);
-    if (raw) return { ...structuredClone(defaultSettings), ...JSON.parse(raw) };
+    if (raw) return withDefaults(JSON.parse(raw));
   } catch {
     /* storage unavailable: fall back to defaults */
   }

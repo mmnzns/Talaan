@@ -5,26 +5,18 @@ import { inTauri } from "./windows";
 const PAD = 8;
 
 /**
- * Sizes the current (frameless, transparent) window to its content. With `corner: "top-right"` it also pins the
- * window to the top-right of the screen, under the menu bar (the call prompts); otherwise the position is left
- * to Rust (the menu bar popover sits under its icon).
+ * Sizes the current (frameless, transparent) window to its content. Rust places it: the call prompt top right
+ * under the menu bar, the menu bar popover under its icon.
  */
-export function useFitWindow(ref: RefObject<HTMLElement | null>, corner?: "top-right") {
+export function useFitWindow(ref: RefObject<HTMLElement | null>, content: unknown) {
   useEffect(() => {
     const el = ref.current;
     if (!el || !inTauri()) return;
     let live = true;
     const fit = async () => {
-      const { getCurrentWindow, currentMonitor, LogicalSize, LogicalPosition } = await import("@tauri-apps/api/window");
+      const { invoke } = await import("@tauri-apps/api/core");
       if (!live) return;
-      const w = Math.ceil(el.offsetWidth) + PAD;
-      const h = Math.ceil(el.offsetHeight) + PAD;
-      const win = getCurrentWindow();
-      await win.setSize(new LogicalSize(w, h));
-      if (corner === "top-right") {
-        const m = await currentMonitor();
-        if (m) await win.setPosition(new LogicalPosition(m.size.width / m.scaleFactor - w - 12, 34));
-      }
+      await invoke("window_fit", { width: Math.ceil(el.offsetWidth) + PAD, height: Math.ceil(el.offsetHeight) + PAD });
     };
     const ro = new ResizeObserver(() => void fit());
     ro.observe(el);
@@ -33,7 +25,9 @@ export function useFitWindow(ref: RefObject<HTMLElement | null>, corner?: "top-r
       live = false;
       ro.disconnect();
     };
-  }, [ref, corner]);
+    // `content` changes when the window shows something else (a different prompt, idle vs recording), so the
+    // observer is attached to the element that is actually there.
+  }, [ref, content]);
 }
 
 /** Frameless windows show only their card: no page background. */

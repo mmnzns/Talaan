@@ -1,4 +1,4 @@
-import { defaultSettings } from "../defaultSettings";
+import { defaultSettings, withDefaults } from "../defaultSettings";
 import type { ByokProvider, LocalModel, Settings, SettingsStore, SpeechModel } from "../settings";
 import { call, onEvent } from "./invoke";
 
@@ -49,7 +49,7 @@ export class TauriSettingsStore implements SettingsStore {
     if (!this.state) {
       const stored = await call<Partial<Settings> | null>("settings_get");
       // No settings file yet means this is the first launch: show onboarding.
-      this.state = stored ? { ...structuredClone(defaultSettings), ...stored } : { ...structuredClone(defaultSettings), onboardingDone: false };
+      this.state = stored ? withDefaults(stored) : { ...structuredClone(defaultSettings), onboardingDone: false };
     }
     return this.state;
   }

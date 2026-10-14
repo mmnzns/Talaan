@@ -18,8 +18,8 @@ interface Prompt {
 export function PromptWindow() {
   useTransparentPage();
   const ref = useRef<HTMLDivElement>(null);
-  useFitWindow(ref, "top-right");
   const [prompt, setPrompt] = useState<Prompt | null>(null);
+  useFitWindow(ref, prompt && `${prompt.kind}:${prompt.app}`);
   const rec = useRecorder(recorderClient);
 
   useEffect(() => {

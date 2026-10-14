@@ -22,10 +22,10 @@ async function inMain(event: string, payload?: unknown) {
 export function TrayWindow() {
   useTransparentPage();
   const ref = useRef<HTMLDivElement>(null);
-  useFitWindow(ref);
   const rec = useRecorder(recorderClient);
   const toast = useToast();
   const active = rec.state.state !== "idle";
+  useFitWindow(ref, active);
 
   const start = async () => {
     const perm = await recorderClient.microphonePermission().catch(() => "unknown" as const);
