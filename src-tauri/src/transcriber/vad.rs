@@ -30,11 +30,25 @@ pub struct Shape {
     pub max_len: usize,
     /// Shorter spans are dropped (clicks, coughs).
     pub min_len: usize,
+    /// After splitting, neighbours closer than this are packed together while they fit in `max_len`
+    /// (Whisper pays for a full 30 s window per call, so fewer, fuller chunks are much faster). 0 = off.
+    pub pack_gap: usize,
 }
 
 impl Default for Shape {
     fn default() -> Self {
-        Shape { pad: RATE / 5, join_gap: RATE / 2, max_len: 25 * RATE, min_len: RATE / 4 }
+        Shape { pad: RATE / 5, join_gap: RATE / 2, max_len: 25 * RATE, min_len: RATE / 4, pack_gap: 0 }
+    }
+}
+
+impl Shape {
+    /// Parakeet: longer joins so a chunk rarely starts mid-sentence (it decodes worse without context).
+    pub fn parakeet() -> Self {
+        Shape { pad: RATE * 3 / 10, join_gap: RATE * 3 / 2, max_len: 40 * RATE, min_len: RATE / 4, pack_gap: 0 }
+    }
+    /// Whisper: chunks packed up to its 30 s window.
+    pub fn whisper() -> Self {
+        Shape { pad: RATE * 3 / 10, join_gap: RATE, max_len: 28 * RATE, min_len: RATE / 4, pack_gap: 5 * RATE }
     }
 }
 
@@ -57,6 +71,20 @@ pub fn shape(raw: &[Span], samples: &[f32], s: Shape) -> Vec<Span> {
         split(span, samples, s.max_len, &mut out);
     }
     out.retain(|sp| sp.len() >= s.min_len);
+    if s.pack_gap > 0 {
+        out = pack(out, s.max_len, s.pack_gap);
+    }
+    out
+}
+
+fn pack(spans: Vec<Span>, max_len: usize, max_gap: usize) -> Vec<Span> {
+    let mut out: Vec<Span> = vec![];
+    for sp in spans {
+        match out.last_mut() {
+            Some(last) if sp.start - last.end <= max_gap && sp.end - last.start <= max_len => last.end = sp.end,
+            _ => out.push(sp),
+        }
+    }
     out
 }
 
@@ -186,6 +214,15 @@ mod tests {
         assert!(out.iter().all(|sp| sp.len() <= s.max_len));
         assert_eq!(out.last().unwrap().end, 60 * RATE);
         assert!(out.windows(2).all(|w| w[0].end == w[1].start));
+    }
+
+    #[test]
+    fn whisper_chunks_are_packed_up_to_the_window() {
+        let samples = vec![0.0; 120 * RATE];
+        let s = Shape { pad: 0, ..Shape::whisper() };
+        let raw = [sp(1.0, 5.0), sp(8.0, 12.0), sp(15.0, 27.0), sp(40.0, 45.0), sp(46.5, 50.0)];
+        // 1-27 fits (26 s); 40 is 13 s after 27 (too far); 40-50 fits.
+        assert_eq!(shape(&raw, &samples, s), vec![sp(1.0, 27.0), sp(40.0, 50.0)]);
     }
 
     #[test]
