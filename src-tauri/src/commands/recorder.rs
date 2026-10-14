@@ -68,6 +68,7 @@ fn payload(engine: &Engine) -> StatePayload {
 fn emit_state(app: &AppHandle) {
     let rec = app.state::<RecorderState>();
     let p = payload(&rec.lock());
+    super::tray::update(app, &p.status);
     let _ = app.emit(STATE, p);
 }
 
@@ -87,30 +88,30 @@ fn system_source() -> Box<dyn crate::recorder::source::AudioSource> {
 }
 
 #[tauri::command]
-pub fn recorder_start(app: AppHandle, state: State<AppState>, rec: State<RecorderState>, app_id: Option<String>, app_label: Option<String>) -> CmdResult<StatePayload> {
+pub fn recorder_start(app: AppHandle, app_id: Option<String>, app_label: Option<String>) -> CmdResult<StatePayload> {
+    start_recording(&app, app_id.as_deref().unwrap_or("other"), app_label.as_deref().unwrap_or("Call"))
+}
+
+/// Starts a recording (Record button, an accepted nudge, or an app on Always).
+pub fn start_recording(app: &AppHandle, app_id: &str, app_label: &str) -> CmdResult<StatePayload> {
+    let state = app.state::<AppState>();
+    let rec = app.state::<RecorderState>();
     let mut engine = rec.lock();
     let storage = state.lock();
     let started_at = chrono::Local::now().fixed_offset();
     engine
-        .start(
-            &storage,
-            app_id.as_deref().unwrap_or("other"),
-            app_label.as_deref().unwrap_or("Call"),
-            Box::new(MicSource::default()),
-            system_source(),
-            platform::host_now_ns(),
-            started_at,
-        )
+        .start(&storage, app_id, app_label, Box::new(MicSource::default()), system_source(), platform::host_now_ns(), started_at)
         .map_err(err)?;
     let st = engine.status(platform::host_now_ns());
     drop(storage);
     if !st.system_audio {
-        notice(&app, "Talaan can't hear the call audio, so only your side is recorded. Allow system audio recording in System Settings.".into(), "warning", Some("system-audio"));
+        notice(app, "Talaan can't hear the call audio, so only your side is recorded. Allow system audio recording in System Settings.".into(), "warning", Some("system-audio"));
     }
     rec.auto_paused.store(false, Ordering::Relaxed);
     let p = payload(&engine);
     drop(engine);
-    notify(&app, MEETINGS_CHANGED);
+    notify(app, MEETINGS_CHANGED);
+    super::tray::update(app, &p.status);
     let _ = app.emit(STATE, p.clone());
     Ok(p)
 }
@@ -138,16 +139,28 @@ pub fn recorder_mark(app: AppHandle, rec: State<RecorderState>, note: Option<Str
 }
 
 #[tauri::command]
-pub fn recorder_stop(app: AppHandle, state: State<AppState>, rec: State<RecorderState>) -> CmdResult<String> {
+pub fn recorder_stop(app: AppHandle) -> CmdResult<String> {
+    stop_recording(&app)
+}
+
+/// Stops and saves, then hands the meeting to the transcriber.
+pub fn stop_recording(app: &AppHandle) -> CmdResult<String> {
+    let state = app.state::<AppState>();
+    let rec = app.state::<RecorderState>();
     let mut engine = rec.lock();
     let storage = state.lock();
     let id = engine.stop(&storage, platform::host_now_ns()).map_err(err)?;
     drop(storage);
     drop(engine);
     app.state::<super::transcriber::TranscriberState>().enqueue(&id);
-    notify(&app, MEETINGS_CHANGED);
-    emit_state(&app);
+    notify(app, MEETINGS_CHANGED);
+    emit_state(app);
     Ok(id)
+}
+
+/// True while recording or paused.
+pub fn is_recording(app: &AppHandle) -> bool {
+    app.state::<RecorderState>().lock().is_active()
 }
 
 #[tauri::command]

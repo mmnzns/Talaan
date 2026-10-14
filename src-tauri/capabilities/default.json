@@ -4,7 +4,9 @@
   "description": "Capability for the main and settings windows",
   "windows": [
     "main",
-    "settings"
+    "prompt",
+    "settings",
+    "tray"
   ],
   "permissions": [
     "core:default",

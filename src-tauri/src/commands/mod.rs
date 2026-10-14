@@ -1,11 +1,13 @@
 //! Tauri commands. Thin wrappers: lock the storage, call it, tell every window what changed.
 
+pub mod calls;
 pub mod dev;
 pub mod meetings;
 pub mod recorder;
 pub mod settings;
 pub mod summarizer;
 pub mod transcriber;
+pub mod tray;
 
 use crate::storage::{Storage, StorageError};
 use std::sync::{Arc, Mutex, MutexGuard};

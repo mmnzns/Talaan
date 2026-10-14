@@ -37,6 +37,8 @@ pub fn run() {
                 platform::macos::notify::setup(move |id| commands::summarizer::open_meeting(&handle, &id));
             }
             commands::transcriber::setup(app.handle(), root);
+            commands::calls::setup(app.handle());
+            commands::tray::setup(app.handle())?;
 
             let handle = app.handle().clone();
             std::thread::spawn(move || loop {
@@ -49,7 +51,12 @@ pub fn run() {
             });
             Ok(())
         })
+        .on_window_event(commands::tray::on_window_event)
         .invoke_handler(tauri::generate_handler![
+            commands::tray::tray_toggle,
+            commands::tray::tray_hide,
+            commands::tray::app_show_main,
+            commands::tray::app_quit,
             platform_name,
             meetings::meetings_list,
             meetings::meetings_get,
@@ -66,6 +73,12 @@ pub fn run() {
             meetings::folders_create,
             meetings::tags_list,
             rec_cmd::meetings_recover,
+            commands::calls::calls_prompt,
+            commands::calls::calls_accept,
+            commands::calls::calls_dismiss,
+            commands::calls::calls_keep,
+            commands::calls::calls_stop,
+            commands::calls::calls_hide,
             rec_cmd::recorder_start,
             rec_cmd::recorder_pause,
             rec_cmd::recorder_resume,
@@ -96,8 +109,12 @@ pub fn run() {
         .build(tauri::generate_context!())
         .expect("error while building Talaan")
         .run(|app, event| {
-            if let tauri::RunEvent::ExitRequested { .. } = event {
-                rec_cmd::stop_on_exit(app);
+            match event {
+                tauri::RunEvent::ExitRequested { .. } => rec_cmd::stop_on_exit(app),
+                // Dock icon clicked while the main window is hidden.
+                #[cfg(target_os = "macos")]
+                tauri::RunEvent::Reopen { .. } => commands::tray::show_main(app),
+                _ => {}
             }
         });
 }
