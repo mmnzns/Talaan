@@ -168,3 +168,57 @@ mod tests {
         assert!(v["recap"].as_str().is_some());
     }
 }
+
+/// Bake-off: the real prompt, schema and parser on the planning-call fixture, for every GGUF in a folder.
+/// `TALAAN_LLM_DIR=<folder> cargo test --release bakeoff -- --ignored --nocapture`
+#[cfg(test)]
+mod bakeoff {
+    use super::*;
+    use crate::storage::model::TranscriptLine;
+    use crate::summarizer::parse::{parse_draft, to_summary};
+    use crate::summarizer::prompt::{summary_prompt, tests::meeting, SCHEMA};
+
+    #[test]
+    #[ignore]
+    fn bakeoff() {
+        let fixture: serde_json::Value = serde_json::from_str(include_str!("../../../fixtures/summary.planning-call.json")).unwrap();
+        let lines: Vec<TranscriptLine> = serde_json::from_value(fixture["transcript"].clone()).unwrap();
+        let mut m = meeting(lines.clone());
+        m.speakers = serde_json::from_value(fixture["speakers"].clone()).unwrap();
+        m.marks = serde_json::from_value(fixture["marks"].clone()).unwrap();
+        m.item.duration_ms = fixture["durationMs"].as_u64().unwrap();
+        let prompt = summary_prompt(&m, &lines, "en", None);
+        let exe = std::env::current_exe().unwrap().parent().unwrap().parent().unwrap().join(HELPER);
+        let dir = std::env::var("TALAAN_LLM_DIR").unwrap();
+        let mut models: Vec<_> = std::fs::read_dir(&dir).unwrap().filter_map(|e| e.ok().map(|e| e.path())).filter(|p| p.extension().is_some_and(|x| x == "gguf")).collect();
+        models.sort();
+        for path in models {
+            let mut ai = LocalAi::new(&exe);
+            let c = Completion { model_path: path.to_string_lossy().into(), n_ctx: 8192, system: prompt.system.clone(), user: prompt.user.clone(), json_schema: Some(SCHEMA.into()), max_tokens: 1500, temperature: 0.2 };
+            let mut read_s = 0.0;
+            let t = Instant::now();
+            let r = ai.complete(&c, &AtomicBool::new(false), &mut |p, d, total| {
+                if p == Phase::Reading && d == total {
+                    read_s = t.elapsed().as_secs_f32();
+                }
+            });
+            let name = path.file_name().unwrap().to_string_lossy();
+            match r {
+                Err(e) => eprintln!("\n== {name}: ERROR {e}"),
+                Ok(r) => {
+                    eprintln!("\n== {name}: {:.1}s total (prompt read by {read_s:.1}s), {} prompt tok, {} out tok ({:.0} tok/s writing), truncated {}", r.seconds, r.prompt_tokens, r.output_tokens, r.output_tokens as f32 / (r.seconds - read_s).max(0.1), r.truncated);
+                    match parse_draft(&r.text) {
+                        Err(e) => eprintln!("   PARSE ERROR: {e}\n   {}", &r.text[..r.text.len().min(400)]),
+                        Ok(d) => {
+                            let s = to_summary(&d, &lines, "x");
+                            eprintln!("   title: {}\n   recap: {}", d.title, s.recap);
+                            for x in &s.decisions { eprintln!("   D [{:?}] {}", x.at.map(|a| a / 1000), x.text); }
+                            for x in &s.action_items { eprintln!("   A [{:?}] {} | owner {:?} | due {:?}", x.at.map(|a| a / 1000), x.text, x.owner, x.due); }
+                            for x in &s.open_questions { eprintln!("   Q [{:?}] {}", x.at.map(|a| a / 1000), x.text); }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

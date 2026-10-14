@@ -1,0 +1,388 @@
+{
+ "title": "Call, Zoom, Oct 14, 2:30 PM",
+ "durationMs": 560000,
+ "speakers": {
+  "them:0": "Dana Reyes",
+  "them:1": "Priya Shah"
+ },
+ "marks": [
+  {
+   "id": "k0",
+   "at": 116000,
+   "note": "pricing decision"
+  },
+  {
+   "id": "k1",
+   "at": 288000
+  }
+ ],
+ "transcript": [
+  {
+   "id": "l0",
+   "at": 0,
+   "end": 17500,
+   "speaker": "me",
+   "text": "Okay, I think everyone's here. Thanks for jumping on. Today is the Q4 roadmap, mostly onboarding and pricing.",
+   "edited": false
+  },
+  {
+   "id": "l1",
+   "at": 18000,
+   "end": 29500,
+   "speaker": "them:0",
+   "text": "Sounds good. I have the numbers from last month if we want to start there.",
+   "edited": false
+  },
+  {
+   "id": "l2",
+   "at": 30000,
+   "end": 35500,
+   "speaker": "me",
+   "text": "Yeah, go ahead Dana.",
+   "edited": false
+  },
+  {
+   "id": "l3",
+   "at": 36000,
+   "end": 67500,
+   "speaker": "them:0",
+   "text": "So trial to paid conversion dropped from eleven percent to eight and a half. Most of the drop is people who never finish setup. They sign up, connect one account, and leave.",
+   "edited": false
+  },
+  {
+   "id": "l4",
+   "at": 68000,
+   "end": 89500,
+   "speaker": "them:1",
+   "text": "That matches what support sees. Priya here. We get a lot of tickets in the first two days asking where to start.",
+   "edited": false
+  },
+  {
+   "id": "l5",
+   "at": 90000,
+   "end": 99500,
+   "speaker": "me",
+   "text": "So onboarding is the real problem, not the price.",
+   "edited": false
+  },
+  {
+   "id": "l6",
+   "at": 100000,
+   "end": 115500,
+   "speaker": "them:0",
+   "text": "I think so. If we change pricing now we won't know which change moved the numbers.",
+   "edited": false
+  },
+  {
+   "id": "l7",
+   "at": 116000,
+   "end": 131500,
+   "speaker": "me",
+   "text": "Then let's make a call. Onboarding revamp ships first, and pricing moves to Q1. Everyone okay with that?",
+   "edited": false
+  },
+  {
+   "id": "l8",
+   "at": 132000,
+   "end": 135500,
+   "speaker": "them:1",
+   "text": "Yes, agreed.",
+   "edited": false
+  },
+  {
+   "id": "l9",
+   "at": 136000,
+   "end": 143500,
+   "speaker": "them:0",
+   "text": "Agreed. Pricing to Q1.",
+   "edited": false
+  },
+  {
+   "id": "l10",
+   "at": 144000,
+   "end": 159500,
+   "speaker": "me",
+   "text": "Great. For onboarding, what's the scope? I don't want a six month project.",
+   "edited": false
+  },
+  {
+   "id": "l11",
+   "at": 160000,
+   "end": 183500,
+   "speaker": "them:0",
+   "text": "Two sprints. Guided setup, a checklist on the home screen, and an empty state that actually explains things.",
+   "edited": false
+  },
+  {
+   "id": "l12",
+   "at": 184000,
+   "end": 197500,
+   "speaker": "them:1",
+   "text": "And the welcome email sequence. That's mine, I can rewrite it.",
+   "edited": false
+  },
+  {
+   "id": "l13",
+   "at": 198000,
+   "end": 211500,
+   "speaker": "me",
+   "text": "Okay. Dana, can you confirm the two sprint estimate with engineering by Thursday?",
+   "edited": false
+  },
+  {
+   "id": "l14",
+   "at": 212000,
+   "end": 221500,
+   "speaker": "them:0",
+   "text": "Yes, I'll confirm it by Thursday the sixteenth.",
+   "edited": false
+  },
+  {
+   "id": "l15",
+   "at": 222000,
+   "end": 235500,
+   "speaker": "me",
+   "text": "And I'll send the onboarding wireframes to design by Friday.",
+   "edited": false
+  },
+  {
+   "id": "l16",
+   "at": 236000,
+   "end": 251500,
+   "speaker": "them:1",
+   "text": "I'll draft the new welcome emails. Probably next Wednesday.",
+   "edited": false
+  },
+  {
+   "id": "l17",
+   "at": 252000,
+   "end": 269500,
+   "speaker": "me",
+   "text": "Perfect. What about analytics? We need to know where people drop off in the new flow.",
+   "edited": false
+  },
+  {
+   "id": "l18",
+   "at": 270000,
+   "end": 287500,
+   "speaker": "them:0",
+   "text": "Right now nobody owns the onboarding funnel dashboard. It used to be Marco but he moved teams.",
+   "edited": false
+  },
+  {
+   "id": "l19",
+   "at": 288000,
+   "end": 299500,
+   "speaker": "me",
+   "text": "Hm. We need someone. Let's not decide today, I'll ask around.",
+   "edited": false
+  },
+  {
+   "id": "l20",
+   "at": 300000,
+   "end": 319500,
+   "speaker": "them:1",
+   "text": "One more thing on pricing. If it moves to Q1, do we still honour the early bird discount we promised in the newsletter?",
+   "edited": false
+  },
+  {
+   "id": "l21",
+   "at": 320000,
+   "end": 331500,
+   "speaker": "them:0",
+   "text": "Good question. I don't know. That's a legal and marketing call.",
+   "edited": false
+  },
+  {
+   "id": "l22",
+   "at": 332000,
+   "end": 343500,
+   "speaker": "me",
+   "text": "Let's leave that open and bring it to Monday's leadership sync.",
+   "edited": false
+  },
+  {
+   "id": "l23",
+   "at": 344000,
+   "end": 347500,
+   "speaker": "them:1",
+   "text": "Okay.",
+   "edited": false
+  },
+  {
+   "id": "l24",
+   "at": 348000,
+   "end": 355500,
+   "speaker": "me",
+   "text": "Anything else on onboarding?",
+   "edited": false
+  },
+  {
+   "id": "l25",
+   "at": 356000,
+   "end": 371500,
+   "speaker": "them:0",
+   "text": "The mobile app. Do we do the checklist there too or web only for now?",
+   "edited": false
+  },
+  {
+   "id": "l26",
+   "at": 372000,
+   "end": 385500,
+   "speaker": "me",
+   "text": "Web only for this release. Mobile can follow once we see the numbers.",
+   "edited": false
+  },
+  {
+   "id": "l27",
+   "at": 386000,
+   "end": 393500,
+   "speaker": "them:0",
+   "text": "Makes sense. Web only.",
+   "edited": false
+  },
+  {
+   "id": "l28",
+   "at": 394000,
+   "end": 405500,
+   "speaker": "them:1",
+   "text": "I'll note that for support so they can tell people.",
+   "edited": false
+  },
+  {
+   "id": "l29",
+   "at": 406000,
+   "end": 425500,
+   "speaker": "me",
+   "text": "Good. Let's also talk about the partner integrations, since three partners asked about the new API.",
+   "edited": false
+  },
+  {
+   "id": "l30",
+   "at": 426000,
+   "end": 443500,
+   "speaker": "them:0",
+   "text": "The API is ready but the docs aren't. I'd say we don't announce until the docs are done.",
+   "edited": false
+  },
+  {
+   "id": "l31",
+   "at": 444000,
+   "end": 455500,
+   "speaker": "me",
+   "text": "Agreed, no announcement until docs are done. Who writes them?",
+   "edited": false
+  },
+  {
+   "id": "l32",
+   "at": 456000,
+   "end": 467500,
+   "speaker": "them:1",
+   "text": "I can take the first draft if engineering reviews it.",
+   "edited": false
+  },
+  {
+   "id": "l33",
+   "at": 468000,
+   "end": 479500,
+   "speaker": "me",
+   "text": "Okay, Priya drafts the API docs, engineering reviews. Target end of month?",
+   "edited": false
+  },
+  {
+   "id": "l34",
+   "at": 480000,
+   "end": 487500,
+   "speaker": "them:1",
+   "text": "End of month works.",
+   "edited": false
+  },
+  {
+   "id": "l35",
+   "at": 488000,
+   "end": 505500,
+   "speaker": "them:0",
+   "text": "Last thing from me. The customer advisory board meeting. Do we want to show them the new onboarding?",
+   "edited": false
+  },
+  {
+   "id": "l36",
+   "at": 506000,
+   "end": 517500,
+   "speaker": "me",
+   "text": "Only if it's ready. Let's decide in two weeks.",
+   "edited": false
+  },
+  {
+   "id": "l37",
+   "at": 518000,
+   "end": 523500,
+   "speaker": "them:0",
+   "text": "Fine.",
+   "edited": false
+  },
+  {
+   "id": "l38",
+   "at": 524000,
+   "end": 549500,
+   "speaker": "me",
+   "text": "Alright. To recap: onboarding first, pricing to Q1, web only, no API announcement until docs. I'll send notes. Thanks everyone.",
+   "edited": false
+  },
+  {
+   "id": "l39",
+   "at": 550000,
+   "end": 553500,
+   "speaker": "them:1",
+   "text": "Thanks, bye.",
+   "edited": false
+  },
+  {
+   "id": "l40",
+   "at": 554000,
+   "end": 559500,
+   "speaker": "them:0",
+   "text": "Bye.",
+   "edited": false
+  }
+ ],
+ "expected": {
+  "decisions": [
+   "Onboarding revamp ships first; pricing moves to Q1",
+   "Web only for this release",
+   "No API announcement until docs are done"
+  ],
+  "action_items": [
+   [
+    "Confirm two-sprint estimate with engineering",
+    "Dana Reyes",
+    "Thursday"
+   ],
+   [
+    "Send onboarding wireframes to design",
+    "Me",
+    "Friday"
+   ],
+   [
+    "Draft new welcome emails",
+    "Priya Shah",
+    "next Wednesday"
+   ],
+   [
+    "Draft API docs (engineering reviews)",
+    "Priya Shah",
+    "end of month"
+   ],
+   [
+    "Find an owner for the onboarding funnel dashboard",
+    "Me",
+    ""
+   ]
+  ],
+  "open_questions": [
+   "Who owns the onboarding funnel dashboard",
+   "Early bird discount if pricing moves to Q1 (Monday leadership sync)",
+   "Show new onboarding to the advisory board (decide in two weeks)"
+  ]
+ }
+}
