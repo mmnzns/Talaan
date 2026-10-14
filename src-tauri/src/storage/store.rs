@@ -83,6 +83,9 @@ impl Storage {
                         pauses: vec![],
                         engine: None,
                         audio_deleted: false,
+                        progress: None,
+                        error: None,
+                        transcription: None,
                         extra: Default::default(),
                     };
                     write_json_atomic(&meetings.join(&id).join(META), &file)?;
@@ -175,8 +178,21 @@ impl Storage {
             transcript,
             marks: file.marks.clone(),
             pauses: file.pauses.clone(),
+            error: file.error.as_ref().map(|e| e.message.clone()),
             item: list_item(&file),
         })
+    }
+
+    /// Meetings in a given status (the transcriber's queue is rebuilt from `transcribing` at launch).
+    pub fn ids_with_status(&self, status: MeetingStatus) -> Result<Vec<String>> {
+        let mut ids = vec![];
+        for item in self.list_meetings(&Filter::default())? {
+            if item.status == status {
+                ids.push(item.id);
+            }
+        }
+        ids.sort();
+        Ok(ids)
     }
 
     /// Writes the transcript the transcriber produced. Never rewritten after that; edits go beside it.
@@ -264,7 +280,7 @@ pub(crate) fn list_item(f: &MeetingFile) -> MeetingListItem {
         started_at: f.started_at.clone(),
         duration_ms: f.duration_ms,
         status: f.status,
-        progress: None,
+        progress: f.progress,
         folder_id: f.folder_id.clone(),
         tags: f.tags.clone(),
         people_count: f.people_count,

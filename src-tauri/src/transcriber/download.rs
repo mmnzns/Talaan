@@ -164,7 +164,6 @@ mod tests {
             note: "",
             engine: EngineKind::Whisper,
             languages: "",
-            language_codes: &[],
             speed: 1,
             accuracy: 1,
             files: std::slice::from_ref(file),

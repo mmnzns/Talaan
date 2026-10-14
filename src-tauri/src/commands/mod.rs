@@ -4,18 +4,24 @@ pub mod dev;
 pub mod meetings;
 pub mod recorder;
 pub mod settings;
+pub mod transcriber;
 
 use crate::storage::{Storage, StorageError};
-use std::sync::{Mutex, MutexGuard};
+use std::sync::{Arc, Mutex, MutexGuard};
 use tauri::{AppHandle, Emitter};
 
 pub struct AppState {
-    storage: Mutex<Storage>,
+    storage: Arc<Mutex<Storage>>,
 }
 
 impl AppState {
     pub fn new(storage: Storage) -> Self {
-        AppState { storage: Mutex::new(storage) }
+        AppState { storage: Arc::new(Mutex::new(storage)) }
+    }
+
+    /// The same storage, for background threads (the transcriber).
+    pub fn shared(&self) -> Arc<Mutex<Storage>> {
+        self.storage.clone()
     }
 
     /// A panic while holding the lock must not brick the app, so a poisoned lock is recovered.

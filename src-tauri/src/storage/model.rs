@@ -126,8 +126,35 @@ pub struct MeetingFile {
     pub engine: Option<String>,
     #[serde(default)]
     pub audio_deleted: bool,
+    /// 0..1 while transcribing or summarizing.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub progress: Option<f64>,
+    /// Why processing failed (status `failed`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub error: Option<ProcessingError>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub transcription: Option<TranscriptionInfo>,
     #[serde(flatten)]
     pub extra: Map<String, Value>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct ProcessingError {
+    /// `no_model` (re-queued when a model finishes downloading) or `failed`.
+    pub code: String,
+    pub message: String,
+}
+
+/// How the transcript was made, for the record and for comparing engines.
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct TranscriptionInfo {
+    pub model: String,
+    pub echo_lines_removed: usize,
+    pub speech_ms: u64,
+    pub took_ms: u64,
+    pub finished_at: String,
 }
 
 /// A list row (matches `MeetingListItem`).
@@ -168,6 +195,9 @@ pub struct Meeting {
     pub transcript: Vec<TranscriptLine>,
     pub marks: Vec<Mark>,
     pub pauses: Vec<PauseGap>,
+    /// Why processing failed, in words for the banner.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
 }
 
 #[cfg(test)]

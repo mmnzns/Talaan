@@ -26,8 +26,6 @@ pub struct ModelInfo {
     pub engine: EngineKind,
     /// Shown in Settings ("25 European languages").
     pub languages: &'static str,
-    /// ISO 639-1 codes the model handles. Empty = any (Whisper).
-    pub language_codes: &'static [&'static str],
     /// 1..3, for the dots in Settings.
     pub speed: u8,
     pub accuracy: u8,
@@ -40,20 +38,12 @@ impl ModelInfo {
     pub fn size(&self) -> u64 {
         self.files.iter().map(|f| f.size).sum()
     }
-
-    pub fn supports(&self, language: &str) -> bool {
-        self.language_codes.is_empty() || self.language_codes.contains(&language)
-    }
 }
 
 #[cfg(test)]
 const PARAKEET_V3: &str = "https://huggingface.co/istupakov/parakeet-tdt-0.6b-v3-onnx/resolve/8f23f0c03c8761650bdb5b40aaf3e40d2c15f1ce/";
 #[cfg(test)]
 const WHISPER: &str = "https://huggingface.co/ggerganov/whisper.cpp/resolve/5359861c739e955e79d9a303bcbc70fb988958b1/";
-
-pub const PARAKEET_V3_LANGUAGES: &[&str] = &[
-    "bg", "hr", "cs", "da", "nl", "en", "et", "fi", "fr", "de", "el", "hu", "it", "lv", "lt", "mt", "pl", "pt", "ro", "sk", "sl", "es", "sv", "ru", "uk",
-];
 
 pub static CATALOG: &[ModelInfo] = &[
     ModelInfo {
@@ -63,7 +53,6 @@ pub static CATALOG: &[ModelInfo] = &[
         note: "Fastest. Good for quick notes in 25 European languages.",
         engine: EngineKind::Parakeet,
         languages: "25 European languages",
-        language_codes: PARAKEET_V3_LANGUAGES,
         speed: 3,
         accuracy: 1,
         files: &[
@@ -82,7 +71,6 @@ pub static CATALOG: &[ModelInfo] = &[
         note: "Recommended. Most accurate, 99 languages including Filipino.",
         engine: EngineKind::Whisper,
         languages: "99 languages",
-        language_codes: &[],
         speed: 2,
         accuracy: 3,
         files: &[ModelFile { name: "ggml-large-v3-turbo-q5_0.bin", url: concat!("https://huggingface.co/ggerganov/whisper.cpp/resolve/5359861c739e955e79d9a303bcbc70fb988958b1/", "ggml-large-v3-turbo-q5_0.bin"), size: 574_041_195, sha256: "394221709cd5ad1f40c46e6031ca61bce88931e6e088c188294c6d5a55ffa7e2" }],
@@ -95,7 +83,6 @@ pub static CATALOG: &[ModelInfo] = &[
         note: "Light and quick on older Macs. Lower accuracy.",
         engine: EngineKind::Whisper,
         languages: "99 languages",
-        language_codes: &[],
         speed: 3,
         accuracy: 1,
         files: &[ModelFile { name: "ggml-small.bin", url: concat!("https://huggingface.co/ggerganov/whisper.cpp/resolve/5359861c739e955e79d9a303bcbc70fb988958b1/", "ggml-small.bin"), size: 487_601_967, sha256: "1be3a9b2063867b937e64e2ec7483364a79917e157fa98c5d94b5c1fffea987b" }],
@@ -111,7 +98,6 @@ pub static VAD: ModelInfo = ModelInfo {
     note: "",
     engine: EngineKind::Whisper,
     languages: "",
-    language_codes: &[],
     speed: 3,
     accuracy: 3,
     files: &[ModelFile { name: "ggml-silero-v6.2.0.bin", url: "https://huggingface.co/ggml-org/whisper-vad/resolve/9ffd54a1e1ee413ddf265af9913beaf518d1639b/ggml-silero-v6.2.0.bin", size: 885_098, sha256: "2aa269b785eeb53a82983a20501ddf7c1d9c48e33ab63a41391ac6c9f7fb6987" }],
@@ -185,11 +171,6 @@ impl ModelStore {
         }
         Location::Missing
     }
-
-    /// Path of one file of a located model.
-    pub fn file(&self, m: &ModelInfo, name: &str) -> Option<PathBuf> {
-        self.locate(m).dir().map(|d| d.join(name))
-    }
 }
 
 /// Every file present with its exact size. (Hashes are checked at download; re-hashing gigabytes on every
@@ -238,13 +219,6 @@ mod tests {
         for m in CATALOG.iter().filter(|m| m.engine == EngineKind::Whisper) {
             assert!(m.files.iter().all(|f| f.url.starts_with(PREFIXES[1])));
         }
-    }
-
-    #[test]
-    fn language_support() {
-        assert!(find("parakeet-v3").unwrap().supports("es"));
-        assert!(!find("parakeet-v3").unwrap().supports("tl"));
-        assert!(find("whisper-turbo").unwrap().supports("tl"));
     }
 
     #[test]

@@ -33,7 +33,8 @@ impl Storage {
         Ok(())
     }
 
-    /// "Delete all Talaan data": every meeting, the library and the settings. Models and keys are added in M4/M5.
+    /// "Delete all Talaan data": every meeting, the library, the settings and downloaded models (all under the data
+    /// folder). Keys arrive in M5. Models reused from another app are never touched.
     pub fn delete_all_data(&mut self) -> Result<()> {
         for entry in fs::read_dir(&self.root)? {
             let path = entry?.path();

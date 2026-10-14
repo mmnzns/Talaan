@@ -5,8 +5,7 @@ use crate::storage::model::MeetingStatus;
 use crate::storage::paths::{ME_WAV, THEM_WAV};
 use crate::storage::{Storage, StorageError};
 
-/// Repairs both tracks, sets the duration from the longer one and marks the meeting ready.
-/// (From M4 on, the meeting goes to transcription instead.)
+/// Repairs both tracks, sets the duration from the longer one and hands the meeting to the transcriber.
 pub fn recover(storage: &Storage, id: &str) -> Result<u64, StorageError> {
     let dir = storage.dir(id)?;
     let mut longest = 0;
@@ -18,7 +17,9 @@ pub fn recover(storage: &Storage, id: &str) -> Result<u64, StorageError> {
     }
     storage.update_meeting_file(id, |f| {
         f.duration_ms = f.duration_ms.max(longest);
-        f.status = MeetingStatus::Ready;
+        f.status = MeetingStatus::Transcribing;
+        f.progress = Some(0.0);
+        f.error = None;
     })?;
     Ok(longest)
 }
@@ -47,17 +48,17 @@ mod tests {
         storage.scan_for_interrupted().unwrap();
         assert_eq!(recover(&storage, &f.id).unwrap(), 3_000);
         let m = storage.get_meeting(&f.id).unwrap();
-        assert_eq!(m.item.status, MeetingStatus::Ready);
+        assert_eq!(m.item.status, MeetingStatus::Transcribing);
         assert_eq!(m.item.duration_ms, 3_000);
         assert!(m.has_audio);
     }
 
     #[test]
-    fn a_meeting_without_audio_still_becomes_ready() {
+    fn a_meeting_without_audio_still_goes_to_the_transcriber() {
         let d = tempfile::tempdir().unwrap();
         let storage = Storage::new(d.path().to_path_buf()).unwrap();
         let f = storage.create_meeting("zoom", "Zoom", chrono::DateTime::parse_from_rfc3339("2026-10-14T14:30:00-07:00").unwrap()).unwrap();
         assert_eq!(recover(&storage, &f.id).unwrap(), 0);
-        assert_eq!(storage.get_meeting(&f.id).unwrap().item.status, MeetingStatus::Ready);
+        assert_eq!(storage.get_meeting(&f.id).unwrap().item.status, MeetingStatus::Transcribing);
     }
 }

@@ -144,6 +144,7 @@ pub fn recorder_stop(app: AppHandle, state: State<AppState>, rec: State<Recorder
     let id = engine.stop(&storage, platform::host_now_ns()).map_err(err)?;
     drop(storage);
     drop(engine);
+    app.state::<super::transcriber::TranscriberState>().enqueue(&id);
     notify(&app, MEETINGS_CHANGED);
     emit_state(&app);
     Ok(id)
@@ -200,6 +201,7 @@ pub fn permissions_open_settings(pane: String) -> CmdResult<()> {
 #[tauri::command]
 pub fn meetings_recover(app: AppHandle, state: State<AppState>, id: String) -> CmdResult<()> {
     crate::recorder::recovery::recover(&state.lock(), &id)?;
+    app.state::<super::transcriber::TranscriberState>().enqueue(&id);
     notify(&app, MEETINGS_CHANGED);
     Ok(())
 }

@@ -20,13 +20,14 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .setup(|app| {
             let root = commands::resolve_data_dir(std::env::var("TALAAN_DATA_DIR").ok(), dirs::data_dir());
-            let mut store = storage::Storage::new(root)?;
+            let mut store = storage::Storage::new(root.clone())?;
             store.load_policy()?;
             // Anything still marked "recording" was interrupted; expired audio goes now.
             store.scan_for_interrupted()?;
             store.apply_retention(chrono::Utc::now())?;
             app.manage(AppState::new(store));
             rec_cmd::setup(app.handle());
+            commands::transcriber::setup(app.handle(), root);
 
             let handle = app.handle().clone();
             std::thread::spawn(move || loop {
@@ -66,7 +67,11 @@ pub fn run() {
             rec_cmd::permissions_status,
             rec_cmd::permissions_request_mic,
             rec_cmd::permissions_open_settings,
-            meetings::meetings_retry,
+            commands::transcriber::meetings_retry,
+            commands::transcriber::models_list,
+            commands::transcriber::models_download,
+            commands::transcriber::models_cancel,
+            commands::transcriber::models_delete,
             meetings::meetings_generate_summary,
             settings::settings_get,
             settings::settings_set,

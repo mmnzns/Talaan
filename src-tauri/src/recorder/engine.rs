@@ -233,7 +233,9 @@ impl Engine {
         storage
             .update_meeting_file(&s.meeting_id, |f| {
                 s.apply(f, now_ns);
-                f.status = MeetingStatus::Ready;
+                // The transcriber picks it up from here.
+                f.status = MeetingStatus::Transcribing;
+                f.progress = Some(0.0);
             })
             .map_err(|e| e.to_string())?;
         Ok(s.meeting_id.clone())
@@ -331,7 +333,7 @@ pub(crate) mod tests {
         assert!(!e.is_active());
 
         let f = storage.read_meeting_file(&id).unwrap();
-        assert_eq!(f.status, MeetingStatus::Ready);
+        assert_eq!(f.status, MeetingStatus::Transcribing);
         assert_eq!(f.duration_ms, 2_000);
         assert_eq!(f.pauses, vec![PauseGap { at: 1_000, duration_ms: 2_000 }]);
         assert_eq!(f.marks.len(), 1);
