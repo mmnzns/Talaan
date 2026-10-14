@@ -229,4 +229,27 @@ mod tests {
         assert_eq!(download_model(m, dir.path(), &AtomicBool::new(true), &mut |_| {}), Err(DownloadError::Cancelled));
         assert!(!dir.path().join("m.bin").exists());
     }
+
+    /// Downloads real models into the app's data folder. `TALAAN_MODELS="parakeet-v3 vad" cargo test real_download -- --ignored`
+    #[test]
+    #[ignore]
+    fn real_download() {
+        use crate::transcriber::models::{find, ModelStore};
+        let data = std::env::var("TALAAN_DATA_DIR").map(std::path::PathBuf::from).unwrap_or_else(|_| dirs::data_dir().unwrap().join("Talaan"));
+        let store = ModelStore::new(&data, false);
+        for id in std::env::var("TALAAN_MODELS").unwrap_or("vad parakeet-v3".into()).split_whitespace() {
+            let m = find(id).unwrap();
+            let t = std::time::Instant::now();
+            let mut last = -1i32;
+            download_model(m, &store.own_dir(m), &AtomicBool::new(false), &mut |p| {
+                let pct = (p * 100.0) as i32;
+                if pct / 10 != last / 10 {
+                    last = pct;
+                    eprintln!("{id}: {pct}%");
+                }
+            })
+            .unwrap();
+            eprintln!("{id}: done in {:.0}s", t.elapsed().as_secs_f32());
+        }
+    }
 }
