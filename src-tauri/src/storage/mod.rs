@@ -2,6 +2,7 @@
 
 pub mod edits;
 pub mod io;
+pub mod library;
 pub mod markdown;
 pub mod model;
 pub mod ops;
