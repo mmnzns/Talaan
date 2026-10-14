@@ -25,7 +25,7 @@ export function TranscriptCard({ meeting, activeAt, jumpSeq, editing, playing, o
   const rows = useMemo(() => buildRows(meeting.transcript, meeting.pauses, meeting.marks), [meeting.transcript, meeting.pauses, meeting.marks]);
   const active = activeAt === undefined ? undefined : lineAt(meeting.transcript, activeAt);
   const scroller = useRef<HTMLDivElement>(null);
-  const audio = Boolean(meeting.audioKeptUntil);
+  const audio = meeting.hasAudio;
 
   useEffect(() => {
     if (!active) return;

@@ -76,11 +76,14 @@ export function MeetingHeader({ meeting, editing, canRevert, onToggleEdit, onRev
             )}
             <Chip>{formatDuration(meeting.durationMs)}</Chip>
             <Chip>{languageName(meeting.language)}</Chip>
-            {meeting.audioKeptUntil ? (
+            {meeting.hasAudio && meeting.pinned ? (
               <Chip>
-                {meeting.pinned ? <Pin size={11} aria-hidden="true" /> : null}
-                {meeting.pinned ? "Audio kept" : `Audio until ${formatDate(meeting.audioKeptUntil)}`}
+                <Pin size={11} aria-hidden="true" /> Audio kept
               </Chip>
+            ) : meeting.hasAudio && meeting.audioKeptUntil ? (
+              <Chip>Audio until {formatDate(meeting.audioKeptUntil)}</Chip>
+            ) : meeting.hasAudio ? (
+              <Chip>Audio kept</Chip>
             ) : (
               <Chip>No audio kept</Chip>
             )}
@@ -172,7 +175,7 @@ export function MeetingHeader({ meeting, editing, canRevert, onToggleEdit, onRev
                     <MessageCircle size={14} aria-hidden="true" /> Ask about this meeting
                   </MenuItem>
                   <MenuItem
-                    disabled={!meeting.audioKeptUntil}
+                    disabled={!meeting.hasAudio}
                     onClick={() => {
                       store.setPinned(meeting.id, !meeting.pinned);
                       close();

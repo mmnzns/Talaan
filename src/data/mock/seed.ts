@@ -37,7 +37,7 @@ export const seedFolders: Omit<Folder, "count">[] = [
 ];
 
 export function seedMeetings(now: Date = new Date()): Meeting[] {
-  const q4: Meeting = {
+  const q4: Omit<Meeting, "hasAudio"> = {
     id: "m-q4",
     title: "Q4 roadmap sync",
     app: "zoom",
@@ -88,7 +88,7 @@ export function seedMeetings(now: Date = new Date()): Meeting[] {
     pauses: [{ at: mmss("00:48"), durationMs: 2 * 60 * 1000 }],
   };
 
-  const vendor: Meeting = {
+  const vendor: Omit<Meeting, "hasAudio"> = {
     id: "m-vendor",
     title: "Vendor demo: email platform",
     app: "zoom",
@@ -112,7 +112,7 @@ export function seedMeetings(now: Date = new Date()): Meeting[] {
     pauses: [],
   };
 
-  const oneOnOne: Meeting = {
+  const oneOnOne: Omit<Meeting, "hasAudio"> = {
     id: "m-1on1",
     title: "Weekly 1:1",
     app: "slack",
@@ -149,7 +149,7 @@ export function seedMeetings(now: Date = new Date()): Meeting[] {
     pauses: [],
   };
 
-  const retro: Meeting = {
+  const retro: Omit<Meeting, "hasAudio"> = {
     id: "m-retro",
     title: "Website launch retro",
     app: "meet",
@@ -184,7 +184,7 @@ export function seedMeetings(now: Date = new Date()): Meeting[] {
     pauses: [],
   };
 
-  const imported: Meeting = {
+  const imported: Omit<Meeting, "hasAudio"> = {
     id: "m-import",
     title: "Imported: client kickoff.m4a",
     app: "import",
@@ -206,7 +206,7 @@ export function seedMeetings(now: Date = new Date()): Meeting[] {
     pauses: [],
   };
 
-  const failed: Meeting = {
+  const failed: Omit<Meeting, "hasAudio"> = {
     id: "m-failed",
     title: "Call, Teams, Oct 8",
     app: "teams",
@@ -224,7 +224,7 @@ export function seedMeetings(now: Date = new Date()): Meeting[] {
     pauses: [],
   };
 
-  const recover: Meeting = {
+  const recover: Omit<Meeting, "hasAudio"> = {
     id: "m-recover",
     title: "Call, Zoom, 8:50 AM",
     app: "zoom",
@@ -242,7 +242,7 @@ export function seedMeetings(now: Date = new Date()): Meeting[] {
     pauses: [],
   };
 
-  return [q4, vendor, oneOnOne, retro, imported, failed, recover];
+  return [q4, vendor, oneOnOne, retro, imported, failed, recover].map((m) => ({ ...m, hasAudio: Boolean(m.audioKeptUntil) || m.pinned }));
 }
 
 export function sampleTranscript(prefix: string): TranscriptLine[] {

@@ -1,4 +1,5 @@
 mod platform;
+mod storage;
 
 #[tauri::command]
 fn platform_name() -> &'static str {

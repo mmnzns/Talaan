@@ -1,0 +1,35 @@
+{
+  "id": "2026-10-14_1430_q4rm",
+  "title": "Q4 roadmap sync",
+  "app": "zoom",
+  "appLabel": "Zoom",
+  "startedAt": "2026-10-14T14:30:00-07:00",
+  "durationMs": 2530000,
+  "status": "ready",
+  "folderId": "work",
+  "tags": ["roadmap", "zoom"],
+  "peopleCount": 3,
+  "pinned": false,
+  "language": "en",
+  "hasAudio": true,
+  "audioKeptUntil": "2026-10-21T14:30:00-07:00",
+  "calendarEvent": { "title": "Q4 Roadmap Sync", "attendees": ["You", "Dana Reyes", "Priya Shah"] },
+  "speakers": { "me": "Me", "them:1": "Dana Reyes", "them:2": "Priya Shah" },
+  "summary": {
+    "recap": "Onboarding revamp ships before the pricing refresh.",
+    "decisions": [{ "id": "d0", "text": "Onboarding revamp ships first; pricing moves to Q1.", "at": 21000 }],
+    "actionItems": [
+      { "id": "a0", "text": "Send onboarding wireframes to design", "owner": "Me", "due": "Fri Oct 17", "at": 41000, "done": false },
+      { "id": "a1", "text": "Find an owner for onboarding analytics", "owner": "Priya Shah", "at": 72000, "done": true }
+    ],
+    "openQuestions": [{ "id": "o0", "text": "Who owns analytics tracking?" }],
+    "engine": "Local AI",
+    "edited": true
+  },
+  "transcript": [
+    { "id": "l0", "at": 0, "end": 6000, "speaker": "them:1", "text": "Okay, looks like everyone is here.", "edited": false },
+    { "id": "l1", "at": 6000, "end": 14000, "speaker": "me", "text": "Sounds good. I put the onboarding revamp first.", "edited": true }
+  ],
+  "marks": [{ "id": "k0", "at": 41000 }, { "id": "k1", "at": 72000, "note": "check with the data team" }],
+  "pauses": [{ "at": 48000, "durationMs": 120000 }]
+}
