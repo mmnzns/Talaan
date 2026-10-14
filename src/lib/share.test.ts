@@ -1,14 +1,15 @@
 import { describe, expect, it } from "vitest";
 import { seedMeetings } from "../data/mock/seed";
-import { safeFileName, toEmail, toMarkdown, toPlainText, toSlack } from "./share";
+import { safeFileName, toEmail, toMarkdown, toPlainText, toShareText } from "./share";
 
 const q4 = seedMeetings(new Date("2026-10-14T20:00:00")).find((m) => m.id === "m-q4")!;
 
-describe("toSlack", () => {
-  const text = toSlack(q4);
-  it("uses Slack bold and bullets", () => {
-    expect(text).toContain("*Q4 roadmap sync");
-    expect(text).toContain("*Decisions*");
+describe("toShareText", () => {
+  const text = toShareText(q4);
+  it("uses plain headings and bullets, no markup", () => {
+    expect(text.startsWith("Q4 roadmap sync")).toBe(true);
+    expect(text).toContain("\nDecisions\n");
+    expect(text).not.toContain("*");
     expect(text).toContain("• Onboarding revamp ships first; pricing moves to Q1. (00:21)");
   });
   it("lists action items with owner and due date", () => {
@@ -38,7 +39,7 @@ describe("toMarkdown", () => {
   it("says so when there is no summary", () => {
     const noSummary = { ...q4, summary: undefined };
     expect(toMarkdown(noSummary, false)).toContain("_No summary yet._");
-    expect(toSlack(noSummary)).toContain("no summary yet");
+    expect(toShareText(noSummary)).toContain("no summary yet");
   });
 });
 

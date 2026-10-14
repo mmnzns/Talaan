@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useMeetings } from "../../data/hooks";
 import { useStore } from "../../data/StoreProvider";
 import { dayGroup, formatClock } from "../../lib/format";
-import { copyText, toSlack } from "../../lib/share";
+import { copyText, toShareText } from "../../lib/share";
 import { openSettings } from "../../lib/windows";
 import { navigate, routes } from "../../lib/router";
 import { Button, Label, useToast } from "../../ui";
@@ -22,7 +22,7 @@ export function MenuBarPopover({ onStart }: Props) {
   const copy = async (id: string) => {
     const m = await store.getMeeting(id);
     if (!m) return;
-    await copyText(toSlack(m));
+    await copyText(toShareText(m));
     setCopied(id);
     setTimeout(() => setCopied(undefined), 1800);
   };

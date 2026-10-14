@@ -13,9 +13,9 @@ interface Props {
   canRevert: boolean;
   onToggleEdit: () => void;
   onRevert: () => void;
-  onCopy: (kind: "slack" | "email") => void;
+  onCopy: (kind: "text" | "email") => void;
   onExport: () => void;
-  copied?: "slack" | "email";
+  copied?: "text" | "email";
 }
 
 const languageName = (code: string) => {
@@ -143,8 +143,8 @@ export function MeetingHeader({ meeting, editing, canRevert, onToggleEdit, onRev
             <Button variant={editing ? "strong" : "default"} raised={!editing} onClick={onToggleEdit}>
               {editing ? "Done editing" : "Edit"}
             </Button>
-            <Button variant="primary" onClick={() => onCopy("slack")}>
-              {copied === "slack" ? "Copied" : "Copy for Slack"}
+            <Button variant="primary" onClick={() => onCopy("text")}>
+              {copied === "text" ? "Copied" : "Copy as text"}
             </Button>
             <Button raised onClick={onExport}>
               Export ▾

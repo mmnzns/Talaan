@@ -10,15 +10,15 @@ function heading(m: Meeting) {
   return `${m.title} · ${formatDate(m.startedAt)} · ${formatDuration(m.durationMs)}`;
 }
 
-/** Summary formatted for pasting into Slack (mrkdwn). */
-export function toSlack(m: Meeting): string {
+/** Summary as plain text with bullets, for pasting anywhere (Slack, email, notes). */
+export function toShareText(m: Meeting): string {
   const s = m.summary;
-  if (!s) return `*${heading(m)}*\n(no summary yet)`;
-  const out = [`*${heading(m)}*`, "", s.recap];
-  if (s.decisions.length) out.push("", "*Decisions*", ...s.decisions.map((d) => `• ${d.text}${when(d.at)}`));
+  if (!s) return `${heading(m)}\n(no summary yet)`;
+  const out = [heading(m), "", s.recap];
+  if (s.decisions.length) out.push("", "Decisions", ...s.decisions.map((d) => `• ${d.text}${when(d.at)}`));
   if (s.actionItems.length)
-    out.push("", "*Action items*", ...s.actionItems.map((a) => `• ${a.done ? "✅" : "☐"} ${a.text}${owner(a.owner)}${due(a.due)}`));
-  if (s.openQuestions.length) out.push("", "*Open questions*", ...s.openQuestions.map((q) => `• ${q.text}`));
+    out.push("", "Action items", ...s.actionItems.map((a) => `• ${a.done ? "✅" : "☐"} ${a.text}${owner(a.owner)}${due(a.due)}`));
+  if (s.openQuestions.length) out.push("", "Open questions", ...s.openQuestions.map((q) => `• ${q.text}`));
   return out.join("\n");
 }
 

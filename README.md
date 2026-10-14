@@ -32,7 +32,7 @@ npm run dev            # same UI in a browser at http://localhost:1420, sample d
 |---|---|
 | Main window | Search, folders, tags, day groups. Click **Q4 roadmap sync**: click any time on a decision or action item to jump to that moment in the transcript. **Edit**, change a line, **Revert to original**. Rename a speaker with the pencil chip. Title, tags and folder are editable in place. |
 | Meeting states | **Vendor demo** (summarizing), **Imported: client kickoff** (transcript only, try *Generate summary*), **Call, Zoom, 8:50 AM** (interrupted: *Recover*), **Call, Teams, Oct 8** (failed: *Try again*). |
-| Copy / Export | **Copy for Slack**, **Export** sheet (Markdown, PDF, text, Notion). Saving is simulated until M7. |
+| Copy / Export | **Copy as text**, **Export** sheet (Markdown, PDF, text, Notion). Saving is simulated until M7. |
 | Ask | Toolbar **Ask**, or *Ask about this meeting* in the `…` menu. Try "What did we decide about pricing?" and click a citation. |
 | Settings | Gear icon or `Cmd+,`. Six tabs. Appearance override lives under General. |
 | Onboarding | **Screens → Onboarding → Restart onboarding**, or *Privacy → Delete everything*. |

@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useMeeting, useMeetings } from "../../data/hooks";
-import { copyText, toEmail, toSlack } from "../../lib/share";
+import { copyText, toEmail, toShareText } from "../../lib/share";
 import { useStore } from "../../data/StoreProvider";
 import type { Meeting, Ms } from "../../data/types";
 import { ExportSheet } from "./ExportSheet";
@@ -61,7 +61,7 @@ function MeetingView({ meeting, jumpTo }: { meeting: Meeting; jumpTo?: Ms }) {
   const [activeAt, setActiveAt] = useState<Ms | undefined>(jumpTo);
   const [jumpSeq, setJumpSeq] = useState(0);
   const [playing, setPlaying] = useState(false);
-  const [copied, setCopied] = useState<"slack" | "email">();
+  const [copied, setCopied] = useState<"text" | "email">();
   const [exporting, setExporting] = useState(false);
 
   const jump = (at: Ms) => {
@@ -88,8 +88,8 @@ function MeetingView({ meeting, jumpTo }: { meeting: Meeting; jumpTo?: Ms }) {
     return () => clearInterval(timer);
   }, [playing, meeting.durationMs]);
 
-  const copy = async (kind: "slack" | "email") => {
-    await copyText(kind === "slack" ? toSlack(meeting) : toEmail(meeting));
+  const copy = async (kind: "text" | "email") => {
+    await copyText(kind === "text" ? toShareText(meeting) : toEmail(meeting));
     setCopied(kind);
     setTimeout(() => setCopied(undefined), 2000);
   };
