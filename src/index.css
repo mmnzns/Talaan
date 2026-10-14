@@ -8,6 +8,16 @@
 @theme inline {
   --color-paper: var(--t-paper);
   --color-ink: var(--t-ink);
+  --color-edge: var(--t-edge-color);
+  --color-input: var(--t-input);
+  --color-hover: var(--t-hover);
+  --color-strong: var(--t-strong-bg);
+  --color-strong-fg: var(--t-strong-fg);
+  --color-mark: var(--t-mark);
+  --color-sp1: var(--t-sp1-bg); --color-sp1-fg: var(--t-sp1-fg); --color-sp1-line: var(--t-sp1-line);
+  --color-sp2: var(--t-sp2-bg); --color-sp2-fg: var(--t-sp2-fg); --color-sp2-line: var(--t-sp2-line);
+  --color-sp3: var(--t-sp3-bg); --color-sp3-fg: var(--t-sp3-fg); --color-sp3-line: var(--t-sp3-line);
+  --color-sp4: var(--t-sp4-bg); --color-sp4-fg: var(--t-sp4-fg); --color-sp4-line: var(--t-sp4-line);
   --color-surface: var(--t-surface);
   --color-raised: var(--t-raised);
   --color-sunken: var(--t-sunken);
