@@ -116,6 +116,11 @@ describe("TauriSettingsStore", () => {
     expect((await store.get()).theme).toBe("dark");
   });
 
+  it("an unknown active model id falls back to the default", async () => {
+    backend({ activeSpeechModel: "parakeet" });
+    expect((await new TauriSettingsStore().get()).activeSpeechModel).toBe("whisper-turbo");
+  });
+
   it("speech models come from disk, with live download progress", async () => {
     backend({});
     const store = new TauriSettingsStore();

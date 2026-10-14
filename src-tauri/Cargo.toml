@@ -64,3 +64,9 @@ objc2-core-audio = "0.3.2"
 objc2-core-audio-types = "0.3.2"
 objc2-core-foundation = "0.3.2"
 objc2-foundation = "0.3.2"
+
+# Dependencies are always optimized, even in debug builds: whisper.cpp (built through CMake, which follows
+# opt-level) and the Rust audio math (mel features, resampling) are 10x+ slower unoptimized, and the signed
+# debug app is what real calls are tested on. Talaan's own code stays fast to compile.
+[profile.dev.package."*"]
+opt-level = 3

@@ -50,7 +50,9 @@ export class TauriSettingsStore implements SettingsStore {
 
   async get(): Promise<Settings> {
     const [s, speechModels] = await Promise.all([this.load(), this.loadModels()]);
-    return structuredClone({ ...s, speechModels });
+    // A model id that no longer exists (older builds used other ids) means the default, as Rust does.
+    const activeSpeechModel = speechModels.some((m) => m.id === s.activeSpeechModel) ? s.activeSpeechModel : defaultSettings.activeSpeechModel;
+    return structuredClone({ ...s, speechModels, activeSpeechModel });
   }
 
   async update(patch: Partial<Settings>): Promise<Settings> {
