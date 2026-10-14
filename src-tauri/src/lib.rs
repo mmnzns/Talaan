@@ -2,7 +2,7 @@ mod commands;
 mod platform;
 mod storage;
 
-use commands::{meetings, settings, AppState, MEETINGS_CHANGED};
+use commands::{dev, meetings, settings, AppState, MEETINGS_CHANGED};
 use std::time::Duration;
 use tauri::Manager;
 
@@ -57,6 +57,8 @@ pub fn run() {
             settings::settings_get,
             settings::settings_set,
             settings::data_delete_all,
+            dev::dev_seed,
+            dev::dev_wipe,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Talaan");

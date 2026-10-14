@@ -3,6 +3,7 @@
 //! Some of the API (create, save_transcript, save_summary, set_status) is only called from M3 onward.
 #![allow(dead_code)]
 
+pub mod dev;
 pub mod edits;
 pub mod io;
 pub mod library;

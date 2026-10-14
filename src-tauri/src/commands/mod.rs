@@ -1,5 +1,6 @@
 //! Tauri commands. Thin wrappers: lock the storage, call it, tell every window what changed.
 
+pub mod dev;
 pub mod meetings;
 pub mod settings;
 

@@ -2,6 +2,7 @@ import { useSettings } from "../../data/hooks";
 import type { ThemePreference } from "../../lib/theme";
 import { navigate, routes } from "../../lib/router";
 import { Button, Label } from "../../ui";
+import { DevDataStage } from "./DevDataStage";
 import { KitGallery } from "./KitGallery";
 import { MenuBarStage, PromptsStage, RecordingStage } from "./SurfaceStages";
 
@@ -11,6 +12,7 @@ const SECTIONS: { id: string; label: string }[] = [
   { id: "recording", label: "Recording" },
   { id: "prompts", label: "Prompts" },
   { id: "kit", label: "UI kit" },
+  { id: "devdata", label: "Dev data" },
 ];
 
 /** Dev-only stage: every surface that is not a normal window (menu bar, banners, prompts), plus the UI kit. */
@@ -49,6 +51,7 @@ export function ScreensStage({ which }: { which?: string }) {
         </nav>
         <main className="min-w-0 flex-1 overflow-auto p-6">
           {current === "kit" && <KitGallery />}
+          {current === "devdata" && <DevDataStage />}
           {current === "menubar" && <MenuBarStage />}
           {current === "recording" && <RecordingStage />}
           {current === "prompts" && <PromptsStage />}
