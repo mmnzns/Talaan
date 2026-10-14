@@ -11,7 +11,7 @@ interface Props {
 
 export function Toolbar({ onImport }: Props) {
   const { settings } = useSettings();
-  const local = !settings || settings.summaryEngine === "local" || settings.summaryEngine === "ollama" || settings.summaryEngine === "lmstudio";
+  const local = !settings || settings.summaryEngine !== "byok";
 
   return (
     <header
