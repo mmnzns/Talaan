@@ -1,4 +1,6 @@
-import { useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { MockRecorderClient } from "../../data/recorder";
+import { useRecorder } from "../../data/useRecorder";
 import { navigate, routes } from "../../lib/router";
 import { openSettings } from "../../lib/windows";
 import { Button, Label, Switch, useToast } from "../../ui";
@@ -35,40 +37,70 @@ export function MenuBarStage() {
 
 export function RecordingStage() {
   const toast = useToast();
+  const client = useMemo(() => new MockRecorderClient({ startAtMs: 768_000 }), []);
+  const rec = useRecorder(client);
   const [speakers, setSpeakers] = useState(true);
-  const [notice, setNotice] = useState<string>();
-  const [instance, setInstance] = useState(0);
+
+  useEffect(() => {
+    client.start();
+    return () => {
+      client.stop();
+    };
+  }, [client]);
 
   return (
     <div>
       <Caption
         title="Recording"
-        note="The menu bar popover while a call is being recorded. Timer, levels, pause, marks and quick notes all work here."
+        note="The menu bar popover while a call is being recorded (simulated here). The toolbar Record button runs the real recorder."
       />
       <div className="flex flex-wrap items-start gap-8">
-        <RecordingPopover
-          key={instance}
-          app="Zoom"
-          startAtMs={768_000}
-          onBuiltInSpeakers={speakers}
-          notice={notice}
-          onStop={() => {
-            toast("Saved. Transcribing now…");
-            navigate(routes.meetings());
-          }}
-          onDiscard={() => {
-            toast("Recording discarded");
-            setInstance((n) => n + 1);
-          }}
-        />
+        {rec.state.state !== "idle" ? (
+          <RecordingPopover
+            state={rec.state}
+            levels={rec.levels}
+            notice={rec.notice}
+            app="Zoom"
+            onPause={() => client.pause()}
+            onResume={() => client.resume()}
+            onMark={(n) => client.mark(n)}
+            onStop={() => {
+              client.stop();
+              toast("Saved. Transcribing now…");
+            }}
+            onDiscard={() => {
+              client.discard();
+              toast("Recording discarded");
+            }}
+            onOpenSettings={() => toast("Opens System Settings")}
+            onDismissNotice={rec.clearNotice}
+          />
+        ) : (
+          <Button variant="primary" onClick={() => client.start()}>
+            Start again
+          </Button>
+        )}
         <div className="flex max-w-xs flex-col gap-3">
           <Label>try a state</Label>
           <label className="flex items-center justify-between gap-3 text-[13px]">
             On the MacBook speakers
-            <Switch aria-label="On the MacBook speakers" checked={speakers} onChange={setSpeakers} />
+            <Switch
+              aria-label="On the MacBook speakers"
+              checked={speakers}
+              onChange={(v) => {
+                setSpeakers(v);
+                client.setSpeakers(v);
+              }}
+            />
           </label>
-          <Button onClick={() => setNotice("Switched to MacBook Pro Microphone. Recording continues.")}>Simulate AirPods disconnecting</Button>
-          <Button onClick={() => setNotice(undefined)}>Clear notice</Button>
+          <Button onClick={() => client.notice({ text: "Switched to MacBook Pro Microphone. Recording continues.", kind: "info" })}>Simulate AirPods disconnecting</Button>
+          <Button
+            onClick={() =>
+              client.notice({ text: "No call audio is coming through. If the other people are talking, allow Talaan under Screen & System Audio Recording.", kind: "warning", settingsPane: "system-audio" })
+            }
+          >
+            Simulate blocked system audio
+          </Button>
         </div>
       </div>
     </div>

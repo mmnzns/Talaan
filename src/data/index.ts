@@ -1,5 +1,6 @@
 import { inTauri } from "../lib/windows";
 import { MockMeetingStore } from "./mock/store";
+import { MockRecorderClient, TauriRecorderClient, type RecorderClient } from "./recorder";
 import { MockSettingsStore } from "./mock/settings";
 import { TauriMeetingStore } from "./tauri/meetingStore";
 import { TauriSettingsStore } from "./tauri/settingsStore";
@@ -16,4 +17,5 @@ const empty = typeof location !== "undefined" && location.search.includes("mock=
 
 export const meetingStore: MeetingStore = real ? new TauriMeetingStore() : new MockMeetingStore(new Date(), { empty });
 export const settingsStore: SettingsStore = real ? new TauriSettingsStore() : new MockSettingsStore();
+export const recorderClient: RecorderClient = real ? new TauriRecorderClient() : new MockRecorderClient();
 export const usingRealStorage = real;
