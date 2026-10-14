@@ -1,17 +1,22 @@
-import { useEffect, useState } from "react";
-import { invoke } from "@tauri-apps/api/core";
+import { useEffect } from "react";
+import { useSettings } from "./data/hooks";
+import { applyTheme } from "./lib/theme";
+import { useRoute } from "./lib/router";
+import { MainWindow } from "./screens/Shell/MainWindow";
+import { OnboardingScreen } from "./screens/Onboarding/OnboardingScreen";
+import { SettingsWindow } from "./screens/Settings/SettingsWindow";
+import { ScreensStage } from "./screens/Stage/ScreensStage";
 
 export default function App() {
-  const [platform, setPlatform] = useState("");
+  const route = useRoute();
+  const { settings } = useSettings();
+  const theme = settings?.theme;
 
-  useEffect(() => {
-    invoke<string>("platform_name").then(setPlatform).catch(() => setPlatform("browser"));
-  }, []);
+  useEffect(() => (theme ? applyTheme(theme) : undefined), [theme]);
 
-  return (
-    <main className="flex h-full flex-col items-center justify-center gap-3">
-      <h1 className="text-4xl font-bold tracking-tight">Talaan</h1>
-      <p className="font-mono text-sm text-subtle">1.0.0-dev · {platform}</p>
-    </main>
-  );
+  if (!settings) return null;
+  if (route.name === "settings") return <SettingsWindow tab={route.tab} />;
+  if (route.name === "screens") return <ScreensStage which={route.which} />;
+  if (!settings.onboardingDone) return <OnboardingScreen />;
+  return <MainWindow route={route} />;
 }
