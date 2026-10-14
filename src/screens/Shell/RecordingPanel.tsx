@@ -3,6 +3,8 @@ import { recorderClient } from "../../data";
 import { describeError } from "../../data/errors";
 import { useRecorder } from "../../data/useRecorder";
 import { navigate, routes } from "../../lib/router";
+import { inTauri } from "../../lib/windows";
+import { invoke } from "@tauri-apps/api/core";
 import { Button, Sheet, useToast } from "../../ui";
 import { RecordingPopover } from "../Recording/RecordingPopover";
 
@@ -25,10 +27,13 @@ export function useRecording() {
     if (rec.notice && !open && active) toast(rec.notice.text);
   }, [rec.notice]);
 
+  // In the app the recording controls live in the menu bar popover; in a browser, a floating panel.
+  const showControls = () => (inTauri() ? void invoke("tray_toggle") : setOpen(true));
+
   const begin = async () => {
     try {
       await recorderClient.start();
-      setOpen(true);
+      showControls();
     } catch (e) {
       toast(describeError(e));
     }
@@ -36,7 +41,8 @@ export function useRecording() {
 
   const start = async () => {
     if (active) {
-      setOpen((o) => !o);
+      if (inTauri()) void invoke("tray_toggle");
+      else setOpen((o) => !o);
       return;
     }
     const perm = await recorderClient.microphonePermission().catch(() => "unknown" as const);

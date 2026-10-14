@@ -25,8 +25,17 @@ export function MainWindow({ route }: { route: Route }) {
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
-  // A clicked "Summary ready" notification opens its meeting.
-  useEffect(() => (inTauri() ? onEvent<string>("open-meeting", (id) => navigate(routes.meeting(id))) : undefined), []);
+  // Other windows ask the main window to do things: open a meeting (notification click, menu bar), record
+  // (the menu bar when the microphone needs explaining), open Settings (menu bar icon's menu).
+  useEffect(() => {
+    if (!inTauri()) return;
+    const offs = [
+      onEvent<string>("open-meeting", (id) => navigate(routes.meeting(id))),
+      onEvent("record-request", () => recording.start()),
+      onEvent("open-settings", () => void openSettings()),
+    ];
+    return () => offs.forEach((off) => off());
+  }, [recording.start]);
 
   const selectedId = route.name === "meeting" ? route.id : route.name === "ask" ? route.meetingId : undefined;
 

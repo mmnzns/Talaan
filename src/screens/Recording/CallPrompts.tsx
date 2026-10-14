@@ -33,9 +33,10 @@ export function Nudge({ app = "Zoom", onRecord, onDismiss }: { app?: string; onR
 }
 
 /** Banner shown when an app set to Always starts recording automatically. */
-export function AlwaysBanner({ app = "Zoom", onStop, onChangeRule }: { app?: string; onStop: () => void; onChangeRule: () => void }) {
+export function AlwaysBanner({ app = "Zoom", elapsedMs, onStop, onChangeRule }: { app?: string; elapsedMs?: number; onStop: () => void; onChangeRule: () => void }) {
   const { settings } = useSettings();
-  const elapsed = useElapsed(4000, true);
+  const demo = useElapsed(4000, elapsedMs === undefined);
+  const elapsed = elapsedMs ?? demo;
   const [copied, setCopied] = useState(false);
   return (
     <div
@@ -72,11 +73,30 @@ export function AlwaysBanner({ app = "Zoom", onStop, onChangeRule }: { app?: str
 }
 
 /** "Call ended. Stop recording?" with a 30 second auto-stop. */
-export function CallEndedPrompt({ app = "Zoom", recordedMs = 42 * 60_000 + 10_000, seconds = 30, onStop, onKeep }: { app?: string; recordedMs?: number; seconds?: number; onStop: () => void; onKeep: () => void }) {
+export function CallEndedPrompt({
+  app = "Zoom",
+  recordedMs = 42 * 60_000 + 10_000,
+  seconds = 30,
+  total = 30,
+  onStop,
+  onKeep,
+  onTimeout,
+}: {
+  app?: string;
+  recordedMs?: number;
+  /** Seconds left on the countdown. */
+  seconds?: number;
+  /** Length of the whole countdown, for the bar. */
+  total?: number;
+  onStop: () => void;
+  onKeep: () => void;
+  /** What happens at zero; defaults to `onStop`. (In the app Talaan stops by itself, so the window just waits.) */
+  onTimeout?: () => void;
+}) {
   const [running, setRunning] = useState(true);
   const { left, reset } = useCountdown(seconds, running, () => {
     setRunning(false);
-    onStop();
+    (onTimeout ?? onStop)();
   });
   return (
     <div role="alertdialog" aria-label="Call ended" className={cn(card, "flex flex-col gap-2 px-4 py-3.5")}>
@@ -86,7 +106,7 @@ export function CallEndedPrompt({ app = "Zoom", recordedMs = 42 * 60_000 + 10_00
       <span className="text-[17px] font-extrabold tracking-[-0.02em]">Call ended. Stop recording?</span>
       <div className="flex items-center gap-2" role="timer" aria-label={`Stops in ${left} seconds`}>
         <span aria-hidden="true" className="h-[5px] flex-1 overflow-hidden rounded-full bg-line">
-          <span className="block h-full bg-ink transition-[width] duration-1000 ease-linear" style={{ width: `${(left / seconds) * 100}%` }} />
+          <span className="block h-full bg-ink transition-[width] duration-1000 ease-linear" style={{ width: `${(left / total) * 100}%` }} />
         </span>
         <Label>{running ? `stops in ${left}s` : "stopped"}</Label>
       </div>

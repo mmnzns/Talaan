@@ -22,6 +22,8 @@ export const defaultSettings: Settings = {
     },
     { id: "facetime", name: "FaceTime", note: "Personal calls", rule: "never" },
     { id: "webex", name: "Webex", note: "Webex app", rule: "ask" },
+    { id: "discord", name: "Discord", note: "Voice channels and calls", rule: "ask" },
+    { id: "whatsapp", name: "WhatsApp", note: "Voice and video calls", rule: "ask" },
   ],
   ignoredApps: [
     { name: "Parlato", why: "dictation" },

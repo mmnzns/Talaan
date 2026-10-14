@@ -131,10 +131,14 @@ pub fn setup(app: &AppHandle) {
                     std::thread::sleep(Duration::from_secs(1));
                     let settings = app.state::<AppState>().lock().settings_get().ok().flatten().unwrap_or(Value::Null);
                     let (enabled, rules, ignored) = rules_from(&settings);
-                    let mut apps: Vec<&str> = crate::platform::macos::mic_users::mic_users()
-                        .iter()
-                        .filter_map(|u| identify(&u.bundle_id, &u.path, &ignored).map(|(id, _)| id))
-                        .collect();
+                    let mut users = crate::platform::macos::mic_users::mic_users();
+                    // Debug builds: `dev-mic-users.txt` in the data folder adds pretend mic users (one bundle id
+                    // per line), so the rules can be exercised end to end without a real call.
+                    #[cfg(debug_assertions)]
+                    if let Ok(fake) = std::fs::read_to_string(app.state::<AppState>().lock().root().join("dev-mic-users.txt")) {
+                        users.extend(fake.lines().filter(|l| !l.trim().is_empty()).map(|b| crate::platform::macos::mic_users::MicUser { pid: 0, bundle_id: b.trim().into(), path: String::new() }));
+                    }
+                    let mut apps: Vec<&str> = users.iter().filter_map(|u| identify(&u.bundle_id, &u.path, &ignored).map(|(id, _)| id)).collect();
                     apps.sort();
                     apps.dedup();
                     let rule = |a: &str| rules.iter().find(|(id, _)| id == a).map(|(_, r)| *r).unwrap_or(Rule::Ask);

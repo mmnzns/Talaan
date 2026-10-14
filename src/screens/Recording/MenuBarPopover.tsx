@@ -9,10 +9,14 @@ import { Button, Label, useToast } from "../../ui";
 
 interface Props {
   onStart: () => void;
+  /** Open a meeting in the main window (the popover is its own window in the app). */
+  onOpenMeeting?: (id: string) => void;
+  onOpenApp?: () => void;
+  onQuit?: () => void;
 }
 
 /** Menu bar popover when nothing is recording. */
-export function MenuBarPopover({ onStart }: Props) {
+export function MenuBarPopover({ onStart, onOpenMeeting, onOpenApp, onQuit }: Props) {
   const store = useStore();
   const toast = useToast();
   const { meetings } = useMeetings();
@@ -56,7 +60,7 @@ export function MenuBarPopover({ onStart }: Props) {
             <div key={m.id} className={item}>
               <button
                 type="button"
-                onClick={() => navigate(routes.meeting(m.id))}
+                onClick={() => (onOpenMeeting ? onOpenMeeting(m.id) : navigate(routes.meeting(m.id)))}
                 className="flex min-w-0 flex-1 cursor-pointer flex-col border-0 bg-transparent p-0 text-left font-[inherit] text-ink"
               >
                 <span className="truncate font-semibold">{m.title}</span>
@@ -78,13 +82,13 @@ export function MenuBarPopover({ onStart }: Props) {
         })}
       </div>
       <div className="flex border-t-[1.5px] border-line p-1.5">
-        <button type="button" onClick={() => navigate(routes.meetings())} className={`${item} flex-1 cursor-pointer border-0 bg-transparent font-[inherit] text-[13px] font-semibold text-ink`}>
+        <button type="button" onClick={() => (onOpenApp ? onOpenApp() : navigate(routes.meetings()))} className={`${item} flex-1 cursor-pointer border-0 bg-transparent font-[inherit] text-[13px] font-semibold text-ink`}>
           Open Talaan
         </button>
         <button type="button" onClick={() => openSettings()} className={`${item} cursor-pointer border-0 bg-transparent font-[inherit] text-[13px] text-ink`}>
           Settings
         </button>
-        <button type="button" onClick={() => toast("Talaan would quit here")} className={`${item} cursor-pointer border-0 bg-transparent font-[inherit] text-[13px] text-ink`}>
+        <button type="button" onClick={() => (onQuit ? onQuit() : toast("Talaan would quit here"))} className={`${item} cursor-pointer border-0 bg-transparent font-[inherit] text-[13px] text-ink`}>
           Quit
         </button>
       </div>

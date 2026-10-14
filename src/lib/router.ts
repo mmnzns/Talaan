@@ -5,7 +5,9 @@ export type Route =
   | { name: "meeting"; id: string; t?: number }
   | { name: "ask"; meetingId?: string }
   | { name: "screens"; which?: string }
-  | { name: "settings"; tab: string };
+  | { name: "settings"; tab: string }
+  | { name: "tray" }
+  | { name: "prompt" };
 
 export function parseRoute(hash: string): Route {
   const [pathPart, queryPart = ""] = hash.replace(/^#/, "").split("?");
@@ -25,6 +27,10 @@ export function parseRoute(hash: string): Route {
       return { name: "screens", which: seg[1] };
     case "settings":
       return { name: "settings", tab: seg[1] ?? "general" };
+    case "tray":
+      return { name: "tray" };
+    case "prompt":
+      return { name: "prompt" };
     default:
       return { name: "meetings" };
   }
