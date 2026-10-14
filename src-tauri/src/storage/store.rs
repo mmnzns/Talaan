@@ -86,6 +86,7 @@ impl Storage {
                         progress: None,
                         error: None,
                         transcription: None,
+                        summary_error: None,
                         extra: Default::default(),
                     };
                     write_json_atomic(&meetings.join(&id).join(META), &file)?;
@@ -179,6 +180,7 @@ impl Storage {
             marks: file.marks.clone(),
             pauses: file.pauses.clone(),
             error: file.error.clone(),
+            summary_error: file.summary_error.clone(),
             item: list_item(&file),
         })
     }

@@ -43,6 +43,7 @@ sha2 = "0.10.9"
 strsim = "0.11.1"
 whatlang = "0.18.0"
 talaan-llm-protocol = { path = "llm-protocol" }
+keyring = "3.6.3"
 
 
 # Read the optimization guideline for more details: https://tauri.app/concept/size/#cargo-configuration
@@ -58,6 +59,7 @@ tempfile = "3.27.0"
 tiny_http = "0.12.0"
 
 [target.'cfg(target_os = "macos")'.dependencies]
+keyring = { version = "3.6.3", features = ["apple-native"] }
 whisper-rs = { version = "0.16.0", features = ["metal"] }
 block2 = "0.6.2"
 mach2 = "0.7.0"

@@ -61,6 +61,7 @@ impl Storage {
             progress: m.item.progress,
             error: m.error.clone(),
             transcription: None,
+            summary_error: None,
             extra: Default::default(),
         };
         write_json_atomic(&dir.join(META), &file)?;

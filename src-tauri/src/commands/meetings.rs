@@ -3,7 +3,7 @@ use crate::storage::model::{Meeting, MeetingListItem, Summary};
 use crate::storage::library::Folder;
 use crate::storage::{Filter, StorageError};
 use serde::Deserialize;
-use tauri::{AppHandle, State};
+use tauri::{AppHandle, Manager, State};
 
 #[derive(Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
@@ -49,6 +49,7 @@ pub fn meetings_set_pinned(app: AppHandle, state: State<AppState>, id: String, p
 #[tauri::command]
 pub fn meetings_delete(app: AppHandle, state: State<AppState>, t: State<super::transcriber::TranscriberState>, id: String) -> CmdResult<()> {
     t.worker.cancel_if_running(&id);
+    app.state::<super::summarizer::SummarizerState>().cancel_if_running(&id);
     changed(&app, state.lock().delete_meeting(&id))
 }
 
@@ -97,8 +98,4 @@ pub fn tags_list(state: State<AppState>) -> CmdResult<Vec<String>> {
     state.lock().list_tags()
 }
 
-// Needs the summarizer (M5). Until then the UI shows a short notice.
-#[tauri::command]
-pub fn meetings_generate_summary(_id: String) -> CmdResult<()> {
-    Err(StorageError::NotYetAvailable("Writing summaries needs the summarizer (M5)".into()))
-}
+

@@ -7,6 +7,8 @@ use std::path::{Path, PathBuf};
 pub enum EngineKind {
     Parakeet,
     Whisper,
+    /// A GGUF model for the local summary AI (run by the `talaan-llm` helper).
+    Llm,
 }
 
 #[derive(Debug)]

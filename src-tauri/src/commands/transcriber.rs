@@ -30,6 +30,17 @@ impl TranscriberState {
     pub fn enqueue(&self, id: &str) {
         self.worker.enqueue(id);
     }
+    pub fn data_dir(&self) -> &std::path::Path {
+        &self.data_dir
+    }
+    pub fn download_progress(&self, id: &str) -> Option<f32> {
+        self.downloads.lock().unwrap_or_else(|e| e.into_inner()).get(id).map(|d| d.1)
+    }
+}
+
+/// A downloadable model: speech (incl. the voice detection file) or local summary AI.
+fn find_any(id: &str) -> Option<&'static crate::transcriber::models::ModelInfo> {
+    find(id).filter(|m| m.id != VAD.id).or_else(|| crate::summarizer::models::find_llm(id))
 }
 
 fn err(message: String) -> StorageError {
@@ -47,6 +58,10 @@ pub fn setup(app: &AppHandle, data_dir: PathBuf) {
         load_engine: Box::new(|m, dir, gpu| engine::load(m, dir, gpu)),
         load_detector: Box::new(|path| Vad::load(path).map(|v| Box::new(v) as Box<dyn Detector + Send>)),
         reuse_roots: None,
+        transcribed: {
+            let app = app.clone();
+            Arc::new(move |id: &str| app.state::<super::summarizer::SummarizerState>().enqueue(id))
+        },
     });
     let waiting = state.lock().ids_with_status(MeetingStatus::Transcribing).unwrap_or_default();
     for id in &waiting {
@@ -137,6 +152,7 @@ pub fn models_list(state: State<AppState>, t: State<TranscriberState>) -> CmdRes
                 engine: match m.engine {
                     crate::transcriber::models::EngineKind::Parakeet => "parakeet",
                     crate::transcriber::models::EngineKind::Whisper => "whisper",
+                    crate::transcriber::models::EngineKind::Llm => "llm",
                 },
                 size_mb: m.size().div_ceil(1_000_000),
                 speed: m.speed,
@@ -158,7 +174,8 @@ struct DownloadProgress {
 /// Downloads a model (and the voice detection file if it's missing) in the background.
 #[tauri::command]
 pub fn models_download(app: AppHandle, t: State<TranscriberState>, id: String) -> CmdResult<()> {
-    let model = find(&id).filter(|m| m.id != VAD.id).ok_or_else(|| err(format!("No model called {id}")))?;
+    let model = find_any(&id).ok_or_else(|| err(format!("No model called {id}")))?;
+    let is_llm = model.engine == crate::transcriber::models::EngineKind::Llm;
     let cancel = Arc::new(AtomicBool::new(false));
     {
         let mut d = t.downloads.lock().unwrap_or_else(|e| e.into_inner());
@@ -181,7 +198,7 @@ pub fn models_download(app: AppHandle, t: State<TranscriberState>, id: String) -
                 let _ = app.emit("model-download", DownloadProgress { id: id.clone(), progress: p });
             }
         };
-        let vad_missing = store.locate(&VAD) == Location::Missing && ModelStore::new(&data_dir, true).locate(&VAD) == Location::Missing;
+        let vad_missing = !is_llm && store.locate(&VAD) == Location::Missing && ModelStore::new(&data_dir, true).locate(&VAD) == Location::Missing;
         let mut result = Ok(());
         if vad_missing {
             result = download_model(&VAD, &store.own_dir(&VAD), &cancel, &mut |_| {});
@@ -192,6 +209,7 @@ pub fn models_download(app: AppHandle, t: State<TranscriberState>, id: String) -
         app.state::<TranscriberState>().downloads.lock().unwrap_or_else(|e| e.into_inner()).remove(&id);
         let _ = app.emit(MODELS_CHANGED, ());
         match result {
+            Ok(()) if is_llm => super::summarizer::requeue_waiting(&app),
             Ok(()) => requeue_waiting_for_model(&app),
             Err(DownloadError::Cancelled) => {}
             Err(e) => {
@@ -214,7 +232,7 @@ pub fn models_cancel(app: AppHandle, t: State<TranscriberState>, id: String) -> 
 /// Deletes Talaan's own copy of a model (never another app's).
 #[tauri::command]
 pub fn models_delete(app: AppHandle, t: State<TranscriberState>, id: String) -> CmdResult<()> {
-    let model = find(&id).filter(|m| m.id != VAD.id).ok_or_else(|| err(format!("No model called {id}")))?;
+    let model = find_any(&id).ok_or_else(|| err(format!("No model called {id}")))?;
     let dir = ModelStore::new(&t.data_dir, false).own_dir(model);
     if dir.exists() {
         std::fs::remove_dir_all(&dir).map_err(|e| err(format!("Couldn't delete the model: {e}")))?;

@@ -25,6 +25,7 @@ pub fn settings_set(app: AppHandle, state: State<AppState>, value: Value) -> Cmd
 #[tauri::command]
 pub fn data_delete_all(app: AppHandle, state: State<AppState>) -> CmdResult<()> {
     state.lock().delete_all_data()?;
+    crate::keys::clear_all();
     notify(&app, MEETINGS_CHANGED);
     notify(&app, SETTINGS_CHANGED);
     app.restart()

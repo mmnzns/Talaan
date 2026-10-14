@@ -47,6 +47,8 @@ pub struct Deps {
     pub load_detector: Box<DetectorLoader>,
     /// Extra folders to look for models in (tests); the real app uses the defaults.
     pub reuse_roots: Option<Vec<PathBuf>>,
+    /// Called with a meeting id once its transcript is saved (it is then `summarizing`).
+    pub transcribed: Arc<dyn Fn(&str) + Send + Sync>,
 }
 
 #[derive(Default)]
@@ -202,8 +204,8 @@ fn process(deps: &Deps, id: &str, loaded: &mut Option<Loaded>, cancel: &AtomicBo
                 return fail(deps, id, "failed", "Couldn't save the transcript.".into());
             }
             let _ = s.update_meeting_file(id, |f| {
-                f.status = MeetingStatus::Ready;
-                f.progress = None;
+                f.status = MeetingStatus::Summarizing;
+                f.progress = Some(0.0);
                 f.error = None;
                 if let Some(lang) = &out.language {
                     f.language = lang.clone();
@@ -217,6 +219,8 @@ fn process(deps: &Deps, id: &str, loaded: &mut Option<Loaded>, cancel: &AtomicBo
                     finished_at: chrono::Local::now().fixed_offset().to_rfc3339(),
                 });
             });
+            drop(s);
+            (deps.transcribed)(id);
         }
         // Cancelled means the meeting is being deleted; leave it alone.
         Err(PipelineError::Cancelled) => {}
@@ -288,6 +292,7 @@ mod tests {
             load_engine: Box::new(move |_, _, _| Ok(Box::new(Echoes(text)))),
             load_detector: Box::new(|_| Ok(Box::new(WholeTrack))),
             reuse_roots: Some(vec![]),
+            transcribed: Arc::new(|_| {}),
         });
         (dir, storage, f.id, worker)
     }
@@ -308,8 +313,7 @@ mod tests {
         wait(&worker);
         let s = storage.lock().unwrap();
         let m = s.get_meeting(&id).unwrap();
-        assert_eq!(m.item.status, MeetingStatus::Ready);
-        assert_eq!(m.item.progress, None);
+        assert_eq!(m.item.status, MeetingStatus::Summarizing);
         assert_eq!(m.transcript.len(), 1);
         assert_eq!(m.transcript[0].speaker, "them:0");
         assert_eq!(m.transcript[0].text, "Hello from the other side.");

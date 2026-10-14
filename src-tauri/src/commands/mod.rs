@@ -4,6 +4,7 @@ pub mod dev;
 pub mod meetings;
 pub mod recorder;
 pub mod settings;
+pub mod summarizer;
 pub mod transcriber;
 
 use crate::storage::{Storage, StorageError};

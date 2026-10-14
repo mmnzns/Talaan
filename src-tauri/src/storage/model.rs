@@ -134,6 +134,9 @@ pub struct MeetingFile {
     pub error: Option<ProcessingError>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub transcription: Option<TranscriptionInfo>,
+    /// Why there is no summary (meeting is `ready`, transcript-only): no engine set up, or the AI failed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub summary_error: Option<ProcessingError>,
     #[serde(flatten)]
     pub extra: Map<String, Value>,
 }
@@ -198,6 +201,9 @@ pub struct Meeting {
     /// Why processing failed (status `failed`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub error: Option<ProcessingError>,
+    /// Why there is no summary yet.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub summary_error: Option<ProcessingError>,
 }
 
 #[cfg(test)]

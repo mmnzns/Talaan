@@ -146,6 +146,7 @@ pub(crate) mod tests {
             marks: vec![Mark { id: "k0".into(), at: 65_000, note: Some("pricing decision".into()) }],
             pauses: vec![],
             error: None,
+            summary_error: None,
         }
     }
 

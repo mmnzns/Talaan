@@ -1,4 +1,5 @@
 mod commands;
+mod keys;
 mod platform;
 mod recorder;
 mod storage;
@@ -28,6 +29,7 @@ pub fn run() {
             store.apply_retention(chrono::Utc::now())?;
             app.manage(AppState::new(store));
             rec_cmd::setup(app.handle());
+            commands::summarizer::setup(app.handle(), root.clone());
             commands::transcriber::setup(app.handle(), root);
 
             let handle = app.handle().clone();
@@ -73,7 +75,11 @@ pub fn run() {
             commands::transcriber::models_download,
             commands::transcriber::models_cancel,
             commands::transcriber::models_delete,
-            meetings::meetings_generate_summary,
+            commands::summarizer::meetings_generate_summary,
+            commands::summarizer::llm_models_list,
+            commands::summarizer::keys_save,
+            commands::summarizer::keys_clear,
+            commands::summarizer::local_server_models,
             settings::settings_get,
             settings::settings_set,
             settings::data_delete_all,
