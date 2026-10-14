@@ -1,7 +1,10 @@
 //! Meeting storage: plain folders on disk, readable without Talaan. No Tauri types in here.
 
+pub mod edits;
 pub mod io;
+pub mod markdown;
 pub mod model;
+pub mod ops;
 pub mod paths;
 pub mod retention;
 pub mod store;

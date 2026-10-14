@@ -13,6 +13,7 @@ pub const TRANSCRIPT_MD: &str = "transcript.md";
 pub const SUMMARY: &str = "summary.json";
 pub const SUMMARY_EDITED: &str = "summary.edited.json";
 pub const SUMMARY_MD: &str = "summary.md";
+pub const SUMMARY_DONE: &str = "summary.done.json";
 pub const LIBRARY: &str = "library.json";
 pub const SETTINGS: &str = "settings.json";
 

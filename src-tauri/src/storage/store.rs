@@ -154,6 +154,16 @@ impl Storage {
                 s
             }),
         };
+        let summary = match summary {
+            Some(mut s) => {
+                let done = self.read_done(id)?;
+                for a in &mut s.action_items {
+                    a.done = done.get(&a.id).copied().unwrap_or(false);
+                }
+                Some(s)
+            }
+            None => None,
+        };
         let has_audio = self.has_audio(&dir, &file);
         Ok(Meeting {
             audio_kept_until: self.audio_kept_until(&file, has_audio),
@@ -172,13 +182,15 @@ impl Storage {
     /// Writes the transcript the transcriber produced. Never rewritten after that; edits go beside it.
     pub fn save_transcript(&self, id: &str, lines: &[TranscriptLine]) -> Result<()> {
         let dir = self.dir(id)?;
-        write_json_atomic(&dir.join(TRANSCRIPT), &lines)
+        write_json_atomic(&dir.join(TRANSCRIPT), &lines)?;
+        self.regenerate_markdown(id)
     }
 
     /// Writes the summary the summarizer produced.
     pub fn save_summary(&self, id: &str, summary: &Summary) -> Result<()> {
         let dir = self.dir(id)?;
-        write_json_atomic(&dir.join(SUMMARY), summary)
+        write_json_atomic(&dir.join(SUMMARY), summary)?;
+        self.regenerate_markdown(id)
     }
 
     pub fn list_meetings(&self, filter: &Filter) -> Result<Vec<MeetingListItem>> {
