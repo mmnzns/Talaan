@@ -3,9 +3,13 @@ import type { ThemePreference } from "../../lib/theme";
 import { navigate, routes } from "../../lib/router";
 import { Button, Label } from "../../ui";
 import { KitGallery } from "./KitGallery";
+import { MenuBarStage, PromptsStage, RecordingStage } from "./SurfaceStages";
 
 const SECTIONS: { id: string; label: string }[] = [
   { id: "onboarding", label: "Onboarding" },
+  { id: "menubar", label: "Menu bar" },
+  { id: "recording", label: "Recording" },
+  { id: "prompts", label: "Prompts" },
   { id: "kit", label: "UI kit" },
 ];
 
@@ -45,6 +49,9 @@ export function ScreensStage({ which }: { which?: string }) {
         </nav>
         <main className="min-w-0 flex-1 overflow-auto p-6">
           {current === "kit" && <KitGallery />}
+          {current === "menubar" && <MenuBarStage />}
+          {current === "recording" && <RecordingStage />}
+          {current === "prompts" && <PromptsStage />}
           {current === "onboarding" && (
             <div className="flex max-w-md flex-col gap-3">
               <h2 className="m-0 text-lg font-extrabold">Onboarding</h2>
