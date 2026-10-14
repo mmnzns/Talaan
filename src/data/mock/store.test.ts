@@ -1,0 +1,111 @@
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { MockMeetingStore } from "./store";
+
+const NOW = new Date("2026-10-14T20:00:00");
+let store: MockMeetingStore;
+
+beforeEach(() => {
+  store = new MockMeetingStore(NOW);
+});
+
+describe("listMeetings", () => {
+  it("returns meetings newest first", async () => {
+    const list = await store.listMeetings();
+    const times = list.map((m) => Date.parse(m.startedAt));
+    expect(times).toEqual([...times].sort((a, b) => b - a));
+  });
+
+  it("filters by folder", async () => {
+    const list = await store.listMeetings({ folderId: "clients" });
+    expect(list.map((m) => m.id)).toEqual(["m-import"]);
+  });
+
+  it("filters by tag", async () => {
+    const list = await store.listMeetings({ tag: "1:1" });
+    expect(list.map((m) => m.id)).toEqual(["m-1on1"]);
+  });
+
+  it("searches titles, summaries and transcripts", async () => {
+    expect((await store.listMeetings({ query: "vendor demo" })).map((m) => m.id)).toEqual(["m-vendor"]);
+    expect((await store.listMeetings({ query: "bigger leak" })).map((m) => m.id)).toContain("m-q4");
+    expect((await store.listMeetings({ query: "harbour" })).map((m) => m.id)).toEqual(["m-import"]);
+    expect(await store.listMeetings({ query: "zzzz-nothing" })).toEqual([]);
+  });
+});
+
+describe("edits", () => {
+  it("renames a meeting", async () => {
+    await store.renameMeeting("m-q4", "Roadmap");
+    expect((await store.getMeeting("m-q4"))?.title).toBe("Roadmap");
+  });
+
+  it("pins and deletes", async () => {
+    await store.setPinned("m-q4", true);
+    expect((await store.getMeeting("m-q4"))?.pinned).toBe(true);
+    await store.deleteMeeting("m-q4");
+    expect(await store.getMeeting("m-q4")).toBeUndefined();
+  });
+
+  it("renames a speaker everywhere it is displayed", async () => {
+    await store.renameSpeaker("m-q4", "them:1", "Dana R.");
+    expect((await store.getMeeting("m-q4"))?.speakers["them:1"]).toBe("Dana R.");
+  });
+
+  it("edits a transcript line and a summary, then reverts both", async () => {
+    const before = await store.getMeeting("m-q4");
+    const line = before!.transcript[0];
+    await store.updateTranscriptLine("m-q4", line.id, "Fixed text");
+    await store.updateSummary("m-q4", { ...before!.summary!, recap: "New recap", edited: true });
+
+    const edited = await store.getMeeting("m-q4");
+    expect(edited!.transcript[0]).toMatchObject({ text: "Fixed text", edited: true });
+    expect(edited!.summary).toMatchObject({ recap: "New recap", edited: true });
+
+    await store.revertEdits("m-q4");
+    const reverted = await store.getMeeting("m-q4");
+    expect(reverted!.transcript[0]).toMatchObject({ text: line.text, edited: false });
+    expect(reverted!.summary).toMatchObject({ recap: before!.summary!.recap, edited: false });
+  });
+
+  it("sets tags and moves between folders", async () => {
+    await store.setTags("m-q4", ["roadmap", "q4"]);
+    await store.moveToFolder("m-q4", "clients");
+    const m = await store.getMeeting("m-q4");
+    expect(m?.tags).toEqual(["roadmap", "q4"]);
+    expect(m?.folderId).toBe("clients");
+    expect(await store.listTags()).toContain("q4");
+  });
+});
+
+describe("folders", () => {
+  it("counts meetings per folder", async () => {
+    const folders = await store.listFolders();
+    expect(folders.find((f) => f.id === "work")?.count).toBe(4);
+    expect(folders.find((f) => f.id === "clients")?.count).toBe(1);
+  });
+});
+
+describe("ask", () => {
+  it("answers a pricing question with citations", async () => {
+    const a = await store.ask("What did we decide about pricing?", { kind: "all" });
+    expect(a.points.length).toBeGreaterThan(0);
+    expect(a.points.every((p) => p.citation)).toBe(true);
+  });
+
+  it("returns an empty answer when nothing matches", async () => {
+    const a = await store.ask("Tell me about unicorns", { kind: "all" });
+    expect(a.points).toEqual([]);
+  });
+});
+
+describe("subscribe", () => {
+  it("fires on change and stops after unsubscribe", async () => {
+    const fn = vi.fn();
+    const off = store.subscribe(fn);
+    await store.renameMeeting("m-q4", "A");
+    expect(fn).toHaveBeenCalledTimes(1);
+    off();
+    await store.renameMeeting("m-q4", "B");
+    expect(fn).toHaveBeenCalledTimes(1);
+  });
+});
