@@ -23,7 +23,8 @@ export class TauriSettingsStore implements SettingsStore {
   private async load(): Promise<Settings> {
     if (!this.state) {
       const stored = await call<Partial<Settings> | null>("settings_get");
-      this.state = { ...structuredClone(defaultSettings), ...(stored ?? {}) };
+      // No settings file yet means this is the first launch: show onboarding.
+      this.state = stored ? { ...structuredClone(defaultSettings), ...stored } : { ...structuredClone(defaultSettings), onboardingDone: false };
     }
     return this.state;
   }

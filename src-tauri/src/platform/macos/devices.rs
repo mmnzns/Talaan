@@ -21,12 +21,10 @@ pub fn on_builtin_speakers() -> bool {
     }
 }
 
-/// Something is playing through the default output (used to tell "silent call" from "blocked tap").
-pub fn output_is_running() -> bool {
-    default_output_device()
-        .and_then(|d| get::<u32>(d, kAudioDevicePropertyDeviceIsRunningSomewhere, kAudioObjectPropertyScopeGlobal))
-        .map(|v| v != 0)
-        .unwrap_or(false)
+/// Another app is playing sound (used to tell "the call is quiet" from "the tap is blocked").
+/// Not the output device's running state: Talaan's own tap keeps that running.
+pub fn others_playing() -> bool {
+    other_process_playing()
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -77,7 +75,7 @@ mod tests {
     #[test]
     fn device_queries_do_not_fail() {
         let _ = on_builtin_speakers();
-        let _ = output_is_running();
+        let _ = others_playing();
     }
 
     #[test]

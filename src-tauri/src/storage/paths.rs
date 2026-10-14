@@ -46,7 +46,11 @@ pub fn new_meeting_id(started: &DateTime<FixedOffset>) -> String {
 
 /// `Call, Zoom, Oct 14, 2:30 PM`. Replaced by a title from the summary once it exists.
 pub fn placeholder_title(app_label: &str, started: &DateTime<FixedOffset>) -> String {
-    format!("Call, {app_label}, {}", started.format("%b %-d, %-I:%M %p"))
+    let when = started.format("%b %-d, %-I:%M %p");
+    match app_label.trim() {
+        "" | "Call" => format!("Call, {when}"),
+        label => format!("Call, {label}, {when}"),
+    }
 }
 
 #[cfg(test)]
@@ -78,6 +82,7 @@ mod tests {
         assert_eq!(placeholder_title("Zoom", &at()), "Call, Zoom, Oct 14, 2:30 PM");
         let morning = DateTime::parse_from_rfc3339("2026-10-04T09:05:00-07:00").unwrap();
         assert_eq!(placeholder_title("Slack huddle", &morning), "Call, Slack huddle, Oct 4, 9:05 AM");
+        assert_eq!(placeholder_title("Call", &at()), "Call, Oct 14, 2:30 PM", "manual recordings don't repeat the word");
     }
 
     #[test]

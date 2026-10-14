@@ -12,6 +12,10 @@ describe("formatTime", () => {
 });
 
 describe("formatDuration", () => {
+  it("uses seconds under a minute", () => {
+    expect(formatDuration(3_683)).toBe("4 s");
+    expect(formatDuration(200)).toBe("1 s");
+  });
   it("uses minutes under an hour", () => {
     expect(formatDuration(2_520_000)).toBe("42 min");
   });

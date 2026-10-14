@@ -12,6 +12,7 @@ export function formatTime(ms: Ms): string {
 
 /** 2_520_000 -> "42 min"; 7_500_000 -> "2 h 5 min" */
 export function formatDuration(ms: Ms): string {
+  if (ms < 59_500) return `${Math.max(1, Math.round(ms / 1000))} s`;
   const minutes = Math.max(1, Math.round(ms / 60_000));
   if (minutes < 60) return `${minutes} min`;
   const h = Math.floor(minutes / 60);

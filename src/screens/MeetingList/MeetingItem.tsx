@@ -43,7 +43,11 @@ export function MeetingItem({ meeting, selected }: { meeting: MeetingListItem; s
         <span className="min-w-0 flex-1 truncate">{meeting.title}</span>
         {meeting.pinned && <Pin size={12} aria-label="Audio pinned" className="flex-none" />}
       </span>
-      {meeting.status === "failed" ? (
+      {meeting.status === "recording" ? (
+        <span className={cn("flex items-center gap-1.5 font-mono text-[11px]", selected ? "text-strong-fg" : "text-ok")}>
+          <span className="size-1.5 animate-pulse rounded-full bg-current" /> Recording now
+        </span>
+      ) : meeting.status === "failed" ? (
         <span className={cn("flex items-center gap-1 font-mono text-[11px]", selected ? "text-strong-fg" : "text-warn-fg")}>
           <AlertTriangle size={12} aria-hidden="true" /> Processing failed
         </span>

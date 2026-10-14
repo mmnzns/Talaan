@@ -4,8 +4,8 @@ import { copyText, toEmail, toSlack } from "../../lib/share";
 import { useStore } from "../../data/StoreProvider";
 import type { Meeting, Ms } from "../../data/types";
 import { ExportSheet } from "./ExportSheet";
-import { navigate, routes } from "../../lib/router";
 import { Button } from "../../ui";
+import { useStartRecording } from "../Shell/RecordingPanel";
 import { MeetingHeader } from "./MeetingHeader";
 import { StatusBanner } from "./StatusBanner";
 import { SummaryCard } from "./SummaryCard";
@@ -31,6 +31,7 @@ export function MeetingPane({ id, jumpTo }: { id?: string; jumpTo?: Ms }) {
 
 function EmptyPane() {
   const { meetings, loading } = useMeetings();
+  const startRecording = useStartRecording();
   if (loading) return null;
   const first = meetings.length === 0;
   return (
@@ -44,7 +45,7 @@ function EmptyPane() {
         </p>
         {first && (
           <div className="mt-2 flex gap-2">
-            <Button variant="primary" raised onClick={() => navigate(routes.screens("recording"))}>
+            <Button variant="primary" raised onClick={() => startRecording?.()}>
               Record a call
             </Button>
           </div>

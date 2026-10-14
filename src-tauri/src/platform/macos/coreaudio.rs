@@ -59,6 +59,34 @@ pub fn device_name(device: AudioObjectID) -> String {
     get_string(device, kAudioObjectPropertyName, kAudioObjectPropertyScopeGlobal).unwrap_or_else(|_| "Unknown device".into())
 }
 
+/// Reads an array-of-IDs property (process list, device list, ...).
+pub fn get_ids(object: AudioObjectID, selector: AudioObjectPropertySelector) -> Result<Vec<AudioObjectID>, String> {
+    let a = addr(selector, kAudioObjectPropertyScopeGlobal);
+    let mut size: u32 = 0;
+    check(unsafe { AudioObjectGetPropertyDataSize(object, NonNull::from(&a), 0, std::ptr::null(), NonNull::from(&mut size)) }, "AudioObjectGetPropertyDataSize")?;
+    let mut ids = vec![0 as AudioObjectID; size as usize / size_of::<AudioObjectID>()];
+    if ids.is_empty() {
+        return Ok(ids);
+    }
+    check(
+        unsafe { AudioObjectGetPropertyData(object, NonNull::from(&a), 0, std::ptr::null(), NonNull::from(&mut size), NonNull::new(ids.as_mut_ptr()).unwrap().cast::<c_void>()) },
+        "AudioObjectGetPropertyData(list)",
+    )?;
+    ids.truncate(size as usize / size_of::<AudioObjectID>());
+    Ok(ids)
+}
+
+/// True when some process other than Talaan is playing audio right now.
+pub fn other_process_playing() -> bool {
+    let own = std::process::id() as i32;
+    let Ok(processes) = get_ids(kAudioObjectSystemObject as u32, kAudioHardwarePropertyProcessObjectList) else { return false };
+    processes.into_iter().any(|p| {
+        let pid: i32 = get(p, kAudioProcessPropertyPID, kAudioObjectPropertyScopeGlobal).unwrap_or(own);
+        let running: u32 = get(p, kAudioProcessPropertyIsRunningOutput, kAudioObjectPropertyScopeGlobal).unwrap_or(0);
+        pid != own && running != 0
+    })
+}
+
 /// Talaan's own Core Audio process object, so the tap can leave our own sounds out.
 pub fn own_process_object() -> Option<AudioObjectID> {
     let pid: i32 = std::process::id() as i32;
@@ -81,6 +109,12 @@ pub fn own_process_object() -> Option<AudioObjectID> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_process_list_can_be_read() {
+        assert!(!get_ids(kAudioObjectSystemObject as u32, kAudioHardwarePropertyProcessObjectList).unwrap().is_empty());
+        let _ = other_process_playing();
+    }
 
     #[test]
     fn the_default_output_device_has_a_uid_and_name() {

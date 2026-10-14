@@ -283,14 +283,14 @@ pub fn setup(app: &AppHandle) {
             // Digital silence from the tap while something plays = system audio is blocked.
             #[cfg(target_os = "macos")]
             {
-                let playing = platform::macos::devices::output_is_running();
+                let playing = platform::macos::devices::others_playing();
                 if them == 0.0 && playing && !paused {
                     let since = *silent_since.get_or_insert_with(Instant::now);
                     if !warned && since.elapsed() > Duration::from_secs(10) {
                         warned = true;
                         notice(&app, "No call audio is coming through. If the other people are talking, allow Talaan under Screen & System Audio Recording.".into(), "warning", Some("system-audio"));
                     }
-                } else if them > 0.0 {
+                } else if them > 0.0 || paused || !playing {
                     silent_since = None;
                 }
             }

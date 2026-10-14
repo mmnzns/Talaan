@@ -27,7 +27,7 @@ function useBars(level: number, active: boolean) {
   const history = useRef<number[]>(Array(BARS).fill(0));
   const [bars, setBars] = useState<number[]>(history.current);
   useEffect(() => {
-    history.current = [active ? level : 0, ...history.current.slice(0, BARS - 1)];
+    history.current = active ? [level, ...history.current.slice(0, BARS - 1)] : Array(BARS).fill(0);
     setBars([...history.current]);
   }, [level, active]);
   return bars;

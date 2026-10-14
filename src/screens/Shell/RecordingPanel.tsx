@@ -1,10 +1,14 @@
-import { useEffect, useState } from "react";
+import { createContext, useContext, useEffect, useState } from "react";
 import { recorderClient } from "../../data";
 import { describeError } from "../../data/errors";
 import { useRecorder } from "../../data/useRecorder";
 import { navigate, routes } from "../../lib/router";
 import { Button, Sheet, useToast } from "../../ui";
 import { RecordingPopover } from "../Recording/RecordingPopover";
+
+/** Lets screens inside the main window start a recording (e.g. the empty state's "Record a call"). */
+export const RecordingContext = createContext<{ start: () => void } | null>(null);
+export const useStartRecording = () => useContext(RecordingContext)?.start;
 
 /**
  * The recording controls until M6 moves them into the real menu bar: a floating panel under the toolbar.

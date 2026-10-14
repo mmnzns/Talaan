@@ -76,6 +76,11 @@ describe("TauriSettingsStore", () => {
     expect(s.retention).toBe("7d");
   });
 
+  it("treats a missing settings file as the first launch", async () => {
+    invoke.mockResolvedValue(null);
+    expect((await new TauriSettingsStore().get()).onboardingDone).toBe(false);
+  });
+
   it("saves the whole object on update and tells subscribers", async () => {
     invoke.mockImplementation((cmd: string) => Promise.resolve(cmd === "settings_get" ? null : undefined));
     const store = new TauriSettingsStore();

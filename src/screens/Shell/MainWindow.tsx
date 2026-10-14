@@ -5,7 +5,7 @@ import { AskScreen } from "../Ask/AskScreen";
 import { ImportSheet } from "../Shell/ImportSheet";
 import { MeetingList } from "../MeetingList/MeetingList";
 import { MeetingPane } from "../Meeting/MeetingPane";
-import { useRecording } from "./RecordingPanel";
+import { RecordingContext, useRecording } from "./RecordingPanel";
 import { Toolbar } from "./Toolbar";
 
 export function MainWindow({ route }: { route: Route }) {
@@ -26,6 +26,7 @@ export function MainWindow({ route }: { route: Route }) {
   const selectedId = route.name === "meeting" ? route.id : route.name === "ask" ? route.meetingId : undefined;
 
   return (
+    <RecordingContext.Provider value={{ start: recording.start }}>
     <div className="flex h-full flex-col bg-paper">
       <Toolbar onImport={() => setImporting(true)} onRecord={recording.start} recording={recording.state} />
       <div className="flex min-h-0 flex-1">
@@ -43,5 +44,6 @@ export function MainWindow({ route }: { route: Route }) {
       <ImportSheet open={importing} onClose={() => setImporting(false)} />
       {recording.panel}
     </div>
+    </RecordingContext.Provider>
   );
 }
