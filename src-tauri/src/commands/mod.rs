@@ -2,6 +2,7 @@
 
 pub mod calls;
 pub mod dev;
+pub mod import;
 pub mod meetings;
 pub mod recorder;
 pub mod settings;

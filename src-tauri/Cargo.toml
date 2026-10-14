@@ -43,6 +43,7 @@ reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"
 sha2 = "0.10.9"
 strsim = "0.11.1"
 whatlang = "0.18.0"
+symphonia = { version = "0.5.5", features = ["aac", "isomp4", "mp3", "aiff", "alac", "caf"] }
 talaan-llm-protocol = { path = "llm-protocol" }
 keyring = "3.6.3"
 

@@ -12,6 +12,7 @@ import { Toolbar } from "./Toolbar";
 
 export function MainWindow({ route }: { route: Route }) {
   const [importing, setImporting] = useState(false);
+  const [dropped, setDropped] = useState<string>();
   const recording = useRecording();
 
   useEffect(() => {
@@ -37,6 +38,24 @@ export function MainWindow({ route }: { route: Route }) {
     return () => offs.forEach((off) => off());
   }, [recording.start]);
 
+  // Drop an audio file anywhere on the window to import it.
+  useEffect(() => {
+    if (!inTauri()) return;
+    let off: (() => void) | undefined;
+    void import("@tauri-apps/api/webview").then(({ getCurrentWebview }) =>
+      getCurrentWebview()
+        .onDragDropEvent((e) => {
+          if (e.payload.type === "over") setImporting(true);
+          if (e.payload.type === "drop" && e.payload.paths[0]) {
+            setImporting(true);
+            setDropped(e.payload.paths[0]);
+          }
+        })
+        .then((unlisten) => (off = unlisten)),
+    );
+    return () => off?.();
+  }, []);
+
   const selectedId = route.name === "meeting" ? route.id : route.name === "ask" ? route.meetingId : undefined;
 
   return (
@@ -55,7 +74,14 @@ export function MainWindow({ route }: { route: Route }) {
           )}
         </main>
       </div>
-      <ImportSheet open={importing} onClose={() => setImporting(false)} />
+      <ImportSheet
+        open={importing}
+        dropped={dropped}
+        onClose={() => {
+          setImporting(false);
+          setDropped(undefined);
+        }}
+      />
       {recording.panel}
     </div>
     </RecordingContext.Provider>

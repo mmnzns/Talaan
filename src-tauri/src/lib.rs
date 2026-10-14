@@ -1,5 +1,6 @@
 mod calls;
 mod commands;
+mod importer;
 mod keys;
 mod platform;
 mod recorder;
@@ -78,6 +79,8 @@ pub fn run() {
             meetings::meetings_delete_audio,
             meetings::meetings_reveal,
             meetings::export_write,
+            commands::import::meetings_import,
+            commands::import::import_extensions,
             rec_cmd::meetings_recover,
             commands::calls::calls_prompt,
             commands::calls::calls_accept,
