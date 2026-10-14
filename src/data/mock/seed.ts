@@ -1,4 +1,4 @@
-import type { Folder, Meeting, TranscriptLine } from "../types";
+import type { Folder, Meeting, Summary, TranscriptLine } from "../types";
 
 const mmss = (s: string): number => {
   const [m, sec] = s.split(":").map(Number);
@@ -243,4 +243,24 @@ export function seedMeetings(now: Date = new Date()): Meeting[] {
   };
 
   return [q4, vendor, oneOnOne, retro, imported, failed, recover];
+}
+
+export function sampleTranscript(prefix: string): TranscriptLine[] {
+  return lines(prefix, [
+    ["00:00", "me", "Okay, I think we are recording. Can you hear me?"],
+    ["00:05", "them:0", "Loud and clear. Let us get started."],
+    ["00:20", "me", "First item is the timeline for the next release."],
+  ]);
+}
+
+export function sampleSummary(): Summary {
+  return {
+    recap:
+      "A short call to confirm the timeline for the next release. Both sides agreed to start with the release plan and follow up in writing.",
+    decisions: [{ id: "gen-d0", text: "Start with the release timeline.", at: 20_000 }],
+    actionItems: [{ id: "gen-a0", text: "Send the release plan in writing", owner: "Me", at: 20_000, done: false }],
+    openQuestions: [],
+    engine: "Local AI",
+    edited: false,
+  };
 }

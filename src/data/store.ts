@@ -25,6 +25,12 @@ export interface MeetingStore {
   updateTranscriptLine(id: MeetingId, lineId: string, text: string): Promise<void>;
   updateSummary(id: MeetingId, summary: Summary): Promise<void>;
   revertEdits(id: MeetingId): Promise<void>;
+  /** Interrupted recording: keep what was saved and process it (M2 recovery). */
+  recoverMeeting(id: MeetingId): Promise<void>;
+  /** Failed processing: run transcription again. */
+  retryProcessing(id: MeetingId): Promise<void>;
+  /** Transcript-only meeting: write the summary now (M5). */
+  generateSummary(id: MeetingId): Promise<void>;
   renameSpeaker(id: MeetingId, speaker: Speaker, name: string): Promise<void>;
   setTags(id: MeetingId, tags: string[]): Promise<void>;
   moveToFolder(id: MeetingId, folderId?: string): Promise<void>;

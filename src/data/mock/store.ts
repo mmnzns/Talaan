@@ -10,7 +10,7 @@ import type {
   Summary,
 } from "../types";
 import { mockAsk } from "./askAnswers";
-import { seedFolders, seedMeetings } from "./seed";
+import { sampleSummary, sampleTranscript, seedFolders, seedMeetings } from "./seed";
 
 const clone = <T>(v: T): T => structuredClone(v);
 
@@ -125,6 +125,50 @@ export class MockMeetingStore implements MeetingStore {
         line.edited = false;
       }
       if (orig?.summary) m.summary = { ...clone(orig.summary), edited: false };
+    });
+  }
+
+  /** Fakes background work: ramps progress, then applies the result. */
+  private simulate(id: MeetingId, status: "transcribing" | "summarizing", done: (m: Meeting) => void) {
+    this.mutate(id, (m) => {
+      m.status = status;
+      m.progress = 0;
+    });
+    let p = 0;
+    const timer = setInterval(() => {
+      p += 0.25;
+      if (p >= 1 || !this.meetings.has(id)) {
+        clearInterval(timer);
+        this.mutate(id, (m) => {
+          done(m);
+          m.progress = undefined;
+        });
+      } else {
+        this.mutate(id, (m) => (m.progress = p));
+      }
+    }, 600);
+  }
+
+  private finishTranscription = (m: Meeting) => {
+    m.status = "ready";
+    m.transcript = sampleTranscript(m.id);
+    m.speakers = { me: "Me", "them:0": "Them" };
+    this.originals.set(m.id, { summary: undefined, lines: new Map(m.transcript.map((l) => [l.id, l.text])) });
+  };
+
+  async recoverMeeting(id: MeetingId) {
+    this.simulate(id, "transcribing", this.finishTranscription);
+  }
+
+  async retryProcessing(id: MeetingId) {
+    this.simulate(id, "transcribing", this.finishTranscription);
+  }
+
+  async generateSummary(id: MeetingId) {
+    this.simulate(id, "summarizing", (m) => {
+      m.status = "ready";
+      m.summary = sampleSummary();
+      this.originals.get(id)!.summary = clone(m.summary);
     });
   }
 

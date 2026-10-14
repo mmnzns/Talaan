@@ -5,6 +5,7 @@ const NOW = new Date("2026-10-14T20:00:00");
 let store: MockMeetingStore;
 
 beforeEach(() => {
+  vi.useRealTimers();
   store = new MockMeetingStore(NOW);
 });
 
@@ -82,6 +83,36 @@ describe("folders", () => {
     const folders = await store.listFolders();
     expect(folders.find((f) => f.id === "work")?.count).toBe(4);
     expect(folders.find((f) => f.id === "clients")?.count).toBe(1);
+  });
+});
+
+describe("background work", () => {
+  beforeEach(() => vi.useFakeTimers());
+
+  it("generates a summary for a transcript-only meeting", async () => {
+    expect((await store.getMeeting("m-import"))?.summary).toBeUndefined();
+    await store.generateSummary("m-import");
+    expect((await store.getMeeting("m-import"))?.status).toBe("summarizing");
+    await vi.advanceTimersByTimeAsync(3000);
+    const m = await store.getMeeting("m-import");
+    expect(m?.status).toBe("ready");
+    expect(m?.summary?.recap).toBeTruthy();
+    expect(m?.progress).toBeUndefined();
+  });
+
+  it("recovers an interrupted recording into a transcript", async () => {
+    await store.recoverMeeting("m-recover");
+    expect((await store.getMeeting("m-recover"))?.status).toBe("transcribing");
+    await vi.advanceTimersByTimeAsync(3000);
+    const m = await store.getMeeting("m-recover");
+    expect(m?.status).toBe("ready");
+    expect(m?.transcript.length).toBeGreaterThan(0);
+  });
+
+  it("retries a failed meeting", async () => {
+    await store.retryProcessing("m-failed");
+    await vi.advanceTimersByTimeAsync(3000);
+    expect((await store.getMeeting("m-failed"))?.status).toBe("ready");
   });
 });
 
