@@ -58,7 +58,8 @@ impl LocalAi {
             });
             let mut r = Running { child, stdin, events };
             send(&mut r.stdin, &Request::Ping)?;
-            match r.events.recv_timeout(Duration::from_secs(15)) {
+            // Generous: the first launch after an install or update waits on macOS checking the new binary.
+            match r.events.recv_timeout(Duration::from_secs(60)) {
                 Ok(Event::Ready) => {}
                 Ok(Event::Error { message }) => return Err(message),
                 _ => return Err("the local AI didn't start".into()),

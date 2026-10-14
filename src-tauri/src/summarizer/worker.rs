@@ -181,6 +181,8 @@ fn process(deps: &Deps, id: &str, cancel: &AtomicBool) {
                 }
                 title = f.title.clone();
             });
+            // The .md files carry the title, which may have just changed.
+            let _ = s.regenerate_markdown(id);
             drop(s);
             (deps.summarized)(id, &title);
         }
