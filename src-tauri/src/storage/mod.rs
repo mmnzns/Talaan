@@ -7,6 +7,7 @@ pub mod markdown;
 pub mod model;
 pub mod ops;
 pub mod paths;
+pub mod recovery;
 pub mod retention;
 pub mod store;
 
