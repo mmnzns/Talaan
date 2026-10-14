@@ -30,6 +30,11 @@ pub fn run() {
             app.manage(AppState::new(store));
             rec_cmd::setup(app.handle());
             commands::summarizer::setup(app.handle(), root.clone());
+            #[cfg(target_os = "macos")]
+            {
+                let handle = app.handle().clone();
+                platform::macos::notify::setup(move |id| commands::summarizer::open_meeting(&handle, &id));
+            }
             commands::transcriber::setup(app.handle(), root);
 
             let handle = app.handle().clone();

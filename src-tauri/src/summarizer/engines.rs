@@ -382,4 +382,38 @@ mod tests {
         assert_eq!(compatible_base("http://localhost:11434"), "http://localhost:11434/v1");
         assert_eq!(compatible_base("localhost:1234/v1/"), "http://localhost:1234/v1");
     }
+
+    /// The whole HTTP path against a fake OpenAI-compatible server: request shape, auth, reply, parsing.
+    #[test]
+    fn a_summary_round_trips_through_an_openai_compatible_server() {
+        use crate::summarizer::prompt::tests::{line, meeting};
+        use crate::summarizer::summarize::summarize;
+        let server = tiny_http::Server::http("127.0.0.1:0").unwrap();
+        let base = format!("http://{}/v1", server.server_addr().to_ip().unwrap());
+        let seen = std::sync::Arc::new(std::sync::Mutex::new(vec![]));
+        let seen2 = seen.clone();
+        std::thread::spawn(move || {
+            for mut req in server.incoming_requests() {
+                let mut body = String::new();
+                req.as_reader().read_to_string(&mut body).unwrap();
+                let auth = req.headers().iter().find(|h| h.field.equiv("Authorization")).map(|h| h.value.to_string());
+                seen2.lock().unwrap().push((req.url().to_string(), auth, body));
+                let content = r#"{\"title\":\"Onboarding plan\",\"recap\":\"We chose onboarding first.\",\"decisions\":[{\"text\":\"Pricing moves to Q1.\",\"time\":\"01:00\"}],\"action_items\":[],\"open_questions\":[]}"#;
+                let reply = format!(r#"{{"choices":[{{"message":{{"role":"assistant","content":"{content}"}}}}]}}"#);
+                let _ = req.respond(tiny_http::Response::from_string(reply).with_header("Content-Type: application/json".parse::<tiny_http::Header>().unwrap()));
+            }
+        });
+        let mut e = HttpEngine { provider: Provider::Compatible, base, key: Some("sk-local".into()), model: "qwen".into(), context: LOCAL_CONTEXT, label: "Test server".into() };
+        let m = meeting(vec![line("l0", 60_000, "them:1", "Pricing moves to Q1.")]);
+        let out = summarize(&m, &mut e, "en", &AtomicBool::new(false), &mut |_| {}).unwrap();
+        assert_eq!(out.summary.recap, "We chose onboarding first.");
+        assert_eq!(out.summary.decisions[0].at, Some(60_000));
+        assert_eq!(out.summary.engine, "Test server");
+        let seen = seen.lock().unwrap();
+        assert_eq!(seen[0].0, "/v1/chat/completions");
+        assert_eq!(seen[0].1.as_deref(), Some("Bearer sk-local"));
+        assert!(seen[0].2.contains("Dana Reyes: Pricing moves to Q1."));
+        // Only text goes out: no audio, no file paths.
+        assert!(!seen[0].2.contains(".wav"));
+    }
 }

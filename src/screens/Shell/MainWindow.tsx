@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import type { Route } from "../../lib/router";
-import { openSettings } from "../../lib/windows";
+import { navigate, routes } from "../../lib/router";
+import { inTauri, openSettings } from "../../lib/windows";
+import { onEvent } from "../../data/tauri/invoke";
 import { AskScreen } from "../Ask/AskScreen";
 import { ImportSheet } from "../Shell/ImportSheet";
 import { MeetingList } from "../MeetingList/MeetingList";
@@ -22,6 +24,9 @@ export function MainWindow({ route }: { route: Route }) {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, []);
+
+  // A clicked "Summary ready" notification opens its meeting.
+  useEffect(() => (inTauri() ? onEvent<string>("open-meeting", (id) => navigate(routes.meeting(id))) : undefined), []);
 
   const selectedId = route.name === "meeting" ? route.id : route.name === "ask" ? route.meetingId : undefined;
 

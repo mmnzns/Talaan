@@ -101,8 +101,28 @@ pub fn setup(app: &AppHandle, data_dir: PathBuf) {
     app.manage(SummarizerState { worker });
 }
 
-/// The "Summary ready" notification (Task 8 makes it native with click-to-open).
-pub fn notify_ready(_app: &AppHandle, _id: &str, _title: &str) {}
+pub const OPEN_MEETING: &str = "open-meeting";
+
+/// The "Summary ready" notification, unless turned off in Settings › General.
+pub fn notify_ready(app: &AppHandle, id: &str, title: &str) {
+    let wanted = app.state::<AppState>().lock().settings_get().ok().flatten().and_then(|s| s["notifySummaryReady"].as_bool()).unwrap_or(true);
+    #[cfg(target_os = "macos")]
+    if wanted {
+        crate::platform::macos::notify::post(id, "Summary ready", title);
+    }
+    #[cfg(not(target_os = "macos"))]
+    let _ = (wanted, id, title);
+}
+
+/// Clicking a "Summary ready" notification: bring Talaan forward on that meeting.
+pub fn open_meeting(app: &AppHandle, id: &str) {
+    if let Some(w) = app.get_webview_window("main") {
+        let _ = w.unminimize();
+        let _ = w.show();
+        let _ = w.set_focus();
+    }
+    let _ = app.emit(OPEN_MEETING, id);
+}
 
 /// Re-queues meetings that are waiting for a summary engine (after the local model finishes downloading).
 pub fn requeue_waiting(app: &AppHandle) {

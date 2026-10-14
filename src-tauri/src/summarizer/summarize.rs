@@ -202,3 +202,39 @@ pub(crate) mod tests {
         assert!(e.prompts.is_empty());
     }
 }
+
+/// A 2-hour call (the planning fixture 13 times) through the real local model: parts, merge, time.
+/// Build the helper first (`scripts/build-llm-helper.sh`), then
+/// `TALAAN_LLM_MODEL=<gguf> cargo test --release long_summary_smoke -- --ignored --nocapture`
+#[cfg(test)]
+mod long_smoke {
+    use super::*;
+    use crate::storage::model::TranscriptLine;
+    use crate::summarizer::engines::LocalEngine;
+    use crate::summarizer::local::{LocalAi, HELPER};
+    use crate::summarizer::prompt::tests::meeting;
+
+    #[test]
+    #[ignore]
+    fn long_summary_smoke() {
+        let fixture: serde_json::Value = serde_json::from_str(include_str!("../../../fixtures/summary.planning-call.json")).unwrap();
+        let one: Vec<TranscriptLine> = serde_json::from_value(fixture["transcript"].clone()).unwrap();
+        let span = one.last().unwrap().end + 5_000;
+        let lines: Vec<TranscriptLine> = (0..13u64)
+            .flat_map(|k| one.iter().map(move |l| TranscriptLine { id: format!("r{k}{}", l.id), at: l.at + k * span, end: l.end + k * span, ..l.clone() }))
+            .collect();
+        let mut m = meeting(lines);
+        m.speakers = serde_json::from_value(fixture["speakers"].clone()).unwrap();
+        m.item.duration_ms = 13 * span;
+        let exe = std::env::current_exe().unwrap().parent().unwrap().parent().unwrap().join(HELPER);
+        let model_path = std::path::PathBuf::from(std::env::var("TALAAN_LLM_MODEL").unwrap());
+        let mut engine = LocalEngine { ai: LocalAi::new(&exe), model_path, model_name: "test".into() };
+        let t = std::time::Instant::now();
+        let out = summarize(&m, &mut engine, "en", &AtomicBool::new(false), &mut |p| eprintln!("progress {:.0}% at {:.0}s", p * 100.0, t.elapsed().as_secs_f32())).unwrap();
+        eprintln!("== {} min call, {} parts, {:.0}s", m.item.duration_ms / 60_000, out.parts, t.elapsed().as_secs_f32());
+        eprintln!("title: {:?}\nrecap: {}", out.title, out.summary.recap);
+        for d in &out.summary.decisions { eprintln!("D {:?} {}", d.at.map(|a| a / 1000), d.text); }
+        for a in &out.summary.action_items { eprintln!("A {:?} {} | {:?} | {:?}", a.at.map(|a| a / 1000), a.text, a.owner, a.due); }
+        for q in &out.summary.open_questions { eprintln!("Q {:?} {}", q.at.map(|a| a / 1000), q.text); }
+    }
+}
