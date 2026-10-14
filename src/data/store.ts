@@ -29,6 +29,7 @@ export interface MeetingStore {
   setTags(id: MeetingId, tags: string[]): Promise<void>;
   moveToFolder(id: MeetingId, folderId?: string): Promise<void>;
   listFolders(): Promise<Folder[]>;
+  createFolder(name: string): Promise<Folder>;
   listTags(): Promise<string[]>;
   ask(question: string, scope: AskScope): Promise<AskAnswer>;
   /** Fires on any change. Returns an unsubscribe function. */

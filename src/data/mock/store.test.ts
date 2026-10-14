@@ -85,6 +85,23 @@ describe("folders", () => {
   });
 });
 
+describe("createFolder", () => {
+  it("adds a folder with a unique id", async () => {
+    const a = await store.createFolder("Q4 Planning");
+    const b = await store.createFolder("Q4 Planning");
+    expect(a.id).toBe("q4-planning");
+    expect(b.id).toBe("q4-planning-2");
+    expect((await store.listFolders()).map((f) => f.id)).toContain("q4-planning");
+  });
+});
+
+describe("empty store", () => {
+  it("starts with no meetings", async () => {
+    const empty = new MockMeetingStore(NOW, { empty: true });
+    expect(await empty.listMeetings()).toEqual([]);
+  });
+});
+
 describe("ask", () => {
   it("answers a pricing question with citations", async () => {
     const a = await store.ask("What did we decide about pricing?", { kind: "all" });

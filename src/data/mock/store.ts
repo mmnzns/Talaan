@@ -27,6 +27,7 @@ function toListItem(m: Meeting): MeetingListItem {
     folderId: m.folderId,
     tags: [...m.tags],
     peopleCount: m.peopleCount,
+    pinned: m.pinned,
   };
 }
 
@@ -34,10 +35,14 @@ function toListItem(m: Meeting): MeetingListItem {
 export class MockMeetingStore implements MeetingStore {
   private meetings = new Map<MeetingId, Meeting>();
   private originals = new Map<MeetingId, { summary?: Summary; lines: Map<string, string> }>();
+  private folders = seedFolders.map((f) => ({ ...f }));
   private listeners = new Set<() => void>();
 
-  constructor(private now: Date = new Date()) {
-    for (const m of seedMeetings(now)) {
+  constructor(
+    private now: Date = new Date(),
+    options: { empty?: boolean } = {},
+  ) {
+    for (const m of options.empty ? [] : seedMeetings(now)) {
       this.meetings.set(m.id, m);
       this.originals.set(m.id, {
         summary: m.summary ? clone(m.summary) : undefined,
@@ -136,10 +141,20 @@ export class MockMeetingStore implements MeetingStore {
   }
 
   async listFolders(): Promise<Folder[]> {
-    return seedFolders.map((f) => ({
+    return this.folders.map((f) => ({
       ...f,
       count: [...this.meetings.values()].filter((m) => m.folderId === f.id).length,
     }));
+  }
+
+  async createFolder(name: string): Promise<Folder> {
+    const base = name.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "folder";
+    let id = base;
+    for (let n = 2; this.folders.some((f) => f.id === id); n++) id = `${base}-${n}`;
+    const folder = { id, name: name.trim() };
+    this.folders.push(folder);
+    this.emit();
+    return { ...folder, count: 0 };
   }
 
   async listTags(): Promise<string[]> {

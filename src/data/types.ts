@@ -74,12 +74,12 @@ export interface MeetingListItem {
   folderId?: string;
   tags: string[];
   peopleCount: number;
+  pinned: boolean; // keep this meeting's audio past the retention window
 }
 
 export interface Meeting extends MeetingListItem {
   language: string; // BCP-47, e.g. "en"
   audioKeptUntil?: string; // ISO; undefined = audio deleted or not kept
-  pinned: boolean;
   calendarEvent?: { title: string; attendees: string[] };
   speakers: Partial<Record<Speaker, string>>; // display names: { me: "Me", "them:1": "Dana Reyes" }
   summary?: Summary; // undefined = transcript-only ("Generate summary")
