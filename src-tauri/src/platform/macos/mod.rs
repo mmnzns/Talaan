@@ -3,6 +3,7 @@
 pub mod clock;
 pub mod coreaudio;
 pub mod devices;
+pub mod mic_users;
 pub mod notify;
 pub mod permissions;
 pub mod power;
