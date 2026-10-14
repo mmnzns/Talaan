@@ -87,3 +87,24 @@ TDD for every pure piece (timeline, resampler wrapper, WAV repair, session state
 ## Out of scope for M3
 
 Transcription (M4), call detection, nudge/banner/real menu bar (M6), echo dedupe (M4), import audio (M7).
+
+## Outcome (2026-10-14)
+
+Tasks 1–12 done; task 13 checks run on the signed debug app. 120 Rust tests (2 ignored hardware smoke tests), 71 TS tests.
+
+Verified on this Mac (macOS 27.0.1, signed with the Parlato certificate):
+
+- **Permissions:** the first Record shows the mic prompt with Talaan's usage text; the system audio prompt follows on the first tap. Talaan is then listed under *System Audio Recording Only* (not Screen Recording). Both deep links (`Privacy_Microphone`, `Privacy_AudioCapture`) open the right pane.
+- **Both sides:** `say` through the speakers lands on `them.wav`, the mic on `me.wav`; the mic lags the system track by about 20 ms. The tap records before the volume control (output volume 19% still gave near full-scale samples).
+- **Crash:** `kill -9` mid-recording → relaunch shows "Recording interrupted · Recover" → Recover repairs both WAVs (1:44.8, under 1 s lost), keeps the mark and the 4.3 s pause gap, status ready.
+- **Discard** confirms, then deletes the folder.
+- **Size:** 16 kHz mono 16-bit = 32 KB/s ≈ 115 MB per hour per track (230 MB per hour of call before retention).
+
+Fixed during checks:
+
+- The "system audio may be blocked" warning fired after real sound because apps keep output streams running while quiet. A blocked tap delivers zeros from the first sample, so once any sound came through, the warning is off for that recording.
+- The level meter froze on its last frame when the level stayed constant (silence looked busy). It now scrolls on every levels event.
+- The speakers warning missed eqMac-style routers (eqMac reports itself as USB). It now also checks whether the built-in speakers device is running underneath.
+- "Copy for Slack" became **Copy as text** with no Slack markup, so it pastes cleanly anywhere.
+
+Left for Miguel at the checkpoint: a real 10-minute Zoom call, AirPods switch mid-call, lid close mid-call.
