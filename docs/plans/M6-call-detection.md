@@ -47,7 +47,7 @@ Browser tab detection and Always for browser calls (M9), launch at login (M10), 
 
 ## Outcome (2026-10-14)
 
-All tasks done. 220 Rust tests, 75 TS tests. Checked in the signed app with a debug-only hook (`dev-mic-users.txt` in the data folder adds pretend mic users by bundle id):
+All tasks done. 217 Rust tests, 75 TS tests. Checked in the signed app with a debug-only hook (`dev-mic-users.txt` in the data folder adds pretend mic users by bundle id):
 
 - **Slack (Ask):** nudge after ~2 s, gone when Slack let go of the mic.
 - **Zoom (Always, via `us.zoom.caphost`):** recording started by itself as "Call, Zoom, Oct 14, 4:42 PM", banner "Recording Zoom automatically" with the live timer, timer in the menu bar. Zoom let go → "Call ended" after 3 s → stopped by itself ~30 s later → transcribing.
