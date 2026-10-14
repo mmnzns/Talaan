@@ -75,3 +75,35 @@ TDD for prompt building, parsing, time snapping, chunking, merge, engine request
 ## Out of scope for M5
 
 Ask-anything (M8, reuses the engines), named speakers (M8), Notion export (M9).
+
+## Outcome (2026-10-14)
+
+All tasks done. 197 Rust tests (10 ignored smoke tests), 74 TS tests.
+
+**Local model bake-off** (M3 Pro, 18 GB; fixed prompt and schema; a 9-minute planning-call fixture with known answers, `fixtures/summary.planning-call.json`):
+
+| Model (Q4_K_M) | Time | Result |
+|---|---|---|
+| **Qwen3.5 4B** (2.7 GB) | 29 s | All 3 decisions, 4 of 5 action items with owners and deadlines exactly as said, 2 of 3 open questions. **Recommended.** |
+| **Qwen3.5 9B** (5.7 GB) | 40 s | All 3 decisions, all 5 action items exact; thinner recap. **Larger.** |
+| Phi-4-mini (2.5 GB) | 23 s | Invented dates ("2026-09-30" for "end of month"), missed an action item. Out. |
+| Gemma 4 E4B (5.0 GB) | — | Its chat template needs llama.cpp's Jinja path, which llama-cpp-2 0.1.159 doesn't expose. Out for now. |
+
+Checks:
+
+- **Wi-Fi off:** the app run inside a sandbox profile that denies all IP traffic (verified: curl to Hugging Face fails in the same profile) took the Zoom call from `transcribing` to a saved local summary and new title in ~50 s.
+- **2-hour meeting:** 122 minutes of transcript summarized locally in 1 min 55 s (2 parts + merge); 13 repeats of the same meeting merged back to 4 decisions, 4 action items, 2 questions.
+- **BYOK:** no key on this Mac, so the HTTP path is verified against a fake OpenAI-compatible server (request shape, auth, parse); Claude / OpenAI / Gemini request and reply shapes are unit-tested. A real key run is left for Miguel.
+- **Malformed output:** fences/prose stripped, one retry with the reason, then transcript-only with "Generate summary" and the reason shown (tests).
+- **Real call (Zoom 2:31 PM, same-room test audio):** summary in ~16 s, title "App recording test call". One decision came out backwards ("10 minutes confirmed" when the call said it isn't needed); the noisy two-devices-in-one-room transcript is the hard case for a 4B model.
+
+Decisions and findings:
+
+- **Local AI runs in its own process** (`talaan-llm`, bundled via `externalBin`, signed with the app). Whisper and llama.cpp each bring ggml; in one binary only one copy survives (Parlato hit this and is stuck on llama-cpp-2 0.1.143, which can't run Qwen 3.5 / Gemma 4). Separate processes let Talaan use llama-cpp-2 0.1.159 and the newest models; a crash or out-of-memory in the model can't take the app down.
+- `sample()` in llama-cpp-2 already accepts the token; accepting again breaks grammar sampling (`GGML_ASSERT(!stacks.empty())`).
+- The first start of a new helper binary can take >15 s while macOS checks it; the start timeout is 60 s.
+- Cloud model names aren't hard-coded: the key test lists the provider's models and picks the newest fast tier (Claude Sonnet, GPT-*-mini, Gemini *-flash).
+- Keys live in the Keychain (service "Talaan"); `settings.json` has only `byokKeySet`. Delete all data removes them.
+- "Summary ready" notifications ask permission on first use, open the meeting on click, and are skipped outside a .app bundle (the notification center throws there).
+
+Left for Miguel at the checkpoint: a real meeting summary in the app, the Summary AI tab (download, Ollama/LM Studio if installed, a real API key), and allowing notifications.

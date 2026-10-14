@@ -222,7 +222,7 @@ function SummaryStep({ settings: s, update }: StepProps) {
       <p className={desc}>Every summary has the same format: recap, decisions, action items and open questions.</p>
       <div role="radiogroup" aria-label="Summary engine" className="flex flex-col gap-2">
         <Option on={local} title="Local AI" tag="default" onClick={() => update({ summaryEngine: "local" })}>
-          Built in and offline. One-time 2.5 GB download.
+          Built in and offline. One-time 2.7 GB download.
         </Option>
         <Option on={s.summaryEngine === "byok"} title="Your own key" onClick={() => update({ summaryEngine: "byok" })}>
           Claude, OpenAI or Gemini. Sends transcript text only. Set up later in Settings.

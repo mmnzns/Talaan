@@ -26,6 +26,7 @@ Mac first (Apple silicon, built on Miguel's MacBook). Windows port is v1.1, buil
 - Internal version `1.0.0-dev`. No tags or GitHub Releases until the v1.0 release gate passes.
 - Verify, don't assume: macOS API availability, model licenses, model folder paths and sizes. Note findings in the Build Log.
 - Ask before pushing to GitHub.
+- **Never link llama.cpp into the main app.** It lives in the `talaan-llm` helper because whisper.cpp and llama.cpp each bundle ggml (see docs/plans/M5-summarizer.md).
 
 ### Model per milestone
 
@@ -37,7 +38,7 @@ Mac first (Apple silicon, built on Miguel's MacBook). Windows port is v1.1, buil
 - Tauri 2. Rust backend in focused modules (storage, recorder, transcriber, summarizer, call detection) behind Tauri commands. React + TypeScript + Vite + Tailwind 4 frontend talks only to those commands.
 - **Platform folders:** all OS-specific code lives in `src-tauri/src/platform/macos/`. `platform/mod.rs` re-exports the active platform; the Windows port adds `platform/windows/` plus one `cfg` line, without touching Mac code. Frontend platform differences follow the same rule.
 - Frontend data comes from one `MeetingStore` interface (mock in M1, real in M2), so screens never change when data sources do.
-- Stack: whisper.cpp via whisper-rs with Metal (Whisper, default model Whisper Large Turbo), ONNX Runtime via parakeet-rs (Parakeet), llama.cpp (local summary AI), Core Audio process taps (macOS 14.4+, no ScreenCaptureKit fallback), macOS Keychain, GitHub Actions.
+- Stack: whisper.cpp via whisper-rs with Metal (Whisper, default model Whisper Large Turbo), ONNX Runtime via parakeet-rs (Parakeet), llama.cpp in a separate helper process `talaan-llm` (local summary AI, default Qwen3.5 4B), Core Audio process taps (macOS 14.4+, no ScreenCaptureKit fallback), macOS Keychain, GitHub Actions.
 
 ```
 src/
@@ -88,11 +89,21 @@ src-tauri/src/
     pipeline.rs         tracks -> chunks -> engine -> retry skipped speech -> echo -> merge -> language
     echo.rs merge.rs    drop Me lines the mic heard from the speakers; interleave and join into lines
     worker.rs           one background thread, queue rebuilt from `transcribing` at launch, idle unload
+  commands/summarizer.rs  summary worker setup, engine factory from settings, Generate summary, LLM models, keys, local servers
+  summarizer/           summaries (no Tauri types)
+    prompt.rs parse.rs  the one fixed prompt + JSON schema; reply parsing, time snapping, title
+    chunk.rs summarize.rs  split long calls on speaker turns, summarize parts, merge; one retry on bad output
+    engines.rs          local helper, Claude, OpenAI, Gemini, OpenAI-compatible (Ollama, LM Studio); model lists
+    local.rs models.rs  client for the talaan-llm helper; local model catalog (Qwen3.5 4B / 9B)
+    worker.rs           summarizing -> ready (with summary_error when there's no engine or it failed)
+  keys.rs               API keys in the Keychain
+  llm/ llm-protocol/    the talaan-llm helper (own llama.cpp + Metal) and its stdin/stdout protocol
   platform/mod.rs       picks the OS module
   platform/macos/       Mac-only code
     system_tap.rs       Core Audio global process tap (excludes Talaan) + private aggregate device + IOProc
     coreaudio.rs clock.rs  property helpers, mach host clock in ns
     permissions.rs devices.rs power.rs  mic permission + deep links, built-in speakers / device watcher, sleep auto-pause
+    notify.rs thread.rs  Summary ready notifications (click opens the meeting), background thread priority
 docs/plans/             per-milestone task plans
 docs/screens/M1/        light + dark screenshots from the M1 checkpoint
 ```
@@ -111,7 +122,7 @@ settings.json   library.json   meetings/<YYYY-MM-DD_HHMM_xxxx>/
 - Ticking an action item is stored in `summary.done.json` and does not count as an edit.
 - Writes are atomic (temp file + rename). Unknown JSON fields are preserved. A meeting written by a newer schema is listed as failed and never touched.
 - Pinned meetings and meetings that still need their audio (recording, needs recovery, processing) are never touched by retention.
-- Stop and Recover put a meeting in `transcribing`; the worker writes `transcript.json` and sets `ready` (M5: `summarizing`). Failures keep `error {code, message}`; `no_model` meetings are re-queued when a model finishes downloading. `generate_summary` returns `not_yet_available` until M5.
+- Stop and Recover put a meeting in `transcribing`; the transcriber writes `transcript.json` and sets `summarizing`; the summarizer writes `summary.json` and sets `ready` (or `ready` with `summaryError` when no engine is set up or it failed; Generate summary retries). Failures keep `error {code, message}`; `no_model` meetings are re-queued when a model finishes downloading. 
 - Speech models live in `<data>/models/<id>/`; their state comes from disk (`models_list`), never from `settings.json`.
 - In the Tauri app the stores talk to Rust (`src/data/tauri/`); in a plain browser the sample data is used. Debug builds have **Screens → Dev data** to load the sample meetings onto disk.
 - Frontend and Rust share `fixtures/meeting.sample.json`: Rust round-trips it, TS checks its shape.
@@ -158,6 +169,7 @@ cargo test --manifest-path src-tauri/Cargo.toml    # Rust tests
 TALAAN_SMOKE_MEETING=<meeting dir> cargo test --release --manifest-path src-tauri/Cargo.toml pipeline_smoke -- --ignored --nocapture   # real models on a real call
 npm run build                                      # type-check + build frontend
 scripts/build-signed-debug.sh                      # signed debug .app (needed for real mic/system-audio permissions)
+scripts/build-llm-helper.sh                        # builds the talaan-llm helper (tauri dev/build run it first)
 ```
 
 `npm run tauri dev` attributes permissions to the terminal; check recording on the signed .app (`src-tauri/target/debug/bundle/macos/Talaan.app`).
