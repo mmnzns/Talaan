@@ -1,0 +1,15 @@
+[package]
+name = "talaan-llm"
+version = "1.0.0-dev"
+description = "Talaan's local AI helper: runs llama.cpp in its own process"
+edition = "2024"
+license = "MIT"
+publish = false
+
+[dependencies]
+talaan-llm-protocol = { path = "../llm-protocol" }
+serde_json = "1"
+llama-cpp-2 = { version = "=0.1.159", default-features = false, features = ["common"] }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+llama-cpp-2 = { version = "=0.1.159", default-features = false, features = ["metal", "common"] }

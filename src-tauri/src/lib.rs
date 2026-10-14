@@ -2,6 +2,7 @@ mod commands;
 mod platform;
 mod recorder;
 mod storage;
+mod summarizer;
 mod transcriber;
 
 use commands::recorder as rec_cmd;

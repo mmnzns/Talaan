@@ -100,3 +100,8 @@ Decisions and findings:
 - Fixed along the way: recorder and retry errors showed "Coming in a later build" (new `refused` error code).
 
 Left for Miguel: a fresh call end to end in the app (Stop → progress in the list → transcript), the Settings › Speech models tab (download, cancel, delete).
+
+Later checks (same day):
+
+- **Spanish:** a Spanish "Them" track (macOS voice) was detected as `es` by both models; Whisper's text was word-perfect, Parakeet dropped two words.
+- **2-hour meeting:** 2 h of both tracks (the Zoom call looped 35 times) transcribed with Whisper Turbo in 6 min 21 s, peak memory 1.8 GB, 501 echo lines removed. Most of the memory is the two tracks held as f32 (≈ 920 MB); worth halving for 8 GB Macs later (keep i16, convert per chunk).
