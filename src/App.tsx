@@ -8,6 +8,7 @@ import { SettingsWindow } from "./screens/Settings/SettingsWindow";
 import { ScreensStage } from "./screens/Stage/ScreensStage";
 import { PromptWindow } from "./screens/MenuBar/PromptWindow";
 import { TrayWindow } from "./screens/MenuBar/TrayWindow";
+import { PrintView } from "./screens/Meeting/PrintView";
 
 export default function App() {
   const route = useRoute();
@@ -22,6 +23,7 @@ export default function App() {
   // The menu bar popover and the call prompts are their own small windows.
   if (route.name === "tray") return <TrayWindow />;
   if (route.name === "prompt") return <PromptWindow />;
+  if (route.name === "print") return <PrintView id={route.id} withTranscript={route.withTranscript} />;
   if (!settings.onboardingDone) return <OnboardingScreen />;
   return <MainWindow route={route} />;
 }

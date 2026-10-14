@@ -7,7 +7,8 @@ export type Route =
   | { name: "screens"; which?: string }
   | { name: "settings"; tab: string }
   | { name: "tray" }
-  | { name: "prompt" };
+  | { name: "prompt" }
+  | { name: "print"; id: string; withTranscript: boolean };
 
 export function parseRoute(hash: string): Route {
   const [pathPart, queryPart = ""] = hash.replace(/^#/, "").split("?");
@@ -29,6 +30,8 @@ export function parseRoute(hash: string): Route {
       return { name: "settings", tab: seg[1] ?? "general" };
     case "tray":
       return { name: "tray" };
+    case "print":
+      return seg[1] ? { name: "print", id: seg[1], withTranscript: query.get("transcript") === "1" } : { name: "meetings" };
     case "prompt":
       return { name: "prompt" };
     default:
@@ -39,6 +42,7 @@ export function parseRoute(hash: string): Route {
 export const routes = {
   meetings: () => "#/",
   meeting: (id: string, t?: number) => `#/meeting/${encodeURIComponent(id)}${t !== undefined ? `?t=${t}` : ""}`,
+  print: (id: string, withTranscript: boolean) => `#/print/${encodeURIComponent(id)}${withTranscript ? "?transcript=1" : ""}`,
   ask: (meetingId?: string) => `#/ask${meetingId ? `?m=${encodeURIComponent(meetingId)}` : ""}`,
   screens: (which?: string) => `#/screens${which ? `/${which}` : ""}`,
   settings: (tab = "general") => `#/settings/${tab}`,

@@ -1,4 +1,4 @@
-import type { Mark, Ms, PauseGap, TranscriptLine } from "../data/types";
+import type { Mark, Meeting, Ms, PauseGap, TranscriptLine } from "../data/types";
 
 export type TranscriptRow =
   | { kind: "line"; line: TranscriptLine; marks: Mark[] }
@@ -31,4 +31,13 @@ export function lineAt(lines: TranscriptLine[], at: Ms): TranscriptLine | undefi
     else break;
   }
   return found ?? lines[0];
+}
+
+/** A speaker's display name: the one the user gave, else Me / Them / Speaker 2. */
+export function speakerName(meeting: Pick<Meeting, "speakers">, speaker: string): string {
+  const named = meeting.speakers[speaker as keyof Meeting["speakers"]];
+  if (named) return named;
+  if (speaker === "me") return "Me";
+  if (speaker === "them:0" || speaker === "them") return "Them";
+  return speaker.startsWith("them:") ? `Speaker ${speaker.slice(5)}` : speaker;
 }

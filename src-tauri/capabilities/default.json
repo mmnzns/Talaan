@@ -4,6 +4,7 @@
   "description": "Capability for the main and settings windows",
   "windows": [
     "main",
+    "print",
     "prompt",
     "settings",
     "tray"
@@ -17,6 +18,7 @@
     "core:window:allow-set-size",
     "core:window:allow-set-position",
     "dialog:allow-save",
-    "dialog:allow-open"
+    "dialog:allow-open",
+    "core:window:allow-close"
   ]
 }

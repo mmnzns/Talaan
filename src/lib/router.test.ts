@@ -21,3 +21,10 @@ describe("parseRoute", () => {
     expect(parseRoute(routes.meeting("m-q4", 5000))).toEqual({ name: "meeting", id: "m-q4", t: 5000 });
   });
 });
+
+describe("print route", () => {
+  it("round-trips the meeting and the transcript choice", () => {
+    expect(parseRoute(routes.print("2026-10-14_1431_yv57", true))).toEqual({ name: "print", id: "2026-10-14_1431_yv57", withTranscript: true });
+    expect(parseRoute(routes.print("m1", false))).toEqual({ name: "print", id: "m1", withTranscript: false });
+  });
+});

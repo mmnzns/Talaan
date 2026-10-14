@@ -36,3 +36,14 @@ describe("buildRows", () => {
     expect(rows.map((r) => (r.kind === "line" ? r.line.id : ""))).toEqual(["a", "c"]);
   });
 });
+
+describe("speakerName", () => {
+  it("prefers the name the user gave, then Me / Them / Speaker N", async () => {
+    const { speakerName } = await import("./transcript");
+    const m = { speakers: { "them:1": "Dana Reyes" } };
+    expect(speakerName(m, "them:1")).toBe("Dana Reyes");
+    expect(speakerName(m, "me")).toBe("Me");
+    expect(speakerName(m, "them:0")).toBe("Them");
+    expect(speakerName(m, "them:2")).toBe("Speaker 2");
+  });
+});

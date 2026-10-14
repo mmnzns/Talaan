@@ -3,7 +3,8 @@ import { useState } from "react";
 import { useSettings } from "../../data/hooks";
 import type { Meeting } from "../../data/types";
 import { formatDate } from "../../lib/format";
-import { safeFileName } from "../../lib/share";
+import { exportMeeting } from "../../lib/exportFile";
+import { describeError } from "../../data/errors";
 import { openSettings } from "../../lib/windows";
 import { Button, Radio, Select, Sheet, Switch, cn } from "../../ui";
 
@@ -42,12 +43,21 @@ export function ExportSheet({ open, meeting, onClose }: Props) {
     onClose();
   };
 
-  const run = () =>
-    setDone(
-      format === "notion"
-        ? `Sent to “${destination}” in Notion.`
-        : `Saved “${safeFileName(meeting.title)}.${selected.ext}” to your Downloads folder.`,
-    );
+  const [busy, setBusy] = useState(false);
+  const run = async () => {
+    // Notion export arrives in M9.
+    if (format === "notion") return setDone(`Sent to “${destination}” in Notion.`);
+    setBusy(true);
+    try {
+      const where = await exportMeeting(meeting, format, withTranscript);
+      if (format === "pdf") return close(); // the print sheet takes it from here
+      if (where) setDone(`Saved “${where.split("/").pop()}”.`);
+    } catch (e) {
+      setDone(describeError(e));
+    } finally {
+      setBusy(false);
+    }
+  };
 
   return (
     <Sheet open={open} title="Export meeting" onClose={close} className="max-w-[540px]">
@@ -136,7 +146,7 @@ export function ExportSheet({ open, meeting, onClose }: Props) {
             <Button variant="ghost" onClick={close}>
               Cancel
             </Button>
-            <Button variant="primary" disabled={blocked} onClick={run}>
+            <Button variant="primary" disabled={blocked || busy} onClick={() => void run()}>
               {cta}
             </Button>
           </div>
