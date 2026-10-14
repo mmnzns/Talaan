@@ -62,17 +62,25 @@ impl ParakeetEngine {
 }
 
 impl ParakeetEngine {
+    /// Half a second of silence on both sides: Parakeet often returns nothing for audio that starts or
+    /// ends right on speech (seen on real calls).
     fn run(&mut self, samples: &[f32]) -> Result<Vec<Piece>, String> {
         use parakeet_rs::Transcriber;
+        const PAD: usize = 8_000;
+        let mut audio = vec![0.0f32; PAD];
+        audio.extend_from_slice(samples);
+        audio.extend(std::iter::repeat_n(0.0, PAD));
         let result = self
             .model
-            .transcribe_samples(samples.to_vec(), 16_000, 1, Some(parakeet_rs::TimestampMode::Sentences))
+            .transcribe_samples(audio, 16_000, 1, Some(parakeet_rs::TimestampMode::Sentences))
             .map_err(|e| format!("transcription failed: {e}"))?;
+        let len_ms = samples.len() as u64 * 1000 / 16_000;
+        let shift = |t: f32| ((t.max(0.0) * 1000.0) as u64).saturating_sub(500).min(len_ms);
         Ok(result
             .tokens
             .into_iter()
             .filter(|t| !is_noise(&t.text))
-            .map(|t| Piece { start_ms: (t.start.max(0.0) * 1000.0) as u64, end_ms: (t.end.max(t.start).max(0.0) * 1000.0) as u64, text: t.text.trim().to_string() })
+            .map(|t| Piece { start_ms: shift(t.start), end_ms: shift(t.end.max(t.start)), text: t.text.trim().to_string() })
             .collect())
     }
 }
@@ -234,15 +242,28 @@ mod probe {
     #[test]
     #[ignore]
     fn parakeet_probe() {
-        use super::super::vad::read_track;
+        use super::super::vad::{read_track, shape, Shape, Vad};
         let dir = std::path::PathBuf::from(std::env::var("TALAAN_SMOKE_MEETING").unwrap());
-        let them = read_track(&dir.join("them.wav")).unwrap();
-        let data = dirs::data_dir().unwrap().join("Talaan/models/parakeet-v3");
-        let mut m = super::ParakeetEngine::load(&data, "Parakeet").unwrap();
-        for (a, b) in [(42.97f32, 55.59f32), (45.5, 55.59), (47.0, 55.59), (40.0, 58.0), (42.97, 47.0)] {
-            let chunk = &them[(a * 16000.0) as usize..(b * 16000.0) as usize];
-            let r = super::Engine::transcribe(&mut m, chunk, None).unwrap();
-            eprintln!("{a}-{b}: {:?}", r.pieces.iter().map(|p| format!("[{}] {}", p.start_ms, p.text)).collect::<Vec<_>>());
+        let me = read_track(&dir.join("me.wav")).unwrap();
+        let data = dirs::data_dir().unwrap().join("Talaan");
+        let mut vad = Vad::load(&data.join("models/vad/ggml-silero-v6.2.0.bin")).unwrap();
+        let spans = shape(&vad.detect(&me).unwrap(), &me, Shape::parakeet());
+        let mut m = super::ParakeetEngine::load(&data.join("models/parakeet-v3"), "Parakeet").unwrap();
+        let _ = spans;
+        let f = |a: f32| (a * 16000.0) as usize;
+        let mut padded = vec![0.0f32; 8000];
+        padded.extend_from_slice(&me[f(75.3)..f(98.8)]);
+        let cases: Vec<(String, Vec<f32>)> = vec![
+            ("75.3-98.8".into(), me[f(75.3)..f(98.8)].to_vec()),
+            ("pad+75.3-98.8".into(), padded),
+            ("75.3-87".into(), me[f(75.3)..f(87.0)].to_vec()),
+            ("87-98.8".into(), me[f(87.0)..f(98.8)].to_vec()),
+            ("74-100".into(), me[f(74.0)..f(100.0)].to_vec()),
+        ];
+        for (name, chunk) in cases {
+            let peak = chunk.iter().fold(0f32, |a, b| a.max(b.abs()));
+            let r = super::Engine::transcribe(&mut m, &chunk, None).unwrap();
+            eprintln!("chunk {name} peak {peak:.2}: {:?}", r.pieces.iter().map(|p| format!("[{}] {}", p.start_ms, p.text)).collect::<Vec<_>>());
         }
     }
 }

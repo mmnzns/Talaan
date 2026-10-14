@@ -60,12 +60,12 @@ pub static CATALOG: &[ModelInfo] = &[
         id: "parakeet-v3",
         name: "Parakeet",
         maker: "NVIDIA",
-        note: "Fast and accurate. 25 European languages.",
+        note: "Fastest. Good for quick notes in 25 European languages.",
         engine: EngineKind::Parakeet,
         languages: "25 European languages",
         language_codes: PARAKEET_V3_LANGUAGES,
         speed: 3,
-        accuracy: 2,
+        accuracy: 1,
         files: &[
             ModelFile { name: "encoder-model.int8.onnx", url: concat!("https://huggingface.co/istupakov/parakeet-tdt-0.6b-v3-onnx/resolve/8f23f0c03c8761650bdb5b40aaf3e40d2c15f1ce/", "encoder-model.int8.onnx"), size: 652_183_999, sha256: "6139d2fa7e1b086097b277c7149725edbab89cc7c7ae64b23c741be4055aff09" },
             ModelFile { name: "decoder_joint-model.int8.onnx", url: concat!("https://huggingface.co/istupakov/parakeet-tdt-0.6b-v3-onnx/resolve/8f23f0c03c8761650bdb5b40aaf3e40d2c15f1ce/", "decoder_joint-model.int8.onnx"), size: 18_202_004, sha256: "eea7483ee3d1a30375daedc8ed83e3960c91b098812127a0d99d1c8977667a70" },
@@ -79,7 +79,7 @@ pub static CATALOG: &[ModelInfo] = &[
         id: "whisper-turbo",
         name: "Whisper Large Turbo",
         maker: "OpenAI",
-        note: "Widest language support, including Filipino.",
+        note: "Recommended. Most accurate, 99 languages including Filipino.",
         engine: EngineKind::Whisper,
         languages: "99 languages",
         language_codes: &[],
@@ -118,7 +118,9 @@ pub static VAD: ModelInfo = ModelInfo {
     reuse_dirs: &["Models"],
 };
 
-pub const DEFAULT_MODEL: &str = "parakeet-v3";
+/// Whisper Turbo: on real calls it was more complete and accurate than Parakeet (which skipped stretches and
+/// misheard more), covers Filipino, and at ~13x real time an hour-long call takes a few minutes.
+pub const DEFAULT_MODEL: &str = "whisper-turbo";
 
 pub fn find(id: &str) -> Option<&'static ModelInfo> {
     if id == VAD.id {

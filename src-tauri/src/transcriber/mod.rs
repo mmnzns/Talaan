@@ -8,4 +8,5 @@ pub mod echo;
 pub mod engine;
 pub mod merge;
 pub mod models;
+pub mod pipeline;
 pub mod vad;
