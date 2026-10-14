@@ -37,7 +37,7 @@ Mac first (Apple silicon, built on Miguel's MacBook). Windows port is v1.1, buil
 - Tauri 2. Rust backend in focused modules (storage, recorder, transcriber, summarizer, call detection) behind Tauri commands. React + TypeScript + Vite + Tailwind 4 frontend talks only to those commands.
 - **Platform folders:** all OS-specific code lives in `src-tauri/src/platform/macos/`. `platform/mod.rs` re-exports the active platform; the Windows port adds `platform/windows/` plus one `cfg` line, without touching Mac code. Frontend platform differences follow the same rule.
 - Frontend data comes from one `MeetingStore` interface (mock in M1, real in M2), so screens never change when data sources do.
-- Stack: whisper.cpp (Whisper), ONNX runtime (Parakeet, Nemotron), llama.cpp (local summary AI), Core Audio process taps with ScreenCaptureKit fallback, macOS Keychain, GitHub Actions.
+- Stack: whisper.cpp (Whisper), ONNX runtime (Parakeet, Nemotron), llama.cpp (local summary AI), Core Audio process taps (macOS 14.4+, no ScreenCaptureKit fallback), macOS Keychain, GitHub Actions.
 
 ```
 src/
@@ -72,8 +72,19 @@ src-tauri/src/
     recovery.rs         interrupted recordings -> needs_recovery
     settings.rs         settings.json + delete-all
     markdown.rs  io.rs  paths.rs  dev.rs
+  commands/recorder.rs  RecorderState, recorder_* / permissions_* commands, 10 Hz levels loop, watchers, stop on quit
+  recorder/             cross-platform recording core (no objc2 here)
+    engine.rs session.rs  Engine (start/pause/mark/stop/discard, device restarts), Session (marks, pauses, meeting.json saves)
+    clock.rs            recording clock that excludes paused time
+    pipeline.rs timeline.rs  host time -> sample position (resync on drift / rate change), gap fill, overlap trim
+    resample.rs wav.rs levels.rs  rubato to 16 kHz mono, hound WAV with 2 s flush + repair_wav, RMS levels
+    feed.rs source.rs   rtrb SPSC feed from audio callbacks, AudioSource trait
+    mic.rs recovery.rs  cpal mic source, crash recovery (repair WAVs, duration)
   platform/mod.rs       picks the OS module
   platform/macos/       Mac-only code
+    system_tap.rs       Core Audio global process tap (excludes Talaan) + private aggregate device + IOProc
+    coreaudio.rs clock.rs  property helpers, mach host clock in ns
+    permissions.rs devices.rs power.rs  mic permission + deep links, built-in speakers / device watcher, sleep auto-pause
 docs/plans/             per-milestone task plans
 docs/screens/M1/        light + dark screenshots from the M1 checkpoint
 ```
@@ -136,4 +147,7 @@ npm run dev                                        # same UI in a browser with s
 npm test                                           # frontend tests (Vitest)
 cargo test --manifest-path src-tauri/Cargo.toml    # Rust tests
 npm run build                                      # type-check + build frontend
+scripts/build-signed-debug.sh                      # signed debug .app (needed for real mic/system-audio permissions)
 ```
+
+`npm run tauri dev` attributes permissions to the terminal; check recording on the signed .app (`src-tauri/target/debug/bundle/macos/Talaan.app`).

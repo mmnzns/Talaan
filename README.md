@@ -17,6 +17,8 @@ npm run tauri dev
 
 Tests: `npm test` and `cargo test --manifest-path src-tauri/Cargo.toml`.
 
+Recording needs macOS 14.4 or later. To test the microphone and system audio permissions the way users get them, build a signed debug app with `scripts/build-signed-debug.sh` and open `src-tauri/target/debug/bundle/macos/Talaan.app` (under `npm run tauri dev` macOS attributes the permissions to your terminal instead).
+
 ## Click through M1 (UI with sample data)
 
 In a browser everything runs on sample data. In the Tauri app (M2 onward) meetings are real files on disk; open **Screens → Dev data → Load sample meetings** (debug builds) to click through on real storage. Nothing records or transcribes yet; that arrives milestone by milestone.

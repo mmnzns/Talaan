@@ -18,5 +18,12 @@ Talaan uses the following libraries, fonts and models. Each is used under its ow
 | rand | MIT / Apache-2.0 | https://github.com/rust-random/rand |
 | thiserror | MIT / Apache-2.0 | https://github.com/dtolnay/thiserror |
 | tempfile (tests only) | MIT / Apache-2.0 | https://github.com/Stebalien/tempfile |
+| cpal (audio input) | Apache-2.0 | https://github.com/RustAudio/cpal |
+| hound (WAV files) | Apache-2.0 | https://github.com/ruuda/hound |
+| rubato (resampling) | MIT / Apache-2.0 | https://github.com/HEnquist/rubato |
+| rtrb (ring buffer) | MIT / Apache-2.0 | https://github.com/mgeier/rtrb |
+| objc2, block2 (macOS bindings) | MIT | https://github.com/madsmtm/objc2 |
+| objc2-foundation, objc2-core-foundation, objc2-core-audio, objc2-core-audio-types, objc2-av-foundation, objc2-app-kit | Zlib / Apache-2.0 / MIT | https://github.com/madsmtm/objc2 |
+| mach2 | BSD-2-Clause / MIT / Apache-2.0 | https://github.com/JohnTitor/mach2 |
 
 Speech models, the local summary engine and other dependencies are added here as they are introduced.
