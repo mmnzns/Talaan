@@ -21,7 +21,7 @@ export function Group({ children, className }: { children: ReactNode; className?
 export function Row({ title, desc, children, stack }: { title: string; desc?: ReactNode; children?: ReactNode; stack?: boolean }) {
   return (
     <div className={cn("flex gap-x-4 gap-y-2 px-4 py-3", stack ? "flex-col" : "flex-wrap items-center justify-between")}>
-      <div className="min-w-0 flex-1 basis-56">
+      <div className={cn("min-w-0", !stack && "flex-1 basis-56")}>
         <div className="text-[13px] font-semibold">{title}</div>
         {desc && <div className="text-xs leading-[17px] text-subtle">{desc}</div>}
       </div>
