@@ -2,6 +2,9 @@
 
 pub mod clock;
 pub mod coreaudio;
+pub mod devices;
+pub mod permissions;
+pub mod power;
 pub mod system_tap;
 
 pub use clock::host_now_ns;
