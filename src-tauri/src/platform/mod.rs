@@ -9,6 +9,13 @@ pub use macos::*;
 #[cfg(not(target_os = "macos"))]
 pub const NAME: &str = "unsupported";
 
+/// Until the Windows port adds its own clock (QPC, matching WASAPI timestamps).
+#[cfg(not(target_os = "macos"))]
+pub fn host_now_ns() -> u64 {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_nanos() as u64).unwrap_or(0)
+}
+
 #[cfg(test)]
 mod tests {
     #[test]

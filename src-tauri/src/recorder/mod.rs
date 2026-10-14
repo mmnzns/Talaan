@@ -4,6 +4,7 @@ pub mod clock;
 pub mod engine;
 pub mod feed;
 pub mod levels;
+pub mod mic;
 pub mod pipeline;
 pub mod resample;
 pub mod session;
