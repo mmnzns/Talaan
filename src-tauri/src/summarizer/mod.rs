@@ -4,6 +4,7 @@
 #![allow(dead_code)]
 
 pub mod chunk;
+pub mod engines;
 pub mod local;
 pub mod parse;
 pub mod prompt;
