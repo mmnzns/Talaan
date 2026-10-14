@@ -1,0 +1,14 @@
+import { describe, expect, it } from "vitest";
+import { resolveTheme } from "./theme";
+
+describe("resolveTheme", () => {
+  it("follows the system when set to system", () => {
+    expect(resolveTheme("system", true)).toBe("dark");
+    expect(resolveTheme("system", false)).toBe("light");
+  });
+
+  it("uses the manual override regardless of the system", () => {
+    expect(resolveTheme("light", true)).toBe("light");
+    expect(resolveTheme("dark", false)).toBe("dark");
+  });
+});

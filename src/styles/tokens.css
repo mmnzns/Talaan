@@ -1,0 +1,60 @@
+/* Talaan design tokens. Shares Parlato's visual language (colors, type, edges,
+   hard offset shadows); the token set and names are Talaan's own. */
+
+:root {
+  --t-paper: #F3F2EE;        /* main window background, plain cream */
+  --t-ink: #141416;          /* text, edges */
+  --t-surface: #FBFAF7;      /* cards, panes */
+  --t-raised: #FFFFFF;       /* popovers, sheets */
+  --t-sunken: #EAE8E1;       /* wells, inputs */
+  --t-rail: #ECEAE3;         /* meeting list column */
+  --t-line: #D5D2C8;         /* hairline dividers */
+  --t-subtle: #5C5B55;       /* secondary text */
+  --t-lime: #B5E61D;         /* primary action, recording */
+  --t-on-lime: #141416;
+  --t-lime-soft: #E5F4B3;    /* marks, highlights */
+  --t-danger: #C9380A;
+  --t-on-danger: #FFFFFF;
+  --t-warn-bg: #FBE4D9;
+  --t-warn-fg: #B8330A;
+  --t-ok: #3E5A00;
+  --t-me: #141416;           /* "Me" speaker accent */
+  --t-them: #5C5B55;         /* "Them" speaker accent */
+
+  --t-edge: 1.5px solid var(--t-ink);
+  --t-shadow: 3px 3px 0 var(--t-ink);
+  --t-shadow-lg: 5px 5px 0 var(--t-ink);
+  --t-radius: 12px;
+  --t-radius-sm: 8px;
+  --t-radius-pill: 999px;
+
+  --t-font-sans: "Bricolage Grotesque Variable", ui-sans-serif, system-ui, sans-serif;
+  --t-font-mono: "IBM Plex Mono", ui-monospace, monospace;
+
+  color-scheme: light;
+}
+
+:root[data-theme="dark"] {
+  --t-paper: #131315;
+  --t-ink: #F3F2EE;
+  --t-surface: #1B1B1E;
+  --t-raised: #222226;
+  --t-sunken: #202023;
+  --t-rail: #0E0E10;
+  --t-line: #323237;
+  --t-subtle: #A5A49D;
+  --t-lime: #B5E61D;
+  --t-on-lime: #141416;
+  --t-lime-soft: #2A3413;
+  --t-danger: #FF6A3D;
+  --t-on-danger: #141416;
+  --t-warn-bg: #3A2016;
+  --t-warn-fg: #FF8A5C;
+  --t-ok: #C4EE48;
+  --t-me: #F3F2EE;
+  --t-them: #A5A49D;
+  --t-edge: 1.5px solid #4A4A50;
+  --t-shadow: 3px 3px 0 #000000;
+  --t-shadow-lg: 5px 5px 0 #000000;
+  color-scheme: dark;
+}
