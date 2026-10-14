@@ -7,14 +7,34 @@ use std::ptr::NonNull;
 
 const DATA_SOURCE_INTERNAL_SPEAKER: u32 = u32::from_be_bytes(*b"ispk");
 
-/// True when the default output is the Mac's own speakers (not the headphone jack, AirPods, USB, HDMI...).
+/// True when call audio is coming out of the Mac's own speakers (not the headphone jack, AirPods, USB, HDMI...).
+/// Either the default output is the built-in speakers, or a router such as eqMac or SoundSource is the default
+/// and is driving the built-in speakers underneath (those report any transport type, so check the speakers themselves).
 pub fn on_builtin_speakers() -> bool {
-    let Ok(device) = default_output_device() else { return false };
-    let transport: u32 = get(device, kAudioDevicePropertyTransportType, kAudioObjectPropertyScopeGlobal).unwrap_or(0);
-    if transport != kAudioDeviceTransportTypeBuiltIn {
-        return false;
+    let Ok(default) = default_output_device() else { return false };
+    if is_builtin(default) {
+        return is_internal_speaker(default);
     }
-    // Built-in output with a data source: speakers vs. headphone jack. No data source: assume speakers.
+    let Ok(devices) = get_ids(kAudioObjectSystemObject as u32, kAudioHardwarePropertyDevices) else { return false };
+    devices.into_iter().any(|d| {
+        let running: u32 = get(d, kAudioDevicePropertyDeviceIsRunningSomewhere, kAudioObjectPropertyScopeGlobal).unwrap_or(0);
+        is_builtin(d) && has_output(d) && is_internal_speaker(d) && running != 0
+    })
+}
+
+fn is_builtin(device: AudioObjectID) -> bool {
+    get::<u32>(device, kAudioDevicePropertyTransportType, kAudioObjectPropertyScopeGlobal).unwrap_or(0) == kAudioDeviceTransportTypeBuiltIn
+}
+
+fn has_output(device: AudioObjectID) -> bool {
+    let a = addr(kAudioDevicePropertyStreams, kAudioObjectPropertyScopeOutput);
+    let mut size: u32 = 0;
+    let status = unsafe { AudioObjectGetPropertyDataSize(device, NonNull::from(&a), 0, std::ptr::null(), NonNull::from(&mut size)) };
+    status == 0 && size > 0
+}
+
+/// Built-in output with a data source: speakers vs. headphone jack. No data source: assume speakers.
+fn is_internal_speaker(device: AudioObjectID) -> bool {
     match get::<u32>(device, kAudioDevicePropertyDataSource, kAudioObjectPropertyScopeOutput) {
         Ok(source) => source == DATA_SOURCE_INTERNAL_SPEAKER,
         Err(_) => true,
@@ -74,7 +94,7 @@ mod tests {
 
     #[test]
     fn device_queries_do_not_fail() {
-        let _ = on_builtin_speakers();
+        eprintln!("on built-in speakers: {}", on_builtin_speakers());
         let _ = others_playing();
     }
 
