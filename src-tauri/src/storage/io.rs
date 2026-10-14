@@ -45,6 +45,19 @@ pub fn read_json_opt<T: DeserializeOwned>(path: &Path) -> Result<Option<T>, Stor
     }
 }
 
+/// Total size in bytes of every file under `path`.
+pub fn dir_size(path: &Path) -> u64 {
+    let Ok(entries) = fs::read_dir(path) else { return 0 };
+    entries
+        .flatten()
+        .map(|e| match e.metadata() {
+            Ok(m) if m.is_dir() => dir_size(&e.path()),
+            Ok(m) => m.len(),
+            Err(_) => 0,
+        })
+        .sum()
+}
+
 pub fn remove_if_exists(path: &Path) -> Result<(), StorageError> {
     match fs::remove_file(path) {
         Ok(()) => Ok(()),
@@ -94,6 +107,16 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let v: Option<serde_json::Value> = read_json_opt(&dir.path().join("nope.json")).unwrap();
         assert!(v.is_none());
+    }
+
+    #[test]
+    fn dir_size_adds_up_nested_files() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::create_dir(dir.path().join("a")).unwrap();
+        fs::write(dir.path().join("a").join("x"), [0u8; 100]).unwrap();
+        fs::write(dir.path().join("y"), [0u8; 20]).unwrap();
+        assert_eq!(dir_size(dir.path()), 120);
+        assert_eq!(dir_size(&dir.path().join("missing")), 0);
     }
 
     #[test]

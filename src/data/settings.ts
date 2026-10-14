@@ -83,6 +83,8 @@ export interface SettingsStore {
   downloadModel(id: string): Promise<void>;
   /** Checks an API key with the provider. The key itself is never stored in settings. */
   testApiKey(provider: ByokProvider, key: string): Promise<{ ok: boolean; message: string }>;
+  /** Where the data lives and how much space it uses. */
+  dataInfo(): Promise<{ path: string; bytes: number }>;
   /** "Delete all Talaan data": meetings, audio, models, settings and keys. */
   deleteAllData(): Promise<void>;
   /** Fires on any change. Returns an unsubscribe function. */

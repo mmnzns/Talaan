@@ -19,11 +19,11 @@ Tests: `npm test` and `cargo test --manifest-path src-tauri/Cargo.toml`.
 
 ## Click through M1 (UI with sample data)
 
-Everything you see runs on sample data. Nothing records, transcribes or saves yet; those arrive milestone by milestone.
+In a browser everything runs on sample data. In the Tauri app (M2 onward) meetings are real files on disk; open **Screens → Dev data → Load sample meetings** (debug builds) to click through on real storage. Nothing records or transcribes yet; that arrives milestone by milestone.
 
 ```bash
-npm run tauri dev      # the real window (a second Settings window opens from the gear or Cmd+,)
-npm run dev            # same UI in a browser at http://localhost:1420 (handy for screenshots)
+npm run tauri dev      # the real window, real storage in ~/Library/Application Support/Talaan (a second Settings window opens from the gear or Cmd+,)
+npm run dev            # same UI in a browser at http://localhost:1420, sample data (handy for screenshots)
 ```
 
 | Where | What to try |

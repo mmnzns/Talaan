@@ -81,6 +81,10 @@ export class MockSettingsStore implements SettingsStore {
       : { ok: false, message: "That key didn’t work. Check it and try again." };
   }
 
+  async dataInfo() {
+    return { path: "~/Library/Application Support/Talaan", bytes: 1_200_000_000 };
+  }
+
   async deleteAllData(): Promise<void> {
     await sleep(400);
     try {

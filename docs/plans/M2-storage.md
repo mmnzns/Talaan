@@ -136,3 +136,14 @@ TDD for every storage task: write the Rust test first (`tempfile::TempDir` root)
 - The Tauri app shows only what's on disk; the browser dev server still shows the mock.
 - A meeting folder opened in Finder is understandable without Talaan.
 - No screen file changed except the three NotYetAvailable callers, the audio chip rule and the Screens stage dev section.
+
+## Outcome (2026-10-14)
+
+All 13 tasks done: 72 Rust tests and 65 TS tests, CI green. Differences from the plan:
+
+- **Done flags** are stored in `summary.done.json` so ticking an action item is not an "edit" (the plan would have created `summary.edited.json` on every tick).
+- **Retention** also spares meetings that still need their audio (recording, needs recovery, transcribing, summarizing), and "Don't keep" spares failed meetings so they can be retried. Pinned meetings are exempt from transcript expiry as well.
+- **`data_info`** command (path and size) added so the Privacy tab no longer shows a fake "1.2 GB".
+- `dev_seed` converts meetings that were mid-processing to `ready`, so the sample data has no stuck jobs.
+
+Manual check in the real app (no `TALAAN_DATA_DIR`): sample data loaded onto disk and readable in Finder; transcript edit created `transcript.edits.json` with the original byte-identical; Revert removed it; action-item tick, pin, new tag and new folder persisted across a restart; search ran in Rust; Delete removed the folder; a hand-made `recording` folder became `needs_recovery` on relaunch; choosing "Don't keep" in Settings removed audio at once and spared pinned and interrupted meetings; "Delete everything" emptied the folder and restarted.

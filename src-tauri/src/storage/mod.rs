@@ -24,7 +24,7 @@ use serde::Serialize;
 pub enum StorageError {
     #[error("not found: {0}")]
     NotFound(String),
-    #[error("not available yet: {0}")]
+    #[error("{0}")]
     NotYetAvailable(String),
     #[error("meeting {id} was written by a newer Talaan (schema {found})")]
     UnsupportedSchema { id: String, found: u32 },

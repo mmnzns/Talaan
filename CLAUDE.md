@@ -61,12 +61,40 @@ src/
     Recording/          menu bar popovers, recording popover, call prompts (mounted for real in M6)
     Stage/              dev-only `#/screens` stage that hosts the non-window surfaces
 src-tauri/src/
-  lib.rs                Tauri builder + commands
+  lib.rs                Tauri builder, startup (scan for interrupted meetings, retention), command list
+  commands/             thin Tauri commands (meetings, settings, dev) + AppState (one Mutex<Storage>)
+  storage/              all disk access; no Tauri types, fully unit-tested with tempdirs
+    model.rs            serde types that mirror src/data/types.ts
+    store.rs            Storage: create / get / list / filters / search
+    ops.rs  edits.rs    rename, pin, tags, folder, speakers, delete; edits beside originals + revert
+    library.rs          folders (library.json) and derived tags
+    retention.rs        policy + the pass that deletes expired audio / old transcripts
+    recovery.rs         interrupted recordings -> needs_recovery
+    settings.rs         settings.json + delete-all
+    markdown.rs  io.rs  paths.rs  dev.rs
   platform/mod.rs       picks the OS module
   platform/macos/       Mac-only code
 docs/plans/             per-milestone task plans
 docs/screens/M1/        light + dark screenshots from the M1 checkpoint
 ```
+
+### Storage on disk (M2)
+
+`~/Library/Application Support/Talaan` (override with `TALAAN_DATA_DIR`):
+
+```
+settings.json   library.json   meetings/<YYYY-MM-DD_HHMM_xxxx>/
+  meeting.json  me.wav  them.wav  transcript.json  transcript.md  summary.json  summary.md
+  transcript.edits.json  summary.edited.json  summary.done.json      (only when the user changed something)
+```
+
+- Originals (`transcript.json`, `summary.json`) are never rewritten after the transcriber / summarizer write them. Edits sit beside them; Revert deletes the edit files. `.md` files are regenerated from what the user sees.
+- Ticking an action item is stored in `summary.done.json` and does not count as an edit.
+- Writes are atomic (temp file + rename). Unknown JSON fields are preserved. A meeting written by a newer schema is listed as failed and never touched.
+- Pinned meetings and meetings that still need their audio (recording, needs recovery, processing) are never touched by retention.
+- `recover`, `retry` and `generate_summary` return `not_yet_available` until M4 / M5; the UI shows a short notice.
+- In the Tauri app the stores talk to Rust (`src/data/tauri/`); in a plain browser the sample data is used. Debug builds have **Screens → Dev data** to load the sample meetings onto disk.
+- Frontend and Rust share `fixtures/meeting.sample.json`: Rust round-trips it, TS checks its shape.
 
 ### Data layer rules
 
@@ -103,7 +131,8 @@ Echo (drop Me lines matching Them within ~2 s, speaker warning on built-in outpu
 
 ```bash
 npm install
-npm run tauri dev                                  # run the app
+npm run tauri dev                                  # run the app (real storage)
+npm run dev                                        # same UI in a browser with sample data
 npm test                                           # frontend tests (Vitest)
 cargo test --manifest-path src-tauri/Cargo.toml    # Rust tests
 npm run build                                      # type-check + build frontend

@@ -39,3 +39,19 @@ export function formatClock(iso: string): string {
 export function formatDate(iso: string): string {
   return new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric" });
 }
+
+/** 1_200_000_000 -> "1.2 GB"; 45_000 -> "45 KB" */
+export function formatBytes(bytes: number): string {
+  if (bytes < 1000) return `${bytes} B`;
+  const units = ["KB", "MB", "GB", "TB"];
+  let v = bytes / 1000;
+  let i = 0;
+  while (v >= 1000 && i < units.length - 1) {
+    v /= 1000;
+    i++;
+  }
+  return `${v >= 100 || i === 0 ? Math.round(v) : v.toFixed(1)} ${units[i]}`;
+}
+
+/** Replaces the home folder with ~ for display. */
+export const tildePath = (p: string) => p.replace(/^\/Users\/[^/]+/, "~");

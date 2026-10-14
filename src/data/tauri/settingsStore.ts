@@ -60,6 +60,10 @@ export class TauriSettingsStore implements SettingsStore {
       : { ok: false, message: "That key didn’t work. Check it and try again." };
   }
 
+  dataInfo(): Promise<{ path: string; bytes: number }> {
+    return call("data_info");
+  }
+
   async deleteAllData(): Promise<void> {
     await call<void>("data_delete_all"); // the app restarts into first-run
   }

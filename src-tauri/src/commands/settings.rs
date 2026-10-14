@@ -29,3 +29,16 @@ pub fn data_delete_all(app: AppHandle, state: State<AppState>) -> CmdResult<()> 
     notify(&app, SETTINGS_CHANGED);
     app.restart()
 }
+
+#[derive(serde::Serialize)]
+pub struct DataInfo {
+    path: String,
+    bytes: u64,
+}
+
+/// Where the data lives and how big it is, for the Privacy tab.
+#[tauri::command]
+pub fn data_info(state: State<AppState>) -> CmdResult<DataInfo> {
+    let storage = state.lock();
+    Ok(DataInfo { path: storage.root().to_string_lossy().to_string(), bytes: crate::storage::io::dir_size(storage.root()) })
+}

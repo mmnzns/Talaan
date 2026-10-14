@@ -57,6 +57,7 @@ pub fn run() {
             settings::settings_get,
             settings::settings_set,
             settings::data_delete_all,
+            settings::data_info,
             dev::dev_seed,
             dev::dev_wipe,
         ])

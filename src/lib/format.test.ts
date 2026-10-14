@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { dayGroup, formatDuration, formatTime } from "./format";
+import { dayGroup, formatBytes, formatDuration, formatTime, tildePath } from "./format";
 
 describe("formatTime", () => {
   it("formats minutes and seconds", () => {
@@ -27,5 +27,21 @@ describe("dayGroup", () => {
     expect(dayGroup("2026-10-14T09:00:00", now).label).toBe("today");
     expect(dayGroup("2026-10-13T09:00:00", now).label).toBe("yesterday");
     expect(dayGroup("2026-10-10T13:00:00", now).label).toBe("oct 10");
+  });
+});
+
+describe("formatBytes", () => {
+  it("picks a readable unit", () => {
+    expect(formatBytes(0)).toBe("0 B");
+    expect(formatBytes(45_000)).toBe("45 KB");
+    expect(formatBytes(1_200_000_000)).toBe("1.2 GB");
+    expect(formatBytes(250_000_000)).toBe("250 MB");
+  });
+});
+
+describe("tildePath", () => {
+  it("shortens the home folder", () => {
+    expect(tildePath("/Users/miguel.monzones/Library/Application Support/Talaan")).toBe("~/Library/Application Support/Talaan");
+    expect(tildePath("/opt/data")).toBe("/opt/data");
   });
 });
