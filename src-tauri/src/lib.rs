@@ -1,5 +1,6 @@
 mod commands;
 mod platform;
+mod recorder;
 mod storage;
 
 use commands::{dev, meetings, settings, AppState, MEETINGS_CHANGED};
