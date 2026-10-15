@@ -1,5 +1,19 @@
 import type { Settings } from "./settings";
 
+/** Windows only. Kept in one place until the per-OS table in src/lib/platform.ts (another branch) can hold it.
+ *  The Rust side already ignores these ids on Windows (calls/apps.rs); this is the list the user sees and edits. */
+const onWindows = typeof navigator !== "undefined" && /windows/i.test(navigator.userAgent);
+const windowsIgnoredApps = onWindows
+  ? [
+      { name: "NVIDIA Broadcast", why: "mic filter" },
+      { name: "SteelSeries Sonar", why: "mic filter" },
+      { name: "Voicemod", why: "mic filter" },
+      { name: "Krisp", why: "mic filter" },
+      { name: "Windows voice typing", why: "built in" },
+      { name: "Sound Recorder", why: "built in" },
+    ]
+  : [];
+
 /** Values used until the user changes something. Shared by the mock and the real settings store. */
 export const defaultSettings: Settings = {
   theme: "system",

@@ -20,6 +20,14 @@ pub const BROWSERS: &[(&str, &str, &str, Family)] = &[
     // Safari's media runs in WebKit's GPU process.
     ("com.apple.WebKit.GPU", "com.apple.Safari", "Safari", Family::Safari),
     ("com.apple.Safari", "com.apple.Safari", "Safari", Family::Safari),
+    // Windows: the exe file name (lower case), or the packaged app's family-name prefix. Firefox is left out.
+    ("chrome.exe", "chrome.exe", "Chrome", Family::Chromium),
+    ("msedge.exe", "msedge.exe", "Edge", Family::Chromium),
+    ("brave.exe", "brave.exe", "Brave", Family::Chromium),
+    ("opera.exe", "opera.exe", "Opera", Family::Chromium),
+    ("vivaldi.exe", "vivaldi.exe", "Vivaldi", Family::Chromium),
+    ("comet.exe", "comet.exe", "Comet", Family::Chromium),
+    ("TheBrowserCompany.Arc_", "TheBrowserCompany.Arc_", "Arc", Family::Chromium),
 ];
 
 /// What asking a browser for its tabs gave.
@@ -54,7 +62,7 @@ pub fn classify(lookups: &[Tabs]) -> BrowserCall {
 }
 
 pub fn browser_for(mic_user: &str) -> Option<(&'static str, &'static str, Family)> {
-    BROWSERS.iter().find(|(p, ..)| mic_user == *p || mic_user.starts_with(&format!("{p}."))).map(|(_, app, name, f)| (*app, *name, *f))
+    BROWSERS.iter().find(|(p, ..)| mic_user == *p || mic_user.starts_with(&format!("{p}.")) || (p.ends_with('_') && mic_user.starts_with(p))).map(|(_, app, name, f)| (*app, *name, *f))
 }
 
 /// The call a tab is in, by its URL: "Google Meet", "Zoom" or "Microsoft Teams". Lobby and home pages aren't calls.
@@ -134,5 +142,13 @@ mod tests {
         assert_eq!(browser_for("com.apple.WebKit.GPU"), Some(("com.apple.Safari", "Safari", Family::Safari)));
         assert_eq!(browser_for("org.mozilla.firefox"), None);
         assert_eq!(browser_for("com.google.ChromeX"), None);
+    }
+
+    #[test]
+    fn windows_browsers_map_to_themselves() {
+        assert_eq!(browser_for("chrome.exe"), Some(("chrome.exe", "Chrome", Family::Chromium)));
+        assert_eq!(browser_for("msedge.exe"), Some(("msedge.exe", "Edge", Family::Chromium)));
+        assert_eq!(browser_for("TheBrowserCompany.Arc_ttt1ap7aakyb4"), Some(("TheBrowserCompany.Arc_", "Arc", Family::Chromium)));
+        assert_eq!(browser_for("firefox.exe"), None);
     }
 }
