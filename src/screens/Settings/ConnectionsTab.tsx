@@ -11,6 +11,12 @@ import type { TabProps } from "./tabProps";
 
 const STATE_LABEL = { allowed: "allowed", denied: "not allowed", not_asked: "asks at the first call", not_installed: "not installed" } as const;
 
+// Windows has no permission for this: Talaan reads the address bar of the tab in front of each browser window.
+// Plain strings for now; they move to t() keys with i18n.
+const TABS_DESC_WINDOWS = "Recognizes Google Meet, Zoom web and Teams web tabs, so Browser calls can use Always. Reads the address of the tab in front of each browser window, on this computer only.";
+const STATE_LABEL_WINDOWS = { ...STATE_LABEL, allowed: "ready" } as const;
+const stateLabel = onWindows ? STATE_LABEL_WINDOWS : STATE_LABEL;
+
 // Windows calendar row (the calendar's iCal address). Plain strings for now; they move to t() keys with i18n.
 const ICS_TEXT = {
   title: "Calendar",
@@ -68,13 +74,16 @@ export function ConnectionsTab({ settings: s, update }: TabProps) {
             </span>
           </Row>
         )}
-        <Row title="Browser call detection" desc="Recognizes Google Meet, Zoom web and Teams web tabs, so Browser calls can use Always. Your system asks once per browser.">
+        <Row
+          title="Browser call detection"
+          desc={onWindows ? TABS_DESC_WINDOWS : "Recognizes Google Meet, Zoom web and Teams web tabs, so Browser calls can use Always. Your system asks once per browser."}
+        >
           <Switch aria-label="Browser call detection" checked={s.tabDetection} onChange={(v) => update({ tabDetection: v })} />
           {s.tabDetection && (
             <div className="flex basis-full flex-wrap gap-2">
               {browsers.map((b) => (
                 <Chip key={b.name} tone={b.state === "allowed" ? "gold" : "default"}>
-                  {b.name} · {STATE_LABEL[b.state]}
+                  {b.name} · {stateLabel[b.state]}
                 </Chip>
               ))}
               {browsers.some((b) => b.state === "denied") && (

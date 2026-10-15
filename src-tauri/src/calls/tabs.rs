@@ -34,7 +34,8 @@ pub const BROWSERS: &[(&str, &str, &str, Family)] = &[
 #[derive(Debug, Clone, PartialEq)]
 pub enum Tabs {
     Urls(Vec<String>),
-    /// The user said no to Automation for this browser.
+    /// The user said no to Automation for this browser (macOS; Windows has no such permission).
+    #[cfg_attr(target_os = "windows", allow(dead_code))]
     Denied,
     /// No answer in time (the permission prompt is still up) or another failure.
     Unknown,

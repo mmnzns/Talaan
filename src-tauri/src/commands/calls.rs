@@ -282,10 +282,21 @@ pub fn browsers_status() -> Vec<BrowserStatus> {
     installed_browsers()
         .into_iter()
         .map(|(name, installed)| {
-            let state = seen.iter().find(|(n, _)| *n == name).map(|(_, s)| *s).unwrap_or(if installed { "not_asked" } else { "not_installed" });
-            BrowserStatus { name, state }
+            let last = seen.iter().find(|(n, _)| *n == name).map(|(_, s)| *s);
+            BrowserStatus { name, state: browser_state(last, installed, cfg!(not(target_os = "windows"))) }
         })
         .collect()
+}
+
+/// A browser's state for Settings: the last answer seen, else "not_asked" where the system asks (macOS
+/// Automation), or "allowed" where there's no permission at all (Windows reads the address bar directly).
+fn browser_state(last: Option<&'static str>, installed: bool, needs_permission: bool) -> &'static str {
+    match last {
+        Some(s) => s,
+        None if !installed => "not_installed",
+        None if needs_permission => "not_asked",
+        None => "allowed",
+    }
 }
 
 /// What the prompt window should show right now (it asks when it first loads).
@@ -344,6 +355,18 @@ mod tests {
         assert!(installed_from(&cands, |p: &Path| p == found));
         assert!(!installed_from(&cands, |_| false));
         assert!(!installed_from(&[], |_| true));
+    }
+
+    #[test]
+    fn browser_states_follow_the_platform() {
+        // macOS: the last answer, else "asks at the first call".
+        assert_eq!(browser_state(Some("denied"), true, true), "denied");
+        assert_eq!(browser_state(None, true, true), "not_asked");
+        assert_eq!(browser_state(None, false, true), "not_installed");
+        // Windows: nothing to ask, so an installed browser is ready.
+        assert_eq!(browser_state(None, true, false), "allowed");
+        assert_eq!(browser_state(None, false, false), "not_installed");
+        assert_eq!(browser_state(Some("allowed"), true, false), "allowed");
     }
 
     #[test]
