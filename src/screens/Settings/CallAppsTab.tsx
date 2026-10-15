@@ -1,6 +1,7 @@
 import { X } from "lucide-react";
 import type { CallRule } from "../../data/settings";
-import { Group, InlineAdd, SectionIntro, Segmented } from "./parts";
+import { Switch } from "../../ui";
+import { Group, InlineAdd, Row, SectionIntro, Segmented } from "./parts";
 import type { TabProps } from "./tabProps";
 
 const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, "-");
@@ -56,6 +57,11 @@ export function CallAppsTab({ settings: s, update }: TabProps) {
           placeholder="App name"
           onAdd={(name) => update({ callApps: [...s.callApps, { id: `${slug(name)}-${s.callApps.length}`, name, note: "Added by you", rule: "ask" }] })}
         />
+        <Group>
+          <Row title="Tag meetings by call app" desc="A call from Zoom gets #zoom, from Slack #slack, and so on. Meetings you start yourself aren't tagged.">
+            <Switch aria-label="Tag meetings by call app" checked={s.autoTagApps} onChange={(v) => update({ autoTagApps: v })} />
+          </Row>
+        </Group>
       </div>
 
       <div className="flex flex-col gap-3">

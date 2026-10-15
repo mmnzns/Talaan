@@ -84,6 +84,16 @@ pub fn meetings_move_to_folder(app: AppHandle, state: State<AppState>, id: Strin
 }
 
 #[tauri::command]
+pub fn folders_rename(app: AppHandle, state: State<AppState>, id: String, name: String) -> CmdResult<()> {
+    changed(&app, state.lock().rename_folder(&id, &name))
+}
+
+#[tauri::command]
+pub fn folders_delete(app: AppHandle, state: State<AppState>, id: String) -> CmdResult<()> {
+    changed(&app, state.lock().delete_folder(&id))
+}
+
+#[tauri::command]
 pub fn folders_list(state: State<AppState>) -> CmdResult<Vec<Folder>> {
     state.lock().list_folders()
 }

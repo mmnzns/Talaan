@@ -51,6 +51,8 @@ export interface Settings {
   // General
   theme: ThemePreference;
   detectCalls: boolean;
+  /** Tag a detected call's meeting with the app's name. */
+  autoTagApps: boolean;
   launchAtLogin: boolean;
   recordingNotice: string;
   microphone: string; // "default" or a device name

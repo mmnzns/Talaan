@@ -4,6 +4,7 @@ import type { Settings } from "./settings";
 export const defaultSettings: Settings = {
   theme: "system",
   detectCalls: true,
+  autoTagApps: false,
   launchAtLogin: true,
   recordingNotice: "Heads up: I'm recording this call for my own notes. It stays on my computer.",
   microphone: "default",

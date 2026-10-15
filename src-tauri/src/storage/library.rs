@@ -77,6 +77,32 @@ impl Storage {
         Ok(Folder { id, name: name.to_string(), count: 0 })
     }
 
+    pub fn rename_folder(&self, id: &str, name: &str) -> Result<()> {
+        let name = name.trim();
+        if name.is_empty() {
+            return Err(StorageError::InvalidId("folder name".into()));
+        }
+        let mut folders = self.read_library()?;
+        let f = folders.iter_mut().find(|f| f.id == id).ok_or_else(|| StorageError::NotFound(format!("folder {id}")))?;
+        // The id stays: meetings point at it.
+        f.name = name.to_string();
+        self.write_library(folders)
+    }
+
+    /// Removes the folder. Its meetings stay, outside any folder.
+    pub fn delete_folder(&self, id: &str) -> Result<()> {
+        let mut folders = self.read_library()?;
+        let before = folders.len();
+        folders.retain(|f| f.id != id);
+        if folders.len() == before {
+            return Err(StorageError::NotFound(format!("folder {id}")));
+        }
+        for m in self.list_meetings(&Filter { folder_id: Some(id.to_string()), ..Default::default() })? {
+            self.move_to_folder(&m.id, None)?;
+        }
+        self.write_library(folders)
+    }
+
     pub fn list_tags(&self) -> Result<Vec<String>> {
         let tags: BTreeSet<String> = self.list_meetings(&Filter::default())?.into_iter().flat_map(|m| m.tags).collect();
         Ok(tags.into_iter().collect())
@@ -87,6 +113,21 @@ impl Storage {
 mod tests {
     use super::super::store::tests::{at, storage};
     use super::*;
+
+    #[test]
+    fn a_folder_can_be_renamed_and_deleted_without_losing_meetings() {
+        let (_d, s) = storage();
+        let f = s.create_folder("Clients").unwrap();
+        let m = s.create_meeting("zoom", "Zoom", at("2026-10-14T14:30:00-07:00")).unwrap().id;
+        s.move_to_folder(&m, Some(&f.id)).unwrap();
+        s.rename_folder(&f.id, "  Client calls ").unwrap();
+        assert_eq!(s.list_folders().unwrap(), vec![Folder { id: f.id.clone(), name: "Client calls".into(), count: 1 }]);
+        assert!(s.rename_folder(&f.id, " ").is_err());
+        s.delete_folder(&f.id).unwrap();
+        assert!(s.list_folders().unwrap().is_empty());
+        assert_eq!(s.get_meeting(&m).unwrap().item.folder_id, None);
+        assert!(s.delete_folder(&f.id).is_err());
+    }
 
     #[test]
     fn folders_get_unique_slug_ids() {

@@ -217,6 +217,18 @@ export class MockMeetingStore implements MeetingStore {
     return { ...folder, count: 0 };
   }
 
+  async renameFolder(id: string, name: string): Promise<void> {
+    const f = this.folders.find((x) => x.id === id);
+    if (f && name.trim()) f.name = name.trim();
+    this.emit();
+  }
+
+  async deleteFolder(id: string): Promise<void> {
+    this.folders = this.folders.filter((f) => f.id !== id);
+    for (const m of this.meetings.values()) if (m.folderId === id) m.folderId = undefined;
+    this.emit();
+  }
+
   async listTags(): Promise<string[]> {
     return [...new Set([...this.meetings.values()].flatMap((m) => m.tags))].sort();
   }

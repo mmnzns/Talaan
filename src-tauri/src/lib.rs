@@ -75,6 +75,8 @@ pub fn run() {
             meetings::meetings_set_tags,
             meetings::meetings_move_to_folder,
             meetings::folders_list,
+            meetings::folders_rename,
+            meetings::folders_delete,
             meetings::folders_create,
             meetings::tags_list,
             meetings::meetings_playback,

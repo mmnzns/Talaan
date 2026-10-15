@@ -103,6 +103,11 @@ pub fn start_recording(app: &AppHandle, app_id: &str, app_label: &str) -> CmdRes
         .start(&storage, app_id, app_label, Box::new(MicSource::default()), system_source(), platform::host_now_ns(), started_at)
         .map_err(err)?;
     let st = engine.status(platform::host_now_ns());
+    if let Some(id) = &st.meeting_id {
+        if let Some(tag) = auto_tag(storage.settings_get().ok().flatten().as_ref(), app_id, app_label) {
+            let _ = storage.set_tags(id, &[tag]);
+        }
+    }
     drop(storage);
     if !st.system_audio {
         notice(app, "Talaan can't hear the call audio, so only your side is recorded. Allow system audio recording in System Settings.".into(), "warning", Some("system-audio"));
@@ -114,6 +119,12 @@ pub fn start_recording(app: &AppHandle, app_id: &str, app_label: &str) -> CmdRes
     super::tray::update(app, &p.status);
     let _ = app.emit(STATE, p.clone());
     Ok(p)
+}
+
+/// The call app's name as a tag, when "Tag meetings by call app" is on. Manual recordings ("other") get none.
+fn auto_tag(settings: Option<&serde_json::Value>, app_id: &str, app_label: &str) -> Option<String> {
+    let on = settings.and_then(|s| s["autoTagApps"].as_bool()).unwrap_or(false);
+    (on && app_id != "other" && !app_label.trim().is_empty()).then(|| app_label.trim().to_lowercase())
 }
 
 #[tauri::command]
@@ -337,5 +348,21 @@ pub fn stop_on_exit(app: &AppHandle) {
     if engine.is_active() {
         let state = app.state::<AppState>();
         let _ = engine.stop(&state.lock(), platform::host_now_ns());
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::auto_tag;
+    use serde_json::json;
+
+    #[test]
+    fn calls_are_tagged_by_app_only_when_turned_on() {
+        let on = json!({ "autoTagApps": true });
+        assert_eq!(auto_tag(Some(&on), "zoom", "Zoom"), Some("zoom".into()));
+        assert_eq!(auto_tag(Some(&on), "browser", "Google Meet"), Some("google meet".into()));
+        assert_eq!(auto_tag(Some(&on), "other", "Call"), None);
+        assert_eq!(auto_tag(Some(&json!({})), "zoom", "Zoom"), None);
+        assert_eq!(auto_tag(None, "zoom", "Zoom"), None);
     }
 }

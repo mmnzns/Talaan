@@ -83,11 +83,18 @@ export class TauriMeetingStore implements MeetingStore {
     return call("folders_create", { name });
   }
 
+  renameFolder(id: string, name: string): Promise<void> {
+    return call("folders_rename", { id, name });
+  }
+
+  deleteFolder(id: string): Promise<void> {
+    return call("folders_delete", { id });
+  }
+
   listTags(): Promise<string[]> {
     return call("tags_list");
   }
 
-  /** Real answers arrive with M8. Until then: an honest "nothing found". */
   ask(question: string, scope: AskScope): Promise<AskAnswer> {
     return call<AskAnswer>("meetings_ask", { question, scope });
   }

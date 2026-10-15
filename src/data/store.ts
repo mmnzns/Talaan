@@ -42,6 +42,9 @@ export interface MeetingStore {
   moveToFolder(id: MeetingId, folderId?: string): Promise<void>;
   listFolders(): Promise<Folder[]>;
   createFolder(name: string): Promise<Folder>;
+  renameFolder(id: string, name: string): Promise<void>;
+  /** Removes the folder; its meetings stay, outside any folder. */
+  deleteFolder(id: string): Promise<void>;
   listTags(): Promise<string[]>;
   ask(question: string, scope: AskScope): Promise<AskAnswer>;
   /** Fires on any change. Returns an unsubscribe function. */

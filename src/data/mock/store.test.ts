@@ -124,6 +124,17 @@ describe("createFolder", () => {
     expect(b.id).toBe("q4-planning-2");
     expect((await store.listFolders()).map((f) => f.id)).toContain("q4-planning");
   });
+
+  it("renames and deletes a folder, keeping its meetings", async () => {
+    const f = await store.createFolder("Clients");
+    const [m] = await store.listMeetings();
+    await store.moveToFolder(m.id, f.id);
+    await store.renameFolder(f.id, "Client calls");
+    expect((await store.listFolders()).find((x) => x.id === f.id)?.name).toBe("Client calls");
+    await store.deleteFolder(f.id);
+    expect((await store.listFolders()).some((x) => x.id === f.id)).toBe(false);
+    expect((await store.getMeeting(m.id))?.folderId).toBeUndefined();
+  });
 });
 
 describe("empty store", () => {
