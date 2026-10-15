@@ -36,6 +36,8 @@ export function MeetingHeader({ meeting, editing, canRevert, onToggleEdit, onRev
   const [title, setTitle] = useState(meeting.title);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [retranscribing, setRetranscribing] = useState(false);
+  const { settings } = useSettings();
+  const speechModel = meeting.transcription && (settings?.speechModels.find((m) => m.id === meeting.transcription!.model)?.name ?? meeting.transcription.model);
 
   const ready = meeting.status === "ready";
 
@@ -224,6 +226,13 @@ export function MeetingHeader({ meeting, editing, canRevert, onToggleEdit, onRev
                   >
                     <Trash2 size={14} aria-hidden="true" /> Delete meeting…
                   </MenuItem>
+                  {(speechModel || meeting.summary) && (
+                    <div className="mt-1 flex flex-col gap-1 border-t border-line px-2.5 pb-1 pt-2.5 text-xs text-subtle">
+                      <Label>made with</Label>
+                      {speechModel && <span>Transcript · {speechModel}</span>}
+                      {meeting.summary && <span>Summary · {meeting.summary.engine}</span>}
+                    </div>
+                  )}
                 </>
               )}
             </Popover>
