@@ -2,7 +2,7 @@
 
 use super::io::{read_json_opt, remove_if_exists, write_json_atomic, write_text_atomic};
 use super::markdown::{summary_md, transcript_md};
-use super::model::{Summary, TranscriptLine};
+use super::model::{MeetingStatus, Summary, TranscriptLine};
 use super::paths::*;
 use super::{Result, Storage, StorageError};
 use std::collections::BTreeMap;
@@ -70,6 +70,32 @@ impl Storage {
         self.regenerate_markdown(id)
     }
 
+    /// "Transcribe again" with `model`: back into the transcriber's queue. Transcript edits are dropped (the new
+    /// lines have new ids) and so is the summary with its edits and ticks, because it is written again from the
+    /// new transcript. Speaker names, title, tags, folder and marks stay. The old transcript stays until the new
+    /// one replaces it, so a failed run loses nothing but the summary.
+    pub fn start_retranscribe(&self, id: &str, model: &str) -> Result<()> {
+        let dir = self.dir(id)?;
+        let file = self.read_meeting_file(id)?;
+        if !matches!(file.status, MeetingStatus::Ready | MeetingStatus::Failed) {
+            return Err(StorageError::Refused("Wait for this meeting to finish first.".into()));
+        }
+        if !self.has_audio(&dir, &file) {
+            return Err(StorageError::Refused("The audio for this call is gone, so it can't be transcribed again.".into()));
+        }
+        for name in [TRANSCRIPT_EDITS, SUMMARY, SUMMARY_EDITED, SUMMARY_DONE] {
+            remove_if_exists(&dir.join(name))?;
+        }
+        self.update_meeting_file(id, |f| {
+            f.status = MeetingStatus::Transcribing;
+            f.progress = Some(0.0);
+            f.error = None;
+            f.summary_error = None;
+            f.retranscribe_model = Some(model.to_string());
+        })?;
+        self.regenerate_markdown(id)
+    }
+
     /// Rewrites `transcript.md` and `summary.md` from what the user currently sees.
     pub fn regenerate_markdown(&self, id: &str) -> Result<()> {
         let dir = self.dir(id)?;
@@ -108,6 +134,37 @@ mod tests {
 
     fn path(d: &tempfile::TempDir, id: &str, name: &str) -> std::path::PathBuf {
         d.path().join("meetings").join(id).join(name)
+    }
+
+    #[test]
+    fn transcribe_again_drops_edits_and_summary_but_keeps_names() {
+        let (d, s, id) = setup();
+        s.update_meeting_file(&id, |f| {
+            f.status = MeetingStatus::Ready;
+            f.title = "Dana 1:1".into();
+            f.title_is_placeholder = false;
+        })
+        .unwrap();
+        s.rename_speaker(&id, "them:0", "Dana").unwrap();
+        s.update_transcript_line(&id, "l0", "Everyone's here.").unwrap();
+        fs::write(path(&d, &id, SUMMARY_EDITED), serde_json::to_vec(&summary("Edited.")).unwrap()).unwrap();
+        fs::write(path(&d, &id, SUMMARY_DONE), r#"{"a0":true}"#).unwrap();
+        // No audio: refused, nothing touched.
+        assert!(matches!(s.start_retranscribe(&id, "parakeet-v3"), Err(StorageError::Refused(_))));
+        assert!(path(&d, &id, TRANSCRIPT_EDITS).exists());
+
+        fs::write(path(&d, &id, ME_WAV), b"x").unwrap();
+        s.start_retranscribe(&id, "parakeet-v3").unwrap();
+        for gone in [TRANSCRIPT_EDITS, SUMMARY, SUMMARY_EDITED, SUMMARY_DONE, SUMMARY_MD] {
+            assert!(!path(&d, &id, gone).exists(), "{gone} should be gone");
+        }
+        let f = s.read_meeting_file(&id).unwrap();
+        assert_eq!((f.status, f.retranscribe_model.as_deref()), (MeetingStatus::Transcribing, Some("parakeet-v3")));
+        assert_eq!((f.title.as_str(), f.speakers["them:0"].as_str()), ("Dana 1:1", "Dana"));
+        // The old transcript stays until the new one replaces it.
+        assert_eq!(s.get_meeting(&id).unwrap().transcript[0].text, "Okay, looks like everyone is here.");
+        // Not while it is busy.
+        assert!(s.start_retranscribe(&id, "whisper-turbo").is_err());
     }
 
     #[test]

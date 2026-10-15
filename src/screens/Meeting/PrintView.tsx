@@ -2,11 +2,13 @@ import { useEffect } from "react";
 import { useMeeting } from "../../data/hooks";
 import { speakerName } from "../../lib/transcript";
 import { formatDate, formatDuration, formatTime } from "../../lib/format";
+import { useT } from "../../lib/i18n/I18nProvider";
 import { inTauri } from "../../lib/windows";
 
 /** A meeting laid out for paper / PDF (`#/print/:id`). Opens the print sheet once it has rendered. */
 export function PrintView({ id, withTranscript }: { id: string; withTranscript: boolean }) {
   const { meeting } = useMeeting(id);
+  const t = useT();
 
   useEffect(() => {
     if (!meeting) return;
@@ -37,19 +39,19 @@ export function PrintView({ id, withTranscript }: { id: string; withTranscript: 
       {s ? (
         <>
           <p className="m-0 mb-5 text-[15px] leading-[23px]">{s.recap}</p>
-          <Section title="Decisions" items={s.decisions.map((d) => [d.id, <>{time(d.at)}{d.text}</>])} />
+          <Section title={t("meeting.shDecisions")} items={s.decisions.map((d) => [d.id, <>{time(d.at)}{d.text}</>])} />
           <Section
-            title="Action items"
-            items={s.actionItems.map((a) => [a.id, <>{time(a.at)}{a.done ? "☑ " : "☐ "}{a.text}{a.owner ? ` — ${a.owner}` : ""}{a.due ? `, due ${a.due}` : ""}</>])}
+            title={t("meeting.shActionItems")}
+            items={s.actionItems.map((a) => [a.id, <>{time(a.at)}{a.done ? "☑ " : "☐ "}{a.text}{a.owner ? ` — ${a.owner}` : ""}{a.due ? `, ${t("meeting.shDue", { date: a.due })}` : ""}</>])}
           />
-          <Section title="Open questions" items={s.openQuestions.map((q) => [q.id, <>{time(q.at)}{q.text}</>])} />
+          <Section title={t("meeting.shOpenQuestions")} items={s.openQuestions.map((q) => [q.id, <>{time(q.at)}{q.text}</>])} />
         </>
       ) : (
-        <p className="text-subtle">No summary yet.</p>
+        <p className="text-subtle">{t("meeting.printNoSummary")}</p>
       )}
       {withTranscript && meeting.transcript.length > 0 && (
         <section className="mt-6 break-before-page">
-          <h2 className="mb-3 text-[15px] font-bold lowercase font-mono tracking-normal">Transcript</h2>
+          <h2 className="mb-3 text-[15px] font-bold lowercase font-mono tracking-normal">{t("meeting.shTranscript")}</h2>
           {meeting.transcript.map((l) => (
             <p key={l.id} className="m-0 mb-2 text-[13px] leading-[19px] [break-inside:avoid]">
               {time(l.at)}

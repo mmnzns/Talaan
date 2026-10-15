@@ -57,6 +57,8 @@ export interface LocalModel {
 export interface Settings {
   // General
   theme: ThemePreference;
+  /** What the transcript, summaries and exports call the user (instead of "Me"). Empty = "Me". */
+  yourName: string;
   detectCalls: boolean;
   /** Tag a detected call's meeting with the app's name. */
   autoTagApps: boolean;
@@ -81,9 +83,13 @@ export interface Settings {
   searchModel: SpeechModel;
   reuseModels: boolean;
   meetingLanguage: "auto" | string;
+  /** The language of Talaan's own screens: "auto" follows the system. Not the language of meetings or summaries. */
+  uiLanguage: "auto" | "en" | "fr" | "es";
   useGpu: boolean;
   // Summary AI
   summaryEngine: SummaryEngineKind;
+  /** Summarize each new transcript by itself. Off: meetings wait for Generate summary. */
+  summarizeAutomatically: boolean;
   /** "meeting" = the meeting's own language, or an ISO code. */
   summaryLanguage: string;
   localModel: "recommended" | "larger";
@@ -150,6 +156,8 @@ export interface SettingsStore {
   disconnectCalendar(): Promise<void>;
   /** Where the data lives and how much space it uses. */
   dataInfo(): Promise<{ path: string; bytes: number }>;
+  /** Shows the data folder in the file manager. */
+  revealData(): Promise<void>;
   /** "Delete all Talaan data": meetings, audio, models, settings and keys. */
   deleteAllData(): Promise<void>;
   /** Fires on any change. Returns an unsubscribe function. */

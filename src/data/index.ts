@@ -15,7 +15,10 @@ import type { SettingsStore } from "./settings";
 const real = inTauri();
 const empty = typeof location !== "undefined" && location.search.includes("mock=empty");
 
-export const meetingStore: MeetingStore = real ? new TauriMeetingStore() : new MockMeetingStore(new Date(), { empty });
-export const settingsStore: SettingsStore = real ? new TauriSettingsStore() : new MockSettingsStore();
+const mockSettings = real ? undefined : new MockSettingsStore();
+export const settingsStore: SettingsStore = mockSettings ?? new TauriSettingsStore();
+export const meetingStore: MeetingStore = mockSettings
+  ? new MockMeetingStore(new Date(), { empty, yourName: () => mockSettings.current().yourName })
+  : new TauriMeetingStore();
 export const recorderClient: RecorderClient = real ? new TauriRecorderClient() : new MockRecorderClient();
 export const usingRealStorage = real;

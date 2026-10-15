@@ -84,6 +84,7 @@ pub fn run() {
             meetings::meetings_revert_edits,
             meetings::meetings_rename_speaker,
             meetings::meetings_set_tags,
+            meetings::meetings_set_transcript_only,
             meetings::meetings_move_to_folder,
             meetings::folders_list,
             meetings::folders_rename,
@@ -119,6 +120,7 @@ pub fn run() {
             rec_cmd::permissions_request_mic,
             rec_cmd::permissions_open_settings,
             commands::transcriber::meetings_retry,
+            commands::transcriber::meetings_retranscribe,
             commands::transcriber::models_list,
             commands::transcriber::models_download,
             commands::transcriber::models_cancel,
@@ -143,6 +145,7 @@ pub fn run() {
             settings::settings_set,
             settings::data_delete_all,
             settings::data_info,
+            settings::data_reveal,
             dev::dev_seed,
             dev::dev_wipe,
         ])

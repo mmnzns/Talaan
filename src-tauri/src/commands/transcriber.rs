@@ -112,6 +112,24 @@ pub fn meetings_retry(app: AppHandle, state: State<AppState>, t: State<Transcrib
     Ok(())
 }
 
+/// Transcribe a finished meeting again with another speech model (this meeting only). Edits and the summary
+/// are dropped, speaker names stay, and the new transcript is summarized like a new call.
+#[tauri::command]
+pub fn meetings_retranscribe(app: AppHandle, state: State<AppState>, t: State<TranscriberState>, id: String, model: String) -> CmdResult<()> {
+    let m = find(&model).filter(|m| matches!(m.engine, EngineKind::Parakeet | EngineKind::Whisper)).ok_or_else(|| err(format!("No speech model called {model}")))?;
+    let storage = state.lock();
+    let config = Config::from_settings(storage.settings_get()?.as_ref());
+    if ModelStore::new(&t.data_dir, config.reuse).locate(m) == Location::Missing {
+        return Err(err(format!("Download {} in Settings › Speech models first.", m.name)));
+    }
+    app.state::<super::summarizer::SummarizerState>().cancel_if_running(&id);
+    storage.start_retranscribe(&id, m.id)?;
+    drop(storage);
+    t.enqueue(&id);
+    notify(&app, MEETINGS_CHANGED);
+    Ok(())
+}
+
 #[derive(Serialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct ModelRow {

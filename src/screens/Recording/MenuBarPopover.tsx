@@ -6,6 +6,7 @@ import { copyText, toShareText } from "../../lib/share";
 import { openSettings } from "../../lib/windows";
 import { navigate, routes } from "../../lib/router";
 import { Button, Label, useToast } from "../../ui";
+import { useT } from "../../lib/i18n/I18nProvider";
 import { Logo } from "../../brand/Logo";
 import { SunCorner } from "../../brand/SunCorner";
 
@@ -19,6 +20,7 @@ interface Props {
 
 /** Menu bar popover when nothing is recording. */
 export function MenuBarPopover({ onStart, onOpenMeeting, onOpenApp, onQuit }: Props) {
+  const t = useT();
   const store = useStore();
   const toast = useToast();
   const { meetings } = useMeetings();
@@ -36,28 +38,28 @@ export function MenuBarPopover({ onStart, onOpenMeeting, onOpenApp, onQuit }: Pr
   const item = "flex items-center gap-3 rounded-[10px] px-3 py-2.5 hover:bg-hover";
 
   return (
-    <div role="dialog" aria-label="Talaan menu" className="flex w-[356px] flex-col overflow-hidden rounded-2xl border border-line bg-surface shadow-[0_16px_40px_rgba(17,19,24,0.14)]">
+    <div role="dialog" aria-label={t("recording.menuAria")} className="flex w-[356px] flex-col overflow-hidden rounded-2xl border border-line bg-surface shadow-[0_16px_40px_rgba(17,19,24,0.14)]">
       <div className="relative flex flex-col gap-[18px] overflow-hidden border-b border-line px-[22px] pb-5 pt-[22px]">
         <SunCorner size={110} className="absolute right-0 top-0" />
         <div className="relative flex items-center gap-2.5">
           <Logo size={34} />
           <div className="flex flex-col">
-            <span className="font-display text-[17px] font-bold leading-5 tracking-[-0.02em]">talaan</span>
+            <span className="font-display text-[17px] font-bold leading-5 tracking-[-0.02em]">{t("recording.wordmark")}</span>
             <Label className="inline-flex items-center gap-1.5">
               <span className="size-1.5 rounded-full bg-gold" />
-              ready · offline
+              {t("recording.readyOffline")}
             </Label>
           </div>
         </div>
         <Button variant="primary" className="relative h-[42px] w-full text-sm" onClick={onStart}>
           <span aria-hidden="true" className="size-[9px] rounded-full bg-red shadow-[0_0_0_3px_color-mix(in_srgb,var(--t-red)_30%,transparent)]" />
-          Start recording
+          {t("recording.startRecording")}
         </Button>
-        <span className="relative text-xs leading-[17px] text-subtle">Talaan also asks when Zoom, Meet, Teams or Slack starts using your mic.</span>
+        <span className="relative text-xs leading-[17px] text-subtle">{t("recording.asksWhen")}</span>
       </div>
       <div className="flex flex-col gap-1 px-2.5 py-4">
-        <Label className="px-3 pb-2">recent</Label>
-        {recent.length === 0 && <span className="px-2.5 py-2 text-[13px] text-subtle">Meetings you record show up here.</span>}
+        <Label className="px-3 pb-2">{t("recording.recent")}</Label>
+        {recent.length === 0 && <span className="px-2.5 py-2 text-[13px] text-subtle">{t("recording.recentEmpty")}</span>}
         {recent.map((m) => {
           const busy = m.status === "summarizing" || m.status === "transcribing";
           const day = dayGroup(m.startedAt).label;
@@ -69,7 +71,7 @@ export function MenuBarPopover({ onStart, onOpenMeeting, onOpenApp, onQuit }: Pr
                 className="flex min-w-0 flex-1 cursor-pointer flex-col border-0 bg-transparent p-0 text-left font-[inherit] text-ink"
               >
                 <span className="truncate font-semibold">{m.title}</span>
-                <Label>{busy ? `${m.status} · a minute left` : `${day} ${formatClock(m.startedAt)}`}</Label>
+                <Label>{busy ? t(m.status === "summarizing" ? "recording.busySummarizing" : "recording.busyTranscribing") : `${day} ${formatClock(m.startedAt)}`}</Label>
               </button>
               {m.status === "ready" && (
                 <button
@@ -77,7 +79,7 @@ export function MenuBarPopover({ onStart, onOpenMeeting, onOpenApp, onQuit }: Pr
                   onClick={() => copy(m.id)}
                   className="h-[26px] cursor-pointer whitespace-nowrap rounded-[7px] border border-edge bg-surface px-2.5 font-[inherit] text-xs font-semibold text-ink hover:bg-hover"
                 >
-                  {copied === m.id ? "Copied" : "Copy as text"}
+                  {copied === m.id ? t("recording.copied") : t("recording.copyAsText")}
                 </button>
               )}
             </div>
@@ -86,13 +88,13 @@ export function MenuBarPopover({ onStart, onOpenMeeting, onOpenApp, onQuit }: Pr
       </div>
       <div className="flex border-t border-line p-2">
         <button type="button" onClick={() => (onOpenApp ? onOpenApp() : navigate(routes.meetings()))} className={`${item} flex-1 cursor-pointer border-0 bg-transparent font-[inherit] text-[13px] font-semibold text-ink`}>
-          Open Talaan
+          {t("recording.openTalaan")}
         </button>
         <button type="button" onClick={() => openSettings()} className={`${item} cursor-pointer border-0 bg-transparent font-[inherit] text-[13px] text-ink`}>
-          Settings
+          {t("recording.settings")}
         </button>
-        <button type="button" onClick={() => (onQuit ? onQuit() : toast("Talaan would quit here"))} className={`${item} cursor-pointer border-0 bg-transparent font-[inherit] text-[13px] text-ink`}>
-          Quit
+        <button type="button" onClick={() => (onQuit ? onQuit() : toast(t("recording.quitDemo")))} className={`${item} cursor-pointer border-0 bg-transparent font-[inherit] text-[13px] text-ink`}>
+          {t("recording.quit")}
         </button>
       </div>
     </div>

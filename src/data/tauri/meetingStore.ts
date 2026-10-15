@@ -45,6 +45,10 @@ export class TauriMeetingStore implements MeetingStore {
     return call<void>("meetings_retry", { id });
   }
 
+  retranscribe(id: MeetingId, model: string) {
+    return call<void>("meetings_retranscribe", { id, model });
+  }
+
   generateSummary(id: MeetingId) {
     return call<void>("meetings_generate_summary", { id });
   }
@@ -66,6 +70,10 @@ export class TauriMeetingStore implements MeetingStore {
 
   renameSpeaker(id: MeetingId, speaker: Speaker, name: string) {
     return call<void>("meetings_rename_speaker", { id, speaker, name });
+  }
+
+  setTranscriptOnly(id: MeetingId, on: boolean) {
+    return call<void>("meetings_set_transcript_only", { id, on });
   }
 
   setTags(id: MeetingId, tags: string[]) {

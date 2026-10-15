@@ -1,4 +1,5 @@
 import type { Meeting } from "../data/types";
+import { t } from "./i18n";
 import { safeFileName, toMarkdown, toPlainText } from "./share";
 import { routes } from "./router";
 import { inTauri } from "./windows";
@@ -29,7 +30,7 @@ export async function exportMeeting(meeting: Meeting, format: FileFormat, withTr
   const { invoke } = await import("@tauri-apps/api/core");
   const path = await save({
     defaultPath: name,
-    filters: [format === "md" ? { name: "Markdown", extensions: ["md"] } : { name: "Plain text", extensions: ["txt"] }],
+    filters: [format === "md" ? { name: "Markdown", extensions: ["md"] } : { name: t("meeting.fmtTxtName"), extensions: ["txt"] }],
   });
   if (!path) return undefined;
   await invoke("export_write", { path, contents: text });
@@ -45,5 +46,5 @@ async function openPrint(id: string, withTranscript: boolean) {
   const { WebviewWindow } = await import("@tauri-apps/api/webviewWindow");
   const old = await WebviewWindow.getByLabel("print");
   await old?.close();
-  new WebviewWindow("print", { url: `index.html${hash}`, title: "Print", width: 820, height: 900, center: true });
+  new WebviewWindow("print", { url: `index.html${hash}`, title: t("meeting.printTitle"), width: 820, height: 900, center: true });
 }

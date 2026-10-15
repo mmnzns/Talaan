@@ -1,7 +1,7 @@
 //! The background summarizer: one thread, one meeting at a time, queue rebuilt from `summarizing` at launch.
 //! A meeting enters `summarizing` and leaves `ready`, with a summary or with `summary_error` saying why not.
 
-use super::summarize::{summarize, EngineError, SummarizeError, SummaryEngine};
+use super::summarize::{summarize, too_short, EngineError, SummarizeError, SummaryEngine};
 use crate::storage::model::{MeetingStatus, ProcessingError};
 use crate::storage::Storage;
 use serde_json::Value;
@@ -14,6 +14,8 @@ use std::time::{Duration, Instant};
 /// unusable or the call failed. Both leave the transcript-only meeting with a Generate summary button.
 pub const NO_ENGINE: &str = "no_engine";
 pub const FAILED: &str = "failed";
+/// Too little speech to summarize (a test call, a cough): transcript only, and Generate summary says the same.
+pub const TOO_SHORT: &str = "too_short";
 
 /// What the worker reads from `settings.json`.
 #[derive(Debug, Clone, PartialEq)]
@@ -146,6 +148,10 @@ fn process(deps: &Deps, id: &str, cancel: &AtomicBool) {
         (meeting, Config::from_settings(s.settings_get().ok().flatten().as_ref()))
     };
 
+    // Checked before the engine, so a test call doesn't wait on (or fail for) a model it never needed.
+    if too_short(&meeting.transcript) {
+        return without_summary(deps, id, TOO_SHORT, SummarizeError::TooShort.message());
+    }
     let mut engine = match (deps.make_engine)(&config) {
         Ok(e) => e,
         Err(EngineError::Unavailable(m)) => return without_summary(deps, id, NO_ENGINE, m),
@@ -187,6 +193,7 @@ fn process(deps: &Deps, id: &str, cancel: &AtomicBool) {
             (deps.summarized)(id, &title);
         }
         Err(SummarizeError::Engine(EngineError::Cancelled)) => {}
+        Err(e @ SummarizeError::TooShort) => without_summary(deps, id, TOO_SHORT, e.message()),
         Err(SummarizeError::Engine(EngineError::Unavailable(m))) => without_summary(deps, id, NO_ENGINE, m),
         Err(e) => without_summary(deps, id, FAILED, e.message()),
     }
@@ -203,7 +210,8 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let mut storage = Storage::new(dir.path().to_path_buf()).unwrap();
         let f = storage.create_meeting("zoom", "Zoom", chrono::DateTime::parse_from_rfc3339("2026-10-14T14:30:00-07:00").unwrap()).unwrap();
-        storage.save_transcript(&f.id, &[TranscriptLine { id: "l0".into(), at: 60_000, end: 64_000, speaker: "me".into(), text: "Onboarding first.".into(), edited: false }]).unwrap();
+        let line = |id: &str, at: u64, speaker: &str, text: &str| TranscriptLine { id: id.into(), at, end: at + 4_000, speaker: speaker.into(), text: text.into(), edited: false };
+        storage.save_transcript(&f.id, &[line("l0", 60_000, "me", "Onboarding first."), line("l1", 65_000, "them:0", "Agreed, pricing waits."), line("l2", 70_000, "me", "I'll send the plan Friday.")]).unwrap();
         storage.update_meeting_file(&f.id, |m| m.status = MeetingStatus::Summarizing).unwrap();
         storage.settings_set(json!({ "summaryEngine": "local" })).unwrap();
         let storage = Arc::new(Mutex::new(storage));
@@ -269,6 +277,20 @@ mod tests {
         let e = m.summary_error.unwrap();
         assert_eq!(e.code, FAILED);
         assert!(e.message.contains("couldn't use"));
+    }
+
+    #[test]
+    fn a_too_short_recording_is_saved_without_a_summary() {
+        let (_d, storage, id, w, done) = setup(Box::new(|_| Ok(Box::new(Scripted { replies: vec![Ok(reply("Invented", "Invented."))], prompts: vec![], context: 16_384 }))));
+        storage.lock().unwrap().save_transcript(&id, &[TranscriptLine { id: "l0".into(), at: 0, end: 2_000, speaker: "me".into(), text: "Can you hear me?".into(), edited: false }]).unwrap();
+        w.enqueue(&id);
+        wait(&w);
+        let m = storage.lock().unwrap().get_meeting(&id).unwrap();
+        assert_eq!(m.item.status, MeetingStatus::Ready);
+        assert!(m.summary.is_none());
+        assert_eq!(m.summary_error.unwrap().code, TOO_SHORT);
+        assert!(m.item.title.starts_with("Call, Zoom"));
+        assert!(done.lock().unwrap().is_empty());
     }
 
     #[test]

@@ -46,6 +46,11 @@ export class MockSettingsStore implements SettingsStore {
     this.emit();
   }
 
+  /** The settings right now, for other mock stores (no copy; don't change it). */
+  current(): Settings {
+    return this.state;
+  }
+
   async get(): Promise<Settings> {
     return structuredClone(this.state);
   }
@@ -173,6 +178,8 @@ export class MockSettingsStore implements SettingsStore {
   async dataInfo() {
     return { path: "~/Library/Application Support/Talaan", bytes: 1_200_000_000 };
   }
+
+  async revealData(): Promise<void> {}
 
   async deleteAllData(): Promise<void> {
     await sleep(400);

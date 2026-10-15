@@ -1,5 +1,7 @@
 import { X } from "lucide-react";
 import type { CallRule } from "../../data/settings";
+import { useLang, useT } from "../../lib/i18n/I18nProvider";
+import { messageOr } from "../../lib/i18n";
 import { Switch, cn } from "../../ui";
 import { Group, InlineAdd, Row, SectionIntro, Segmented } from "./parts";
 import type { TabProps } from "./tabProps";
@@ -9,15 +11,23 @@ const TINTS = ["bg-sp1 text-sp1-fg", "bg-sp3 text-sp3-fg", "bg-sp2 text-sp2-fg"]
 
 const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, "-");
 
+/** The stored English note is data: the known ones are translated for display. */
+const ADDED_BY_YOU = "Added by you";
+
 export function CallAppsTab({ settings: s, update }: TabProps) {
+  const t = useT();
+  const lang = useLang();
+  const noteOf = (a: { id: string; note: string }) =>
+    a.note === ADDED_BY_YOU ? t("settings.app_note_added_by_you") : messageOr(lang, `settings.app_note_${a.id}`, a.note);
+  const whyOf = (why: string) => messageOr(lang, `settings.why_${why.replace(/ /g, "_")}`, why);
   const setRule = (id: string, rule: CallRule) => update({ callApps: s.callApps.map((a) => (a.id === id ? { ...a, rule } : a)) });
 
   return (
     <div className="flex flex-col gap-6">
       <div className="flex flex-col gap-3">
         <SectionIntro
-          title="Call apps"
-          desc="What Talaan does when one of these starts using your mic. Ask is the default. Always record still shows a banner with the recording notice and Stop."
+          title={t("settings.apps_title")}
+          desc={t("settings.apps_desc")}
         />
         <Group>
           {s.callApps.map((a, i) => {
@@ -29,12 +39,12 @@ export function CallAppsTab({ settings: s, update }: TabProps) {
                 </span>
                 <div className="min-w-0 flex-1 basis-48">
                   <div className="text-[13px] font-semibold">{a.name}</div>
-                  <div className="text-xs leading-[17px] text-subtle">{a.note}</div>
+                  <div className="text-xs leading-[17px] text-subtle">{noteOf(a)}</div>
                 </div>
-                {a.note === "Added by you" && (
+                {a.note === ADDED_BY_YOU && (
                   <button
                     type="button"
-                    aria-label={`Remove ${a.name}`}
+                    aria-label={t("settings.apps_remove", { name: a.name })}
                     onClick={() => update({ callApps: s.callApps.filter((x) => x.id !== a.id) })}
                     className="grid cursor-pointer place-items-center border-0 bg-transparent p-1 text-subtle hover:text-ink"
                   >
@@ -46,9 +56,9 @@ export function CallAppsTab({ settings: s, update }: TabProps) {
                   value={lockAlways && a.rule === "always" ? "ask" : a.rule}
                   onChange={(v) => setRule(a.id, v)}
                   options={[
-                    { value: "ask", label: "Ask" },
-                    { value: "always", label: "Always", disabled: lockAlways, title: lockAlways ? "Turn on browser call detection in Connections first" : undefined },
-                    { value: "never", label: "Never" },
+                    { value: "ask", label: t("settings.rule_ask") },
+                    { value: "always", label: t("settings.rule_always"), disabled: lockAlways, title: lockAlways ? t("settings.rule_locked") : undefined },
+                    { value: "never", label: t("settings.rule_never") },
                   ]}
                 />
               </div>
@@ -56,30 +66,30 @@ export function CallAppsTab({ settings: s, update }: TabProps) {
           })}
         </Group>
         <InlineAdd
-          label="+ Add an app"
-          placeholder="App name"
-          onAdd={(name) => update({ callApps: [...s.callApps, { id: `${slug(name)}-${s.callApps.length}`, name, note: "Added by you", rule: "ask" }] })}
+          label={t("settings.apps_add")}
+          placeholder={t("settings.apps_add_placeholder")}
+          onAdd={(name) => update({ callApps: [...s.callApps, { id: `${slug(name)}-${s.callApps.length}`, name, note: ADDED_BY_YOU, rule: "ask" }] })}
         />
         <Group>
-          <Row title="Tag meetings by call app" desc="A call from Zoom gets #zoom, from Slack #slack, and so on. Meetings you start yourself aren't tagged.">
-            <Switch aria-label="Tag meetings by call app" checked={s.autoTagApps} onChange={(v) => update({ autoTagApps: v })} />
+          <Row title={t("settings.tag_title")} desc={t("settings.tag_desc")}>
+            <Switch aria-label={t("settings.tag_title")} checked={s.autoTagApps} onChange={(v) => update({ autoTagApps: v })} />
           </Row>
         </Group>
       </div>
 
       <div className="flex flex-col gap-3">
         <SectionIntro
-          title="Ignored apps"
-          desc="Dictation and voice apps also use the mic. Talaan never prompts or records for these. Common ones are added automatically when they're installed."
+          title={t("settings.ignored_title")}
+          desc={t("settings.ignored_desc")}
         />
         <div className="flex flex-wrap gap-2">
           {s.ignoredApps.map((g) => (
             <span key={g.name} className="inline-flex h-8 items-center gap-2 rounded-full border border-line bg-surface pl-3 pr-1.5">
               <span className="text-[13px] font-semibold">{g.name}</span>
-              <span className="font-mono text-[11px] lowercase text-faint">{g.why}</span>
+              <span className="font-mono text-[11px] lowercase text-faint">{whyOf(g.why)}</span>
               <button
                 type="button"
-                aria-label={`Stop ignoring ${g.name}`}
+                aria-label={t("settings.ignored_stop", { name: g.name })}
                 onClick={() => update({ ignoredApps: s.ignoredApps.filter((x) => x.name !== g.name) })}
                 className="grid size-[22px] cursor-pointer place-items-center rounded-full border-0 bg-rail text-subtle hover:text-ink"
               >
@@ -89,8 +99,8 @@ export function CallAppsTab({ settings: s, update }: TabProps) {
           ))}
         </div>
         <InlineAdd
-          label="+ Ignore an app"
-          placeholder="App name"
+          label={t("settings.ignored_add")}
+          placeholder={t("settings.apps_add_placeholder")}
           onAdd={(name) => !s.ignoredApps.some((g) => g.name === name) && update({ ignoredApps: [...s.ignoredApps, { name, why: "added by you" }] })}
         />
       </div>

@@ -5,20 +5,17 @@ import { useStore } from "../../data/StoreProvider";
 import type { AskAnswer, AskCitation, AskScope } from "../../data/types";
 import { describeError } from "../../data/errors";
 import { formatTime } from "../../lib/format";
+import { useT } from "../../lib/i18n/I18nProvider";
 import { navigate, routes } from "../../lib/router";
 import { Button, Chip, Label, Select, cn } from "../../ui";
 import { SunCorner } from "../../brand/SunCorner";
 
-type Turn = { id: number; question: string; scope: string; state: "loading" | "done" | "error"; answer?: AskAnswer; error?: string };
+type Turn = { id: number; question: string; scope: string; allScope: boolean; state: "loading" | "done" | "error"; answer?: AskAnswer; error?: string };
 
-const SUGGESTIONS = [
-  "What did we decide about pricing?",
-  "What are my open action items this week?",
-  "What did the vendor promise on the demo?",
-  "Summarize everything tagged #roadmap",
-];
+const SUGGESTIONS = ["shell.suggest1", "shell.suggest2", "shell.suggest3", "shell.suggest4"] as const;
 
 export function AskScreen({ meetingId }: { meetingId?: string }) {
+  const t = useT();
   const store = useStore();
   const { settings } = useSettings();
   const folders = useFolders();
@@ -40,12 +37,12 @@ export function AskScreen({ meetingId }: { meetingId?: string }) {
 
   const scopeLabel = (s: AskScope) =>
     s.kind === "meeting"
-      ? meeting?.title ?? "This meeting"
+      ? meeting?.title ?? t("shell.thisMeeting")
       : s.kind === "folder"
-        ? `Folder: ${folders.find((f) => f.id === s.id)?.name ?? ""}`
+        ? t("shell.folderScope", { name: folders.find((f) => f.id === s.id)?.name ?? "" })
         : s.kind === "tag"
-          ? `Tag: #${s.tag}`
-          : "All meetings";
+          ? t("shell.tagScope", { tag: s.tag })
+          : t("shell.allMeetings");
 
   const ask = async (question: string) => {
     const q = question.trim();
@@ -53,7 +50,7 @@ export function AskScreen({ meetingId }: { meetingId?: string }) {
     const id = Date.now();
     const label = scopeLabel(scope);
     setDraft("");
-    setTurns((t) => [...t, { id, question: q, scope: label, state: "loading" }]);
+    setTurns((t) => [...t, { id, question: q, scope: label, allScope: scope.kind === "all", state: "loading" }]);
     try {
       const answer = await store.ask(q, scope);
       setTurns((t) => t.map((x) => (x.id === id ? { ...x, state: "done", answer } : x)));
@@ -74,68 +71,68 @@ export function AskScreen({ meetingId }: { meetingId?: string }) {
       <SunCorner className="absolute right-0 top-0" />
       <div className="relative flex flex-wrap items-center gap-2.5 border-b border-line px-6 py-3">
         <Button size="md" className="h-7" onClick={() => navigate(meetingId ? routes.meeting(meetingId) : routes.meetings())}>
-          <ArrowLeft size={14} aria-hidden="true" /> {meetingId ? "Back to meeting" : "Meetings"}
+          <ArrowLeft size={14} aria-hidden="true" /> {meetingId ? t("shell.backToMeeting") : t("shell.backToMeetings")}
         </Button>
-        <Chip>{local ? "local ai · searches stay on this computer" : "your key · transcript text is sent · searches stay on this computer"}</Chip>
+        <Chip>{local ? t("shell.askLocalChip") : t("shell.askByokChip")}</Chip>
       </div>
 
       <div className="relative mx-auto flex w-full max-w-[820px] flex-1 flex-col gap-7 px-8 pb-8 pt-11">
-        <h1 className="m-0 font-display text-[32px] font-bold leading-9 tracking-[-0.02em]">{scope.kind === "meeting" ? "Ask about this meeting" : "Ask your meetings"}</h1>
-        <div className="-mt-3.5 flex flex-wrap items-center gap-2" role="group" aria-label="What to ask about">
-          <Label className="mr-1">asking</Label>
+        <h1 className="m-0 font-display text-[32px] font-bold leading-9 tracking-[-0.02em]">{scope.kind === "meeting" ? t("shell.askAboutThis") : t("shell.askAboutAll")}</h1>
+        <div className="-mt-3.5 flex flex-wrap items-center gap-2" role="group" aria-label={t("shell.askingGroup")}>
+          <Label className="mr-1">{t("shell.asking")}</Label>
           {meetingId && (
             <button type="button" className={pill(scope.kind === "meeting")} onClick={() => setScope({ kind: "meeting", id: meetingId })}>
-              This meeting
+              {t("shell.thisMeeting")}
             </button>
           )}
           <button type="button" className={pill(scope.kind === "all")} onClick={() => setScope({ kind: "all" })}>
-            All meetings
+            {t("shell.allMeetings")}
           </button>
           <Select
-            label="Folder"
+            label={t("shell.folderLabel")}
             value={scope.kind === "folder" ? scope.id : ""}
             onChange={(e) => e.target.value && setScope({ kind: "folder", id: e.target.value })}
             className={cn(pill(scope.kind === "folder"), "py-0 pr-7")}
           >
-            <option value="">Folder…</option>
+            <option value="">{t("shell.folderPick")}</option>
             {folders.map((f) => (
               <option key={f.id} value={f.id}>
-                Folder: {f.name}
+                {t("shell.folderScope", { name: f.name })}
               </option>
             ))}
           </Select>
           <Select
-            label="Tag"
+            label={t("shell.tagLabel")}
             value={scope.kind === "tag" ? scope.tag : ""}
             onChange={(e) => e.target.value && setScope({ kind: "tag", tag: e.target.value })}
             className={cn(pill(scope.kind === "tag"), "py-0 pr-7")}
           >
-            <option value="">Tag…</option>
-            {tags.map((t) => (
-              <option key={t} value={t}>
-                Tag: #{t}
+            <option value="">{t("shell.tagPick")}</option>
+            {tags.map((tg) => (
+              <option key={tg} value={tg}>
+                {t("shell.tagScope", { tag: tg })}
               </option>
             ))}
           </Select>
         </div>
 
         {turns.length === 0 && (
-          <p className="m-0 text-[13px] text-subtle">Answers come only from your own meetings and link to the exact moment.</p>
+          <p className="m-0 text-[13px] text-subtle">{t("shell.askHint")}</p>
         )}
 
-        {turns.map((t) => (
-          <div key={t.id} className="flex flex-col gap-3.5">
+        {turns.map((turn) => (
+          <div key={turn.id} className="flex flex-col gap-3.5">
             <div className="flex justify-end">
-              <div className="max-w-[80%] rounded-[14px_14px_4px_14px] bg-strong px-4 py-3 text-strong-fg">{t.question}</div>
+              <div className="max-w-[80%] rounded-[14px_14px_4px_14px] bg-strong px-4 py-3 text-strong-fg">{turn.question}</div>
             </div>
-            <AnswerCard turn={t} onRetry={() => ask(t.question)} />
+            <AnswerCard turn={turn} onRetry={() => ask(turn.question)} />
           </div>
         ))}
 
         <div className="flex flex-wrap gap-2">
-          {SUGGESTIONS.map((s) => (
-            <Chip key={s} onClick={() => ask(s)} className="normal-case">
-              {s}
+          {SUGGESTIONS.map((k) => (
+            <Chip key={k} onClick={() => ask(t(k))} className="normal-case">
+              {t(k)}
             </Chip>
           ))}
         </div>
@@ -149,16 +146,16 @@ export function AskScreen({ meetingId }: { meetingId?: string }) {
           }}
         >
           <label className="flex flex-1">
-            <span className="sr-only">Ask a question</span>
+            <span className="sr-only">{t("shell.askQuestion")}</span>
             <input
               value={draft}
               onChange={(e) => setDraft(e.target.value)}
-              placeholder={scope.kind === "meeting" ? "Ask about this meeting" : "Ask about your meetings"}
+              placeholder={scope.kind === "meeting" ? t("shell.askPlaceholderThis") : t("shell.askPlaceholderAll")}
               className="flex-1 border-0 bg-transparent py-1.5 font-[inherit] text-sm text-ink outline-none placeholder:text-faint"
             />
           </label>
           <Button type="submit" variant="primary" size="lg" disabled={!draft.trim()}>
-            <Send size={14} aria-hidden="true" /> Ask
+            <Send size={14} aria-hidden="true" /> {t("shell.ask")}
           </Button>
         </form>
       </div>
@@ -167,11 +164,12 @@ export function AskScreen({ meetingId }: { meetingId?: string }) {
 }
 
 function AnswerCard({ turn, onRetry }: { turn: Turn; onRetry: () => void }) {
+  const t = useT();
   const card = "flex flex-col gap-3.5 rounded-card border border-line bg-surface px-6 py-[22px] shadow-card";
   if (turn.state === "loading") {
     return (
       <div className={card} role="status">
-        <span className="text-[13px] text-subtle">Searching {turn.scope.toLowerCase()}…</span>
+        <span className="text-[13px] text-subtle">{t("shell.searching", { scope: turn.scope.toLowerCase() })}</span>
         <span className="h-[5px] w-40 overflow-hidden rounded-full bg-line">
           <span className="block h-full w-1/3 animate-pulse rounded-full bg-ink" />
         </span>
@@ -181,10 +179,10 @@ function AnswerCard({ turn, onRetry }: { turn: Turn; onRetry: () => void }) {
   if (turn.state === "error" || !turn.answer) {
     return (
       <div className={card} role="alert">
-        <span className="font-semibold text-danger">That didn’t work.</span>
-        <p className="m-0 text-[13px] text-subtle">{turn.error ?? "The summary engine didn’t answer. Check Summary AI in Settings, then try again."}</p>
+        <span className="font-semibold text-danger">{t("shell.didntWork")}</span>
+        <p className="m-0 text-[13px] text-subtle">{turn.error ?? t("shell.engineSilent")}</p>
         <div>
-          <Button onClick={onRetry}>Try again</Button>
+          <Button onClick={onRetry}>{t("shell.tryAgain")}</Button>
         </div>
       </div>
     );
@@ -193,9 +191,9 @@ function AnswerCard({ turn, onRetry }: { turn: Turn; onRetry: () => void }) {
   if (a.points.length === 0 && !a.text) {
     return (
       <div className={card}>
-        <p className="m-0">I couldn’t find that in {turn.scope === "All meetings" ? "your meetings" : turn.scope}.</p>
-        <p className="m-0 text-[13px] text-subtle">Try different words, or ask across all meetings.</p>
-        <Label>From 0 of {a.totalMeetings} meetings</Label>
+        <p className="m-0">{t("shell.notFound", { where: turn.allScope ? t("shell.yourMeetings") : turn.scope })}</p>
+        <p className="m-0 text-[13px] text-subtle">{t("shell.notFoundHint")}</p>
+        <Label>{t("shell.fromZero", { total: a.totalMeetings })}</Label>
       </div>
     );
   }
@@ -212,7 +210,7 @@ function AnswerCard({ turn, onRetry }: { turn: Turn; onRetry: () => void }) {
         </ul>
       )}
       <Label className="border-t border-line pt-2.5">
-        from {a.fromMeetings} of {a.totalMeetings} meetings · answers only use your meetings
+        {t("shell.fromCount", { from: a.fromMeetings, total: a.totalMeetings })}
       </Label>
     </div>
   );

@@ -1,4 +1,6 @@
 import { useSettings } from "../../data/hooks";
+import type { MessageKey } from "../../lib/i18n";
+import { useT } from "../../lib/i18n/I18nProvider";
 import { navigate, routes } from "../../lib/router";
 import { Label, cn } from "../../ui";
 import { Logo } from "../../brand/Logo";
@@ -11,22 +13,23 @@ import { PrivacyTab } from "./PrivacyTab";
 import { SummaryAITab } from "./SummaryAITab";
 
 export const SETTINGS_TABS = [
-  { id: "general", label: "General" },
-  { id: "apps", label: "Call apps" },
-  { id: "models", label: "Speech models" },
-  { id: "ai", label: "Summary AI" },
-  { id: "connections", label: "Connections" },
-  { id: "privacy", label: "Privacy" },
-] as const;
+  { id: "general", label: "settings.tab_general" },
+  { id: "apps", label: "settings.tab_apps" },
+  { id: "models", label: "settings.tab_models" },
+  { id: "ai", label: "settings.tab_ai" },
+  { id: "connections", label: "settings.tab_connections" },
+  { id: "privacy", label: "settings.tab_privacy" },
+] as const satisfies readonly { id: string; label: MessageKey }[];
 
 export function SettingsWindow({ tab }: { tab: string }) {
   const { settings, update } = useSettings();
-  const current = SETTINGS_TABS.find((t) => t.id === tab) ?? SETTINGS_TABS[0];
+  const t = useT();
+  const current = SETTINGS_TABS.find((x) => x.id === tab) ?? SETTINGS_TABS[0];
   if (!settings) return null;
 
   const props = { settings, update };
   const onKey = (e: React.KeyboardEvent) => {
-    const i = SETTINGS_TABS.findIndex((t) => t.id === current.id);
+    const i = SETTINGS_TABS.findIndex((x) => x.id === current.id);
     const next = e.key === "ArrowDown" || e.key === "ArrowRight" ? i + 1 : e.key === "ArrowUp" || e.key === "ArrowLeft" ? i - 1 : undefined;
     if (next !== undefined) {
       e.preventDefault();
@@ -36,36 +39,36 @@ export function SettingsWindow({ tab }: { tab: string }) {
 
   return (
     <div className="flex h-full bg-paper">
-      <nav aria-label="Settings" className="flex w-[220px] flex-none flex-col gap-1 border-r border-line bg-rail px-3.5 py-[22px]">
+      <nav aria-label={t("settings.nav_label")} className="flex w-[220px] flex-none flex-col gap-1 border-r border-line bg-rail px-3.5 py-[22px]">
         <div className="flex items-center gap-2.5 px-2 pb-[22px]">
           <Logo size={26} />
-          <span className="font-display text-[17px] font-bold tracking-[-0.02em]">settings</span>
+          <span className="font-display text-[17px] font-bold tracking-[-0.02em]">{t("settings.window_title")}</span>
         </div>
-        <div role="tablist" aria-label="Settings" aria-orientation="vertical" onKeyDown={onKey} className="flex flex-col gap-1">
-          {SETTINGS_TABS.map((t) => {
-            const on = t.id === current.id;
+        <div role="tablist" aria-label={t("settings.nav_label")} aria-orientation="vertical" onKeyDown={onKey} className="flex flex-col gap-1">
+          {SETTINGS_TABS.map((x) => {
+            const on = x.id === current.id;
             return (
               <button
-                key={t.id}
+                key={x.id}
                 type="button"
                 role="tab"
-                id={`tab-${t.id}`}
+                id={`tab-${x.id}`}
                 aria-selected={on}
                 aria-controls="settings-panel"
                 tabIndex={on ? 0 : -1}
-                onClick={() => navigate(routes.settings(t.id))}
+                onClick={() => navigate(routes.settings(x.id))}
                 className={cn(
                   "flex h-9 cursor-pointer items-center rounded-control border-0 px-3 text-left font-[inherit] text-[13px] text-ink",
                   on ? "bg-surface font-bold shadow-[inset_3px_0_0_var(--t-gold),var(--t-shadow)]" : "bg-transparent font-medium hover:bg-hover",
                 )}
               >
-                {t.label}
+                {t(x.label)}
               </button>
             );
           })}
         </div>
         <span className="flex-1" />
-        <Label className="px-2.5">talaan {__APP_VERSION__} · mit license</Label>
+        <Label className="px-2.5">{t("settings.footer", { version: __APP_VERSION__ })}</Label>
       </nav>
       <div id="settings-panel" role="tabpanel" aria-labelledby={`tab-${current.id}`} className="relative min-h-0 min-w-0 flex-1 overflow-auto">
         <SunCorner size={200} className="absolute right-0 top-0" />

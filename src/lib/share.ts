@@ -1,11 +1,12 @@
 import type { Meeting, Ms } from "../data/types";
+import { t } from "./i18n";
 import { formatDate, formatDuration, formatTime } from "./format";
-import { speakerName } from "./transcript";
+import { ownerName, speakerName } from "./transcript";
 
 const nameOf = (m: Meeting, speaker: string) => speakerName(m, speaker);
 const when = (at?: Ms) => (at === undefined ? "" : ` (${formatTime(at)})`);
 const owner = (o?: string) => (o ? ` — ${o}` : "");
-const due = (d?: string) => (d ? `, due ${d}` : "");
+const due = (d?: string) => (d ? `, ${t("meeting.shDue", { date: d })}` : "");
 
 function heading(m: Meeting) {
   return `${m.title} · ${formatDate(m.startedAt)} · ${formatDuration(m.durationMs)}`;
@@ -16,22 +17,22 @@ export function toShareText(m: Meeting): string {
   const s = m.summary;
   if (!s) return `${heading(m)}\n(no summary yet)`;
   const out = [heading(m), "", s.recap];
-  if (s.decisions.length) out.push("", "Decisions", ...s.decisions.map((d) => `• ${d.text}${when(d.at)}`));
+  if (s.decisions.length) out.push("", t("meeting.shDecisions"), ...s.decisions.map((d) => `• ${d.text}${when(d.at)}`));
   if (s.actionItems.length)
-    out.push("", "Action items", ...s.actionItems.map((a) => `• ${a.done ? "✅" : "☐"} ${a.text}${owner(a.owner)}${due(a.due)}`));
-  if (s.openQuestions.length) out.push("", "Open questions", ...s.openQuestions.map((q) => `• ${q.text}`));
+    out.push("", t("meeting.shActionItems"), ...s.actionItems.map((a) => `• ${a.done ? "✅" : "☐"} ${a.text}${owner(a.owner && ownerName(m, a.owner))}${due(a.due)}`));
+  if (s.openQuestions.length) out.push("", t("meeting.shOpenQuestions"), ...s.openQuestions.map((q) => `• ${q.text}`));
   return out.join("\n");
 }
 
 /** Summary formatted for an email body. */
 export function toEmail(m: Meeting): string {
   const s = m.summary;
-  const out = [`Subject: ${m.title} — ${formatDate(m.startedAt)}`, "", `Hi all,`, "", `Here is the summary from ${m.title}.`, ""];
-  if (!s) return [...out, "(no summary yet)"].join("\n");
+  const out = [t("meeting.emailSubject", { title: m.title, date: formatDate(m.startedAt) }), "", t("meeting.emailHi"), "", t("meeting.emailIntro", { title: m.title }), ""];
+  if (!s) return [...out, t("meeting.shNoSummaryParen")].join("\n");
   out.push(s.recap);
-  if (s.decisions.length) out.push("", "Decisions", ...s.decisions.map((d) => `- ${d.text}`));
-  if (s.actionItems.length) out.push("", "Action items", ...s.actionItems.map((a) => `- ${a.text}${owner(a.owner)}${due(a.due)}`));
-  if (s.openQuestions.length) out.push("", "Open questions", ...s.openQuestions.map((q) => `- ${q.text}`));
+  if (s.decisions.length) out.push("", t("meeting.shDecisions"), ...s.decisions.map((d) => `- ${d.text}`));
+  if (s.actionItems.length) out.push("", t("meeting.shActionItems"), ...s.actionItems.map((a) => `- ${a.text}${owner(a.owner && ownerName(m, a.owner))}${due(a.due)}`));
+  if (s.openQuestions.length) out.push("", t("meeting.shOpenQuestions"), ...s.openQuestions.map((q) => `- ${q.text}`));
   return out.join("\n");
 }
 
@@ -39,18 +40,18 @@ export function toEmail(m: Meeting): string {
 export function toMarkdown(m: Meeting, includeTranscript: boolean): string {
   const out = [`# ${m.title}`, "", `${m.appLabel} · ${formatDate(m.startedAt)} · ${formatDuration(m.durationMs)}`, ""];
   const s = m.summary;
-  out.push("## Summary", "");
+  out.push(`## ${t("meeting.shSummary")}`, "");
   if (!s) {
-    out.push("_No summary yet._");
+    out.push(`_${t("meeting.shNoSummary")}_`);
   } else {
     out.push(s.recap);
-    if (s.decisions.length) out.push("", "### Decisions", "", ...s.decisions.map((d) => `- ${d.text}${when(d.at)}`));
+    if (s.decisions.length) out.push("", `### ${t("meeting.shDecisions")}`, "", ...s.decisions.map((d) => `- ${d.text}${when(d.at)}`));
     if (s.actionItems.length)
-      out.push("", "### Action items", "", ...s.actionItems.map((a) => `- [${a.done ? "x" : " "}] ${a.text}${owner(a.owner)}${due(a.due)}${when(a.at)}`));
-    if (s.openQuestions.length) out.push("", "### Open questions", "", ...s.openQuestions.map((q) => `- ${q.text}`));
+      out.push("", `### ${t("meeting.shActionItems")}`, "", ...s.actionItems.map((a) => `- [${a.done ? "x" : " "}] ${a.text}${owner(a.owner && ownerName(m, a.owner))}${due(a.due)}${when(a.at)}`));
+    if (s.openQuestions.length) out.push("", `### ${t("meeting.shOpenQuestions")}`, "", ...s.openQuestions.map((q) => `- ${q.text}`));
   }
   if (includeTranscript && m.transcript.length) {
-    out.push("", "## Transcript", "", ...m.transcript.map((l) => `**${formatTime(l.at)} ${nameOf(m, l.speaker)}:** ${l.text}`));
+    out.push("", `## ${t("meeting.shTranscript")}`, "", ...m.transcript.map((l) => `**${formatTime(l.at)} ${nameOf(m, l.speaker)}:** ${l.text}`));
   }
   return out.join("\n") + "\n";
 }

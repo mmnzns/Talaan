@@ -17,6 +17,7 @@ const windowsIgnoredApps = onWindows
 /** Values used until the user changes something. Shared by the mock and the real settings store. */
 export const defaultSettings: Settings = {
   theme: "system",
+  yourName: "",
   detectCalls: true,
   autoTagApps: false,
   launchAtLogin: true,
@@ -65,8 +66,10 @@ export const defaultSettings: Settings = {
   searchModel: { id: "search", name: "Search by meaning", maker: "Qwen", note: "Lets Ask find answers phrased differently from the question, in 100+ languages.", engine: "search", sizeMb: 640, speed: 3, accuracy: 2, languages: "100+ languages", state: "not_downloaded" },
   reuseModels: true,
   meetingLanguage: "auto",
+  uiLanguage: "auto",
   useGpu: true,
   summaryEngine: "local",
+  summarizeAutomatically: true,
   summaryLanguage: "meeting",
   localModel: "recommended",
   // Mirrors the Rust catalog (src-tauri/src/summarizer/models.rs). In the app the states come from disk.

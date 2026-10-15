@@ -4,7 +4,7 @@
 use super::chunk::{estimate_tokens, split};
 use super::parse::{parse_draft, to_summary, usable_title, Draft};
 use super::prompt::{merge_prompt, summary_prompt, Prompt, SCHEMA};
-use crate::storage::model::{Meeting, Summary};
+use crate::storage::model::{Meeting, Summary, TranscriptLine};
 use std::sync::atomic::{AtomicBool, Ordering};
 
 /// Room left for the reply in every call.
@@ -39,6 +39,8 @@ pub struct Outcome {
 #[derive(Debug, Clone, PartialEq)]
 pub enum SummarizeError {
     Empty,
+    /// Under a second of speech, or a line or two with almost no words: nothing a summary could say.
+    TooShort,
     Engine(EngineError),
     /// Two replies in a row couldn't be used.
     BadOutput(String),
@@ -48,6 +50,7 @@ impl SummarizeError {
     pub fn message(&self) -> String {
         match self {
             SummarizeError::Empty => "There's no transcript to summarize.".into(),
+            SummarizeError::TooShort => "This recording is too short to summarize, so only the transcript is saved.".into(),
             SummarizeError::Engine(EngineError::Unavailable(m)) | SummarizeError::Engine(EngineError::Failed(m)) => m.clone(),
             SummarizeError::Engine(EngineError::Cancelled) => "Cancelled.".into(),
             SummarizeError::BadOutput(m) => format!("The summary AI gave an answer Talaan couldn't use ({m})."),
@@ -60,6 +63,9 @@ pub fn summarize(meeting: &Meeting, engine: &mut dyn SummaryEngine, language: &s
     let lines = &meeting.transcript;
     if lines.iter().all(|l| l.text.trim().is_empty()) {
         return Err(SummarizeError::Empty);
+    }
+    if too_short(lines) {
+        return Err(SummarizeError::TooShort);
     }
     // What the instructions and header cost, measured on an empty transcript.
     let overhead = {
@@ -89,6 +95,15 @@ pub fn summarize(meeting: &Meeting, engine: &mut dyn SummaryEngine, language: &s
     let merged = ask(engine, &merge_prompt(meeting, &parts_json, language), cancel)?;
     progress(1.0);
     Ok(finish(&merged, meeting, engine, n))
+}
+
+/// Too little to summarize: under 1 s of speech in all, or at most two lines with fewer than 12 words between
+/// them. A model asked to summarize "Can you hear me?" invents a recap and a title.
+pub fn too_short(lines: &[TranscriptLine]) -> bool {
+    let spoken: Vec<&TranscriptLine> = lines.iter().filter(|l| !l.text.trim().is_empty()).collect();
+    let speech_ms: u64 = spoken.iter().map(|l| l.end.saturating_sub(l.at)).sum();
+    let words: usize = spoken.iter().map(|l| l.text.split_whitespace().count()).sum();
+    speech_ms < 1_000 || (spoken.len() <= 2 && words < 12)
 }
 
 fn finish(draft: &Draft, meeting: &Meeting, engine: &dyn SummaryEngine, parts: usize) -> Outcome {
@@ -140,7 +155,7 @@ pub(crate) mod tests {
     }
 
     fn short() -> Meeting {
-        meeting(vec![line("l0", 0, "me", "Hi."), line("l1", 60_000, "them:1", "Onboarding first, pricing in Q1.")])
+        meeting(vec![line("l0", 0, "me", "Hi."), line("l1", 60_000, "them:1", "Onboarding first, pricing in Q1."), line("l2", 125_000, "me", "I'll send the wireframes Friday.")])
     }
 
     #[test]
@@ -193,6 +208,34 @@ pub(crate) mod tests {
         assert!(e.prompts.last().unwrap().user.contains("Combine them into one summary"));
         assert!(seen.windows(2).all(|w| w[0] <= w[1]));
         assert_eq!(*seen.last().unwrap(), 1.0);
+    }
+
+    #[test]
+    fn a_recording_too_short_to_summarize_is_not_sent() {
+        let mut e = Scripted { replies: vec![], prompts: vec![], context: 16_384 };
+        let no = AtomicBool::new(false);
+        // A cough: under a second of speech.
+        let mut cough = line("l0", 0, "me", "Hm.");
+        cough.end = 600;
+        assert_eq!(summarize(&meeting(vec![cough]), &mut e, "en", &no, &mut |_| {}), Err(SummarizeError::TooShort));
+        // Two short lines.
+        let two = meeting(vec![line("l0", 0, "me", "Can you hear me?"), line("l1", 5_000, "them:0", "Yes, one second.")]);
+        assert_eq!(summarize(&two, &mut e, "en", &no, &mut |_| {}), Err(SummarizeError::TooShort));
+        assert!(e.prompts.is_empty());
+        assert!(SummarizeError::TooShort.message().contains("too short"));
+    }
+
+    #[test]
+    fn two_long_lines_are_still_summarized() {
+        // An imported voice memo can be one long line per speaker.
+        let words = "We agreed to ship onboarding first and move pricing to the first quarter. ";
+        let m = meeting(vec![line("l0", 0, "them:0", &words.repeat(3)), line("l1", 30_000, "them:0", &words.repeat(2))]);
+        let mut e = Scripted { replies: vec![Ok(reply("Plan", "We planned."))], prompts: vec![], context: 16_384 };
+        assert!(summarize(&m, &mut e, "en", &AtomicBool::new(false), &mut |_| {}).is_ok());
+        // Three lines is a conversation, however short.
+        let three = meeting(vec![line("l0", 0, "me", "Hi."), line("l1", 5_000, "them:0", "Hi."), line("l2", 9_000, "me", "Ship it.")]);
+        let mut e = Scripted { replies: vec![Ok(reply("Plan", "Short."))], prompts: vec![], context: 16_384 };
+        assert!(summarize(&three, &mut e, "en", &AtomicBool::new(false), &mut |_| {}).is_ok());
     }
 
     #[test]
