@@ -4,6 +4,7 @@ import { useSettings } from "../../data/hooks";
 import { onEvent } from "../../data/tauri/invoke";
 import type { RecorderState } from "../../data/recorder";
 import { formatTime } from "../../lib/format";
+import { onMac } from "../../lib/os";
 import { Logo } from "../../brand/Logo";
 import { inTauri, openSettings } from "../../lib/windows";
 import { navigate, routes } from "../../lib/router";
@@ -27,7 +28,7 @@ export function Toolbar({ onImport, onRecord, recording }: Props) {
       data-tauri-drag-region
       className={cn(
         "flex flex-wrap items-center gap-3 border-b border-line bg-surface px-6 py-3.5",
-        inTauri() && "pl-[84px]",
+        inTauri() && onMac && "pl-[84px]",
       )}
     >
       <Logo size={28} />

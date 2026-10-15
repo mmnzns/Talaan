@@ -19,6 +19,7 @@
     "core:window:allow-set-position",
     "dialog:allow-save",
     "dialog:allow-open",
-    "core:window:allow-close"
+    "core:window:allow-close",
+    "core:window:allow-set-theme"
   ]
 }

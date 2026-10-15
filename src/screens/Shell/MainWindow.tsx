@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { onWindows } from "../../lib/os";
 import type { Route } from "../../lib/router";
 import { navigate, routes } from "../../lib/router";
 import { inTauri, openSettings } from "../../lib/windows";
@@ -17,7 +18,7 @@ export function MainWindow({ route }: { route: Route }) {
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.metaKey && e.key === ",") {
+      if ((onWindows ? e.ctrlKey : e.metaKey) && e.key === ",") {
         e.preventDefault();
         openSettings();
       }
