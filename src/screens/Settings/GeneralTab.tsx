@@ -5,6 +5,7 @@ import { useSettingsStore } from "../../data/StoreProvider";
 import { openLink } from "../../lib/windows";
 import { Button, Field, Label, Select, Switch } from "../../ui";
 import { Group, Row, SectionIntro } from "./parts";
+import { SetupCheck } from "./SetupCheck";
 import type { TabProps } from "./tabProps";
 
 export function GeneralTab({ settings: s, update }: TabProps) {
@@ -52,6 +53,7 @@ export function GeneralTab({ settings: s, update }: TabProps) {
       </Row>
       <UpdatesRow settings={s} update={update} />
     </Group>
+    <SetupCheck />
     <About />
     </div>
   );
