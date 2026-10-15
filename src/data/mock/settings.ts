@@ -92,6 +92,14 @@ export class MockSettingsStore implements SettingsStore {
     this.setModel(id, { state: "not_downloaded", progress: undefined });
   }
 
+  async calendarAccess() {
+    return "allowed" as const;
+  }
+
+  async requestCalendar() {
+    return "allowed" as const;
+  }
+
   async deleteModel(id: string): Promise<void> {
     this.setModel(id, { state: "not_downloaded", progress: undefined });
   }

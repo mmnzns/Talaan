@@ -1,5 +1,6 @@
 //! macOS-only code: audio capture, permissions and call detection.
 
+pub mod calendar;
 pub mod clock;
 pub mod coreaudio;
 pub mod devices;

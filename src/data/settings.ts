@@ -6,6 +6,7 @@ export type RetentionChoice = "1d" | "7d" | "30d" | "forever" | "none";
 export type TranscriptRetention = "forever" | "1y" | "90d";
 export type SummaryEngineKind = "local" | "ollama" | "byok";
 export type ByokProvider = "claude" | "openai" | "gemini" | "compatible";
+export type CalendarAccess = "allowed" | "not_asked" | "denied";
 export type BrowserState = "allowed" | "not_asked" | "not_installed";
 
 export interface CallAppRule {
@@ -115,6 +116,10 @@ export interface SettingsStore {
   clearApiKey(provider: ByokProvider): Promise<void>;
   /** Models a local server (Ollama, LM Studio) offers at an address. Throws when it can't be reached. */
   localServerModels(address: string): Promise<string[]>;
+  /** Calendar access as the system reports it. */
+  calendarAccess(): Promise<CalendarAccess>;
+  /** Asks the system for calendar access (the prompt shows only the first time). */
+  requestCalendar(): Promise<CalendarAccess>;
   /** Where the data lives and how much space it uses. */
   dataInfo(): Promise<{ path: string; bytes: number }>;
   /** "Delete all Talaan data": meetings, audio, models, settings and keys. */

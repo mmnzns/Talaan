@@ -1,4 +1,5 @@
 mod ask;
+mod calendar;
 mod calls;
 mod commands;
 mod importer;
@@ -109,6 +110,8 @@ pub fn run() {
             commands::transcriber::models_delete,
             commands::summarizer::meetings_generate_summary,
             commands::ask::meetings_ask,
+            commands::calendar::calendar_access,
+            commands::calendar::calendar_request,
             commands::summarizer::llm_models_list,
             commands::summarizer::keys_save,
             commands::summarizer::keys_clear,

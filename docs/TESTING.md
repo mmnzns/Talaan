@@ -38,3 +38,9 @@ app (`scripts/build-signed-debug.sh` → `src-tauri/target/debug/bundle/macos/Ta
 - [ ] Ask from a meeting (This meeting), and with a folder / tag scope.
 - [ ] Ask something none of your meetings cover: it says it couldn't find it instead of making something up.
 
+## Organize and connect (M9)
+- [ ] A folder's ⋯ menu: Rename, Delete (its meetings stay, outside any folder).
+- [ ] Settings › Call apps › Tag meetings by call app: the next detected call gets #zoom (or the app's name).
+- [ ] Settings › Connections › Calendar: turning it on asks for calendar access once. Record during a calendar event (or up to 10 min before it): the meeting takes the event's title, the speaker chips suggest attendees, and action-item owners use their names.
+- [ ] Deny calendar access: the switch stays off and "Allow in system settings" opens the right pane.
+

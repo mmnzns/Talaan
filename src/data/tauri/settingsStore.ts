@@ -1,5 +1,5 @@
 import { defaultSettings, withDefaults } from "../defaultSettings";
-import type { ByokProvider, LocalModel, Settings, SettingsStore, SpeechModel } from "../settings";
+import type { ByokProvider, CalendarAccess, LocalModel, Settings, SettingsStore, SpeechModel } from "../settings";
 import { call, onEvent } from "./invoke";
 
 
@@ -113,6 +113,14 @@ export class TauriSettingsStore implements SettingsStore {
 
   localServerModels(address: string): Promise<string[]> {
     return call<string[]>("local_server_models", { address });
+  }
+
+  calendarAccess(): Promise<CalendarAccess> {
+    return call<CalendarAccess>("calendar_access");
+  }
+
+  requestCalendar(): Promise<CalendarAccess> {
+    return call<CalendarAccess>("calendar_request");
   }
 
   dataInfo(): Promise<{ path: string; bytes: number }> {

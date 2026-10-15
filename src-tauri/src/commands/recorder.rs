@@ -109,6 +109,9 @@ pub fn start_recording(app: &AppHandle, app_id: &str, app_label: &str) -> CmdRes
         }
     }
     drop(storage);
+    if let Some(id) = &st.meeting_id {
+        super::calendar::link_soon(app, id);
+    }
     if !st.system_audio {
         notice(app, "Talaan can't hear the call audio, so only your side is recorded. Allow system audio recording in System Settings.".into(), "warning", Some("system-audio"));
     }
@@ -163,6 +166,8 @@ pub fn stop_recording(app: &AppHandle) -> CmdResult<String> {
     let id = engine.stop(&storage, platform::host_now_ns()).map_err(err)?;
     drop(storage);
     drop(engine);
+    // A call started before its event was on the calendar (or a few minutes early) gets a second chance.
+    super::calendar::link_soon(app, &id);
     app.state::<super::transcriber::TranscriberState>().enqueue(&id);
     notify(app, MEETINGS_CHANGED);
     emit_state(app);

@@ -6,5 +6,7 @@
 	<string>Talaan records your side of the call from the microphone. Audio stays on this Mac.</string>
 	<key>NSAudioCaptureUsageDescription</key>
 	<string>Talaan records the other people on your call from the system audio. Audio stays on this Mac.</string>
+	<key>NSCalendarsFullAccessUsageDescription</key>
+	<string>Talaan reads the calendar event during a recording to name the meeting and suggest who spoke. It never changes your calendar.</string>
 </dict>
 </plist>

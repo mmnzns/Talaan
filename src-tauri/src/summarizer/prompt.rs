@@ -87,6 +87,13 @@ pub fn summary_prompt(meeting: &Meeting, lines: &[TranscriptLine], language: &st
         // One track, so everyone (the user included) is labeled Them.
         user.push_str("This is an imported recording on a single track: every line says Them, including the person who made it. \"Them\" is not a name: use a person's name as owner only when it is said, otherwise leave owner empty, and don't call anyone \"the speaker\".\n");
     }
+    if let Some(ev) = &meeting.calendar_event {
+        user.push_str(&format!("Calendar event: {}.", ev.title.trim()));
+        if !ev.attendees.is_empty() {
+            user.push_str(&format!(" Invited: {}. Use these names for owners when the transcript makes clear who it is.", ev.attendees.join(", ")));
+        }
+        user.push('\n');
+    }
     if let (Some((i, n)), Some(first), Some(last)) = (part, lines.first(), lines.last()) {
         user.push_str(&format!("This is part {i} of {n} of a long call, from {} to {}. Summarize only this part.\n", stamp(first.at), stamp(last.end)));
     }
@@ -152,6 +159,16 @@ pub(crate) mod tests {
             error: None,
             summary_error: None,
         }
+    }
+
+    #[test]
+    fn calendar_attendees_are_offered_as_owner_names() {
+        let mut m = meeting(vec![line("l0", 0, "them:0", "I'll send it.")]);
+        m.calendar_event = Some(crate::storage::model::CalendarEvent { title: "Q4 sync".into(), attendees: vec!["Priya Shah".into(), "Dana Reyes".into()] });
+        let p = summary_prompt(&m, &m.transcript, "en", None);
+        assert!(p.user.contains("Calendar event: Q4 sync. Invited: Priya Shah, Dana Reyes."));
+        m.calendar_event = None;
+        assert!(!summary_prompt(&m, &m.transcript, "en", None).user.contains("Calendar event"));
     }
 
     #[test]
