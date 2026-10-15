@@ -90,6 +90,7 @@ src-tauri/src/
     engine.rs           Engine trait; Parakeet (silence padding, resume when it stops early) and Whisper (Metal)
     pipeline.rs         tracks -> chunks -> engine -> retry skipped speech -> echo -> merge -> language
     echo.rs merge.rs    drop Me lines the mic heard from the speakers; interleave and join into lines
+    diarize.rs          named speakers: Nemotron 3 Diarization (parakeet-rs sortformer) on the Them track, warm-up pass, Speaker 1, 2, 3
     worker.rs           one background thread, queue rebuilt from `transcribing` at launch, idle unload
   commands/summarizer.rs  summary worker setup, engine factory from settings, Generate summary, LLM models, keys, local servers
   summarizer/           summaries (no Tauri types)
@@ -98,6 +99,9 @@ src-tauri/src/
     engines.rs          local helper, Claude, OpenAI, Gemini, OpenAI-compatible (Ollama, LM Studio); model lists
     local.rs models.rs  client for the talaan-llm helper; local model catalog (Qwen3.5 4B / 9B)
     worker.rs           summarizing -> ready (with summary_error when there's no engine or it failed)
+  ask/                  Ask (no Tauri types): passages.rs (transcript windows + summary items), search.rs (BM25, cosine,
+                        rank fusion), index.rs (search.bin vectors beside each meeting), answer.rs (prompt, schema, citations)
+  commands/ask.rs       meetings_ask (scope -> passages -> rank -> summary engine) and the background indexer
   keys.rs               API keys in the Keychain
   importer.rs           import audio: symphonia decode -> 16 kHz mono them.wav (commands/import.rs runs it)
   calls/                call detection (pure): apps.rs bundle-id tables (call apps, ignored apps), rules.rs state machine

@@ -28,3 +28,13 @@ app (`scripts/build-signed-debug.sh` → `src-tauri/target/debug/bundle/macos/Ta
 - [ ] Export › PDF: the print sheet opens; Save as PDF looks right.
 - [ ] Drag an audio file onto the window: it imports.
 - [ ] ⋯ › Delete audio now, Show in Finder, Write the summary again.
+
+## Named speakers and Ask (M8)
+- [ ] Settings › Speech models › Tell speakers apart: Download (401 MB). Then a call with 3+ other people: the transcript says Speaker 1, 2, 3. Are the turns right?
+- [ ] Rename Speaker 2 by clicking the chip: every line updates, and action items owned by "Speaker 2" now show the name.
+- [ ] Turn Tell speakers apart off: the next meeting's other side is plain "Them".
+- [ ] Settings › Speech models › Search by meaning: Download (640 MB).
+- [ ] Ask (toolbar) across all meetings, with Wi-Fi off: answers cite the right meeting and moment; clicking a citation jumps there and plays.
+- [ ] Ask from a meeting (This meeting), and with a folder / tag scope.
+- [ ] Ask something none of your meetings cover: it says it couldn't find it instead of making something up.
+
