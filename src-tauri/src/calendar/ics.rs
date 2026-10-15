@@ -62,14 +62,14 @@ impl Length {
     /// The end of an occurrence that starts at `start`.
     fn end_ms(self, start: &DateTime<Tz>) -> i64 {
         match self {
-            Length::Ms(ms) => start.timestamp_millis() + ms,
+            Length::Ms(ms) => start.timestamp_millis().saturating_add(ms),
             Length::Days(n) => start
                 .with_timezone(&chrono::Local)
                 .date_naive()
                 .checked_add_days(Days::new(n.into()))
                 .and_then(|d| in_zone(Tz::LOCAL, d.and_hms_opt(0, 0, 0)?))
                 .map(|d| d.timestamp_millis())
-                .unwrap_or(start.timestamp_millis() + i64::from(n) * 86_400_000),
+                .unwrap_or(start.timestamp_millis().saturating_add(i64::from(n) * 86_400_000)),
         }
     }
 
@@ -155,7 +155,7 @@ impl Calendar {
                     vec![(start_ms, end)]
                 }
                 Some(r) => {
-                    if r.until_ms.is_some_and(|u| u + it.length.max_ms() <= from_ms) {
+                    if r.until_ms.is_some_and(|u| u.saturating_add(it.length.max_ms()) <= from_ms) {
                         continue;
                     }
                     expand(it, r, from_ms, to_ms)
@@ -182,7 +182,7 @@ fn expand(it: &Item, r: &Recurrence, from_ms: i64, to_ms: i64) -> Vec<(i64, i64)
         if s >= to_ms {
             break;
         }
-        if s + reach > from_ms {
+        if s.saturating_add(reach) > from_ms {
             let e = it.length.end_ms(&at);
             if e > from_ms {
                 out.push((s, e));
@@ -1016,6 +1016,28 @@ mod tests {
         assert_eq!(cal.events(utc(2026, 10, 12, 0, 0), utc(2026, 10, 13, 0, 0)).len(), 1);
         assert_eq!(cal.events(utc(2026, 10, 12, 0, 0), utc(2026, 10, 27, 0, 0)).len(), 3);
         assert!(cal.events(utc(2026, 9, 1, 0, 0), utc(2026, 10, 1, 0, 0)).is_empty());
+    }
+
+    #[test]
+    fn huge_durations_do_not_overflow() {
+        let ics = cal("
+            BEGIN:VEVENT
+            UID:long@test
+            SUMMARY:Forever
+            DTSTART:20261020T170000Z
+            DURATION:P106751991167D
+            END:VEVENT
+            BEGIN:VEVENT
+            UID:long-series@test
+            SUMMARY:Forever weekly
+            DTSTART:20261020T170000Z
+            DURATION:P106751991167D
+            RRULE:FREQ=WEEKLY;UNTIL=20261103T170000Z
+            END:VEVENT");
+        let e = parse(&ics, utc(2026, 10, 1, 0, 0), utc(2026, 11, 1, 0, 0), &[]);
+        assert_eq!(e.iter().filter(|e| e.title == "Forever").count(), 1);
+        assert!(e.iter().all(|e| e.end_ms == i64::MAX));
+        assert!(parse(&ics, i64::MAX - 10, i64::MAX, &[]).iter().all(|e| e.end_ms > e.start_ms));
     }
 
     #[test]
