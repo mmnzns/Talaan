@@ -128,7 +128,14 @@ export function PrivacyTab({ settings: s, update }: TabProps) {
               disabled={deleting}
               onClick={async () => {
                 setDeleting(true);
-                await store.deleteAllData();
+                try {
+                  await store.deleteAllData();
+                } catch (e) {
+                  // The sheet stays open (and closable) so the user can try again or cancel.
+                  setDeleting(false);
+                  toast(describeError(e));
+                  return;
+                }
                 setDeleting(false);
                 setConfirm(false);
                 toast(t("settings.wipe_done"));
