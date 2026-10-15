@@ -1,3 +1,4 @@
+import { t } from "./i18n";
 import type { Mark, Meeting, Ms, PauseGap, TranscriptLine } from "../data/types";
 
 export type TranscriptRow =
@@ -37,7 +38,7 @@ export function lineAt(lines: TranscriptLine[], at: Ms): TranscriptLine | undefi
 export function speakerName(meeting: Pick<Meeting, "speakers">, speaker: string): string {
   const named = meeting.speakers[speaker as keyof Meeting["speakers"]];
   if (named) return named;
-  if (speaker === "me") return "Me";
-  if (speaker === "them:0" || speaker === "them") return "Them";
-  return speaker.startsWith("them:") ? `Speaker ${speaker.slice(5)}` : speaker;
+  if (speaker === "me") return t("meeting.speakerMe");
+  if (speaker === "them:0" || speaker === "them") return t("meeting.speakerThem");
+  return speaker.startsWith("them:") ? t("meeting.speakerN", { n: speaker.slice(5) }) : speaker;
 }

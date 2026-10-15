@@ -6,7 +6,8 @@ import { formatTime } from "../../lib/format";
 import { copyText } from "../../lib/share";
 import { Button, Label, cn } from "../../ui";
 import { SunCorner } from "../../brand/SunCorner";
-import { platform } from "../../lib/platform";
+import { usePlatform } from "../../lib/platform";
+import { useT } from "../../lib/i18n/I18nProvider";
 
 interface Props {
   state: RecorderState;
@@ -51,7 +52,10 @@ function Bars({ levels, tone }: { levels: number[]; tone: "me" | "them" }) {
 }
 
 /** Menu bar popover while recording: notice, levels, pause, mark, quick note, stop. */
-export function RecordingPopover({ state, levels, notice, app = "Call", onPause, onResume, onMark, onStop, onDiscard, onOpenSettings, onDismissNotice }: Props) {
+export function RecordingPopover({ state, levels, notice, app, onPause, onResume, onMark, onStop, onDiscard, onOpenSettings, onDismissNotice }: Props) {
+  const t = useT();
+  const platform = usePlatform();
+  const appName = app ?? t("recording.appDefault");
   const { settings } = useSettings();
   const [copied, setCopied] = useState(false);
   const [note, setNote] = useState("");
@@ -62,31 +66,31 @@ export function RecordingPopover({ state, levels, notice, app = "Call", onPause,
 
   const text = settings?.recordingNotice ?? "";
   const info = [
-    paused ? "Paused: nothing is being recorded" : null,
-    `${state.marks} ${state.marks === 1 ? "mark" : "marks"}`,
-    `${state.notes} ${state.notes === 1 ? "note" : "notes"} so far`,
+    paused ? t("recording.infoPaused") : null,
+    t("recording.marks", { count: state.marks }),
+    t("recording.notes", { count: state.notes }),
   ]
     .filter(Boolean)
     .join(" · ");
 
   return (
-    <div role="dialog" aria-label="Recording" className="flex w-[356px] flex-col overflow-hidden rounded-2xl border border-line bg-surface shadow-[0_16px_40px_rgba(17,19,24,0.16)]">
+    <div role="dialog" aria-label={t("recording.recordingAria")} className="flex w-[356px] flex-col overflow-hidden rounded-2xl border border-line bg-surface shadow-[0_16px_40px_rgba(17,19,24,0.16)]">
       <div className="relative flex flex-col gap-2 overflow-hidden border-b border-line px-[22px] pb-[22px] pt-6">
         <SunCorner size={120} className="absolute right-0 top-0" />
         <div className="relative flex items-center gap-2">
           <span className={cn("size-[9px] rounded-full", paused ? "bg-faint" : "animate-pulse bg-red shadow-[0_0_0_4px_color-mix(in_srgb,var(--t-red)_20%,transparent)]")} />
           <Label>
-            {paused ? "paused" : "recording"} · {app}
+            {paused ? t("recording.paused") : t("recording.recordingState")} · {appName}
           </Label>
         </div>
-        <span className="relative font-mono text-[40px] font-medium leading-[46px] tracking-[-0.03em]" aria-label="Elapsed time">
+        <span className="relative font-mono text-[40px] font-medium leading-[46px] tracking-[-0.03em]" aria-label={t("recording.elapsedAria")}>
           {formatTime(state.elapsedMs)}
         </span>
       </div>
 
       <div className="flex flex-col gap-[26px] px-[22px] pb-[22px] pt-[26px]">
         <div className="flex flex-col gap-2.5">
-          <span className="font-bold">Let people know you’re recording</span>
+          <span className="font-bold">{t("recording.letKnow")}</span>
           <div className="rounded-[10px] bg-rail px-3 py-2.5 text-[13px] leading-[18px]">{text}</div>
           <Button
             className={cn("h-[34px]", copied && "bg-gold-soft text-gold-ink")}
@@ -95,14 +99,14 @@ export function RecordingPopover({ state, levels, notice, app = "Call", onPause,
               setCopied(true);
             }}
           >
-            {copied ? "Copied. Paste it in the meeting chat" : "Copy notice"}
+            {copied ? t("recording.copiedPaste") : t("recording.copyNotice")}
           </Button>
         </div>
 
         {state.onBuiltInSpeakers && settings?.warnOnSpeakers !== false && (
           <div role="note" className="flex items-start gap-2.5 rounded-[10px] bg-warn-bg px-3 py-2.5 text-warn-fg">
             <AlertTriangle size={16} aria-hidden="true" className="mt-px flex-none" />
-            <span className="text-xs leading-[17px]">You’re on the built-in speakers. Use headphones so other people’s voices aren’t recorded twice.</span>
+            <span className="text-xs leading-[17px]">{t("recording.speakersWarning")}</span>
           </div>
         )}
 
@@ -123,7 +127,7 @@ export function RecordingPopover({ state, levels, notice, app = "Call", onPause,
               )}
               {onDismissNotice && (
                 <Button variant="ghost" className="h-7" onClick={onDismissNotice}>
-                  OK
+                  {t("recording.ok")}
                 </Button>
               )}
             </span>
@@ -132,15 +136,18 @@ export function RecordingPopover({ state, levels, notice, app = "Call", onPause,
 
         <div className="flex flex-col gap-3">
           <div className="grid grid-cols-[46px_minmax(0,1fr)] items-center gap-2.5">
-            <span className="rounded-md bg-strong py-[3px] text-center text-[11px] font-bold text-strong-fg">Me</span>
+            <span className="rounded-md bg-strong py-[3px] text-center text-[11px] font-bold text-strong-fg">{t("recording.me")}</span>
             <Bars levels={me} tone="me" />
           </div>
           <div className="grid grid-cols-[46px_minmax(0,1fr)] items-center gap-2.5">
-            <span className="rounded-md bg-gold-soft py-[3px] text-center text-[11px] font-bold text-gold-ink">Them</span>
+            <span className="rounded-md bg-gold-soft py-[3px] text-center text-[11px] font-bold text-gold-ink">{t("recording.them")}</span>
             <Bars levels={them} tone="them" />
           </div>
           <Label>
-            Mic: {state.micName || "none"} · {state.systemAudio ? "saved every few seconds" : "call audio not available"}
+            {t("recording.micInfo", {
+              mic: state.micName || t("recording.micNone"),
+              audio: state.systemAudio ? t("recording.savedEvery") : t("recording.noCallAudio"),
+            })}
           </Label>
         </div>
 
@@ -148,10 +155,10 @@ export function RecordingPopover({ state, levels, notice, app = "Call", onPause,
           <div className="flex gap-2">
             <Button size="lg" variant={paused ? "strong" : "default"} onClick={paused ? onResume : onPause}>
               {paused ? <Play size={13} fill="currentColor" aria-hidden="true" /> : <Pause size={13} fill="currentColor" aria-hidden="true" />}
-              {paused ? "Resume" : "Pause"}
+              {paused ? t("recording.resume") : t("recording.pause")}
             </Button>
             <Button size="lg" className="flex-1" disabled={paused} onClick={() => onMark()}>
-              <Star size={13} aria-hidden="true" className="fill-gold text-gold" /> Mark this moment
+              <Star size={13} aria-hidden="true" className="fill-gold text-gold" /> {t("recording.markMoment")}
             </Button>
           </div>
           <form
@@ -164,12 +171,12 @@ export function RecordingPopover({ state, levels, notice, app = "Call", onPause,
             }}
           >
             <label className="flex h-[34px] items-center gap-2 rounded-control border border-input bg-paper px-3 focus-within:border-ink">
-              <span className="sr-only">Quick note</span>
+              <span className="sr-only">{t("recording.quickNoteLabel")}</span>
               <input
                 value={note}
                 onChange={(e) => setNote(e.target.value)}
                 disabled={paused}
-                placeholder="Quick note, then Enter"
+                placeholder={t("recording.quickNotePlaceholder")}
                 className="min-w-0 flex-1 border-0 bg-transparent font-[inherit] text-[13px] text-ink outline-none placeholder:text-faint"
               />
             </label>
@@ -179,7 +186,7 @@ export function RecordingPopover({ state, levels, notice, app = "Call", onPause,
 
         <div className="mt-1 flex gap-2.5">
           <Button variant="primary" className="h-[42px] flex-1 text-sm" onClick={onStop}>
-            <Square size={12} fill="currentColor" aria-hidden="true" className="text-red" /> Stop and save
+            <Square size={12} fill="currentColor" aria-hidden="true" className="text-red" /> {t("recording.stopSave")}
           </Button>
           <Button
             variant="ghost"
@@ -187,7 +194,7 @@ export function RecordingPopover({ state, levels, notice, app = "Call", onPause,
             onClick={() => (confirmDiscard ? onDiscard() : setConfirmDiscard(true))}
             onBlur={() => setConfirmDiscard(false)}
           >
-            {confirmDiscard ? "Really discard?" : "Discard"}
+            {confirmDiscard ? t("recording.reallyDiscard") : t("recording.discard")}
           </Button>
         </div>
       </div>

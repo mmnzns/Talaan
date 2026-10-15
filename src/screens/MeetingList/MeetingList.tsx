@@ -3,11 +3,13 @@ import { useState } from "react";
 import { useFolders, useMeetings, useTags } from "../../data/hooks";
 import type { MeetingListItem } from "../../data/types";
 import { dayGroup, dayMark } from "../../lib/format";
+import { useT } from "../../lib/i18n/I18nProvider";
 import { Button, Field, Label } from "../../ui";
 import { FolderNav } from "./FolderNav";
 import { MeetingItem } from "./MeetingItem";
 
 export function MeetingList({ selectedId }: { selectedId?: string }) {
+  const t = useT();
   const [folderId, setFolderId] = useState<string | undefined>();
   const [tag, setTag] = useState<string | undefined>();
   const [query, setQuery] = useState("");
@@ -34,13 +36,13 @@ export function MeetingList({ selectedId }: { selectedId?: string }) {
   }
 
   return (
-    <nav aria-label="Meetings" className="flex w-[310px] flex-none flex-col border-r border-line bg-rail">
+    <nav aria-label={t("shell.meetingsNav")} className="flex w-[310px] flex-none flex-col border-r border-line bg-rail">
       <div className="px-4 pb-2.5 pt-5">
         <Field
-          label="Search meetings"
+          label={t("shell.searchLabel")}
           type="search"
           icon={<Search size={15} aria-hidden="true" />}
-          placeholder="Search meetings and transcripts"
+          placeholder={t("shell.searchPlaceholder")}
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           wrapperClassName="h-[34px]"
@@ -82,21 +84,20 @@ export function MeetingList({ selectedId }: { selectedId?: string }) {
 }
 
 function EmptyState({ firstRun, filtering, onClear }: { firstRun: boolean; filtering: boolean; onClear: () => void }) {
+  const t = useT();
   if (firstRun) {
     return (
       <div className="flex flex-col items-start gap-2 px-2 py-6">
-        <span className="font-display text-base font-bold">No meetings yet</span>
-        <p className="m-0 text-[13px] text-subtle">
-          Start a call and press Record, or import a Voice Memo. Transcripts and summaries show up here.
-        </p>
+        <span className="font-display text-base font-bold">{t("shell.noMeetingsTitle")}</span>
+        <p className="m-0 text-[13px] text-subtle">{t("shell.noMeetingsBody")}</p>
       </div>
     );
   }
   return (
     <div className="flex flex-col items-start gap-2 px-2 py-6">
-      <span className="font-display text-base font-bold">No matches</span>
-      <p className="m-0 text-[13px] text-subtle">Nothing in your meetings fits that search or filter.</p>
-      {filtering && <Button onClick={onClear}>Clear filters</Button>}
+      <span className="font-display text-base font-bold">{t("shell.noMatchesTitle")}</span>
+      <p className="m-0 text-[13px] text-subtle">{t("shell.noMatchesBody")}</p>
+      {filtering && <Button onClick={onClear}>{t("shell.clearFilters")}</Button>}
     </div>
   );
 }

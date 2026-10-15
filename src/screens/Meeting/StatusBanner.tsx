@@ -5,11 +5,13 @@ import { navigate, routes } from "../../lib/router";
 import { openSettings } from "../../lib/windows";
 import { describeError } from "../../data/errors";
 import { Button, useToast } from "../../ui";
+import { useT } from "../../lib/i18n/I18nProvider";
 
 /** Shown above the meeting when it needs the user: interrupted recording or failed processing. */
 export function StatusBanner({ meeting }: { meeting: Meeting }) {
   const store = useStore();
   const toast = useToast();
+  const t = useT();
   const run = (p: Promise<void>) => p.catch((e) => toast(describeError(e)));
   const leave = async () => {
     navigate(routes.meetings());
@@ -19,26 +21,26 @@ export function StatusBanner({ meeting }: { meeting: Meeting }) {
   if (meeting.status === "needs_recovery") {
     return (
       <Banner
-        title="This recording was interrupted"
-        text="Talaan closed or the computer slept before the call was saved. Recover what was captured, or discard it."
+        title={t("meeting.interruptedTitle")}
+        text={t("meeting.interruptedText")}
       >
-        <Button variant="primary" onClick={() => run(store.recoverMeeting(meeting.id))}>Recover</Button>
-        <Button onClick={leave}>Discard</Button>
+        <Button variant="primary" onClick={() => run(store.recoverMeeting(meeting.id))}>{t("meeting.recover")}</Button>
+        <Button onClick={leave}>{t("meeting.discard")}</Button>
       </Banner>
     );
   }
   if (meeting.status === "failed" && meeting.error?.code === "no_model") {
     return (
-      <Banner title="No speech model yet" text="Download one in Settings. This call is transcribed as soon as it finishes.">
-        <Button variant="primary" onClick={() => void openSettings("models")}>Open Speech models</Button>
+      <Banner title={t("meeting.noModelTitle")} text={t("meeting.noModelText")}>
+        <Button variant="primary" onClick={() => void openSettings("models")}>{t("meeting.openModels")}</Button>
       </Banner>
     );
   }
   if (meeting.status === "failed") {
     return (
-      <Banner title="Processing failed" text={`${meeting.error ? `${meeting.error.message} ` : ""}The audio is safe on this computer. Try again, or delete the meeting.`}>
-        <Button variant="primary" onClick={() => run(store.retryProcessing(meeting.id))}>Try again</Button>
-        <Button onClick={leave}>Delete</Button>
+      <Banner title={t("meeting.failedTitle")} text={meeting.error ? t("meeting.failedTextWith", { message: meeting.error.message }) : t("meeting.failedText")}>
+        <Button variant="primary" onClick={() => run(store.retryProcessing(meeting.id))}>{t("meeting.tryAgain")}</Button>
+        <Button onClick={leave}>{t("meeting.delete")}</Button>
       </Banner>
     );
   }

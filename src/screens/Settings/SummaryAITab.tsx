@@ -2,32 +2,35 @@ import { useEffect, useState } from "react";
 import { describeError } from "../../data/errors";
 import { useSettingsStore } from "../../data/StoreProvider";
 import type { ByokProvider, SummaryEngineKind } from "../../data/settings";
+import { useLang, useT } from "../../lib/i18n/I18nProvider";
+import { messageOr, type MessageKey } from "../../lib/i18n";
 import { Button, Chip, Field, Label, Select, cn, useToast } from "../../ui";
 import { Group, Row, SectionIntro } from "./parts";
 import type { TabProps } from "./tabProps";
 
-const ENGINES: { id: SummaryEngineKind; name: string; tag: string; note: string }[] = [
-  { id: "local", name: "Local AI", tag: "default", note: "Built in. Offline. Nothing leaves your computer." },
-  { id: "ollama", name: "Ollama / LM Studio", tag: "offline", note: "Use a model you already run on this computer." },
-  { id: "byok", name: "Your own key", tag: "cloud", note: "Claude, OpenAI or Gemini. Sends text only." },
+const ENGINES: { id: SummaryEngineKind; name: MessageKey; tag: MessageKey; note: MessageKey }[] = [
+  { id: "local", name: "settings.engine_local", tag: "settings.engine_local_tag", note: "settings.engine_local_note" },
+  { id: "ollama", name: "settings.engine_ollama", tag: "settings.engine_ollama_tag", note: "settings.engine_ollama_note" },
+  { id: "byok", name: "settings.engine_byok", tag: "settings.engine_byok_tag", note: "settings.engine_byok_note" },
 ];
 
-const FORMAT = [
-  ["01", "Recap", "3 to 5 sentences"],
-  ["02", "Decisions", "With timestamps"],
-  ["03", "Action items", "Owner and due date"],
-  ["04", "Open questions", "Left unresolved"],
+const FORMAT: [string, MessageKey, MessageKey][] = [
+  ["01", "settings.format_recap", "settings.format_recap_note"],
+  ["02", "settings.format_decisions", "settings.format_decisions_note"],
+  ["03", "settings.format_actions", "settings.format_actions_note"],
+  ["04", "settings.format_questions", "settings.format_questions_note"],
 ];
 
 export function SummaryAITab({ settings: s, update }: TabProps) {
+  const t = useT();
   return (
     <div className="flex flex-col gap-6">
       <div className="flex flex-col gap-3">
         <SectionIntro
-          title="Summary engine"
-          desc="Writes the summary after each call. Every engine follows the same Talaan format, so summaries always look the same."
+          title={t("settings.engine_title")}
+          desc={t("settings.engine_desc")}
         />
-        <div className="grid grid-cols-1 gap-2.5 min-[620px]:grid-cols-3" role="radiogroup" aria-label="Summary engine">
+        <div className="grid grid-cols-1 gap-2.5 min-[620px]:grid-cols-3" role="radiogroup" aria-label={t("settings.engine_title")}>
           {ENGINES.map((e) => {
             const on = s.summaryEngine === e.id;
             return (
@@ -43,10 +46,10 @@ export function SummaryAITab({ settings: s, update }: TabProps) {
                 )}
               >
                 <span className="flex items-center gap-2">
-                  <span className="font-bold">{e.name}</span>
-                  <Chip tone={e.id === "byok" ? "default" : "gold"}>{e.tag}</Chip>
+                  <span className="font-bold">{t(e.name)}</span>
+                  <Chip tone={e.id === "byok" ? "default" : "gold"}>{t(e.tag)}</Chip>
                 </span>
-                <span className="text-xs leading-[17px] text-subtle">{e.note}</span>
+                <span className="text-xs leading-[17px] text-subtle">{t(e.note)}</span>
               </button>
             );
           })}
@@ -59,28 +62,28 @@ export function SummaryAITab({ settings: s, update }: TabProps) {
 
       <div className="flex flex-col gap-3">
         <div className="flex items-baseline gap-3">
-          <SectionIntro title="Talaan summary format" />
-          <Label>same for every engine</Label>
+          <SectionIntro title={t("settings.format_title")} />
+          <Label>{t("settings.format_same")}</Label>
         </div>
         <Group>
           <div className="grid grid-cols-2 divide-x divide-line min-[620px]:grid-cols-4">
             {FORMAT.map(([n, name, note]) => (
               <div key={n} className="flex flex-col gap-0.5 px-4 py-3">
                 <span className="font-mono text-[11px] text-subtle">{n}</span>
-                <span className="text-[13px] font-bold">{name}</span>
-                <span className="text-xs text-subtle">{note}</span>
+                <span className="text-[13px] font-bold">{t(name)}</span>
+                <span className="text-xs text-subtle">{t(note)}</span>
               </div>
             ))}
           </div>
-          <Row title="Summary language">
-            <Select label="Summary language" wrapperClassName="w-44" value={s.summaryLanguage} onChange={(e) => update({ summaryLanguage: e.target.value })}>
-              <option value="meeting">Same as meeting</option>
-              <option value="en">English</option>
-              <option value="tl">Filipino</option>
-              <option value="es">Spanish</option>
-              <option value="fr">French</option>
-              <option value="de">German</option>
-              <option value="pt">Portuguese</option>
+          <Row title={t("settings.summary_language")}>
+            <Select label={t("settings.summary_language")} wrapperClassName="w-44" value={s.summaryLanguage} onChange={(e) => update({ summaryLanguage: e.target.value })}>
+              <option value="meeting">{t("settings.summary_language_meeting")}</option>
+              <option value="en">{t("settings.lang_en")}</option>
+              <option value="tl">{t("settings.lang_tl")}</option>
+              <option value="es">{t("settings.lang_es")}</option>
+              <option value="fr">{t("settings.lang_fr")}</option>
+              <option value="de">{t("settings.lang_de")}</option>
+              <option value="pt">{t("settings.lang_pt")}</option>
             </Select>
           </Row>
         </Group>
@@ -94,31 +97,33 @@ const gb = (mb: number) => `${(mb / 1000).toFixed(1)} GB`;
 function LocalPanel({ settings: s, update }: TabProps) {
   const store = useSettingsStore();
   const toast = useToast();
+  const t = useT();
+  const lang = useLang();
   const run = (p: Promise<void>) => p.catch((e) => toast(describeError(e)));
   const model = s.localModels.find((m) => m.choice === s.localModel) ?? s.localModels[0];
   const pct = Math.round((model?.progress ?? 0) * 100);
   return (
     <Group>
-      <Row title="Local model" desc="Downloaded once. Runs on this computer's GPU, with Wi-Fi off too.">
-        <Select label="Local model" wrapperClassName="w-60" value={s.localModel} onChange={(e) => update({ localModel: e.target.value as "recommended" | "larger" })}>
+      <Row title={t("settings.local_model_title")} desc={t("settings.local_model_desc")}>
+        <Select label={t("settings.local_model_title")} wrapperClassName="w-60" value={s.localModel} onChange={(e) => update({ localModel: e.target.value as "recommended" | "larger" })}>
           {s.localModels.map((m) => (
             <option key={m.id} value={m.choice}>
-              {m.choice === "recommended" ? "Recommended" : "Larger"} · {m.name} · {gb(m.sizeMb)}
+              {t("settings.local_option", { choice: m.choice === "recommended" ? t("settings.local_recommended") : t("settings.local_larger"), name: m.name, size: gb(m.sizeMb) })}
             </option>
           ))}
         </Select>
       </Row>
       {model && (
-        <Row title="Status" desc={model.note}>
+        <Row title={t("settings.status_title")} desc={messageOr(lang, `settings.model_note_${model.id}`, model.note)}>
           {model.state === "downloaded" && (
             <span className="flex items-center gap-2">
-              <Chip tone="gold">Installed</Chip>
+              <Chip tone="gold">{t("settings.installed")}</Chip>
               <button type="button" className="cursor-pointer border-0 bg-transparent p-0 text-xs text-subtle underline" onClick={() => run(store.deleteModel(model.id))}>
-                Delete
+                {t("settings.delete")}
               </button>
             </span>
           )}
-          {model.state === "not_downloaded" && <Button onClick={() => run(store.downloadModel(model.id))}>Download {gb(model.sizeMb)}</Button>}
+          {model.state === "not_downloaded" && <Button onClick={() => run(store.downloadModel(model.id))}>{t("settings.download_size", { size: gb(model.sizeMb) })}</Button>}
           {model.state === "downloading" && (
             <span className="flex w-36 flex-col items-end gap-1">
               <span className="h-[5px] w-full overflow-hidden rounded-full bg-line">
@@ -126,7 +131,7 @@ function LocalPanel({ settings: s, update }: TabProps) {
               </span>
               <span className="font-mono text-[11px] text-subtle">{pct}%</span>
               <button type="button" className="cursor-pointer border-0 bg-transparent p-0 text-xs text-subtle underline" onClick={() => run(store.cancelModelDownload(model.id))}>
-                Cancel
+                {t("settings.cancel")}
               </button>
             </span>
           )}
@@ -138,6 +143,7 @@ function LocalPanel({ settings: s, update }: TabProps) {
 
 function OllamaPanel({ settings: s, update }: TabProps) {
   const store = useSettingsStore();
+  const t = useT();
   const [models, setModels] = useState<string[]>();
   const [problem, setProblem] = useState<string>();
 
@@ -157,17 +163,17 @@ function OllamaPanel({ settings: s, update }: TabProps) {
 
   return (
     <Group>
-      <Row title="Connection" desc="Ollama (port 11434) or LM Studio (port 1234) on this computer.">
-        <Field label="Address" value={s.ollamaAddress} onChange={(e) => update({ ollamaAddress: e.target.value })} wrapperClassName="w-60" />
+      <Row title={t("settings.ollama_title")} desc={t("settings.ollama_desc")}>
+        <Field label={t("settings.ollama_address")} value={s.ollamaAddress} onChange={(e) => update({ ollamaAddress: e.target.value })} wrapperClassName="w-60" />
         {problem && (
           <div role="status" className="basis-full text-xs font-semibold text-danger">
             {problem}
           </div>
         )}
       </Row>
-      <Row title="Model" desc={models ? `${models.length} available.` : "Detected from the running app."}>
-        <Select label="Model" wrapperClassName="w-52" value={s.ollamaModel ?? ""} onChange={(e) => update({ ollamaModel: e.target.value || undefined })}>
-          <option value="">First available</option>
+      <Row title={t("settings.ollama_model_title")} desc={models ? t("settings.ollama_models_found", { count: models.length }) : t("settings.ollama_models_unknown")}>
+        <Select label={t("settings.ollama_model_title")} wrapperClassName="w-52" value={s.ollamaModel ?? ""} onChange={(e) => update({ ollamaModel: e.target.value || undefined })}>
+          <option value="">{t("settings.ollama_first")}</option>
           {s.ollamaModel && !models?.includes(s.ollamaModel) && <option value={s.ollamaModel}>{s.ollamaModel}</option>}
           {models?.map((m) => (
             <option key={m} value={m}>
@@ -182,6 +188,7 @@ function OllamaPanel({ settings: s, update }: TabProps) {
 
 function ByokPanel({ settings: s, update }: TabProps) {
   const store = useSettingsStore();
+  const t = useT();
   const [key, setKey] = useState("");
   const [testing, setTesting] = useState(false);
   const [result, setResult] = useState<{ ok: boolean; message: string }>();
@@ -202,28 +209,28 @@ function ByokPanel({ settings: s, update }: TabProps) {
 
   return (
     <Group>
-      <Row title="Provider" desc="Only the transcript text is sent, never the audio.">
-        <Select label="Provider" wrapperClassName="w-52" value={s.byokProvider} onChange={(e) => (setResult(undefined), update({ byokProvider: e.target.value as ByokProvider }))}>
-          <option value="claude">Claude</option>
-          <option value="openai">OpenAI</option>
-          <option value="gemini">Google Gemini</option>
-          <option value="compatible">Other (OpenAI-compatible)</option>
+      <Row title={t("settings.byok_provider")} desc={t("settings.byok_provider_desc")}>
+        <Select label={t("settings.byok_provider")} wrapperClassName="w-52" value={s.byokProvider} onChange={(e) => (setResult(undefined), update({ byokProvider: e.target.value as ByokProvider }))}>
+          <option value="claude">{t("settings.provider_claude")}</option>
+          <option value="openai">{t("settings.provider_openai")}</option>
+          <option value="gemini">{t("settings.provider_gemini")}</option>
+          <option value="compatible">{t("settings.provider_compatible")}</option>
         </Select>
       </Row>
       {s.byokProvider === "compatible" && (
-        <Row title="Server address" desc="The API's base URL, for example https://api.example.com/v1.">
-          <Field label="Server address" value={s.byokBaseUrl ?? ""} onChange={(e) => update({ byokBaseUrl: e.target.value })} wrapperClassName="w-60" />
+        <Row title={t("settings.byok_server")} desc={t("settings.byok_server_desc")}>
+          <Field label={t("settings.byok_server")} value={s.byokBaseUrl ?? ""} onChange={(e) => update({ byokBaseUrl: e.target.value })} wrapperClassName="w-60" />
         </Row>
       )}
-      <Row title="API key" desc={s.byokKeySet ? "A key is saved in your system's secure key storage." : "Checked, then stored in your system's secure key storage."}>
+      <Row title={t("settings.byok_key")} desc={s.byokKeySet ? t("settings.byok_key_saved") : t("settings.byok_key_new")}>
         <div className="flex items-center gap-2">
-          <Field label="API key" type="password" placeholder={s.byokKeySet ? "••••••••••••" : "Paste key"} value={key} onChange={(e) => setKey(e.target.value)} wrapperClassName="w-52" />
+          <Field label={t("settings.byok_key")} type="password" placeholder={s.byokKeySet ? "••••••••••••" : t("settings.byok_key_placeholder")} value={key} onChange={(e) => setKey(e.target.value)} wrapperClassName="w-52" />
           <Button onClick={test} disabled={testing || !key.trim()}>
-            {testing ? "Testing…" : "Test"}
+            {testing ? t("settings.byok_testing") : t("settings.byok_test")}
           </Button>
           {s.byokKeySet && (
             <button type="button" className="cursor-pointer border-0 bg-transparent p-0 text-xs text-subtle underline" onClick={() => void store.clearApiKey(s.byokProvider).then(() => setResult(undefined))}>
-              Remove
+              {t("settings.remove")}
             </button>
           )}
         </div>
@@ -233,10 +240,10 @@ function ByokPanel({ settings: s, update }: TabProps) {
           </div>
         )}
       </Row>
-      <Row title="Model" desc="Leave empty to use the provider's newest fast model.">
+      <Row title={t("settings.byok_model")} desc={t("settings.byok_model_desc")}>
         <Field
-          label="Model"
-          placeholder="Recommended"
+          label={t("settings.byok_model")}
+          placeholder={t("settings.byok_model_placeholder")}
           value={s.byokModel === "recommended" ? "" : s.byokModel}
           onChange={(e) => update({ byokModel: e.target.value.trim() || "recommended" })}
           wrapperClassName="w-52"

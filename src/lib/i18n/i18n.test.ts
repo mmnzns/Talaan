@@ -66,8 +66,10 @@ describe("the catalog", () => {
       }
       // Known pairs that are different words by meaning: si/sí, tu/tú, mas/más, el/él, se/sé, te/té, de/dé, que/qué, como/cómo,
       // cual/cuál, donde/dónde, cuando/cuándo, ou/où, a/à, la/là, sur/sûr, du/dû.
-      const different = new Set(["si", "tu", "mas", "el", "se", "te", "de", "que", "como", "cual", "donde", "cuando", "quien", "cuanto", "ou", "a", "la", "sur", "du", "mur", "ce", "cote", "pecher", "peche"]);
-      const bad = [...spellings].filter(([base, set]) => set.size > 1 && !different.has(base)).map(([base, set]) => `${lang}: ${base} → ${[...set].join(" / ")}`);
+      const different = new Set(["si", "tu", "mas", "el", "se", "te", "de", "que", "como", "cual", "donde", "cuando", "quien", "cuanto", "ou", "a", "la", "sur", "du", "mur", "ce", "cote", "pecher", "peche", "esta", "este", "estas", "mi", "solo"]);
+      // French -er verbs: present "enregistre" and participle "enregistré" are different words, not a missing accent.
+      const verbForms = (set: Set<string>) => lang === "fr" && [...set].every((w) => /(e|es|é|ée|és|ées)$/.test(w));
+      const bad = [...spellings].filter(([base, set]) => set.size > 1 && !different.has(base) && !verbForms(set)).map(([base, set]) => `${lang}: ${base} → ${[...set].join(" / ")}`);
       expect(bad).toEqual([]);
     }
   });
