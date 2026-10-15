@@ -14,6 +14,13 @@ is currently very slow (391 s for a 62 s clip), under investigation.
 "Call audio stopped" notice if it can't. The speakers warning sees through virtual outputs (FxSound). A device watcher follows
 default-device changes, recording auto-pauses on sleep, and microphone access reads the Privacy & security switches.
 
+**W2 done.** Call detection reads the microphone consent store in the registry (`LastUsedTimeStop` = 0 while an app holds
+the mic; unreadable values never count as in use). Windows ids are in `calls/apps.rs` and `calls/tabs.rs`: Zoom, Teams, Slack,
+WhatsApp, Discord, Webex, browsers; ignored: Talaan, Parlato, Wispr Flow, voice typing, Sound Recorder, Xbox Game Bar and mic
+processors (NVIDIA Broadcast, SteelSeries Sonar, Voicemod, Krisp). Settings > Connections lists installed Windows browsers.
+**Not done:** a real call with Zoom/Teams (your checkpoint). **Known:** a dev build or console exe (the test exe, python.exe)
+gets no consent-store entry even while it records, so `mic_users_live_smoke` can't show a live entry; GUI apps do appear.
+
 **Known:** relay apps (FxSound, Voicemeeter, Sonar) re-render audio under their own process, so Talaan's own sounds can reach
 "Them" and other audio may be captured twice.
 
@@ -26,6 +33,7 @@ default-device changes, recording auto-pauses on sleep, and microphone access re
 | `system_silence_keeps_packets_flowing` (30 s of silence still delivers 30 s of samples) | `cargo test system_silence_keeps_packets_flowing -- --ignored --nocapture` |
 | `mic_clock_smoke` (mic stamps are on the host clock) | `cargo test mic_clock_smoke -- --ignored --nocapture` |
 | `tracks_line_up_smoke` (mic and loopback stamp-vs-now lag under 200 ms; a PowerShell process plays a Windows sound) | `cargo test tracks_line_up_smoke -- --ignored --nocapture` |
+| `mic_users_live_smoke` (prints this exe's consent-store entry while recording and after) | `cargo test mic_users_live_smoke -- --ignored --nocapture` |
 | `pipeline_smoke` (real models on a recorded meeting) | `TALAAN_SMOKE_MEETING=<meeting dir> cargo test --release pipeline_smoke -- --ignored --nocapture` |
 
 ## What's already shared
