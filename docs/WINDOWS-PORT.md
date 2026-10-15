@@ -52,6 +52,31 @@ that AppUserModelID, or toasts won't show for installed builds.
 **Dev note:** the single-instance guard is Windows only. On Windows, `npm run tauri dev` exits immediately if the installed
 Talaan is running; quit it first.
 
+**W4 done.** *Calendar:* Windows' own calendar store doesn't see new Outlook or Google (spike below), so Talaan reads
+the calendar's private iCal address instead, which works with any provider. The user pastes it in Settings › Connections ›
+Calendar (Windows only; "Test and connect" downloads it and says how many events are in the next 7 days). It's saved as
+`calendarIcsUrl` in settings.json, and Privacy › What leaves this computer lists the download. `calendar/fetch.rs`
+downloads it (15 s timeout, 20 MB cap, `webcal://` accepted, refreshed every 15 minutes, a failed download keeps the old copy
+and retries after a minute). `calendar/ics.rs` reads it once per download and expands recurrences per window: RRULE, EXDATE,
+RECURRENCE-ID overrides, IANA and Windows time zone names (Outlook's "Eastern Standard Time"), floating and all-day times,
+at most 1,000 occurrences per event. Reading is tolerant: a bad event is skipped and the rest are kept. The user's own
+address (from a Google address) and declined attendees are left out. The public Google holidays feed reads as 433 events.
+A 21 MB synthetic feed reads in about 0.15 s in a release build. *Browser tabs:* UI Automation reads the address bar
+(`OmniboxViewViews`) of each Chromium browser window, within 300 ms. **Limitation:** only the tab in front of each window is
+visible. So a call tab seen means the call (Always works), but no call tab seen means "can't tell" (Ask), never "not a call":
+a Meet call in a background tab still asks. Settings shows installed browsers as "ready" (Windows has no permission for this).
+Firefox stays Ask, as on the Mac.
+
+**Check by hand (W4):**
+
+- In Google Calendar › Settings › your calendar › "Secret address in iCal format", copy the address, paste it in Talaan's
+  Settings › Connections › Calendar and click Test and connect: it shows "Found N events in the next 7 days".
+- Start a recording during a calendar event: the meeting takes the event's title and attendees.
+- With Google Meet on Always, join a Meet call in Edge or Chrome (Meet tab in front): recording starts by itself.
+- With YouTube in front and the mic in use (e.g. a voice-search or recorder site), it asks instead (Browser rule).
+- The "Where do I find this?" links (Google, Outlook, iCloud) open the right help pages; the Outlook and iCloud links
+  were written from memory and haven't been opened yet.
+
 **Smoke tests** (all `#[ignore]`; run from `src-tauri/`, most need a working mic):
 
 | Test | Command |
@@ -64,6 +89,9 @@ Talaan is running; quit it first.
 | `mic_users_live_smoke` (prints this exe's consent-store entry while recording and after) | `cargo test mic_users_live_smoke -- --ignored --nocapture` |
 | `capture_sessions_live_smoke` (our pid is an active capture session while recording, is kept out of `mic_users()`, and is gone 1.5 s after stopping) | `cargo test capture_sessions_live_smoke -- --ignored --nocapture` |
 | `toast_smoke` (posts one toast under the PowerShell app id, waits 5 s, prints what `show()` returned) | `cargo test toast_smoke -- --ignored --nocapture` |
+| `public_holiday_feed_smoke` (downloads Google's public Canadian holidays calendar and reads it; network) | `cargo test public_holiday_feed_smoke -- --ignored --nocapture` |
+| `tab_urls_live_smoke` (opens a new Edge window on a Meet URL, then on example.com; expects `Urls`, then `Unknown`; closes only the windows it opened) | `cargo test tab_urls_live_smoke -- --ignored --nocapture --test-threads=1` |
+| `large_feed_timing` (reads a 21 MB synthetic calendar) | `cargo test --release large_feed_timing -- --ignored --nocapture` |
 | `pipeline_smoke` (real models on a recorded meeting) | `TALAAN_SMOKE_MEETING=<meeting dir> cargo test --release pipeline_smoke -- --ignored --nocapture` |
 
 **Speed (release builds).** whisper.cpp and llama.cpp were compiled at `/Od` in release on Windows: with the Visual Studio generator the `cmake` crate overwrites `CMAKE_C_FLAGS_RELEASE`/`CMAKE_CXX_FLAGS_RELEASE` and drops every `/O` flag (debug builds were fine). A 62 s clip took 398 s; with the fix it takes about 29 s, same transcript. Fix: `.cargo/config.toml` sets both variables to `-O2 -DNDEBUG`, which the -sys crates forward as CMake defines. Also tuned: CPU Whisper uses three quarters of the logical cores (2..=12; 16 threads on a 16-thread Ryzen is 2-3x slower than 12) and flash attention is on only for Metal. Cargo does not rebuild the -sys crates when `[env]` changes, so after editing `.cargo/config.toml` run `cargo clean --manifest-path src-tauri/Cargo.toml --release -p whisper-rs-sys -p llama-cpp-sys-2`. The same flags apply on macOS (-O2 instead of CMake's -O3 for CPU code; negligible, Metal runs the models).
@@ -90,7 +118,7 @@ Mirror each macOS item with the same names, so callers don't change:
 | `power.rs` `SleepWatcher` | Auto-pause on sleep | `WM_POWERBROADCAST` / `RegisterSuspendResumeNotification`. |
 | `notify.rs` | "Summary ready" notification, click opens the meeting | Windows toast (tauri-plugin-notification or WinRT `ToastNotificationManager` with an activation argument). |
 | `calendar.rs` | Calendar events (title, attendees) | The calendar's private iCal address (W4): download, then `calendar/ics.rs` parses and expands recurrences; the pure picker in `calendar/` is shared. WinRT `AppointmentStore` was ruled out by the W4 spike (below). |
-| `browser_tabs.rs` | Tab URLs of a browser using the mic | No AppleScript: UI Automation on the browser's address bar (active tab only), or leave browser calls on Ask/Never on Windows. `calls/tabs.rs` classification is shared. |
+| `browser_tabs.rs` | Tab URLs of a browser using the mic | UI Automation on each Chromium window's address bar (W4; the tab in front only, so no call seen = Unsure). `calls/tabs.rs` classification is shared. |
 | `thread.rs` | Background thread priority | `SetThreadPriority(THREAD_PRIORITY_BELOW_NORMAL)` / `THREAD_MODE_BACKGROUND_BEGIN`. |
 
 **W4 spike, AppointmentStore (2026-10-15, Miguel's PC, new Outlook installed, unpackaged debug test):**
