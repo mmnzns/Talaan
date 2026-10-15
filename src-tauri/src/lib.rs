@@ -24,6 +24,8 @@ fn platform_name() -> &'static str {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        // First, so a second launch exits before anything else starts; it focuses the running Talaan instead.
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| commands::tray::show_main(app)))
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
