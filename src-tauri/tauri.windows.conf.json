@@ -1,0 +1,7 @@
+{
+  "build": {
+    "beforeDevCommand": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-llm-helper.ps1 && npm run dev",
+    "beforeBuildCommand": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-llm-helper.ps1 && npm run build"
+  },
+  "bundle": { "targets": ["nsis"] }
+}
