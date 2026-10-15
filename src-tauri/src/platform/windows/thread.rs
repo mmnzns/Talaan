@@ -1,4 +1,4 @@
-﻿//! Thread priority for long background work (transcription, indexing), so a call being recorded never stutters.
+//! Thread priority for long background work (transcription, indexing), so a call being recorded never stutters.
 //! Below normal, not THREAD_MODE_BACKGROUND_BEGIN: background mode also throttles disk reads, which would make
 //! loading a 1.5 GB model crawl.
 

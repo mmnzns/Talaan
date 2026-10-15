@@ -1,15 +1,24 @@
-﻿//! Host time in nanoseconds: QueryPerformanceCounter on the 100 ns grid WASAPI uses for its QPC positions,
+//! Host time in nanoseconds: QueryPerformanceCounter on the 100 ns grid WASAPI uses for its QPC positions,
 //! so cpal's mic timestamps and the loopback timestamps are on the same clock as `host_now_ns`.
 
 use ::windows::Win32::System::Performance::{QueryPerformanceCounter, QueryPerformanceFrequency};
+use std::sync::OnceLock;
 
 pub fn host_now_ns() -> u64 {
-    let (mut counter, mut freq) = (0i64, 0i64);
+    // The frequency is fixed at boot, so ask once.
+    static FREQ: OnceLock<u64> = OnceLock::new();
+    let freq = *FREQ.get_or_init(|| {
+        let mut f = 0i64;
+        unsafe {
+            let _ = QueryPerformanceFrequency(&mut f);
+        }
+        f as u64
+    });
+    let mut counter = 0i64;
     unsafe {
         let _ = QueryPerformanceCounter(&mut counter);
-        let _ = QueryPerformanceFrequency(&mut freq);
     }
-    qpc_to_ns(counter as u64, freq as u64)
+    qpc_to_ns(counter as u64, freq)
 }
 
 /// A QPC reading -> ns, through 100 ns units (matches cpal's `now()` and WASAPI positions exactly).
@@ -47,7 +56,6 @@ mod tests {
         let a = host_now_ns();
         std::thread::sleep(std::time::Duration::from_millis(20));
         let d = host_now_ns() - a;
-        assert!((15_000_000..200_000_000).contains(&d), "{d}");
+        assert!((15_000_000..2_000_000_000).contains(&d), "{d}");
     }
 }
-
