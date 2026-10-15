@@ -6,6 +6,9 @@ name: Release
 #                  scripts/release-local.sh then scripts/upload-mac-release.sh <tag> (or by the macos job below
 #                  once the APPLE_CERTIFICATE secrets exist and the repo variable MAC_RELEASE_ON_CI is "true")
 #   latest.json:   rebuilt from every .sig on the release by scripts/latest-json.mjs, by whoever uploads last
+# Run the Mac upload (scripts/upload-mac-release.sh) only after this workflow's updater-json job has finished, then
+# check that latest.json has four keys (the script checks it too). latest-json.mjs reads its upload back and retries,
+# but two uploads at once can still race.
 # Publish the draft by hand after the release gate (docs/TESTING.md).
 #
 # Secrets:

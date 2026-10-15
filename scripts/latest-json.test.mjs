@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildLatest, platformsFor } from "./latest-json.mjs";
+import { buildLatest, missingPlatforms, platformsFor } from "./latest-json.mjs";
 
 const base = { repo: "mmnzns/Talaan", tag: "v1.0.0", notes: "n", pubDate: "2026-10-20T00:00:00.000Z" };
 
@@ -24,6 +24,18 @@ describe("latest.json", () => {
       url: "https://github.com/mmnzns/Talaan/releases/download/v1.0.0/Talaan_1.0.0_x64-setup.exe",
     });
     expect(a.platforms["darwin-aarch64"].signature).toBe("MAC");
+  });
+
+  it("finds signatures the uploaded file lacks, so a racing upload gets rebuilt", () => {
+    const win = { name: "Talaan_1.0.0_x64-setup.exe.sig", signature: "WIN" };
+    const mac = { name: "Talaan_aarch64.app.tar.gz.sig", signature: "MAC\n" };
+    const winOnly = buildLatest({ ...base, sigs: [win] });
+    expect(missingPlatforms(winOnly, [win])).toEqual([]);
+    expect(missingPlatforms(winOnly, [win, mac])).toEqual(["darwin-aarch64", "darwin-aarch64-app"]);
+    expect(missingPlatforms(buildLatest({ ...base, sigs: [win, mac] }), [win, mac])).toEqual([]);
+    // A rebuilt artifact re-signed after the file was written counts as missing too.
+    expect(missingPlatforms(winOnly, [{ ...win, signature: "WIN2" }])).toEqual(["windows-x86_64", "windows-x86_64-nsis"]);
+    expect(missingPlatforms(undefined, [win])).toHaveLength(2);
   });
 
   it("refuses to write an empty file", () => {

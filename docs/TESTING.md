@@ -124,8 +124,11 @@ quit the dev app first: one Talaan at a time.
 
 **Before publishing**
 - [ ] Version is 1.0.0 in tauri.conf.json, Cargo.toml and package.json (not -dev).
+- [ ] The Mac upload (`scripts/upload-mac-release.sh <tag>`) ran after the CI **updater-json** job had finished,
+  not while it was running, so the two latest.json uploads didn't race.
 - [ ] The draft has the .exe, .exe.sig, .dmg, Talaan_aarch64.app.tar.gz, its .sig and latest.json with four
-  keys (windows-x86_64, windows-x86_64-nsis, darwin-aarch64, darwin-aarch64-app).
+  keys (windows-x86_64, windows-x86_64-nsis, darwin-aarch64, darwin-aarch64-app). If one is missing, run
+  `node scripts/latest-json.mjs <tag>` again.
 - [ ] If the first tag shows that `gh release upload/download <tag>` can't find the draft (never tried on a test
   repo), look the draft up with `gh api repos/mmnzns/Talaan/releases --jq '.[] | select(.tag_name=="vX") | .id'`
   and upload through `gh api` instead (scripts/latest-json.mjs, scripts/upload-mac-release.sh, release.yml).
