@@ -395,6 +395,17 @@ pub fn stop_on_exit(app: &AppHandle) {
     }
 }
 
+/// "Delete everything" while recording: drop the recording (its files are about to go) so nothing writes into
+/// the emptied folder and Windows has no open WAV files blocking the delete.
+pub fn discard_for_wipe(app: &AppHandle) {
+    let Some(rec) = app.try_state::<RecorderState>() else { return };
+    let mut engine = rec.lock();
+    if engine.is_active() {
+        let state = app.state::<AppState>();
+        let _ = engine.discard(&state.lock(), platform::host_now_ns());
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::auto_tag;

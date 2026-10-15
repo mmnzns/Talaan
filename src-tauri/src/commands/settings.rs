@@ -27,15 +27,15 @@ pub fn settings_set(app: AppHandle, state: State<AppState>, value: Value) -> Cmd
     Ok(())
 }
 
-/// Deletes everything, then restarts so the next launch is first-run.
+/// Deletes everything, then quits (as the Privacy tab says). The next launch starts at onboarding.
 #[tauri::command]
 pub fn data_delete_all(app: AppHandle, state: State<AppState>) -> CmdResult<()> {
+    super::recorder::discard_for_wipe(&app);
     state.lock().delete_all_data()?;
     crate::keys::clear_all();
     super::updates::remove_login_item(&app);
-    notify(&app, MEETINGS_CHANGED);
-    notify(&app, SETTINGS_CHANGED);
-    app.restart()
+    app.exit(0);
+    Ok(())
 }
 
 #[derive(serde::Serialize)]

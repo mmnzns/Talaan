@@ -174,7 +174,7 @@ export class TauriSettingsStore implements SettingsStore {
   }
 
   async deleteAllData(): Promise<void> {
-    await call<void>("data_delete_all"); // the app restarts into first-run
+    await call<void>("data_delete_all"); // Talaan deletes everything, then quits; the next launch is first-run.
   }
 
   subscribe(listener: () => void): () => void {
