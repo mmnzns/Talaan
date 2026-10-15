@@ -24,3 +24,13 @@ export async function openSettings(tab = "general"): Promise<void> {
     center: true,
   });
 }
+
+/** Opens a web link in the default browser (in a plain browser, a new tab). */
+export async function openLink(url: string): Promise<void> {
+  if (!inTauri()) {
+    window.open(url, "_blank", "noopener");
+    return;
+  }
+  const { openUrl } = await import("@tauri-apps/plugin-opener");
+  await openUrl(url);
+}

@@ -1,12 +1,14 @@
 import { Check } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import type { NotionDestination } from "../../data/settings";
+import { useSettingsStore, useStore } from "../../data/StoreProvider";
 import { useSettings } from "../../data/hooks";
 import type { Meeting } from "../../data/types";
 import { formatDate } from "../../lib/format";
 import { SunCorner } from "../../brand/SunCorner";
 import { exportMeeting } from "../../lib/exportFile";
 import { describeError } from "../../data/errors";
-import { openSettings } from "../../lib/windows";
+import { openLink, openSettings } from "../../lib/windows";
 import { Label, Button, Radio, Select, Sheet, Switch, cn } from "../../ui";
 
 type Format = "md" | "pdf" | "txt" | "notion";
@@ -18,7 +20,6 @@ const FORMATS: { id: Format; name: string; note: string; ext?: string }[] = [
   { id: "notion", name: "Notion", note: "New page in a database or under a page" },
 ];
 
-const DESTINATIONS = ["Meeting Notes (database)", "Talaan Journey (page)"];
 
 interface Props {
   open: boolean;
@@ -30,26 +31,42 @@ export function ExportSheet({ open, meeting, onClose }: Props) {
   const { settings } = useSettings();
   const [format, setFormat] = useState<Format>("md");
   const [withTranscript, setWithTranscript] = useState(false);
-  const [destination, setDestination] = useState(DESTINATIONS[0]);
+  const settingsStore = useSettingsStore();
+  const store = useStore();
+  const [places, setPlaces] = useState<NotionDestination[]>();
+  const [destinationId, setDestinationId] = useState<string>();
   const [done, setDone] = useState<string>();
+  const [link, setLink] = useState<string>();
 
   const edited = Boolean(meeting.summary?.edited) || meeting.transcript.some((l) => l.edited);
   const notionReady = settings?.notion.connected ?? false;
   const selected = FORMATS.find((f) => f.id === format)!;
   const cta = format === "notion" ? "Send to Notion" : `Save ${selected.name === "Plain text" ? "text" : selected.name} file`;
-  const blocked = format === "notion" && !notionReady;
+  const destination = places?.find((p) => p.id === (destinationId ?? settings?.notion.destination?.id)) ?? places?.[0];
+  const blocked = format === "notion" && (!notionReady || !destination);
+
+  useEffect(() => {
+    if (open && format === "notion" && notionReady && places === undefined) {
+      settingsStore.notionDestinations().then(setPlaces, (e) => setDone(describeError(e)));
+    }
+  }, [open, format, notionReady, places, settingsStore]);
 
   const close = () => {
     setDone(undefined);
+    setLink(undefined);
     onClose();
   };
 
   const [busy, setBusy] = useState(false);
   const run = async () => {
-    // Notion export arrives in M9.
-    if (format === "notion") return setDone(`Sent to “${destination}” in Notion.`);
     setBusy(true);
     try {
+      if (format === "notion") {
+        if (!destination) return;
+        const url = await store.exportToNotion(meeting.id, destination, withTranscript);
+        setLink(url || undefined);
+        return setDone(`Sent to “${destination.title}” in Notion.`);
+      }
       const where = await exportMeeting(meeting, format, withTranscript);
       if (format === "pdf") return close(); // the print sheet takes it from here
       if (where) setDone(`Saved “${where.split("/").pop()}”.`);
@@ -78,9 +95,16 @@ export function ExportSheet({ open, meeting, onClose }: Props) {
           </span>
           <div className="font-display text-lg font-bold">Done</div>
           <p className="m-0 text-[13px] text-subtle">{done}</p>
-          <Button variant="primary" onClick={close}>
-            Close
-          </Button>
+          <span className="flex gap-2">
+            {link && (
+              <Button variant="primary" onClick={() => void openLink(link)}>
+                Open in Notion
+              </Button>
+            )}
+            <Button variant={link ? "default" : "primary"} onClick={close}>
+              Close
+            </Button>
+          </span>
         </div>
       ) : (
         <>
@@ -124,11 +148,15 @@ export function ExportSheet({ open, meeting, onClose }: Props) {
                   <div className="flex items-center justify-between gap-5 border-t border-line py-4">
                     <div>
                       <div className="font-semibold">Notion destination</div>
-                      <div className="text-xs text-subtle">Connected as {settings?.notion.workspace ?? "you"}</div>
+                      <div className="text-xs text-subtle">{settings?.notion.workspace ?? "Notion"}</div>
                     </div>
-                    <Select label="Notion destination" wrapperClassName="w-[220px]" value={destination} onChange={(e) => setDestination(e.target.value)}>
-                      {DESTINATIONS.map((d) => (
-                        <option key={d}>{d}</option>
+                    <Select label="Notion destination" wrapperClassName="w-[220px]" value={destination?.id ?? ""} onChange={(e) => setDestinationId(e.target.value)}>
+                      {places === undefined && <option value="">Loading…</option>}
+                      {places?.length === 0 && <option value="">Nothing shared with Talaan yet</option>}
+                      {places?.map((p) => (
+                        <option key={p.id} value={p.id}>
+                          {p.title} ({p.kind})
+                        </option>
                       ))}
                     </Select>
                   </div>

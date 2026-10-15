@@ -1,12 +1,13 @@
 import { useEffect, useState } from "react";
 import { recorderClient } from "../../data";
-import type { CalendarAccess } from "../../data/settings";
+import type { CalendarAccess, NotionDestination } from "../../data/settings";
+import { describeError } from "../../data/errors";
+import { openLink } from "../../lib/windows";
 import { useSettingsStore } from "../../data/StoreProvider";
-import { Button, Chip, Select, Switch, useToast } from "../../ui";
+import { Button, Chip, Field, Select, Switch, useToast } from "../../ui";
 import { Group, Row, SectionIntro } from "./parts";
 import type { TabProps } from "./tabProps";
 
-const DESTINATIONS = ["Meeting Notes (database)", "Talaan Journey (page)"];
 const STATE_LABEL = { allowed: "allowed", not_asked: "not asked yet", not_installed: "not installed" } as const;
 
 export function ConnectionsTab({ settings: s, update }: TabProps) {
@@ -23,11 +24,6 @@ export function ConnectionsTab({ settings: s, update }: TabProps) {
     setCalendar(access);
     if (access === "allowed") update({ calendarConnected: true });
     else toast("Calendar access is off for Talaan. Turn it on in your system settings, then try again.");
-  };
-
-  const connect = () => {
-    update({ notion: { connected: true, workspace: "Miguel", destination: DESTINATIONS[0] } });
-    toast("Connected to Notion");
   };
 
   return (
@@ -56,38 +52,99 @@ export function ConnectionsTab({ settings: s, update }: TabProps) {
             </div>
           )}
         </Row>
-        <Row
-          title="Notion"
-          desc={
-            s.notion.connected
-              ? `Connected as ${s.notion.workspace ?? "you"}. Sends only when you click Export.`
-              : "Not connected. Send a meeting to a Notion page or database when you click Export."
-          }
-        >
-          {s.notion.connected ? (
-            <div className="flex items-center gap-2">
-              <Select
-                label="Default destination"
-                wrapperClassName="w-52"
-                value={s.notion.destination ?? DESTINATIONS[0]}
-                onChange={(e) => update({ notion: { ...s.notion, destination: e.target.value } })}
-              >
-                {DESTINATIONS.map((d) => (
-                  <option key={d}>{d}</option>
-                ))}
-              </Select>
-              <Button onClick={() => update({ notion: { connected: false } })}>Disconnect</Button>
-            </div>
-          ) : (
-            <Button variant="primary" onClick={connect}>
-              Connect Notion
-            </Button>
-          )}
-        </Row>
+        <NotionRow settings={s} update={update} />
         <Row title="Speaker names" desc="Suggest names for speakers from calendar attendees.">
           <Switch aria-label="Suggest speaker names" checked={s.suggestSpeakerNames} onChange={(v) => update({ suggestSpeakerNames: v })} />
         </Row>
       </Group>
     </div>
+  );
+}
+
+const NOTION_INTEGRATIONS = "https://www.notion.so/profile/integrations";
+
+/** Notion: connect with an integration secret, then pick where meetings go. Sends only when you click Export. */
+function NotionRow({ settings: s, update }: TabProps) {
+  const store = useSettingsStore();
+  const toast = useToast();
+  const [secret, setSecret] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string>();
+  const [places, setPlaces] = useState<NotionDestination[]>();
+
+  useEffect(() => {
+    if (!s.notion.connected) return;
+    store.notionDestinations().then(setPlaces, (e) => setError(describeError(e)));
+  }, [s.notion.connected, store]);
+
+  const connect = async () => {
+    setBusy(true);
+    setError(undefined);
+    try {
+      const workspace = await store.connectNotion(secret);
+      setSecret("");
+      toast(`Connected to ${workspace}`);
+    } catch (e) {
+      setError(describeError(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  if (!s.notion.connected) {
+    return (
+      <Row
+        stack
+        title="Notion"
+        desc="Send a meeting to a Notion page or database when you click Export. Nothing is sent otherwise."
+      >
+        <ol className="m-0 flex list-decimal flex-col gap-1 pl-5 text-xs leading-[17px] text-subtle">
+          <li>
+            In Notion, make an internal integration named Talaan and copy its secret.{" "}
+            <button type="button" className="cursor-pointer border-0 bg-transparent p-0 text-xs text-ink underline" onClick={() => void openLink(NOTION_INTEGRATIONS)}>
+              Open Notion integrations
+            </button>
+          </li>
+          <li>On each page or database Talaan may write to: ••• › Connections › add Talaan.</li>
+          <li>Paste the secret here. It’s kept in your system’s secure key storage.</li>
+        </ol>
+        <form
+          className="flex flex-wrap items-center gap-2"
+          onSubmit={(e) => {
+            e.preventDefault();
+            void connect();
+          }}
+        >
+          <Field label="Notion integration secret" type="password" placeholder="ntn_…" value={secret} onChange={(e) => setSecret(e.target.value)} wrapperClassName="w-72" />
+          <Button type="submit" variant="primary" disabled={!secret.trim() || busy}>
+            {busy ? "Checking…" : "Connect"}
+          </Button>
+        </form>
+        {error && <span className="text-xs text-warn-fg">{error}</span>}
+      </Row>
+    );
+  }
+
+  const current = s.notion.destination;
+  return (
+    <Row title="Notion" desc={`Connected to ${s.notion.workspace ?? "Notion"}. Sends only when you click Export.`}>
+      <div className="flex flex-wrap items-center gap-2">
+        <Select
+          label="Default destination"
+          wrapperClassName="w-56"
+          value={current?.id ?? ""}
+          onChange={(e) => update({ notion: { ...s.notion, destination: places?.find((p) => p.id === e.target.value) } })}
+        >
+          <option value="">{places === undefined ? "Loading…" : places.length ? "Choose where meetings go" : "Nothing shared with Talaan yet"}</option>
+          {places?.map((p) => (
+            <option key={p.id} value={p.id}>
+              {p.title} ({p.kind})
+            </option>
+          ))}
+        </Select>
+        <Button onClick={() => void store.disconnectNotion()}>Disconnect</Button>
+      </div>
+      {error && <span className="basis-full text-xs text-warn-fg">{error}</span>}
+    </Row>
   );
 }

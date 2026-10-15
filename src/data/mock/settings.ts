@@ -92,6 +92,24 @@ export class MockSettingsStore implements SettingsStore {
     this.setModel(id, { state: "not_downloaded", progress: undefined });
   }
 
+  async connectNotion(secret: string) {
+    await sleep(500);
+    if (!secret.trim().startsWith("ntn_") && !secret.trim().startsWith("secret_")) throw new Error("Notion didn't accept that secret.");
+    await this.update({ notion: { connected: true, workspace: "Sample workspace" } });
+    return "Sample workspace";
+  }
+
+  async disconnectNotion() {
+    await this.update({ notion: { connected: false } });
+  }
+
+  async notionDestinations() {
+    return [
+      { id: "db-notes", kind: "database" as const, title: "Meeting Notes" },
+      { id: "pg-journal", kind: "page" as const, title: "Work journal" },
+    ];
+  }
+
   async calendarAccess() {
     return "allowed" as const;
   }

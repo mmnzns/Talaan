@@ -43,4 +43,7 @@ app (`scripts/build-signed-debug.sh` → `src-tauri/target/debug/bundle/macos/Ta
 - [ ] Settings › Call apps › Tag meetings by call app: the next detected call gets #zoom (or the app's name).
 - [ ] Settings › Connections › Calendar: turning it on asks for calendar access once. Record during a calendar event (or up to 10 min before it): the meeting takes the event's title, the speaker chips suggest attendees, and action-item owners use their names.
 - [ ] Deny calendar access: the switch stays off and "Allow in system settings" opens the right pane.
+- [ ] Notion: Settings › Connections › Notion. Make an internal integration (the link opens Notion), share a database and a page with it, paste the secret, Connect. Pick a default destination.
+- [ ] Export › Notion into the database (with and without transcript), then into the page: "Open in Notion" shows the summary, to-dos with owners, and times. A long meeting's transcript arrives whole.
+- [ ] A wrong secret says Notion didn't accept it; a page not shared with Talaan says how to add the connection.
 

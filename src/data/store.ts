@@ -1,3 +1,4 @@
+import type { NotionDestination } from "./settings";
 import type {
   AskAnswer,
   AskScope,
@@ -47,6 +48,8 @@ export interface MeetingStore {
   deleteFolder(id: string): Promise<void>;
   listTags(): Promise<string[]>;
   ask(question: string, scope: AskScope): Promise<AskAnswer>;
+  /** Sends the meeting to Notion; returns the new page's URL. */
+  exportToNotion(id: MeetingId, destination: NotionDestination, includeTranscript: boolean): Promise<string>;
   /** Fires on any change. Returns an unsubscribe function. */
   subscribe(listener: () => void): () => void;
 }

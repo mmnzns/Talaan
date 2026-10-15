@@ -1,5 +1,5 @@
 import { defaultSettings, withDefaults } from "../defaultSettings";
-import type { ByokProvider, CalendarAccess, LocalModel, Settings, SettingsStore, SpeechModel } from "../settings";
+import type { ByokProvider, CalendarAccess, LocalModel, NotionDestination, Settings, SettingsStore, SpeechModel } from "../settings";
 import { call, onEvent } from "./invoke";
 
 
@@ -113,6 +113,21 @@ export class TauriSettingsStore implements SettingsStore {
 
   localServerModels(address: string): Promise<string[]> {
     return call<string[]>("local_server_models", { address });
+  }
+
+  async connectNotion(secret: string): Promise<string> {
+    const { workspace } = await call<{ workspace: string }>("notion_connect", { secret });
+    await this.update({ notion: { connected: true, workspace } });
+    return workspace;
+  }
+
+  async disconnectNotion(): Promise<void> {
+    await call<void>("notion_disconnect");
+    await this.update({ notion: { connected: false } });
+  }
+
+  notionDestinations(): Promise<NotionDestination[]> {
+    return call<NotionDestination[]>("notion_destinations");
   }
 
   calendarAccess(): Promise<CalendarAccess> {

@@ -6,6 +6,12 @@ export type RetentionChoice = "1d" | "7d" | "30d" | "forever" | "none";
 export type TranscriptRetention = "forever" | "1y" | "90d";
 export type SummaryEngineKind = "local" | "ollama" | "byok";
 export type ByokProvider = "claude" | "openai" | "gemini" | "compatible";
+export interface NotionDestination {
+  id: string;
+  kind: "page" | "database";
+  title: string;
+}
+
 export type CalendarAccess = "allowed" | "not_asked" | "denied";
 export type BrowserState = "allowed" | "not_asked" | "not_installed";
 
@@ -93,7 +99,8 @@ export interface Settings {
   tabDetection: boolean;
   browsers: { name: string; state: BrowserState }[];
   suggestSpeakerNames: boolean;
-  notion: { connected: boolean; workspace?: string; destination?: string };
+  /** The secret itself lives in secure key storage, never here. */
+  notion: { connected: boolean; workspace?: string; destination?: NotionDestination };
   // Privacy
   retention: RetentionChoice;
   transcriptRetention: TranscriptRetention;
@@ -116,6 +123,11 @@ export interface SettingsStore {
   clearApiKey(provider: ByokProvider): Promise<void>;
   /** Models a local server (Ollama, LM Studio) offers at an address. Throws when it can't be reached. */
   localServerModels(address: string): Promise<string[]>;
+  /** Checks an integration secret with Notion and saves it; returns the workspace name. */
+  connectNotion(secret: string): Promise<string>;
+  disconnectNotion(): Promise<void>;
+  /** Pages and databases shared with the integration. */
+  notionDestinations(): Promise<NotionDestination[]>;
   /** Calendar access as the system reports it. */
   calendarAccess(): Promise<CalendarAccess>;
   /** Asks the system for calendar access (the prompt shows only the first time). */

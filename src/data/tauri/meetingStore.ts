@@ -1,3 +1,4 @@
+import type { NotionDestination } from "../settings";
 import type { MeetingFilter, MeetingStore } from "../store";
 import type { AskAnswer, AskScope, Folder, Meeting, MeetingId, MeetingListItem, Speaker, Summary } from "../types";
 import { call, onEvent } from "./invoke";
@@ -93,6 +94,10 @@ export class TauriMeetingStore implements MeetingStore {
 
   listTags(): Promise<string[]> {
     return call("tags_list");
+  }
+
+  exportToNotion(id: MeetingId, destination: NotionDestination, includeTranscript: boolean): Promise<string> {
+    return call<string>("notion_export", { id, destination, includeTranscript });
   }
 
   ask(question: string, scope: AskScope): Promise<AskAnswer> {

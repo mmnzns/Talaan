@@ -24,7 +24,7 @@ pub fn clear(provider: &str) -> Result<(), String> {
 
 /// "Delete all Talaan data" removes every key too.
 pub fn clear_all() {
-    for p in ["claude", "openai", "gemini", "compatible"] {
+    for p in ["claude", "openai", "gemini", "compatible", "notion"] {
         let _ = clear(p);
     }
 }

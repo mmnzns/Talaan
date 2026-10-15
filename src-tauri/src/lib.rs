@@ -4,6 +4,7 @@ mod calls;
 mod commands;
 mod importer;
 mod keys;
+mod notion;
 mod platform;
 mod recorder;
 mod storage;
@@ -112,6 +113,10 @@ pub fn run() {
             commands::ask::meetings_ask,
             commands::calendar::calendar_access,
             commands::calendar::calendar_request,
+            commands::notion::notion_connect,
+            commands::notion::notion_disconnect,
+            commands::notion::notion_destinations,
+            commands::notion::notion_export,
             commands::summarizer::llm_models_list,
             commands::summarizer::keys_save,
             commands::summarizer::keys_clear,

@@ -233,6 +233,11 @@ export class MockMeetingStore implements MeetingStore {
     return [...new Set([...this.meetings.values()].flatMap((m) => m.tags))].sort();
   }
 
+  async exportToNotion(id: MeetingId): Promise<string> {
+    await new Promise((r) => setTimeout(r, 600));
+    return `https://www.notion.so/sample-${id}`;
+  }
+
   async ask(question: string, scope: AskScope): Promise<AskAnswer> {
     await new Promise((r) => setTimeout(r, this.askDelayMs));
     return mockAsk(question, scope, this.now);

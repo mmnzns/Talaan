@@ -3,7 +3,7 @@ import { useMeetings } from "../../data/hooks";
 import { useSettingsStore } from "../../data/StoreProvider";
 import type { RetentionChoice, TranscriptRetention } from "../../data/settings";
 import { formatBytes, tildePath } from "../../lib/format";
-import { Button, Select, Sheet, useToast } from "../../ui";
+import { Button, Label, Select, Sheet, useToast } from "../../ui";
 import { Group, Row } from "./parts";
 import type { TabProps } from "./tabProps";
 
@@ -23,15 +23,15 @@ export function PrivacyTab({ settings: s, update }: TabProps) {
     ["Audio", "Never"],
     ["Transcripts and summaries", "Never"],
     ["Transcript text, only if Summary AI uses your own key", s.summaryEngine === "byok" ? "On" : "Off"],
-    ["Summary text to Notion, only when you click Export", "You choose"],
+    ["Summary (and the transcript if you tick it) to Notion, only when you click Export", s.notion.connected ? "When you export" : "Not connected"],
     ["Usage data or analytics", "Never collected"],
   ];
 
   return (
     <div className="flex flex-col gap-3">
       <Group>
-        <div className="flex flex-col gap-2 px-4 py-3">
-          <span className="font-mono text-[11px] text-subtle">What leaves this computer</span>
+        <div className="flex flex-col gap-2.5 py-4">
+          <Label>what leaves this computer</Label>
           <div className="grid grid-cols-[1fr_auto] gap-x-4 gap-y-1.5 text-[13px]">
             {flows.map(([what, when]) => (
               <div key={what} className="contents">

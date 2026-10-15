@@ -274,7 +274,6 @@ function AppsStep({ settings: s, update }: StepProps) {
 }
 
 function ExtrasStep({ settings: s, update }: StepProps) {
-  const toast = useToast();
   const rows: [string, string, ReactNode][] = [
     ["Calendar", "Meeting titles and attendee names from your calendar.", <Switch key="c" aria-label="Calendar" checked={s.calendarConnected} onChange={(v) => update({ calendarConnected: v })} />],
     ["Browser call detection", "Recognize Google Meet, Zoom web and Teams web tabs.", <Switch key="b" aria-label="Browser call detection" checked={s.tabDetection} onChange={(v) => update({ tabDetection: v })} />],
@@ -286,15 +285,7 @@ function ExtrasStep({ settings: s, update }: StepProps) {
           <Check size={11} aria-hidden="true" /> Connected
         </Chip>
       ) : (
-        <Button
-          key="n"
-          onClick={() => {
-            update({ notion: { connected: true, workspace: "Miguel", destination: "Meeting Notes (database)" } });
-            toast("Connected to Notion");
-          }}
-        >
-          Connect
-        </Button>
+        <Label key="n">later in settings › connections</Label>
       ),
     ],
   ];

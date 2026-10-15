@@ -6,6 +6,7 @@ pub mod calls;
 pub mod dev;
 pub mod import;
 pub mod meetings;
+pub mod notion;
 pub mod recorder;
 pub mod settings;
 pub mod summarizer;
