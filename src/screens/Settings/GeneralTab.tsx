@@ -7,6 +7,7 @@ import { Button, Label, Select, Switch } from "../../ui";
 import { Group, Row, SectionIntro } from "./parts";
 import type { TabProps } from "./tabProps";
 import { platform } from "../../lib/platform";
+import { LANGS, LANG_NAMES } from "../../lib/i18n";
 
 export function GeneralTab({ settings: s, update }: TabProps) {
   return (
@@ -36,6 +37,16 @@ export function GeneralTab({ settings: s, update }: TabProps) {
           <option value="system">Auto</option>
           <option value="light">Light</option>
           <option value="dark">Dark</option>
+        </Select>
+      </Row>
+      <Row title="Language" desc="The language of Talaan's screens. Meetings and summaries have their own language settings.">
+        <Select label="Language" wrapperClassName="w-40" value={s.uiLanguage} onChange={(e) => update({ uiLanguage: e.target.value as TabProps["settings"]["uiLanguage"] })}>
+          <option value="auto">Auto</option>
+          {LANGS.map((l) => (
+            <option key={l} value={l} lang={l}>
+              {LANG_NAMES[l]}
+            </option>
+          ))}
         </Select>
       </Row>
       <Row title="Notify when a summary is ready" desc="Click the notification to open the meeting.">

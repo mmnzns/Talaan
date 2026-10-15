@@ -48,6 +48,7 @@ export const defaultSettings: Settings = {
   searchModel: { id: "search", name: "Search by meaning", maker: "Qwen", note: "Lets Ask find answers phrased differently from the question, in 100+ languages.", engine: "search", sizeMb: 640, speed: 3, accuracy: 2, languages: "100+ languages", state: "not_downloaded" },
   reuseModels: true,
   meetingLanguage: "auto",
+  uiLanguage: "auto",
   useGpu: true,
   summaryEngine: "local",
   summaryLanguage: "meeting",

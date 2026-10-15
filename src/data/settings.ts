@@ -81,6 +81,8 @@ export interface Settings {
   searchModel: SpeechModel;
   reuseModels: boolean;
   meetingLanguage: "auto" | string;
+  /** The language of Talaan's own screens: "auto" follows the system. Not the language of meetings or summaries. */
+  uiLanguage: "auto" | "en" | "fr" | "es";
   useGpu: boolean;
   // Summary AI
   summaryEngine: SummaryEngineKind;
