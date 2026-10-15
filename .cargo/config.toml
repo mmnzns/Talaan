@@ -1,0 +1,6 @@
+[env]
+# cmake-rs strips /O flags from CMAKE_<LANG>_FLAGS_RELEASE under the Visual Studio generator, so whisper.cpp (and
+# llama.cpp in the talaan-llm helper) built at /Od in release on Windows: ~10x slower. The CMake-based -sys crates
+# forward CMAKE_* env vars as defines, which stops the override. -O2/-DNDEBUG work for cl, clang-cl and clang.
+CMAKE_C_FLAGS_RELEASE = "-O2 -DNDEBUG"
+CMAKE_CXX_FLAGS_RELEASE = "-O2 -DNDEBUG"

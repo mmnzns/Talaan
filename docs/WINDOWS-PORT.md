@@ -66,6 +66,8 @@ Talaan is running; quit it first.
 | `toast_smoke` (posts one toast under the PowerShell app id, waits 5 s, prints what `show()` returned) | `cargo test toast_smoke -- --ignored --nocapture` |
 | `pipeline_smoke` (real models on a recorded meeting) | `TALAAN_SMOKE_MEETING=<meeting dir> cargo test --release pipeline_smoke -- --ignored --nocapture` |
 
+**Speed (release builds).** whisper.cpp and llama.cpp were compiled at `/Od` in release on Windows: with the Visual Studio generator the `cmake` crate overwrites `CMAKE_C_FLAGS_RELEASE`/`CMAKE_CXX_FLAGS_RELEASE` and drops every `/O` flag (debug builds were fine). A 62 s clip took 398 s; with the fix it takes about 29 s, same transcript. Fix: `.cargo/config.toml` sets both variables to `-O2 -DNDEBUG`, which the -sys crates forward as CMake defines. Also tuned: CPU Whisper uses three quarters of the logical cores (2..=12; 16 threads on a 16-thread Ryzen is 2-3x slower than 12) and flash attention is on only for Metal. Cargo does not rebuild the -sys crates when `[env]` changes, so after editing `.cargo/config.toml` run `cargo clean --manifest-path src-tauri/Cargo.toml --release -p whisper-rs-sys -p llama-cpp-sys-2`. The same flags apply on macOS (-O2 instead of CMake's -O3 for CPU code; negligible, Metal runs the models).
+
 ## What's already shared
 
 Everything outside `src-tauri/src/platform/macos/` is cross-platform by design: storage, the transcriber
