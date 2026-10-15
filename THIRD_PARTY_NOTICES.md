@@ -15,6 +15,7 @@ Talaan uses the following libraries, fonts and models. Each is used under its ow
 | lucide-react (icons) | ISC | https://lucide.dev |
 | clsx, tailwind-merge | MIT | https://github.com/lukeed/clsx, https://github.com/dcastil/tailwind-merge |
 | tauri-plugin-single-instance | MIT / Apache-2.0 | https://github.com/tauri-apps/plugins-workspace |
+| tauri-winrt-notification (Windows toasts) | MIT / Apache-2.0 | https://github.com/tauri-apps/winrt-notification |
 | serde, serde_json | MIT / Apache-2.0 | https://serde.rs |
 | chrono | MIT / Apache-2.0 | https://github.com/chronotope/chrono |
 | dirs | MIT / Apache-2.0 | https://github.com/soc/dirs-rs |
