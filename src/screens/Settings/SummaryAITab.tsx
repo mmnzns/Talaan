@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { describeError } from "../../data/errors";
 import { useSettingsStore } from "../../data/StoreProvider";
+import { byokModels } from "../../data/byokModels";
 import type { ByokProvider, SummaryEngineKind } from "../../data/settings";
 import { useLang, useT } from "../../lib/i18n/I18nProvider";
 import { messageOr, type MessageKey } from "../../lib/i18n";
@@ -195,6 +196,11 @@ function ByokPanel({ settings: s, update }: TabProps) {
   const [key, setKey] = useState("");
   const [testing, setTesting] = useState(false);
   const [result, setResult] = useState<{ ok: boolean; message: string }>();
+  const models = byokModels(s.byokProvider);
+  const listed = s.byokModel === "recommended" || models.some((m) => m.id === s.byokModel);
+  // A model id typed by hand: for a model newer than this list, or any model on your own server.
+  const [typing, setTyping] = useState(!listed);
+  const custom = typing || !listed || models.length === 0;
 
   const test = async () => {
     setTesting(true);
@@ -213,10 +219,14 @@ function ByokPanel({ settings: s, update }: TabProps) {
   return (
     <Group>
       <Row title={t("settings.byok_provider")} desc={t("settings.byok_provider_desc")}>
-        <Select label={t("settings.byok_provider")} wrapperClassName="w-52" value={s.byokProvider} onChange={(e) => (setResult(undefined), update({ byokProvider: e.target.value as ByokProvider }))}>
+        <Select label={t("settings.byok_provider")} wrapperClassName="w-52" value={s.byokProvider} onChange={(e) => (setResult(undefined), setTyping(false), update({ byokProvider: e.target.value as ByokProvider, byokModel: "recommended" }))}>
           <option value="claude">{t("settings.provider_claude")}</option>
           <option value="openai">{t("settings.provider_openai")}</option>
           <option value="gemini">{t("settings.provider_gemini")}</option>
+          <option value="groq">Groq</option>
+          <option value="cerebras">Cerebras</option>
+          <option value="mistral">Mistral</option>
+          <option value="openrouter">OpenRouter</option>
           <option value="compatible">{t("settings.provider_compatible")}</option>
         </Select>
       </Row>
@@ -243,14 +253,38 @@ function ByokPanel({ settings: s, update }: TabProps) {
           </div>
         )}
       </Row>
-      <Row title={t("settings.byok_model")} desc={t("settings.byok_model_desc")}>
-        <Field
-          label={t("settings.byok_model")}
-          placeholder={t("settings.byok_model_placeholder")}
-          value={s.byokModel === "recommended" ? "" : s.byokModel}
-          onChange={(e) => update({ byokModel: e.target.value.trim() || "recommended" })}
-          wrapperClassName="w-52"
-        />
+      <Row title={t("settings.byok_model")} desc={models.length ? t("settings.byok_model_desc") : t("settings.byok_model_desc_server")}>
+        <div className="flex flex-col items-end gap-2">
+          {models.length > 0 && (
+            <Select
+              label={t("settings.byok_model")}
+              wrapperClassName="w-72"
+              value={custom ? "__custom" : s.byokModel}
+              onChange={(e) => {
+                const v = e.target.value;
+                setTyping(v === "__custom");
+                if (v !== "__custom") update({ byokModel: v });
+              }}
+            >
+              <option value="recommended">{t("settings.byok_model_recommended", { name: models[0].name })}</option>
+              {models.map((m) => (
+                <option key={m.id} value={m.id}>
+                  {m.name}
+                </option>
+              ))}
+              <option value="__custom">{t("settings.byok_model_typed")}</option>
+            </Select>
+          )}
+          {custom && (
+            <Field
+              label={t("settings.byok_model_id")}
+              placeholder={models.length ? t("settings.byok_model_id_placeholder") : t("settings.byok_model_placeholder")}
+              value={s.byokModel === "recommended" ? "" : s.byokModel}
+              onChange={(e) => update({ byokModel: e.target.value.trim() || "recommended" })}
+              wrapperClassName="w-72"
+            />
+          )}
+        </div>
       </Row>
     </Group>
   );

@@ -5,7 +5,7 @@ export type CallRule = "ask" | "always" | "never";
 export type RetentionChoice = "1d" | "7d" | "30d" | "forever" | "none";
 export type TranscriptRetention = "forever" | "1y" | "90d";
 export type SummaryEngineKind = "local" | "ollama" | "byok";
-export type ByokProvider = "claude" | "openai" | "gemini" | "compatible";
+export type ByokProvider = "claude" | "openai" | "gemini" | "groq" | "cerebras" | "mistral" | "openrouter" | "compatible";
 export interface NotionDestination {
   id: string;
   kind: "page" | "database";

@@ -23,7 +23,7 @@ Everything runs on your computer by default: speech recognition, speaker separat
 
 | What | When |
 |---|---|
-| Transcript text | Only if you set Summary AI to your own key (Claude, OpenAI, Gemini, any OpenAI-compatible service). Never audio. |
+| Transcript text | Only if you set Summary AI to your own key (Claude, OpenAI, Gemini, Groq, Cerebras, Mistral, OpenRouter, any OpenAI-compatible service). Never audio. |
 | Summary (and transcript if you tick it) | Only when you click Export › Notion. |
 | The latest version number from GitHub | At launch, if "Check for updates automatically" is on. |
 | Your calendar (Windows) | Downloaded from the private iCal address you paste, when a recording starts (at most every 15 minutes). Nothing is sent. |

@@ -28,7 +28,7 @@ pub const CALENDAR_ICS: &str = "calendar-ics";
 
 /// Every account Talaan stores (service "Talaan"). Windows names them "<account>.Talaan" in Credential Manager.
 /// The Windows uninstaller deletes the same list (src-tauri/windows/installer-hooks.nsh, checked by a test).
-pub const ACCOUNTS: [&str; 6] = ["claude", "openai", "gemini", "compatible", "notion", CALENDAR_ICS];
+pub const ACCOUNTS: [&str; 10] = ["claude", "openai", "gemini", "groq", "cerebras", "mistral", "openrouter", "compatible", "notion", CALENDAR_ICS];
 
 /// "Delete all Talaan data" removes every key too.
 pub fn clear_all() {
@@ -43,7 +43,12 @@ mod tests {
 
     #[test]
     fn deleting_all_data_covers_every_key() {
-        for k in ["claude", "openai", "gemini", "compatible", "notion", CALENDAR_ICS] {
+        use crate::summarizer::engines::Provider;
+        for p in ["claude", "openai", "gemini", "groq", "cerebras", "mistral", "openrouter", "compatible"] {
+            let id = Provider::parse(p).unwrap().key_id();
+            assert!(ACCOUNTS.contains(&id), "{id}");
+        }
+        for k in ["notion", CALENDAR_ICS] {
             assert!(ACCOUNTS.contains(&k), "{k}");
         }
     }

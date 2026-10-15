@@ -13,7 +13,7 @@ app (`scripts/build-signed-debug.sh` → `src-tauri/target/debug/bundle/macos/Ta
 - [ ] macOS asks to allow notifications the first time a summary finishes; "Summary ready" opens the meeting.
 - [ ] Settings › Speech models: download / cancel / delete a model; switch to Parakeet and back.
 - [ ] Settings › Summary AI: Local AI (already downloaded), Larger model download, Ollama / LM Studio if installed.
-- [ ] Your own key (Claude or OpenAI): paste, Test (it should name the model it picked), record a call, check the summary says that provider.
+- [ ] Your own key (Claude, OpenAI, Gemini, Groq, Cerebras, Mistral or OpenRouter): paste, Test (it should name the model it picked), pick a model from the menu or type one with "Other model ID…", record a call, check the summary says that provider and model.
 
 ## Call detection and menu bar (M6)
 - [ ] A real Zoom call (Zoom is on Always): recording starts by itself with the banner; leave the call → "Call ended" → stops after 30 s.

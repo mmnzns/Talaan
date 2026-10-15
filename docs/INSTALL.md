@@ -61,7 +61,7 @@ Talaan walks you through seven short steps the first time it opens.
    - **Microphone** records what you say, labeled "Me". Click **Allow**.
    - **System audio** records the other people on the call. On Windows it needs no permission.
 3. **Speech model** ("Choose a speech model"). Pick one and it starts downloading. See [Which speech model](#which-speech-model) below. On Windows, **Parakeet** is much faster.
-4. **Summaries** ("How summaries are written"). **On this computer** is the default: built in and offline, a one-time download. **Your own key** (Claude, OpenAI, Gemini or any OpenAI-compatible service) sends transcript text only, and you set it up later in Settings.
+4. **Summaries** ("How summaries are written"). **On this computer** is the default: built in and offline, a one-time download. **Your own key** (Claude, OpenAI, Gemini, Groq, Cerebras, Mistral, OpenRouter or any OpenAI-compatible service) sends transcript text only, and you set it up later in Settings.
 5. **Call apps** ("When should Talaan record?"). By default Talaan asks every time a call app uses your mic. Turn on **Always record** for apps you always want recorded.
 6. **Extras** ("Optional extras"). Calendar, browser call detection and Notion. All are off by default and can be turned on later in Settings. On Windows the calendar is set up in Settings (see [Calendar on Windows](#calendar-on-windows)).
 7. **Done.** Click **Open Talaan**.
