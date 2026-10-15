@@ -2,7 +2,12 @@
 
 use ::windows::Win32::Devices::FunctionDiscovery::PKEY_Device_EnumeratorName;
 use ::windows::Win32::Foundation::PROPERTYKEY;
-use ::windows::Win32::Media::Audio::{eConsole, eRender, IMMDevice, IMMDeviceEnumerator, MMDeviceEnumerator, PKEY_AudioEndpoint_FormFactor};
+use ::windows::core::{implement, PCWSTR};
+use ::windows::Win32::Media::Audio::{
+    eCapture, eConsole, eRender, EDataFlow, ERole, IMMDevice, IMMDeviceEnumerator, IMMNotificationClient, IMMNotificationClient_Impl, MMDeviceEnumerator,
+    DEVICE_STATE, PKEY_AudioEndpoint_FormFactor,
+};
+use std::sync::Arc;
 use ::windows::Win32::System::Com::StructuredStorage::{PropVariantClear, PropVariantToStringAlloc, PropVariantToUInt32, PROPVARIANT};
 use ::windows::Win32::System::Com::{CoCreateInstance, CoTaskMemFree, CLSCTX_ALL, STGM_READ};
 
@@ -70,11 +75,66 @@ pub enum DeviceEvent {
     OutputChanged,
 }
 
-pub struct DeviceWatcher;
+/// Windows announces each default change once per role. Only the console role (what apps play to) matters;
+/// communications and multimedia fire alongside it and would restart the recording twice.
+pub fn event_for(flow: EDataFlow, role: ERole) -> Option<DeviceEvent> {
+    match (flow, role) {
+        (f, r) if f == eRender && r == eConsole => Some(DeviceEvent::OutputChanged),
+        (f, r) if f == eCapture && r == eConsole => Some(DeviceEvent::InputChanged),
+        _ => None,
+    }
+}
+
+type OnChange = Arc<dyn Fn(DeviceEvent) + Send + Sync>;
+
+#[implement(IMMNotificationClient)]
+struct Client(OnChange);
+
+impl IMMNotificationClient_Impl for Client_Impl {
+    fn OnDefaultDeviceChanged(&self, flow: EDataFlow, role: ERole, _id: &PCWSTR) -> ::windows::core::Result<()> {
+        if let Some(e) = event_for(flow, role) {
+            (self.0)(e);
+        }
+        Ok(())
+    }
+    fn OnDeviceStateChanged(&self, _id: &PCWSTR, _state: DEVICE_STATE) -> ::windows::core::Result<()> {
+        Ok(())
+    }
+    fn OnDeviceAdded(&self, _id: &PCWSTR) -> ::windows::core::Result<()> {
+        Ok(())
+    }
+    fn OnDeviceRemoved(&self, _id: &PCWSTR) -> ::windows::core::Result<()> {
+        Ok(())
+    }
+    fn OnPropertyValueChanged(&self, _id: &PCWSTR, _key: &PROPERTYKEY) -> ::windows::core::Result<()> {
+        Ok(())
+    }
+}
+
+/// Listens for default input/output changes until dropped. The callback runs on a Windows audio thread, so it
+/// must return quickly.
+pub struct DeviceWatcher {
+    enumerator: IMMDeviceEnumerator,
+    client: IMMNotificationClient,
+}
+
+// COM pointers from the multithreaded apartment; only used to unregister on drop.
+unsafe impl Send for DeviceWatcher {}
 
 impl DeviceWatcher {
-    pub fn new(_on_change: impl Fn(DeviceEvent) + Send + Sync + 'static) -> Result<Self, String> {
-        Ok(DeviceWatcher)
+    pub fn new(on_change: impl Fn(DeviceEvent) + Send + Sync + 'static) -> Result<Self, String> {
+        let enumerator = enumerator().map_err(|e| e.to_string())?;
+        let client: IMMNotificationClient = Client(Arc::new(on_change)).into();
+        unsafe { enumerator.RegisterEndpointNotificationCallback(&client) }.map_err(|e| e.to_string())?;
+        Ok(DeviceWatcher { enumerator, client })
+    }
+}
+
+impl Drop for DeviceWatcher {
+    fn drop(&mut self) {
+        unsafe {
+            let _ = self.enumerator.UnregisterEndpointNotificationCallback(&self.client);
+        }
     }
 }
 
@@ -82,7 +142,31 @@ impl DeviceWatcher {
 mod tests {
     use super::*;
     use ::windows::Win32::Devices::FunctionDiscovery::PKEY_Device_FriendlyName;
-    use ::windows::Win32::Media::Audio::DEVICE_STATE_ACTIVE;
+    use ::windows::Win32::Media::Audio::{eCommunications, eMultimedia, DEVICE_STATE_ACTIVE};
+
+    #[test]
+    fn a_watcher_can_be_added_and_removed() {
+        let w = DeviceWatcher::new(|_| {}).unwrap();
+        drop(w);
+    }
+
+    /// Manual: switch output or input in the taskbar flyout while this runs; each switch prints one event.
+    #[test]
+    #[ignore]
+    fn print_device_events_for_20s() {
+        let w = DeviceWatcher::new(|e| eprintln!("device event: {e:?}")).unwrap();
+        std::thread::sleep(std::time::Duration::from_secs(20));
+        drop(w);
+        eprintln!("watcher removed");
+    }
+
+    #[test]
+    fn only_console_default_changes_matter() {
+        assert_eq!(event_for(eRender, eConsole), Some(DeviceEvent::OutputChanged));
+        assert_eq!(event_for(eCapture, eConsole), Some(DeviceEvent::InputChanged));
+        assert_eq!(event_for(eRender, eCommunications), None); // fires alongside eConsole; avoid double restarts
+        assert_eq!(event_for(eRender, eMultimedia), None);
+    }
 
     #[test]
     fn only_wired_speakers_count() {
