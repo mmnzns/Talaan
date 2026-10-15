@@ -40,8 +40,10 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          # The notes link to INSTALL.md and CHANGELOG.md as of this tag.
+          sed "s/{{TAG}}/$GITHUB_REF_NAME/g" scripts/release-notes.md > "$RUNNER_TEMP/notes.md"
           gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1 || \
-            gh release create "$GITHUB_REF_NAME" --draft --verify-tag --title "Talaan $GITHUB_REF_NAME" --notes-file scripts/release-notes.md
+            gh release create "$GITHUB_REF_NAME" --draft --verify-tag --title "Talaan $GITHUB_REF_NAME" --notes-file "$RUNNER_TEMP/notes.md"
 
   windows:
     needs: draft

@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { buildLatest, missingPlatforms, platformsFor } from "./latest-json.mjs";
 
@@ -36,6 +37,13 @@ describe("latest.json", () => {
     // A rebuilt artifact re-signed after the file was written counts as missing too.
     expect(missingPlatforms(winOnly, [{ ...win, signature: "WIN2" }])).toEqual(["windows-x86_64", "windows-x86_64-nsis"]);
     expect(missingPlatforms(undefined, [win])).toHaveLength(2);
+  });
+
+  it("release notes link to the tag's docs, not main (release.yml and upload-mac-release.sh fill {{TAG}})", () => {
+    const notes = readFileSync(new URL("./release-notes.md", import.meta.url), "utf8");
+    expect(notes).not.toContain("/blob/main/");
+    expect(notes).toContain("/blob/{{TAG}}/docs/INSTALL.md");
+    expect(notes).toContain("/blob/{{TAG}}/CHANGELOG.md");
   });
 
   it("refuses to write an empty file", () => {
