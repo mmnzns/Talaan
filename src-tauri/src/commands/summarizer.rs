@@ -106,12 +106,9 @@ pub const OPEN_MEETING: &str = "open-meeting";
 /// The "Summary ready" notification, unless turned off in Settings › General.
 pub fn notify_ready(app: &AppHandle, id: &str, title: &str) {
     let wanted = app.state::<AppState>().lock().settings_get().ok().flatten().and_then(|s| s["notifySummaryReady"].as_bool()).unwrap_or(true);
-    #[cfg(target_os = "macos")]
     if wanted {
-        crate::platform::macos::notify::post(id, "Summary ready", title);
+        crate::platform::notify::post(id, "Summary ready", title);
     }
-    #[cfg(not(target_os = "macos"))]
-    let _ = (wanted, id, title);
 }
 
 /// Clicking a "Summary ready" notification: bring Talaan forward on that meeting.

@@ -39,10 +39,9 @@ pub fn run() {
             rec_cmd::setup(app.handle());
             commands::summarizer::setup(app.handle(), root.clone());
             commands::ask::setup(app.handle(), root.clone());
-            #[cfg(target_os = "macos")]
             {
                 let handle = app.handle().clone();
-                platform::macos::notify::setup(move |id| commands::summarizer::open_meeting(&handle, &id));
+                platform::notify::setup(move |id| commands::summarizer::open_meeting(&handle, &id));
             }
             commands::transcriber::setup(app.handle(), root);
             commands::calls::setup(app.handle());

@@ -2,7 +2,7 @@
 
 use super::{notify, AppState, MEETINGS_CHANGED};
 use crate::calendar::{pick, EARLY_MS};
-use crate::platform::macos::calendar::{self as system, Access};
+use crate::platform::calendar::{self as system, Access};
 use crate::storage::model::CalendarEvent;
 use tauri::{AppHandle, Manager};
 

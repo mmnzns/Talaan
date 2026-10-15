@@ -226,7 +226,7 @@ mod long_smoke {
         let mut m = meeting(lines);
         m.speakers = serde_json::from_value(fixture["speakers"].clone()).unwrap();
         m.item.duration_ms = 13 * span;
-        let exe = std::env::current_exe().unwrap().parent().unwrap().parent().unwrap().join(HELPER);
+        let exe = std::env::current_exe().unwrap().parent().unwrap().parent().unwrap().join(format!("{HELPER}{}", std::env::consts::EXE_SUFFIX));
         let model_path = std::path::PathBuf::from(std::env::var("TALAAN_LLM_MODEL").unwrap());
         let mut engine = LocalEngine { ai: LocalAi::new(&exe), model_path, model_name: "test".into() };
         let t = std::time::Instant::now();

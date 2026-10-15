@@ -1,5 +1,5 @@
 //! Calendar link: which calendar event a recording belongs to (pure; the system calendar is read in
-//! `platform::macos::calendar`).
+//! `platform::<os>::calendar`).
 
 /// An event as read from the system calendar. Times are Unix milliseconds.
 #[derive(Debug, Clone, PartialEq)]

@@ -21,8 +21,7 @@ pub struct RecorderState {
     auto_paused: AtomicBool,
     restarting_mic: Arc<AtomicBool>,
     restarting_output: Arc<AtomicBool>,
-    #[cfg(target_os = "macos")]
-    watchers: Mutex<Option<(platform::macos::devices::DeviceWatcher, platform::macos::power::SleepWatcher)>>,
+    watchers: Mutex<Option<(platform::devices::DeviceWatcher, platform::power::SleepWatcher)>>,
 }
 
 impl RecorderState {
@@ -55,10 +54,7 @@ pub struct Levels {
 }
 
 fn speakers() -> bool {
-    #[cfg(target_os = "macos")]
-    return platform::macos::devices::on_builtin_speakers();
-    #[cfg(not(target_os = "macos"))]
-    return false;
+    platform::devices::on_builtin_speakers()
 }
 
 fn payload(engine: &Engine) -> StatePayload {
@@ -81,10 +77,7 @@ fn err(e: String) -> StorageError {
 }
 
 fn system_source() -> Box<dyn crate::recorder::source::AudioSource> {
-    #[cfg(target_os = "macos")]
-    return Box::new(platform::macos::system_tap::SystemTap::default());
-    #[cfg(not(target_os = "macos"))]
-    return Box::new(MicSource::default()); // replaced by WASAPI loopback in the Windows port
+    Box::new(platform::system_tap::SystemTap::default())
 }
 
 #[tauri::command]
@@ -211,18 +204,12 @@ pub struct PermissionStatus {
 
 #[tauri::command]
 pub fn permissions_status() -> PermissionStatus {
-    #[cfg(target_os = "macos")]
-    return PermissionStatus { microphone: platform::macos::permissions::mic_status() };
-    #[cfg(not(target_os = "macos"))]
-    return PermissionStatus { microphone: "granted" };
+    PermissionStatus { microphone: platform::permissions::mic_status() }
 }
 
 #[tauri::command]
 pub async fn permissions_request_mic() -> bool {
-    #[cfg(target_os = "macos")]
-    return tauri::async_runtime::spawn_blocking(platform::macos::permissions::request_mic).await.unwrap_or(false);
-    #[cfg(not(target_os = "macos"))]
-    return true;
+    tauri::async_runtime::spawn_blocking(platform::permissions::request_mic).await.unwrap_or(false)
 }
 
 /// Onboarding: shows the system-audio prompt now rather than at the first call, by opening the tap for a
@@ -233,11 +220,10 @@ pub async fn permissions_request_system_audio(app: AppHandle) -> bool {
     if is_recording(&app) {
         return true; // already capturing; asking again would only disturb the recording
     }
-    #[cfg(target_os = "macos")]
-    return tauri::async_runtime::spawn_blocking(|| {
+    tauri::async_runtime::spawn_blocking(|| {
         use crate::recorder::source::AudioSource;
         let (producer, _consumer) = crate::recorder::feed::feed();
-        let mut tap = platform::macos::system_tap::SystemTap::default();
+        let mut tap = platform::system_tap::SystemTap::default();
         let ok = tap.start(std::sync::Arc::new(std::sync::Mutex::new(producer))).is_ok();
         // Long enough for the system to show its prompt; the prompt stays up on its own after this.
         std::thread::sleep(std::time::Duration::from_millis(1500));
@@ -245,17 +231,12 @@ pub async fn permissions_request_system_audio(app: AppHandle) -> bool {
         ok
     })
     .await
-    .unwrap_or(false);
-    #[cfg(not(target_os = "macos"))]
-    return true;
+    .unwrap_or(false)
 }
 
 #[tauri::command]
 pub fn permissions_open_settings(pane: String) -> CmdResult<()> {
-    #[cfg(target_os = "macos")]
-    return platform::macos::permissions::open_settings(&pane).map_err(err);
-    #[cfg(not(target_os = "macos"))]
-    return Err(err(format!("No settings pane {pane} on this platform")));
+    platform::permissions::open_settings(&pane).map_err(err)
 }
 
 /// Recover an interrupted recording: repair the audio files and make the meeting usable.
@@ -296,9 +277,8 @@ fn restart_later(app: AppHandle, flag: Arc<AtomicBool>, mic: bool) {
 pub fn setup(app: &AppHandle) {
     app.manage(RecorderState::default());
 
-    #[cfg(target_os = "macos")]
     {
-        use platform::macos::{devices::DeviceEvent, devices::DeviceWatcher, power::SleepWatcher};
+        use platform::{devices::DeviceEvent, devices::DeviceWatcher, power::SleepWatcher};
         let rec = app.state::<RecorderState>();
         let (a1, mic_flag, out_flag) = (app.clone(), rec.restarting_mic.clone(), rec.restarting_output.clone());
         let devices = DeviceWatcher::new(move |e| match e {
@@ -327,26 +307,36 @@ pub fn setup(app: &AppHandle) {
     let app = app.clone();
     std::thread::spawn(move || {
         let mut last_state = Instant::now();
+        #[cfg(target_os = "macos")]
         let mut silent_since: Option<Instant> = None;
+        #[cfg(target_os = "macos")]
         let mut warned = false;
         // A blocked tap delivers zeros from the first sample. Once any sound came through, it isn't blocked.
+        #[cfg(target_os = "macos")]
         let mut heard_them = false;
         loop {
             std::thread::sleep(Duration::from_millis(100));
             let rec = app.state::<RecorderState>();
             let engine = rec.lock();
             if !engine.is_active() {
-                silent_since = None;
-                warned = false;
-                heard_them = false;
+                #[cfg(target_os = "macos")]
+                {
+                    silent_since = None;
+                    warned = false;
+                    heard_them = false;
+                }
                 continue;
             }
             let (me, them) = engine.levels();
+            #[cfg(target_os = "macos")]
             let paused = engine.status(platform::host_now_ns()).state == "paused";
             drop(engine);
             let _ = app.emit(LEVELS, Levels { me, them });
 
-            heard_them |= them > 0.0;
+            #[cfg(target_os = "macos")]
+            {
+                heard_them |= them > 0.0;
+            }
 
             // Digital silence from the tap since the start while something plays = system audio is blocked.
             // (Apps keep output streams running while quiet, so silence after real sound means nothing.)

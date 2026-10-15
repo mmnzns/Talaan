@@ -74,8 +74,7 @@ fn note_access(name: &'static str, tabs: &Tabs) {
 
 /// With tab detection on, turns the "browser" entry into the call it is, drops it when no tab is a call, or
 /// leaves it (Ask) when Talaan can't tell.
-#[cfg(target_os = "macos")]
-fn resolve_browsers(users: &[crate::platform::macos::mic_users::MicUser], apps: &mut Vec<&str>, cache: &mut TabCache) {
+fn resolve_browsers(users: &[crate::platform::mic_users::MicUser], apps: &mut Vec<&str>, cache: &mut TabCache) {
     if !apps.contains(&"browser") {
         return;
     }
@@ -86,7 +85,7 @@ fn resolve_browsers(users: &[crate::platform::macos::mic_users::MicUser], apps: 
         .iter()
         .map(|(app, name, family)| {
             let fresh = cache.by_app.get(app).filter(|(t, _)| t.elapsed() < TAB_CACHE).map(|(_, r)| r.clone());
-            let r = fresh.unwrap_or_else(|| crate::platform::macos::browser_tabs::tab_urls(app, *family));
+            let r = fresh.unwrap_or_else(|| crate::platform::browser_tabs::tab_urls(app, *family));
             note_access(name, &r);
             cache.by_app.insert(app, (Instant::now(), r.clone()));
             r
@@ -183,7 +182,6 @@ fn run(app: &AppHandle, action: Action) {
 
 pub fn setup(app: &AppHandle) {
     app.manage(CallsState { detector: Mutex::new(Detector::default()), prompt: Mutex::new(None) });
-    #[cfg(target_os = "macos")]
     {
         let app = app.clone();
         std::thread::Builder::new()
@@ -196,12 +194,12 @@ pub fn setup(app: &AppHandle) {
                     let settings = app.state::<AppState>().lock().settings_get().ok().flatten().unwrap_or(Value::Null);
                     let (enabled, rules, ignored) = rules_from(&settings);
                     #[cfg_attr(not(debug_assertions), allow(unused_mut))] // only the debug hook below adds to it
-                    let mut users = crate::platform::macos::mic_users::mic_users();
+                    let mut users = crate::platform::mic_users::mic_users();
                     // Debug builds: `dev-mic-users.txt` in the data folder adds pretend mic users (one bundle id
                     // per line), so the rules can be exercised end to end without a real call.
                     #[cfg(debug_assertions)]
                     if let Ok(fake) = std::fs::read_to_string(app.state::<AppState>().lock().root().join("dev-mic-users.txt")) {
-                        users.extend(fake.lines().filter(|l| !l.trim().is_empty()).map(|b| crate::platform::macos::mic_users::MicUser { pid: 0, bundle_id: b.trim().into(), path: String::new() }));
+                        users.extend(fake.lines().filter(|l| !l.trim().is_empty()).map(|b| crate::platform::mic_users::MicUser { pid: 0, bundle_id: b.trim().into(), path: String::new() }));
                     }
                     let mut apps: Vec<&str> = users.iter().filter_map(|u| identify(&u.bundle_id, &u.path, &ignored).map(|(id, _)| id)).collect();
                     apps.sort();

@@ -42,7 +42,7 @@ pub fn setup(app: &AppHandle, data_dir: PathBuf) {
     std::thread::Builder::new()
         .name("talaan-ask-index".into())
         .spawn(move || {
-            crate::platform::macos::thread::background_priority();
+            crate::platform::background_priority();
             // Index once at launch, then after changes.
             let _ = app.state::<AskState>().kick.lock().map(|k| k.send(()));
             while rx.recv().is_ok() {
@@ -259,7 +259,7 @@ mod tests {
             std::fs::create_dir_all(&d).unwrap();
             dirs.push(d);
         }
-        let exe = std::env::current_exe().unwrap().parent().unwrap().parent().unwrap().join(crate::summarizer::local::HELPER);
+        let exe = std::env::current_exe().unwrap().parent().unwrap().parent().unwrap().join(format!("{}{}", crate::summarizer::local::HELPER, std::env::consts::EXE_SUFFIX));
         let embedder = Mutex::new(LocalAi::new(&exe));
         let settings = serde_json::json!({ "summaryEngine": "local", "localModel": "recommended" });
         for (q, want_meeting, want_at) in [
