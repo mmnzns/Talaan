@@ -51,6 +51,10 @@ Talaan uses the following libraries, fonts and models. Each is used under its ow
 | windows (Windows bindings) | MIT / Apache-2.0 | https://github.com/microsoft/windows-rs |
 | rrule (recurring events) | MIT / Apache-2.0 | https://github.com/fmeringdal/rust-rrule |
 | chrono-tz (time zones; includes the IANA tz database, public domain) | MIT / Apache-2.0 | https://github.com/chronotope/chrono-tz |
+| DirectML 1.15 (`DirectML.dll`, shipped in the Windows installer for ONNX Runtime) | Microsoft Software License Terms for DirectML (redistributable) | https://www.nuget.org/packages/Microsoft.AI.DirectML |
+| Microsoft Visual C++ Redistributable (`vcruntime140*.dll`, `msvcp140*.dll` in the Windows installer) | Microsoft Software License Terms (redistributable files of Visual Studio) | https://learn.microsoft.com/cpp/windows/redistributing-visual-cpp-files |
+| NSIS (the Windows installer stub) | zlib/libpng | https://nsis.sourceforge.io |
+| nsis_tauri_utils (Windows installer plugin) | MIT / Apache-2.0 | https://github.com/tauri-apps/nsis-tauri-utils |
 
 ## Models
 
