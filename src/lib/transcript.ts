@@ -33,6 +33,21 @@ export function lineAt(lines: TranscriptLine[], at: Ms): TranscriptLine | undefi
   return found ?? lines[0];
 }
 
+/**
+ * The meeting as everyone sees it once the user has a name: Me becomes the name unless this meeting renamed
+ * Me, and action items owned by "Me" follow. Mirrors `Storage::get_meeting` (the browser preview uses this).
+ */
+export function withYourName(meeting: Meeting, yourName: string | undefined): Meeting {
+  const name = yourName?.trim();
+  const stored = meeting.speakers.me;
+  if (!name || (stored && stored !== "Me")) return meeting;
+  const summary = meeting.summary && {
+    ...meeting.summary,
+    actionItems: meeting.summary.actionItems.map((a) => (a.owner?.trim() === "Me" ? { ...a, owner: name } : a)),
+  };
+  return { ...meeting, speakers: { ...meeting.speakers, me: name }, summary };
+}
+
 /** A speaker's display name: the one the user gave, else Me / Them / Speaker 2. */
 export function speakerName(meeting: Pick<Meeting, "speakers">, speaker: string): string {
   const named = meeting.speakers[speaker as keyof Meeting["speakers"]];

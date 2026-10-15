@@ -5,7 +5,7 @@ import type { Meeting, Speaker } from "../../data/types";
 import { speakerName } from "../../lib/transcript";
 import { Button, Field, Label, Popover, cn, toneFor } from "../../ui";
 
-/** Speaker chips. Diarized speakers (Speaker 1, 2, 3) can be renamed once; every line updates. */
+/** Speaker chips. Anyone can be renamed (Me, Them, Speaker 1, 2, 3); every line and action item updates. */
 export function SpeakersBar({ meeting }: { meeting: Meeting }) {
   // Everyone in the transcript (or the stored names before there is one), Me first, then Speaker 1, 2, 3.
   const ids = new Set<Speaker>(meeting.transcript.length ? meeting.transcript.map((l) => l.speaker) : (Object.keys(meeting.speakers) as Speaker[]));
@@ -20,10 +20,8 @@ export function SpeakersBar({ meeting }: { meeting: Meeting }) {
       {speakers.map((s) => {
         const name = speakerName(meeting, s);
         const chip = cn("inline-flex items-center gap-1 rounded-full border px-2 py-[3px] font-mono text-[11px] leading-[14px]", toneFor(s));
-        const renameable = s !== "me" && s !== "them:0";
-        if (!renameable) return <span key={s} className={chip}>{name}</span>;
         return (
-          <RenameChip key={s} meetingId={meeting.id} speaker={s} name={name} className={chip} suggestions={suggestions} />
+          <RenameChip key={s} meetingId={meeting.id} speaker={s} name={name} className={chip} suggestions={s === "me" ? [] : suggestions} />
         );
       })}
       {suggestions.length > 0 && <Label className="ml-auto">names from calendar</Label>}
@@ -52,7 +50,7 @@ function RenameChip({ meetingId, speaker, name, className, suggestions }: { meet
         };
         return (
           <div className="flex flex-col gap-2 p-1.5">
-            <Label>rename speaker</Label>
+            <Label>{speaker === "me" ? "your name in this meeting" : "rename speaker"}</Label>
             <Field label="Speaker name" autoFocus value={draft} onChange={(e) => setDraft(e.target.value)} onKeyDown={(e) => e.key === "Enter" && save(draft)} />
             {suggestions.length > 0 && (
               <div className="flex flex-wrap gap-1.5">

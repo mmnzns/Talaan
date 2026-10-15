@@ -168,13 +168,25 @@ impl Storage {
             }
             None => None,
         };
+        let speakers = self.named_speakers(&file.speakers);
+        let summary = summary.map(|mut s| {
+            // Summaries written before the user had a name (or by a model that said "Me" anyway).
+            if let Some(me) = speakers.get("me").filter(|n| n.as_str() != "Me") {
+                for a in &mut s.action_items {
+                    if a.owner.as_deref().is_some_and(|o| o.trim() == "Me") {
+                        a.owner = Some(me.clone());
+                    }
+                }
+            }
+            s
+        });
         let has_audio = self.has_audio(&dir, &file);
         Ok(Meeting {
             audio_kept_until: self.audio_kept_until(&file, has_audio),
             has_audio,
             language: file.language.clone(),
             calendar_event: file.calendar_event.clone(),
-            speakers: file.speakers.clone(),
+            speakers,
             summary,
             transcript,
             marks: file.marks.clone(),
@@ -183,6 +195,24 @@ impl Storage {
             summary_error: file.summary_error.clone(),
             item: list_item(&file),
         })
+    }
+
+    /// Settings › General "Your name", when set.
+    pub fn your_name(&self) -> Option<String> {
+        let v = self.settings_get().ok().flatten()?;
+        v["yourName"].as_str().map(str::trim).filter(|n| !n.is_empty()).map(str::to_string)
+    }
+
+    /// A meeting's speaker names as everyone sees them: Me is the user's name unless this meeting renamed it.
+    /// New meetings store "Me", which counts as not renamed, so changing Your name later updates them all.
+    pub fn named_speakers(&self, stored: &BTreeMap<String, String>) -> BTreeMap<String, String> {
+        let mut speakers = stored.clone();
+        if let Some(name) = self.your_name() {
+            if stored.get("me").is_none_or(|n| n.trim().is_empty() || n == "Me") {
+                speakers.insert("me".into(), name);
+            }
+        }
+        speakers
     }
 
     /// Meetings in a given status (the transcriber's queue is rebuilt from `transcribing` at launch).
@@ -441,6 +471,24 @@ pub(crate) mod tests {
         assert_eq!(items[0].status, MeetingStatus::Failed);
         assert!(matches!(s.get_meeting(&f.id), Err(StorageError::UnsupportedSchema { found: 99, .. })));
         assert_eq!(fs::read(&path).unwrap(), before);
+    }
+
+    #[test]
+    fn your_name_names_me_unless_the_meeting_renamed_it() {
+        let (_d, mut s) = storage();
+        let f = s.create_meeting("zoom", "Zoom", at("2026-10-14T09:00:00-07:00")).unwrap();
+        s.save_summary(&f.id, &summary("recap")).unwrap();
+        assert_eq!(s.get_meeting(&f.id).unwrap().speakers["me"], "Me");
+        s.settings_set(serde_json::json!({ "yourName": " Miguel " })).unwrap();
+        let m = s.get_meeting(&f.id).unwrap();
+        assert_eq!(m.speakers["me"], "Miguel");
+        assert_eq!(m.speakers["them:0"], "Them");
+        // Older summaries said "Me" for the owner.
+        assert_eq!(m.summary.unwrap().action_items[0].owner.as_deref(), Some("Miguel"));
+        // meeting.json still says "Me", so a later change of name follows.
+        assert_eq!(s.read_meeting_file(&f.id).unwrap().speakers["me"], "Me");
+        s.update_meeting_file(&f.id, |m| { m.speakers.insert("me".into(), "Miggy".into()); }).unwrap();
+        assert_eq!(s.get_meeting(&f.id).unwrap().speakers["me"], "Miggy");
     }
 
     #[test]

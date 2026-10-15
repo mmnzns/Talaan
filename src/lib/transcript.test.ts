@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import type { TranscriptLine } from "../data/types";
-import { buildRows, lineAt } from "./transcript";
+import type { Meeting, TranscriptLine } from "../data/types";
+import { buildRows, lineAt, withYourName } from "./transcript";
 
 const line = (id: string, at: number): TranscriptLine => ({ id, at, end: at + 5000, speaker: "me", text: id, edited: false });
 const lines = [line("a", 0), line("b", 10_000), line("c", 30_000)];
@@ -45,5 +45,23 @@ describe("speakerName", () => {
     expect(speakerName(m, "me")).toBe("Me");
     expect(speakerName(m, "them:0")).toBe("Them");
     expect(speakerName(m, "them:2")).toBe("Speaker 2");
+  });
+});
+
+describe("withYourName", () => {
+  const meeting = (me?: string) =>
+    ({
+      speakers: me ? { me, "them:0": "Them" } : { "them:0": "Them" },
+      summary: { recap: "", decisions: [], openQuestions: [], engine: "", edited: false, actionItems: [{ id: "a", text: "Send the deck", owner: "Me", done: false }] },
+    }) as unknown as Meeting;
+  it("names Me and the action items Me owned", () => {
+    const m = withYourName(meeting("Me"), " Miguel ");
+    expect(m.speakers.me).toBe("Miguel");
+    expect(m.summary?.actionItems[0].owner).toBe("Miguel");
+    expect(withYourName(meeting(), "Miguel").speakers.me).toBe("Miguel");
+  });
+  it("keeps a name given in this meeting, and Me when there is no name", () => {
+    expect(withYourName(meeting("Miggy"), "Miguel").speakers.me).toBe("Miggy");
+    expect(withYourName(meeting("Me"), "  ").speakers.me).toBe("Me");
   });
 });

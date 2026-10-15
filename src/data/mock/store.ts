@@ -9,6 +9,7 @@ import type {
   Speaker,
   Summary,
 } from "../types";
+import { withYourName } from "../../lib/transcript";
 import { mockAsk } from "./askAnswers";
 import { sampleSummary, sampleTranscript, seedFolders, seedMeetings } from "./seed";
 
@@ -38,12 +39,14 @@ export class MockMeetingStore implements MeetingStore {
   private folders = seedFolders.map((f) => ({ ...f }));
   private listeners = new Set<() => void>();
   private askDelayMs: number;
+  private yourName: () => string | undefined;
 
   constructor(
     private now: Date = new Date(),
-    options: { empty?: boolean; askDelayMs?: number } = {},
+    options: { empty?: boolean; askDelayMs?: number; yourName?: () => string | undefined } = {},
   ) {
     this.askDelayMs = options.askDelayMs ?? 700;
+    this.yourName = options.yourName ?? (() => undefined);
     for (const m of options.empty ? [] : seedMeetings(now)) {
       this.meetings.set(m.id, m);
       this.originals.set(m.id, {
@@ -86,7 +89,7 @@ export class MockMeetingStore implements MeetingStore {
 
   async getMeeting(id: MeetingId): Promise<Meeting | undefined> {
     const m = this.meetings.get(id);
-    return m ? clone(m) : undefined;
+    return m ? withYourName(clone(m), this.yourName()) : undefined;
   }
 
   async renameMeeting(id: MeetingId, title: string) {

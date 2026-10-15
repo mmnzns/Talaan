@@ -3,7 +3,7 @@ import { Logo } from "../../brand/Logo";
 import { describeError } from "../../data/errors";
 import { useSettingsStore } from "../../data/StoreProvider";
 import { openLink } from "../../lib/windows";
-import { Button, Label, Select, Switch } from "../../ui";
+import { Button, Field, Label, Select, Switch } from "../../ui";
 import { Group, Row, SectionIntro } from "./parts";
 import type { TabProps } from "./tabProps";
 
@@ -11,6 +11,16 @@ export function GeneralTab({ settings: s, update }: TabProps) {
   return (
     <div className="flex flex-col gap-6">
     <Group>
+      <Row title="Your name" desc="Used instead of “Me” in transcripts, summaries and exports. Rename Me in a meeting to change it there only.">
+        <Field
+          label="Your name"
+          placeholder="Me"
+          defaultValue={s.yourName}
+          onBlur={(e) => e.target.value.trim() !== s.yourName && update({ yourName: e.target.value.trim() })}
+          onKeyDown={(e) => e.key === "Enter" && e.currentTarget.blur()}
+          wrapperClassName="w-40"
+        />
+      </Row>
       <Row title="Detect calls" desc="Notice when a call app starts using the mic. Set what happens per app in Call apps.">
         <Switch aria-label="Detect calls" checked={s.detectCalls} onChange={(v) => update({ detectCalls: v })} />
       </Row>

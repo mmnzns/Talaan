@@ -10,13 +10,16 @@ pub fn settings_get(state: State<AppState>) -> CmdResult<Option<Value>> {
 #[tauri::command]
 pub fn settings_set(app: AppHandle, state: State<AppState>, value: Value) -> CmdResult<()> {
     let mut storage = state.lock();
+    let name_before = storage.your_name();
     storage.settings_set(value)?;
+    // Your name shows in every meeting.
+    let renamed = storage.your_name() != name_before;
     // A changed retention setting takes effect right away.
     let report = storage.apply_retention(chrono::Utc::now())?;
     drop(storage);
     super::updates::apply_login_item(&app);
     notify(&app, SETTINGS_CHANGED);
-    if !report.audio_deleted.is_empty() || !report.meetings_deleted.is_empty() {
+    if renamed || !report.audio_deleted.is_empty() || !report.meetings_deleted.is_empty() {
         notify(&app, MEETINGS_CHANGED);
     }
     Ok(())
@@ -37,6 +40,13 @@ pub fn data_delete_all(app: AppHandle, state: State<AppState>) -> CmdResult<()> 
 pub struct DataInfo {
     path: String,
     bytes: u64,
+}
+
+/// Shows the data folder (meetings, models, settings) in the file manager.
+#[tauri::command]
+pub fn data_reveal(state: State<AppState>) -> CmdResult<()> {
+    let meetings = crate::storage::paths::meetings_dir(state.lock().root());
+    tauri_plugin_opener::reveal_item_in_dir(meetings).map_err(|e| crate::storage::StorageError::Refused(format!("Couldn't open the folder: {e}")))
 }
 
 /// Where the data lives and how big it is, for the Privacy tab.

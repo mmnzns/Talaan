@@ -3,6 +3,7 @@ import type { Settings } from "./settings";
 /** Values used until the user changes something. Shared by the mock and the real settings store. */
 export const defaultSettings: Settings = {
   theme: "system",
+  yourName: "",
   detectCalls: true,
   autoTagApps: false,
   launchAtLogin: true,

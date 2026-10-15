@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import { useMeetings } from "../../data/hooks";
-import { useSettingsStore } from "../../data/StoreProvider";
+import { describeError } from "../../data/errors";
+import { useSettingsStore, useStore } from "../../data/StoreProvider";
+import { exportAll } from "../../lib/exportAll";
 import type { RetentionChoice, TranscriptRetention } from "../../data/settings";
 import { formatBytes, tildePath } from "../../lib/format";
 import { Button, Label, Select, Sheet, useToast } from "../../ui";
@@ -13,6 +15,8 @@ export function PrivacyTab({ settings: s, update }: TabProps) {
   const { meetings } = useMeetings();
   const [confirm, setConfirm] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [exporting, setExporting] = useState(false);
+  const meetingStore = useStore();
   const [info, setInfo] = useState<{ path: string; bytes: number }>();
 
   useEffect(() => {
@@ -60,8 +64,23 @@ export function PrivacyTab({ settings: s, update }: TabProps) {
         </Row>
         <Row title="Meetings folder" desc={info ? `${tildePath(info.path)} · ${formatBytes(info.bytes)} · ${meetings.length} ${meetings.length === 1 ? "meeting" : "meetings"}` : `${meetings.length} meetings`}>
           <div className="flex gap-2">
-            <Button onClick={() => toast("Opens the folder once storage is connected")}>Open folder</Button>
-            <Button onClick={() => toast("Export all arrives with storage")}>Export all</Button>
+            <Button onClick={() => store.revealData().catch((e) => toast(describeError(e)))}>Open folder</Button>
+            <Button
+              disabled={exporting || meetings.length === 0}
+              onClick={async () => {
+                setExporting(true);
+                try {
+                  const n = await exportAll(meetingStore);
+                  if (n !== undefined) toast(`Exported ${n} ${n === 1 ? "meeting" : "meetings"} as Markdown`);
+                } catch (e) {
+                  toast(describeError(e));
+                } finally {
+                  setExporting(false);
+                }
+              }}
+            >
+              {exporting ? "Exporting…" : "Export all"}
+            </Button>
           </div>
         </Row>
         <Row title="Saved API keys" desc="Stored in your system's secure key storage, never in Talaan's files.">
