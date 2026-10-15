@@ -72,6 +72,16 @@ visible. So a call tab seen means the call (Always works), but no call tab seen 
 a Meet call in a background tab still asks. Settings shows installed browsers as "ready" (Windows has no permission for this).
 Firefox stays Ask, as on the Mac.
 
+**Known limits of the iCal reader** (rare in Google and Outlook feeds; fix if one shows up):
+
+- `RECURRENCE-ID;RANGE=THISANDFUTURE` changes only that one occurrence, not the ones after it.
+- `RDATE;VALUE=PERIOD` values are ignored; so is `EXRULE` (deprecated).
+- A series is stepped through from its first occurrence, at most 100,000 steps: a series that repeats every few minutes
+  or hours and started long ago may show nothing in the current window. Daily or weekly meetings are far below the cap
+  (30 years of a daily meeting is about 11,000 steps).
+- A DTSTART that doesn't fit its own RRULE isn't counted as an occurrence (RFC 5545 says it should be).
+- Time zone ids written as display names ("(UTC-05:00) Eastern Time (US & Canada)") fall back to local time.
+
 **Check by hand (W4):**
 
 - In Google Calendar › Settings › your calendar › "Secret address in iCal format", copy the address, paste it in Talaan's

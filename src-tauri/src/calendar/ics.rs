@@ -48,6 +48,8 @@ struct Recurrence {
     rule: RRule<Validated>,
     rdates: Vec<DateTime<Tz>>,
     exdates: Vec<DateTime<Tz>>,
+    /// Days left out of a timed series by a date-only EXDATE (`EXDATE;VALUE=DATE:20261019`), in the series' zone.
+    exdays: Vec<NaiveDate>,
     until_ms: Option<i64>,
 }
 
@@ -91,7 +93,8 @@ impl Calendar {
 
         let mut masters: Vec<(Option<String>, Item)> = Vec::new();
         let mut overrides: Vec<(String, DateTime<Tz>)> = Vec::new(); // (UID, original start) replaced or cancelled
-        let mut items: Vec<Item> = Vec::new();
+        let mut moved: Vec<(Option<String>, Item)> = Vec::new(); // overrides that still happen
+        let mut cancelled_series: Vec<String> = Vec::new();
         for lines in &blocks.events {
             let ev = Block(lines);
             let uid = ev.value("UID").map(|u| u.trim().to_string()).filter(|u| !u.is_empty());
@@ -101,14 +104,17 @@ impl Calendar {
                     overrides.push((uid.clone(), rid.at));
                 }
                 if !cancelled {
-                    items.extend(item(&ev, &zones, me, false));
+                    moved.extend(item(&ev, &zones, me, false).map(|it| (uid, it)));
                 }
-            } else if !cancelled {
-                if let Some(it) = item(&ev, &zones, me, true) {
-                    masters.push((uid, it));
-                }
+            } else if cancelled {
+                cancelled_series.extend(uid);
+            } else if let Some(it) = item(&ev, &zones, me, true) {
+                masters.push((uid, it));
             }
         }
+
+        // A cancelled series takes its moved occurrences with it.
+        let mut items: Vec<Item> = moved.into_iter().filter(|(uid, _)| uid.as_ref().is_none_or(|u| !cancelled_series.contains(u))).map(|(_, it)| it).collect();
 
         // An override replaces its occurrence in the series with the same UID. Series without a UID match nothing.
         let mut by_uid: HashMap<&str, Vec<usize>> = HashMap::new();
@@ -182,7 +188,7 @@ fn expand(it: &Item, r: &Recurrence, from_ms: i64, to_ms: i64) -> Vec<(i64, i64)
         if s >= to_ms {
             break;
         }
-        if s.saturating_add(reach) > from_ms {
+        if s.saturating_add(reach) > from_ms && !r.exdays.contains(&at.date_naive()) {
             let e = it.length.end_ms(&at);
             if e > from_ms {
                 out.push((s, e));
@@ -217,7 +223,9 @@ fn item(ev: &Block, zones: &HashMap<String, Tz>, me: &[String], series: bool) ->
 fn recurrence(rule: &str, ev: &Block, start: &When, zones: &HashMap<String, Tz>) -> Option<Recurrence> {
     let rule = until_in_utc(rule, start.at.timezone()).parse::<RRule<Unvalidated>>().ok()?.validate(start.at).ok()?;
     let until_ms = rule.get_until().map(|u| u.timestamp_millis());
-    Some(Recurrence { rule, rdates: ev.times("RDATE", zones), exdates: ev.times("EXDATE", zones), until_ms })
+    // On a timed series a date-only EXDATE means that whole day (an all-day series matches it as a time already).
+    let exdays = if start.all_day { vec![] } else { ev.days("EXDATE") };
+    Some(Recurrence { rule, rdates: ev.times("RDATE", zones), exdates: ev.times("EXDATE", zones), exdays, until_ms })
 }
 
 /// DTEND − DTSTART, else DURATION, else a day for all-day events and nothing for the rest (RFC 5545).
@@ -318,6 +326,15 @@ impl Block<'_, '_> {
 
     fn value(&self, name: &str) -> Option<&str> {
         self.get(name).map(|l| l.value)
+    }
+
+    /// The date-only values of a list property (`EXDATE;VALUE=DATE:20261019,20261026`).
+    fn days(&self, name: &str) -> Vec<NaiveDate> {
+        self.0
+            .iter()
+            .filter(|l| l.name.eq_ignore_ascii_case(name))
+            .flat_map(|l| l.value.split(',').filter(|v| v.trim().len() == 8).filter_map(|v| NaiveDate::parse_from_str(v.trim(), "%Y%m%d").ok()))
+            .collect()
     }
 
     /// Every value of a list property that may repeat (EXDATE, RDATE), e.g. `EXDATE;TZID=…:20261019T093000,20261026T093000`.
@@ -1016,6 +1033,29 @@ mod tests {
         assert_eq!(cal.events(utc(2026, 10, 12, 0, 0), utc(2026, 10, 13, 0, 0)).len(), 1);
         assert_eq!(cal.events(utc(2026, 10, 12, 0, 0), utc(2026, 10, 27, 0, 0)).len(), 3);
         assert!(cal.events(utc(2026, 9, 1, 0, 0), utc(2026, 10, 1, 0, 0)).is_empty());
+    }
+
+    #[test]
+    fn a_date_only_exdate_removes_that_day_of_a_timed_series() {
+        let ics = cal(&STANDUP.replace("RRULE:", "EXDATE;VALUE=DATE:20261019\nRRULE:"));
+        let e = parse(&ics, utc(2026, 10, 12, 0, 0), utc(2026, 10, 27, 0, 0), &[]);
+        assert_eq!(starts(&e), vec![utc(2026, 10, 12, 13, 30), utc(2026, 10, 26, 13, 30)]);
+    }
+
+    #[test]
+    fn overrides_of_a_cancelled_series_are_hidden_too() {
+        let ics = cal(&format!(
+            "{}
+            BEGIN:VEVENT
+            UID:standup@test
+            RECURRENCE-ID;TZID=America/Toronto:20261019T093000
+            SUMMARY:Stand-up (moved)
+            DTSTART;TZID=America/Toronto:20261019T110000
+            DTEND;TZID=America/Toronto:20261019T111500
+            END:VEVENT",
+            STANDUP.replace("RRULE:", "STATUS:CANCELLED\nRRULE:")
+        ));
+        assert!(parse(&ics, utc(2026, 10, 12, 0, 0), utc(2026, 10, 27, 0, 0), &[]).is_empty());
     }
 
     #[test]
