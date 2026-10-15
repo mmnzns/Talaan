@@ -9,6 +9,7 @@ import type {
   Speaker,
   Summary,
 } from "../types";
+import { withYourName } from "../../lib/transcript";
 import { mockAsk } from "./askAnswers";
 import { sampleSummary, sampleTranscript, seedFolders, seedMeetings } from "./seed";
 
@@ -38,12 +39,14 @@ export class MockMeetingStore implements MeetingStore {
   private folders = seedFolders.map((f) => ({ ...f }));
   private listeners = new Set<() => void>();
   private askDelayMs: number;
+  private yourName: () => string | undefined;
 
   constructor(
     private now: Date = new Date(),
-    options: { empty?: boolean; askDelayMs?: number } = {},
+    options: { empty?: boolean; askDelayMs?: number; yourName?: () => string | undefined } = {},
   ) {
     this.askDelayMs = options.askDelayMs ?? 700;
+    this.yourName = options.yourName ?? (() => undefined);
     for (const m of options.empty ? [] : seedMeetings(now)) {
       this.meetings.set(m.id, m);
       this.originals.set(m.id, {
@@ -86,7 +89,7 @@ export class MockMeetingStore implements MeetingStore {
 
   async getMeeting(id: MeetingId): Promise<Meeting | undefined> {
     const m = this.meetings.get(id);
-    return m ? clone(m) : undefined;
+    return m ? withYourName(clone(m), this.yourName()) : undefined;
   }
 
   async renameMeeting(id: MeetingId, title: string) {
@@ -166,6 +169,18 @@ export class MockMeetingStore implements MeetingStore {
     this.simulate(id, "transcribing", this.finishTranscription);
   }
 
+  async retranscribe(id: MeetingId, model: string) {
+    this.mutate(id, (m) => {
+      m.summary = undefined;
+      m.transcription = { model, echoLinesRemoved: 0, speechMs: m.durationMs, tookMs: 0, finishedAt: new Date().toISOString() };
+    });
+    this.simulate(id, "transcribing", (m) => {
+      const names = m.speakers;
+      this.finishTranscription(m);
+      m.speakers = { ...m.speakers, ...names }; // names stay
+    });
+  }
+
   // The browser preview has no audio files: the player simulates the playhead.
   async playbackUrl(_id: MeetingId): Promise<string | undefined> {
     return undefined;
@@ -190,6 +205,10 @@ export class MockMeetingStore implements MeetingStore {
 
   async renameSpeaker(id: MeetingId, speaker: Speaker, name: string) {
     this.mutate(id, (m) => (m.speakers[speaker] = name));
+  }
+
+  async setTranscriptOnly(id: MeetingId, on: boolean) {
+    this.mutate(id, (m) => (m.transcriptOnly = on || undefined));
   }
 
   async setTags(id: MeetingId, tags: string[]) {

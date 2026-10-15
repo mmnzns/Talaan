@@ -74,6 +74,11 @@ pub fn meetings_rename_speaker(app: AppHandle, state: State<AppState>, id: Strin
 }
 
 #[tauri::command]
+pub fn meetings_set_transcript_only(app: AppHandle, state: State<AppState>, id: String, on: bool) -> CmdResult<()> {
+    changed(&app, state.lock().set_transcript_only(&id, on))
+}
+
+#[tauri::command]
 pub fn meetings_set_tags(app: AppHandle, state: State<AppState>, id: String, tags: Vec<String>) -> CmdResult<()> {
     changed(&app, state.lock().set_tags(&id, &tags))
 }
@@ -125,11 +130,11 @@ pub fn meetings_delete_audio(app: AppHandle, state: State<AppState>, id: String)
 #[tauri::command]
 pub fn meetings_reveal(state: State<AppState>, id: String) -> CmdResult<()> {
     let dir = state.lock().dir(&id)?;
-    tauri_plugin_opener::reveal_item_in_dir(dir.join(crate::storage::paths::META)).map_err(|e| StorageError::Refused(format!("Couldn't open the folder: {e}")))
+    tauri_plugin_opener::reveal_item_in_dir(dir.join(crate::storage::paths::META)).map_err(|e| StorageError::Refused(crate::i18n::tr_err("error.open_folder", e)))
 }
 
 /// Writes an exported file where the user chose in the save dialog.
 #[tauri::command]
 pub fn export_write(path: String, contents: String) -> CmdResult<()> {
-    std::fs::write(&path, contents).map_err(|e| StorageError::Refused(format!("Couldn't save the file: {e}")))
+    std::fs::write(&path, contents).map_err(|e| StorageError::Refused(crate::i18n::tr_err("error.save_file", e)))
 }

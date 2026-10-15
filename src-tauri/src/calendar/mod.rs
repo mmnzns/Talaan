@@ -1,5 +1,11 @@
 //! Calendar link: which calendar event a recording belongs to (pure; the system calendar is read in
-//! `platform::macos::calendar`).
+//! `platform::<os>::calendar`).
+
+// The Windows calendar downloads an iCal address; macOS uses EventKit, so these stay unused there.
+#[cfg_attr(not(target_os = "windows"), allow(dead_code))]
+pub mod fetch;
+#[cfg_attr(not(target_os = "windows"), allow(dead_code))]
+pub mod ics;
 
 /// An event as read from the system calendar. Times are Unix milliseconds.
 #[derive(Debug, Clone, PartialEq)]

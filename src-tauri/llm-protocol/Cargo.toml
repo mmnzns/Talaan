@@ -1,6 +1,6 @@
 [package]
 name = "talaan-llm-protocol"
-version = "1.0.0-dev"
+version = "1.0.0"
 edition = "2024"
 license = "MIT"
 publish = false

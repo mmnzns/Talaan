@@ -154,12 +154,27 @@ export class TauriSettingsStore implements SettingsStore {
     return call<CalendarAccess>("calendar_request");
   }
 
+  async connectCalendar(url: string): Promise<number> {
+    const n = await call<number>("calendar_connect", { url });
+    await this.update({ calendarConnected: true });
+    return n;
+  }
+
+  async disconnectCalendar(): Promise<void> {
+    await call<void>("calendar_disconnect");
+    await this.update({ calendarConnected: false });
+  }
+
   dataInfo(): Promise<{ path: string; bytes: number }> {
     return call("data_info");
   }
 
+  revealData(): Promise<void> {
+    return call<void>("data_reveal");
+  }
+
   async deleteAllData(): Promise<void> {
-    await call<void>("data_delete_all"); // the app restarts into first-run
+    await call<void>("data_delete_all"); // Talaan deletes everything, then quits; the next launch is first-run.
   }
 
   subscribe(listener: () => void): () => void {

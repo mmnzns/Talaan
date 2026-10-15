@@ -1,3 +1,5 @@
+import { t } from "../lib/i18n";
+
 /** Errors from the Rust side arrive as `{ code, message }`. */
 export class StoreError extends Error {
   constructor(
@@ -18,19 +20,35 @@ export function toStoreError(e: unknown): StoreError {
   return new StoreError("unknown", e instanceof Error ? e.message : String(e));
 }
 
+/** Why a meeting has no summary. Fixed reasons are shown in the app language by their code (meeting.json keeps
+ *  Rust's English text); other failures show the stored message. */
+export function summaryErrorText(err: { code: string; message: string } | undefined): string {
+  if (!err) return t("meeting.noSummaryBody");
+  switch (err.code) {
+    case "waiting":
+      return t("meeting.summaryTranscriptOnly");
+    case "too_short":
+      return t("meeting.summaryTooShort");
+    case "no_engine":
+      return t("meeting.summaryNoEngine");
+    default:
+      return err.message;
+  }
+}
+
 /** Turns a failed store call into the one line the user sees. */
 export function describeError(e: unknown): string {
   const err = toStoreError(e);
   switch (err.code) {
     case "not_yet_available":
-      return `${err.message}. Coming in a later build.`;
+      return t("kit.errorLater", { message: err.message });
     case "not_found":
-      return "That meeting is gone.";
+      return t("kit.errorGone");
     case "refused":
       return err.message;
     case "unsupported_schema":
-      return "This meeting was saved by a newer version of Talaan.";
+      return t("kit.errorNewer");
     default:
-      return "Something went wrong. Your data is safe.";
+      return t("kit.errorGeneric");
   }
 }

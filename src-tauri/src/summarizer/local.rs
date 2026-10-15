@@ -11,10 +11,16 @@ use talaan_llm_protocol::{encode, Completion, Embedding, Event, Phase, Reply, Re
 
 pub const HELPER: &str = "talaan-llm";
 
-/// Where the helper lives: next to Talaan's own binary (in the app bundle, `Contents/MacOS/`, and in
-/// `target/<profile>/` during development).
+/// The helper's file name on this OS (`talaan-llm`, or `talaan-llm.exe` on Windows).
+pub fn helper_file() -> String {
+    format!("{HELPER}{}", std::env::consts::EXE_SUFFIX)
+}
+
+/// Where the helper lives: next to Talaan's own binary (in the app bundle, `Contents/MacOS/`; next to
+/// `Talaan.exe` on Windows; in `target/<profile>/` during development).
 pub fn helper_path() -> PathBuf {
-    std::env::current_exe().ok().and_then(|p| p.parent().map(|d| d.join(HELPER))).unwrap_or_else(|| PathBuf::from(HELPER))
+    let name = helper_file();
+    std::env::current_exe().ok().and_then(|p| p.parent().map(|d| d.join(&name))).unwrap_or_else(|| PathBuf::from(name))
 }
 
 struct Running {
@@ -62,7 +68,7 @@ impl LocalAi {
             match r.events.recv_timeout(Duration::from_secs(60)) {
                 Ok(Event::Ready) => {}
                 Ok(Event::Error { message }) => return Err(message),
-                _ => return Err("the local AI didn't start".into()),
+                _ => return Err(crate::i18n::tr("local_ai.no_start")),
             }
             self.running = Some(r);
         }
@@ -89,12 +95,12 @@ impl LocalAi {
                     // A summary should never take this long; something is stuck.
                     if started.elapsed() > Duration::from_secs(30 * 60) {
                         self.stop();
-                        return Err("the local AI took too long".into());
+                        return Err(crate::i18n::tr("local_ai.too_slow"));
                     }
                 }
                 Err(RecvTimeoutError::Disconnected) => {
                     self.stop();
-                    return Err("the local AI stopped unexpectedly, probably out of memory. Try the smaller model, or close other apps.".into());
+                    return Err(crate::i18n::tr("local_ai.crashed"));
                 }
             }
         }
@@ -157,10 +163,20 @@ mod tests {
     #[test]
     fn a_crashing_helper_is_reported_not_fatal() {
         let dir = tempfile::tempdir().unwrap();
-        let fake = dir.path().join("fake-llm");
         // Answers the ping, then exits on the first real request.
-        std::fs::write(&fake, "#!/bin/sh\nread line\necho '{\"event\":\"ready\"}'\nread line\nexit 1\n").unwrap();
-        std::fs::set_permissions(&fake, std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
+        #[cfg(unix)]
+        let fake = {
+            let fake = dir.path().join("fake-llm");
+            std::fs::write(&fake, "#!/bin/sh\nread line\necho '{\"event\":\"ready\"}'\nread line\nexit 1\n").unwrap();
+            std::fs::set_permissions(&fake, std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
+            fake
+        };
+        #[cfg(windows)]
+        let fake = {
+            let fake = dir.path().join("fake-llm.cmd");
+            std::fs::write(&fake, "@echo off\r\nset /p line=\r\necho {\"event\":\"ready\"}\r\nset /p line=\r\nexit /b 1\r\n").unwrap();
+            fake
+        };
         let mut ai = LocalAi::new(&fake);
         let c = Completion { model_path: "x".into(), n_ctx: 512, system: "".into(), user: "".into(), json_schema: None, max_tokens: 1, temperature: 0.0 };
         let e = ai.complete(&c, &AtomicBool::new(false), &mut |_, _, _| {}).unwrap_err();
@@ -173,7 +189,7 @@ mod tests {
     #[ignore]
     fn local_ai_smoke() {
         let model = std::env::var("TALAAN_LLM_MODEL").unwrap();
-        let exe = std::env::current_exe().unwrap().parent().unwrap().parent().unwrap().join(HELPER);
+        let exe = std::env::current_exe().unwrap().parent().unwrap().parent().unwrap().join(helper_file());
         eprintln!("helper: {} exists={}", exe.display(), exe.exists());
         let mut ai = LocalAi::new(&exe);
         let c = Completion {
@@ -211,7 +227,7 @@ mod bakeoff {
         m.marks = serde_json::from_value(fixture["marks"].clone()).unwrap();
         m.item.duration_ms = fixture["durationMs"].as_u64().unwrap();
         let prompt = summary_prompt(&m, &lines, "en", None);
-        let exe = std::env::current_exe().unwrap().parent().unwrap().parent().unwrap().join(HELPER);
+        let exe = std::env::current_exe().unwrap().parent().unwrap().parent().unwrap().join(helper_file());
         let dir = std::env::var("TALAAN_LLM_DIR").unwrap();
         let mut models: Vec<_> = std::fs::read_dir(&dir).unwrap().filter_map(|e| e.ok().map(|e| e.path())).filter(|p| p.extension().is_some_and(|x| x == "gguf")).collect();
         models.sort();

@@ -332,4 +332,26 @@ mod tests {
         assert_eq!(s.run(1, &["slack"]), vec![Action::CloseNudge]);
         assert!(s.run(10, &["zoom"]).is_empty());
     }
+
+    /// What the calls loop does with mic users (the same shared step).
+    fn apps_for(users: &[&str]) -> Vec<&'static str> {
+        crate::calls::apps::call_app_ids(users.iter().map(|u| (*u, "")), &[])
+    }
+
+    #[test]
+    fn windows_ids_drive_the_rules_end_to_end() {
+        // zoom is Always, everything else Ask (see `rules`).
+        let mut s = Sim::new();
+        assert_eq!(s.run(3, &apps_for(&["zoom.exe"])), vec![Action::AutoStart { app: "zoom".into() }]);
+        assert_eq!(s.run(4, &apps_for(&[])), vec![Action::CallEnded { app: "zoom".into() }]);
+        assert_eq!(s.run(31, &apps_for(&[])), vec![Action::AutoStop]);
+
+        let mut s = Sim::new();
+        assert_eq!(s.run(5, &apps_for(&["MSTeams_8wekyb3d8bbwe"])), vec![nudge("teams")]);
+        assert_eq!(s.run(1, &apps_for(&[])), vec![Action::CloseNudge]);
+
+        // Parlato's dictation and a mic filter never prompt, even alongside each other.
+        let mut s = Sim::new();
+        assert!(s.run(60, &apps_for(&["parla.exe", "nvidia broadcast.exe"])).is_empty());
+    }
 }

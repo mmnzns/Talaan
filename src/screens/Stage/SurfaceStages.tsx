@@ -72,7 +72,7 @@ export function RecordingStage() {
               client.discard();
               toast("Recording discarded");
             }}
-            onOpenSettings={() => toast("Opens System Settings")}
+            onOpenSettings={() => toast("Opens the system settings")}
             onDismissNotice={rec.clearNotice}
           />
         ) : (

@@ -2,6 +2,7 @@ mod ask;
 mod calendar;
 mod calls;
 mod commands;
+mod i18n;
 mod importer;
 mod keys;
 mod notion;
@@ -23,7 +24,13 @@ fn platform_name() -> &'static str {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
+    let builder = tauri::Builder::default();
+    // Windows only, and first, so a second launch exits before anything else starts and focuses the running
+    // Talaan instead. (On the Mac the OS already does this, and the plugin's socket would make `tauri dev` exit
+    // while the installed app runs.)
+    #[cfg(target_os = "windows")]
+    let builder = builder.plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| commands::tray::show_main(app)));
+    builder
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
@@ -32,6 +39,7 @@ pub fn run() {
             let root = commands::resolve_data_dir(std::env::var("TALAAN_DATA_DIR").ok(), dirs::data_dir());
             let mut store = storage::Storage::new(root.clone())?;
             store.load_policy()?;
+            commands::calendar::remove_legacy_address(&mut store);
             // Anything still marked "recording" was interrupted; expired audio goes now.
             store.scan_for_interrupted()?;
             store.apply_retention(chrono::Utc::now())?;
@@ -39,13 +47,12 @@ pub fn run() {
             rec_cmd::setup(app.handle());
             commands::summarizer::setup(app.handle(), root.clone());
             commands::ask::setup(app.handle(), root.clone());
-            #[cfg(target_os = "macos")]
-            {
-                let handle = app.handle().clone();
-                platform::macos::notify::setup(move |id| commands::summarizer::open_meeting(&handle, &id));
-            }
+            let handle = app.handle().clone();
+            platform::notify::setup(move |id| commands::summarizer::open_meeting(&handle, &id));
             commands::transcriber::setup(app.handle(), root);
             commands::calls::setup(app.handle());
+            #[cfg(target_os = "windows")]
+            commands::calendar::sync_source(app.handle());
             commands::updates::apply_login_item(app.handle());
             commands::updates::check_at_launch(app.handle());
             commands::tray::setup(app.handle())?;
@@ -63,6 +70,7 @@ pub fn run() {
         })
         .on_window_event(commands::tray::on_window_event)
         .invoke_handler(tauri::generate_handler![
+            commands::tray::i18n_set_language,
             commands::tray::tray_toggle,
             commands::tray::window_fit,
             commands::tray::tray_hide,
@@ -79,6 +87,7 @@ pub fn run() {
             meetings::meetings_revert_edits,
             meetings::meetings_rename_speaker,
             meetings::meetings_set_tags,
+            meetings::meetings_set_transcript_only,
             meetings::meetings_move_to_folder,
             meetings::folders_list,
             meetings::folders_rename,
@@ -114,6 +123,7 @@ pub fn run() {
             rec_cmd::permissions_request_mic,
             rec_cmd::permissions_open_settings,
             commands::transcriber::meetings_retry,
+            commands::transcriber::meetings_retranscribe,
             commands::transcriber::models_list,
             commands::transcriber::models_download,
             commands::transcriber::models_cancel,
@@ -122,6 +132,10 @@ pub fn run() {
             commands::ask::meetings_ask,
             commands::calendar::calendar_access,
             commands::calendar::calendar_request,
+            #[cfg(target_os = "windows")]
+            commands::calendar::calendar_connect,
+            #[cfg(target_os = "windows")]
+            commands::calendar::calendar_disconnect,
             commands::notion::notion_connect,
             commands::notion::notion_disconnect,
             commands::notion::notion_destinations,
@@ -134,6 +148,7 @@ pub fn run() {
             settings::settings_set,
             settings::data_delete_all,
             settings::data_info,
+            settings::data_reveal,
             dev::dev_seed,
             dev::dev_wipe,
         ])

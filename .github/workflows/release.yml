@@ -1,25 +1,121 @@
 name: Release
 
-# Push a tag like v1.0.0 to build a signed Apple-silicon release as a draft on GitHub Releases, with the
-# updater files (Talaan.app.tar.gz, its .sig and latest.json). Publish the draft by hand after checking it.
+# Push a tag like v1.0.0. This makes a draft GitHub Release with:
+#   Windows (CI):  Talaan_<v>_x64-setup.exe and its .sig (built by scripts/release-windows.ps1)
+#   Mac:           the .dmg, Talaan_aarch64.app.tar.gz and its .sig, uploaded from the Mac with
+#                  scripts/release-local.sh then scripts/upload-mac-release.sh <tag> (or by the macos job below
+#                  once the APPLE_CERTIFICATE secrets exist and the repo variable MAC_RELEASE_ON_CI is "true")
+#   latest.json:   rebuilt from every .sig on the release by scripts/latest-json.mjs, by whoever uploads last
+# Run the Mac upload (scripts/upload-mac-release.sh) only after this workflow's updater-json job has finished, then
+# check that latest.json has four keys (the script checks it too). latest-json.mjs reads its upload back and retries,
+# but two uploads at once can still race.
+# Publish the draft by hand after the release gate (docs/TESTING.md).
 #
 # Secrets:
-#   TAURI_SIGNING_PRIVATE_KEY / _PASSWORD   Talaan's updater key (minisign)
-#   APPLE_CERTIFICATE                       base64 of the exported code-signing .p12 (self-signed, free)
+#   TAURI_SIGNING_PRIVATE_KEY / _PASSWORD   Talaan's updater key (minisign), used by both platforms
+#   APPLE_CERTIFICATE                       macos job only: base64 of the exported code-signing .p12 (self-signed)
 #   APPLE_CERTIFICATE_PASSWORD              its export password
 #   APPLE_SIGNING_IDENTITY                  the certificate's name
-# A stable signature is what keeps the microphone, system audio, calendar and automation permissions across
-# updates, so the release fails rather than ship unsigned.
+# On the Mac a stable signature is what keeps the microphone, system audio, calendar and automation permissions
+# across updates, so the macos job fails rather than ship unsigned.
 
 on:
   push:
     tags: ["v*"]
+  # Test build: Actions › Release › Run workflow. Builds the signed Windows installer exactly like a release and
+  # keeps it as a workflow artifact; no tag, no release, no latest.json.
+  workflow_dispatch:
 
 permissions:
   contents: write
 
 jobs:
+  windows-test:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: windows-latest
+    env:
+      LIBCLANG_PATH: C:\Program Files\LLVM\bin
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+          key: release-windows
+      - run: npm ci
+      - name: Build the installer
+        shell: pwsh
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: ./scripts/release-windows.ps1
+      - uses: actions/upload-artifact@v4
+        with:
+          name: talaan-windows-installer
+          path: |
+            src-tauri/target/release/bundle/nsis/*_x64-setup.exe
+            src-tauri/target/release/bundle/nsis/*_x64-setup.exe.sig
+          if-no-files-found: error
+
+  draft:
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Version matches the tag
+        run: |
+          want="${GITHUB_REF_NAME#v}"
+          have=$(node -p "require('./src-tauri/tauri.conf.json').version")
+          [ "$want" = "$have" ] || { echo "::error::tag $GITHUB_REF_NAME but tauri.conf.json says $have"; exit 1; }
+      - name: Draft release for this tag (once)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # The notes link to INSTALL.md and CHANGELOG.md as of this tag.
+          sed "s/{{TAG}}/$GITHUB_REF_NAME/g" scripts/release-notes.md > "$RUNNER_TEMP/notes.md"
+          gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1 || \
+            gh release create "$GITHUB_REF_NAME" --draft --verify-tag --title "Talaan $GITHUB_REF_NAME" --notes-file "$RUNNER_TEMP/notes.md"
+
+  windows:
+    needs: draft
+    runs-on: windows-latest
+    env:
+      LIBCLANG_PATH: C:\Program Files\LLVM\bin
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+          key: release-windows
+      - run: npm ci
+      # Builds the helper (beforeBuildCommand), the installer and its updater signature; fails if whisper.cpp or
+      # llama.cpp weren't built with -O2 (.cargo/config.toml).
+      - name: Build the installer
+        shell: pwsh
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: ./scripts/release-windows.ps1
+      - name: Upload to the draft
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          v="${GITHUB_REF_NAME#v}"; out=src-tauri/target/release/bundle/nsis
+          gh release upload "$GITHUB_REF_NAME" "$out/Talaan_${v}_x64-setup.exe" "$out/Talaan_${v}_x64-setup.exe.sig" --clobber
+
   macos:
+    needs: draft
+    if: vars.MAC_RELEASE_ON_CI == 'true'
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
@@ -78,6 +174,7 @@ jobs:
           releaseName: "Talaan ${{ github.ref_name }}"
           releaseBody: "See CHANGELOG.md for what's new. First install: open the .dmg, drag Talaan to Applications, then right-click › Open (or System Settings › Privacy & Security › Open Anyway) once."
           releaseDraft: true
+          includeUpdaterJson: false
           args: --target aarch64-apple-darwin
 
       - name: Signature check
@@ -85,3 +182,16 @@ jobs:
           app="src-tauri/target/aarch64-apple-darwin/release/bundle/macos/Talaan.app"
           codesign --verify --deep --strict --verbose=2 "$app"
           codesign -d --entitlements - "$app" | grep -q device.audio-input
+
+  updater-json:
+    needs: [windows, macos]
+    if: ${{ always() && needs.windows.result == 'success' && needs.macos.result != 'failure' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - env:
+          GH_TOKEN: ${{ github.token }}
+        run: node scripts/latest-json.mjs "$GITHUB_REF_NAME"

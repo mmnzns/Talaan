@@ -1,0 +1,47 @@
+import { area } from "../core";
+
+/** Words that differ by operating system (mac_ and windows_ prefixes); `usePlatform()` in lib/platform.ts picks the set. */
+export const platform = area({
+  en: {
+    mac_openSettings: "Open System Settings",
+    mac_settingsApp: "System Settings",
+    mac_micSettingsPath: "System Settings › Privacy & Security › Microphone",
+    mac_trayName: "menu bar",
+    mac_audioIntro: "Talaan needs your microphone (your side) and system audio (everyone else). Your system will ask for each one next.",
+    mac_systemAudioDesc: "Records the other people on the call. Your system may list this as screen and system audio recording; Talaan only uses the audio.",
+    windows_openSettings: "Open Windows Settings",
+    windows_settingsApp: "Windows Settings",
+    windows_micSettingsPath: "Windows Settings › Privacy & security › Microphone",
+    windows_trayName: "system tray",
+    windows_audioIntro: "Talaan needs your microphone (your side) and system audio (everyone else). System audio needs no permission here.",
+    windows_systemAudioDesc: "Records the other people on the call. No permission needed.",
+  },
+  fr: {
+    mac_openSettings: "Ouvrir les Réglages Système",
+    mac_settingsApp: "Réglages Système",
+    mac_micSettingsPath: "Réglages Système › Confidentialité et sécurité › Microphone",
+    mac_trayName: "barre des menus",
+    mac_audioIntro: "Talaan a besoin de votre microphone (votre côté) et de l’audio système (tous les autres). Votre système vous demandera ensuite chacune de ces autorisations.",
+    mac_systemAudioDesc: "Enregistre les autres personnes de l’appel. Votre système peut afficher cette autorisation sous le nom « Enregistrement de l’écran et de l’audio système » ; Talaan n’utilise que l’audio.",
+    windows_openSettings: "Ouvrir les Paramètres Windows",
+    windows_settingsApp: "Paramètres Windows",
+    windows_micSettingsPath: "Paramètres Windows › Confidentialité et sécurité › Microphone",
+    windows_trayName: "zone de notification",
+    windows_audioIntro: "Talaan a besoin de votre microphone (votre côté) et de l’audio système (tous les autres). L’audio système n’exige aucune autorisation ici.",
+    windows_systemAudioDesc: "Enregistre les autres personnes de l’appel. Aucune autorisation nécessaire.",
+  },
+  es: {
+    mac_openSettings: "Abrir Ajustes del Sistema",
+    mac_settingsApp: "Ajustes del Sistema",
+    mac_micSettingsPath: "Ajustes del Sistema › Privacidad y seguridad › Micrófono",
+    mac_trayName: "barra de menús",
+    mac_audioIntro: "Talaan necesita tu micrófono (tu lado) y el audio del sistema (todos los demás). Tu sistema te pedirá cada permiso a continuación.",
+    mac_systemAudioDesc: "Graba a las demás personas de la llamada. Tu sistema puede mostrarlo como grabación de pantalla y audio del sistema; Talaan solo usa el audio.",
+    windows_openSettings: "Abrir Configuración de Windows",
+    windows_settingsApp: "Configuración de Windows",
+    windows_micSettingsPath: "Configuración de Windows › Privacidad y seguridad › Micrófono",
+    windows_trayName: "bandeja del sistema",
+    windows_audioIntro: "Talaan necesita tu micrófono (tu lado) y el audio del sistema (todos los demás). El audio del sistema no requiere ningún permiso aquí.",
+    windows_systemAudioDesc: "Graba a las demás personas de la llamada. No necesita permiso.",
+  },
+});

@@ -6,6 +6,7 @@ use crate::ask::passages::{passages, Passage};
 use crate::ask::{index, query_text, search};
 use crate::storage::model::{Meeting, MeetingStatus};
 use crate::storage::store::Filter;
+use crate::i18n::{tr, tr_err, tr_with};
 use crate::storage::StorageError;
 use crate::summarizer::local::{helper_path, LocalAi};
 use crate::summarizer::summarize::EngineError;
@@ -42,7 +43,7 @@ pub fn setup(app: &AppHandle, data_dir: PathBuf) {
     std::thread::Builder::new()
         .name("talaan-ask-index".into())
         .spawn(move || {
-            crate::platform::macos::thread::background_priority();
+            crate::platform::background_priority();
             // Index once at launch, then after changes.
             let _ = app.state::<AskState>().kick.lock().map(|k| k.send(()));
             while rx.recv().is_ok() {
@@ -109,13 +110,13 @@ fn searchable(m: &Meeting) -> bool {
 
 #[tauri::command]
 pub async fn meetings_ask(app: AppHandle, question: String, scope: Scope) -> CmdResult<AskAnswer> {
-    tauri::async_runtime::spawn_blocking(move || ask(&app, &question, &scope)).await.map_err(|e| refused(format!("Ask stopped unexpectedly: {e}")))?
+    tauri::async_runtime::spawn_blocking(move || ask(&app, &question, &scope)).await.map_err(|e| refused(tr_err("ask.stopped", e)))?
 }
 
 fn ask(app: &AppHandle, question: &str, scope: &Scope) -> CmdResult<AskAnswer> {
     let question = question.trim();
     if question.is_empty() {
-        return Err(refused("Type a question first."));
+        return Err(refused(tr("ask.empty")));
     }
     let state = app.state::<AskState>();
     let (meetings, dirs, settings) = {
@@ -156,9 +157,9 @@ fn answer_from(data_dir: &Path, embedder: &Mutex<LocalAi>, meetings: &[Meeting],
 
     let config = Config::from_settings(settings);
     let mut engine = crate::commands::summarizer::make_engine(&config, data_dir).map_err(|e| match e {
-        EngineError::Unavailable(m) => refused(format!("Ask uses your summary AI. {m}")),
+        EngineError::Unavailable(m) => refused(tr_with("ask.needs_ai", &[("message", &m)])),
         EngineError::Failed(m) => refused(m),
-        EngineError::Cancelled => refused("cancelled"),
+        EngineError::Cancelled => refused(tr("error.cancelled")),
     })?;
     let budget_chars = engine.context_tokens().saturating_sub(RESERVED_TOKENS + REPLY_TOKENS as usize) * 3;
 
@@ -193,10 +194,10 @@ fn answer_from(data_dir: &Path, embedder: &Mutex<LocalAi>, meetings: &[Meeting],
                 Err(e) => last_err = e,
             },
             Err(EngineError::Unavailable(m)) | Err(EngineError::Failed(m)) => return Err(refused(m)),
-            Err(EngineError::Cancelled) => return Err(refused("cancelled")),
+            Err(EngineError::Cancelled) => return Err(refused(tr("error.cancelled"))),
         }
     }
-    Err(refused(format!("The summary AI's answer couldn't be read ({last_err}). Try again.")))
+    Err(refused(tr_err("ask.unreadable", last_err)))
 }
 
 /// The question's vector and every meeting's passage vectors (building missing indexes now), or None when
@@ -259,7 +260,7 @@ mod tests {
             std::fs::create_dir_all(&d).unwrap();
             dirs.push(d);
         }
-        let exe = std::env::current_exe().unwrap().parent().unwrap().parent().unwrap().join(crate::summarizer::local::HELPER);
+        let exe = std::env::current_exe().unwrap().parent().unwrap().parent().unwrap().join(crate::summarizer::local::helper_file());
         let embedder = Mutex::new(LocalAi::new(&exe));
         let settings = serde_json::json!({ "summaryEngine": "local", "localModel": "recommended" });
         for (q, want_meeting, want_at) in [

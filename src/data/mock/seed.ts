@@ -53,6 +53,7 @@ export function seedMeetings(now: Date = new Date()): Meeting[] {
     pinned: false,
     calendarEvent: { title: "Q4 Roadmap Sync", attendees: ["You", "Dana Reyes", "Priya Shah"] },
     speakers: { me: "Me", "them:1": "Dana Reyes", "them:2": "Priya Shah" },
+    transcription: { model: "whisper-turbo", echoLinesRemoved: 2, speechMs: mmss("38:40"), tookMs: 95_000, finishedAt: at(now, 0, 15, 14) },
     summary: {
       recap:
         "Onboarding revamp ships before the pricing refresh, since onboarding drop-off is the bigger leak. Engineering fits it in two sprints if design hands off by Oct 24.",

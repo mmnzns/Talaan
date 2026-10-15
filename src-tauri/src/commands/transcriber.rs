@@ -99,13 +99,31 @@ pub fn meetings_retry(app: AppHandle, state: State<AppState>, t: State<Transcrib
     let storage = state.lock();
     let dir = storage.dir(&id)?;
     if !dir.join("me.wav").exists() && !dir.join("them.wav").exists() {
-        return Err(err("The audio for this call is gone, so it can't be transcribed again.".into()));
+        return Err(err(crate::i18n::tr("error.audio_gone")));
     }
     storage.update_meeting_file(&id, |f| {
         f.status = MeetingStatus::Transcribing;
         f.progress = Some(0.0);
         f.error = None;
     })?;
+    drop(storage);
+    t.enqueue(&id);
+    notify(&app, MEETINGS_CHANGED);
+    Ok(())
+}
+
+/// Transcribe a finished meeting again with another speech model (this meeting only). Edits and the summary
+/// are dropped, speaker names stay, and the new transcript is summarized like a new call.
+#[tauri::command]
+pub fn meetings_retranscribe(app: AppHandle, state: State<AppState>, t: State<TranscriberState>, id: String, model: String) -> CmdResult<()> {
+    let m = find(&model).filter(|m| matches!(m.engine, EngineKind::Parakeet | EngineKind::Whisper)).ok_or_else(|| err(format!("No speech model called {model}")))?;
+    let storage = state.lock();
+    let config = Config::from_settings(storage.settings_get()?.as_ref());
+    if ModelStore::new(&t.data_dir, config.reuse).locate(m) == Location::Missing {
+        return Err(err(crate::i18n::tr_with("error.download_speech_model", &[("name", m.name)])));
+    }
+    app.state::<super::summarizer::SummarizerState>().cancel_if_running(&id);
+    storage.start_retranscribe(&id, m.id)?;
     drop(storage);
     t.enqueue(&id);
     notify(&app, MEETINGS_CHANGED);
@@ -221,7 +239,7 @@ pub fn models_download(app: AppHandle, t: State<TranscriberState>, id: String) -
             Ok(()) => {}
             Err(DownloadError::Cancelled) => {}
             Err(e) => {
-                let _ = app.emit("recorder-notice", serde_json::json!({ "text": e.to_string(), "kind": "warning" }));
+                let _ = app.emit("recorder-notice", serde_json::json!({ "text": e.user_message(), "kind": "warning" }));
             }
         }
     });
@@ -243,7 +261,7 @@ pub fn models_delete(app: AppHandle, t: State<TranscriberState>, id: String) -> 
     let model = find_any(&id).ok_or_else(|| err(format!("No model called {id}")))?;
     let dir = ModelStore::new(&t.data_dir, false).own_dir(model);
     if dir.exists() {
-        std::fs::remove_dir_all(&dir).map_err(|e| err(format!("Couldn't delete the model: {e}")))?;
+        std::fs::remove_dir_all(&dir).map_err(|e| err(crate::i18n::tr_err("error.delete_model", e)))?;
     }
     let _ = app.emit(MODELS_CHANGED, ());
     Ok(())

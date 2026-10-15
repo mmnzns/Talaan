@@ -15,6 +15,7 @@
   "audioKeptUntil": "2026-10-21T14:30:00-07:00",
   "calendarEvent": { "title": "Q4 Roadmap Sync", "attendees": ["You", "Dana Reyes", "Priya Shah"] },
   "speakers": { "me": "Me", "them:1": "Dana Reyes", "them:2": "Priya Shah" },
+  "transcription": { "model": "whisper-turbo", "echoLinesRemoved": 2, "speechMs": 2320000, "tookMs": 95000, "finishedAt": "2026-10-14T15:14:00-07:00" },
   "summary": {
     "recap": "Onboarding revamp ships before the pricing refresh.",
     "decisions": [{ "id": "d0", "text": "Onboarding revamp ships first; pricing moves to Q1.", "at": 21000 }],

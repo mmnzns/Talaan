@@ -46,8 +46,29 @@ pub fn extract_json(text: &str) -> Option<&str> {
     (end > start).then(|| &text[start..=end])
 }
 
+/// The reply without `<think>…</think>` blocks, which reasoning models put before (or around) the answer.
+/// Braces inside them would otherwise be taken for the JSON. An unclosed block runs to the end of the reply.
+pub fn strip_reasoning(text: &str) -> String {
+    const OPEN: &str = "<think>";
+    const CLOSE: &str = "</think>";
+    // ASCII lowercasing keeps byte offsets, so positions found in `lower` cut `text` in the same places.
+    let lower = text.to_ascii_lowercase();
+    let mut out = String::with_capacity(text.len());
+    let mut at = 0;
+    while let Some(start) = lower[at..].find(OPEN).map(|i| at + i) {
+        out.push_str(&text[at..start]);
+        match lower[start..].find(CLOSE) {
+            Some(end) => at = start + end + CLOSE.len(),
+            None => return out,
+        }
+    }
+    out.push_str(&text[at..]);
+    out
+}
+
 pub fn parse_draft(text: &str) -> Result<Draft, String> {
-    let json = extract_json(text).ok_or("the reply had no JSON object")?;
+    let text = strip_reasoning(text);
+    let json = extract_json(&text).ok_or("the reply had no JSON object")?;
     let draft: Draft = serde_json::from_str(json).map_err(|e| format!("the reply wasn't valid JSON ({e})"))?;
     if draft.recap.trim().is_empty() {
         return Err("the reply had no recap".into());
@@ -141,6 +162,18 @@ mod tests {
         let reply = "Sure! Here it is:\n```json\n{\"title\":\"Q4 sync\",\"recap\":\"We met.\",\"decisions\":[],\"action_items\":[],\"open_questions\":[]}\n```\nHope that helps.";
         let d = parse_draft(reply).unwrap();
         assert_eq!(d.title, "Q4 sync");
+    }
+
+    #[test]
+    fn reasoning_blocks_are_ignored() {
+        let reply = "<think>The user wants {json}. Maybe {\"recap\": \"wrong\"}?</think>\n{\"title\":\"Q4 sync\",\"recap\":\"We met.\"}";
+        assert_eq!(parse_draft(reply).unwrap().recap, "We met.");
+        // Cut off mid-thought: there is no answer to find.
+        assert_eq!(parse_draft("<think>Let me write {\"recap\": \"x\"} and"), Err("the reply had no JSON object".into()));
+        // Two blocks, any case, and text that only mentions the tag.
+        let reply = "<THINK>{a}</THINK>{\"recap\":\"One.\"}<think>{b}</think>";
+        assert_eq!(parse_draft(reply).unwrap().recap, "One.");
+        assert_eq!(strip_reasoning("no tags {\"recap\":\"x\"}"), "no tags {\"recap\":\"x\"}");
     }
 
     #[test]

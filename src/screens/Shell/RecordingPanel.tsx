@@ -7,6 +7,8 @@ import { inTauri } from "../../lib/windows";
 import { invoke } from "@tauri-apps/api/core";
 import { Button, Sheet, useToast } from "../../ui";
 import { RecordingPopover } from "../Recording/RecordingPopover";
+import { usePlatform } from "../../lib/platform";
+import { useT } from "../../lib/i18n/I18nProvider";
 
 /** Lets screens inside the main window start a recording (e.g. the empty state's "Record a call"). */
 export const RecordingContext = createContext<{ start: () => void } | null>(null);
@@ -19,6 +21,8 @@ export const useStartRecording = () => useContext(RecordingContext)?.start;
 export function useRecording() {
   const rec = useRecorder(recorderClient);
   const toast = useToast();
+  const t = useT();
+  const platform = usePlatform();
   const [open, setOpen] = useState(false);
   const [micDenied, setMicDenied] = useState(false);
   const active = rec.state.state !== "idle";
@@ -59,7 +63,7 @@ export function useRecording() {
     try {
       const id = await recorderClient.stop();
       setOpen(false);
-      toast("Saved");
+      toast(t("shell.saved"));
       if (id) navigate(routes.meeting(id));
     } catch (e) {
       toast(describeError(e));
@@ -81,21 +85,21 @@ export function useRecording() {
             onDiscard={async () => {
               await recorderClient.discard();
               setOpen(false);
-              toast("Recording discarded");
+              toast(t("shell.discarded"));
             }}
             onOpenSettings={(pane) => recorderClient.openSettings(pane)}
             onDismissNotice={rec.clearNotice}
           />
         </div>
       )}
-      <Sheet open={micDenied} title="Microphone is off" onClose={() => setMicDenied(false)}>
+      <Sheet open={micDenied} title={t("shell.micOffTitle")} onClose={() => setMicDenied(false)}>
         <div className="flex flex-col gap-3 p-5">
-          <h2 className="m-0 font-display text-xl font-bold tracking-[-0.02em]">Talaan can’t use the microphone</h2>
+          <h2 className="m-0 font-display text-xl font-bold tracking-[-0.02em]">{t("shell.micOffHeading")}</h2>
           <p className="m-0 text-[13px] text-subtle">
-            Your side of the call won’t be recorded. Turn Talaan on in System Settings › Privacy &amp; Security › Microphone, or record only the other people for now.
+            {t("shell.micOffBody", { path: platform.micSettingsPath })}
           </p>
           <div className="flex flex-wrap justify-end gap-2">
-            <Button onClick={() => recorderClient.openSettings("microphone")}>Open System Settings</Button>
+            <Button onClick={() => recorderClient.openSettings("microphone")}>{platform.openSettings}</Button>
             <Button
               variant="primary"
               onClick={async () => {
@@ -103,7 +107,7 @@ export function useRecording() {
                 await begin();
               }}
             >
-              Record call audio only
+              {t("shell.recordCallOnly")}
             </Button>
           </div>
         </div>

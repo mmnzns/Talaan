@@ -1,6 +1,6 @@
 [package]
 name = "talaan"
-version = "1.0.0-dev"
+version = "1.0.0"
 description = "Bot-free meeting recorder"
 authors = ["Miguel Monzones"]
 license = "MIT"
@@ -46,6 +46,8 @@ whatlang = "0.18.0"
 symphonia = { version = "0.5.5", features = ["aac", "isomp4", "mp3", "aiff", "alac", "caf"] }
 talaan-llm-protocol = { path = "llm-protocol" }
 keyring = "3.6.3"
+rrule = "0.14.0"
+chrono-tz = "0.10.4"
 
 
 # Read the optimization guideline for more details: https://tauri.app/concept/size/#cargo-configuration
@@ -74,6 +76,33 @@ objc2-core-foundation = "0.3.2"
 objc2-foundation = "0.3.2"
 objc2-user-notifications = "0.3.2"
 objc2-event-kit = "0.3.2"
+
+[target.'cfg(target_os = "windows")'.dependencies]
+keyring = { version = "3.6.3", features = ["windows-native"] }
+# CPU for now; GPU (vulkan) after the W1 checkpoint, see "Later" in docs/plans/W0-W1-windows-build-and-recorder.md.
+whisper-rs = "0.16.0"
+wasapi = "0.26.0"
+winreg = "0.56.0"
+windows = { version = "0.62", features = [
+  "Win32_Foundation",
+  "Win32_Media_Audio",
+  "Win32_Media_Audio_Endpoints",
+  "Win32_Devices_FunctionDiscovery",
+  "Win32_Storage_Packaging_Appx",
+  "Win32_System_Com",
+  "Win32_System_Com_StructuredStorage",
+  "Win32_System_Diagnostics_ToolHelp",
+  "Win32_System_Variant",
+  "Win32_System_Performance",
+  "Win32_System_Power",
+  "Win32_System_Threading",
+  "Win32_UI_Accessibility",
+  "Win32_UI_Shell_PropertiesSystem",
+  "Win32_UI_WindowsAndMessaging",
+] }
+windows-core = "0.62"
+tauri-winrt-notification = "0.8"
+tauri-plugin-single-instance = "2"
 
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
 tauri-plugin-autostart = "2"

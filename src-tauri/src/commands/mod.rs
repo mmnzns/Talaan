@@ -73,4 +73,14 @@ mod tests {
         assert_eq!(resolve_data_dir(None, Some("/Users/a/Library/Application Support".into())), PathBuf::from("/Users/a/Library/Application Support/Talaan"));
         assert_eq!(resolve_data_dir(Some("  ".into()), Some("/d".into())), PathBuf::from("/d/Talaan"));
     }
+
+    #[cfg(windows)]
+    #[test]
+    fn default_is_the_roaming_appdata_folder_plus_talaan_on_windows() {
+        assert_eq!(
+            resolve_data_dir(None, Some(r"C:\Users\a\AppData\Roaming".into())),
+            PathBuf::from(r"C:\Users\a\AppData\Roaming\Talaan")
+        );
+        assert_eq!(resolve_data_dir(Some(r"D:\x".into()), Some(r"C:\Users\a\AppData\Roaming".into())), PathBuf::from(r"D:\x"));
+    }
 }

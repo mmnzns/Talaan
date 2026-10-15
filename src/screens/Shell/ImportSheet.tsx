@@ -4,6 +4,7 @@ import { describeError } from "../../data/errors";
 import { onEvent } from "../../data/tauri/invoke";
 import { navigate, routes } from "../../lib/router";
 import { inTauri } from "../../lib/windows";
+import { useT } from "../../lib/i18n/I18nProvider";
 import { Button, Label, Sheet } from "../../ui";
 
 interface Props {
@@ -19,6 +20,7 @@ type Phase = { kind: "idle" } | { kind: "working"; name: string; progress: numbe
 const fileName = (path: string) => path.split("/").pop() ?? path;
 
 export function ImportSheet({ open, dropped, onClose }: Props) {
+  const t = useT();
   const [phase, setPhase] = useState<Phase>({ kind: "idle" });
 
   useEffect(() => {
@@ -45,11 +47,11 @@ export function ImportSheet({ open, dropped, onClose }: Props) {
   }, [dropped]);
 
   const choose = async () => {
-    if (!inTauri()) return setPhase({ kind: "failed", message: "Importing works in the Talaan app." });
+    if (!inTauri()) return setPhase({ kind: "failed", message: t("shell.importOnlyApp") });
     const { invoke } = await import("@tauri-apps/api/core");
     const { open: openDialog } = await import("@tauri-apps/plugin-dialog");
     const extensions = await invoke<string[]>("import_extensions");
-    const path = await openDialog({ multiple: false, directory: false, filters: [{ name: "Audio", extensions }] });
+    const path = await openDialog({ multiple: false, directory: false, filters: [{ name: t("shell.importAudioFilter"), extensions }] });
     if (typeof path === "string") await start(path);
   };
 
@@ -59,28 +61,26 @@ export function ImportSheet({ open, dropped, onClose }: Props) {
   };
 
   return (
-    <Sheet open={open} title="Import audio" onClose={close}>
+    <Sheet open={open} title={t("shell.importTitle")} onClose={close}>
       <div className="flex flex-col gap-4 p-5">
         <div>
-          <h2 className="m-0 font-display text-xl font-bold tracking-[-0.02em]">Import audio</h2>
-          <p className="m-0 mt-1 text-[13px] text-subtle">
-            Drop a Voice Memo or a meeting recording. It becomes a meeting with a transcript and summary.
-          </p>
+          <h2 className="m-0 font-display text-xl font-bold tracking-[-0.02em]">{t("shell.importTitle")}</h2>
+          <p className="m-0 mt-1 text-[13px] text-subtle">{t("shell.importIntro")}</p>
         </div>
         <div className="grid place-items-center gap-2 rounded-card border border-dashed border-input bg-surface px-4 py-10 text-center">
           <FileAudio size={28} aria-hidden="true" className="text-subtle" />
           {phase.kind === "working" ? (
             <div className="flex w-64 flex-col gap-2" role="status">
-              <span className="truncate text-[13px] font-semibold">Reading {phase.name}…</span>
+              <span className="truncate text-[13px] font-semibold">{t("shell.importReading", { name: phase.name })}</span>
               <span className="h-[5px] overflow-hidden rounded-full bg-line">
                 <span className="block h-full bg-ink" style={{ width: `${Math.round(phase.progress * 100)}%` }} />
               </span>
             </div>
           ) : (
             <>
-              <span className="text-[13px] font-semibold">Drag an audio file here</span>
+              <span className="text-[13px] font-semibold">{t("shell.importDrag")}</span>
               <Label>.m4a · .mp3 · .wav · .aiff · .flac</Label>
-              <Button onClick={() => void choose()}>Choose file…</Button>
+              <Button onClick={() => void choose()}>{t("shell.importChoose")}</Button>
             </>
           )}
           {phase.kind === "failed" && (
@@ -89,11 +89,9 @@ export function ImportSheet({ open, dropped, onClose }: Props) {
             </span>
           )}
         </div>
-        <p className="m-0 text-xs text-subtle">
-          One track is labeled “Them” unless you split it by speaker later. The file stays on this computer.
-        </p>
+        <p className="m-0 text-xs text-subtle">{t("shell.importNote")}</p>
         <div className="flex justify-end">
-          <Button onClick={close}>{phase.kind === "working" ? "Hide" : "Cancel"}</Button>
+          <Button onClick={close}>{phase.kind === "working" ? t("shell.hide") : t("common.cancel")}</Button>
         </div>
       </div>
     </Sheet>

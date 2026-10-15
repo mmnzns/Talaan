@@ -140,6 +140,7 @@ pub struct Vad {
 impl Vad {
     pub fn load(model: &Path) -> Result<Self, String> {
         let mut p = whisper_rs::WhisperVadContextParams::new();
+        // More threads make VAD much slower: 16 threads measured 9-13 s vs 0.3-0.5 s.
         p.set_n_threads(4);
         p.set_use_gpu(false);
         let ctx = whisper_rs::WhisperVadContext::new(&model.to_string_lossy(), p).map_err(|e| format!("couldn't load voice detection: {e}"))?;

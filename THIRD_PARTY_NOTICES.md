@@ -14,6 +14,8 @@ Talaan uses the following libraries, fonts and models. Each is used under its ow
 | Fontsource (font packaging) | MIT | https://fontsource.org |
 | lucide-react (icons) | ISC | https://lucide.dev |
 | clsx, tailwind-merge | MIT | https://github.com/lukeed/clsx, https://github.com/dcastil/tailwind-merge |
+| tauri-plugin-single-instance | MIT / Apache-2.0 | https://github.com/tauri-apps/plugins-workspace |
+| tauri-winrt-notification (Windows toasts) | MIT / Apache-2.0 | https://github.com/tauri-apps/winrt-notification |
 | serde, serde_json | MIT / Apache-2.0 | https://serde.rs |
 | chrono | MIT / Apache-2.0 | https://github.com/chronotope/chrono |
 | dirs | MIT / Apache-2.0 | https://github.com/soc/dirs-rs |
@@ -44,6 +46,15 @@ Talaan uses the following libraries, fonts and models. Each is used under its ow
 | Symphonia (audio import) | MPL-2.0 | https://github.com/pdeljanov/Symphonia |
 | tauri-plugin-dialog, -opener, -updater, -autostart | MIT / Apache-2.0 | https://github.com/tauri-apps/plugins-workspace |
 | objc2-event-kit (macOS calendar) | Zlib / Apache-2.0 / MIT | https://github.com/madsmtm/objc2 |
+| wasapi (Windows system audio) | MIT | https://github.com/HEnquist/wasapi-rs |
+| winreg (Windows registry) | MIT | https://github.com/gentoo90/winreg-rs |
+| windows (Windows bindings) | MIT / Apache-2.0 | https://github.com/microsoft/windows-rs |
+| rrule (recurring events) | MIT / Apache-2.0 | https://github.com/fmeringdal/rust-rrule |
+| chrono-tz (time zones; includes the IANA tz database, public domain) | MIT / Apache-2.0 | https://github.com/chronotope/chrono-tz |
+| DirectML 1.15 (`DirectML.dll`, shipped in the Windows installer for ONNX Runtime) | Microsoft Software License Terms for DirectML (redistributable) | https://www.nuget.org/packages/Microsoft.AI.DirectML |
+| Microsoft Visual C++ Redistributable (`vcruntime140*.dll`, `msvcp140*.dll` in the Windows installer) | Microsoft Software License Terms (redistributable files of Visual Studio) | https://learn.microsoft.com/cpp/windows/redistributing-visual-cpp-files |
+| NSIS (the Windows installer stub) | zlib/libpng | https://nsis.sourceforge.io |
+| nsis_tauri_utils (Windows installer plugin) | MIT / Apache-2.0 | https://github.com/tauri-apps/nsis-tauri-utils |
 
 ## Models
 

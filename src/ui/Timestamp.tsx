@@ -1,5 +1,6 @@
 import type { Ms } from "../data/types";
 import { formatTime } from "../lib/format";
+import { useT } from "../lib/i18n/I18nProvider";
 import { cn } from "./cn";
 
 interface Props {
@@ -12,6 +13,7 @@ interface Props {
 
 /** A clickable mono time pill. Jumps to that moment in the transcript. */
 export function Timestamp({ at, onJump, active, className }: Props) {
+  const t = useT();
   const cls = cn(
     "flex-none rounded-md border border-edge bg-transparent px-1.5 py-0.5 font-mono text-[11px] leading-[14px] text-faint",
     onJump && "cursor-pointer hover:border-gold hover:bg-gold hover:text-on-gold",
@@ -19,7 +21,7 @@ export function Timestamp({ at, onJump, active, className }: Props) {
     className,
   );
   return onJump ? (
-    <button type="button" className={cls} onClick={() => onJump(at)} aria-label={`Jump to ${formatTime(at)}`}>
+    <button type="button" className={cls} onClick={() => onJump(at)} aria-label={t("kit.jumpTo", { time: formatTime(at) })}>
       {formatTime(at)}
     </button>
   ) : (

@@ -1,11 +1,13 @@
-import { Calendar, FolderOpen, MessageCircle, MoreHorizontal, Pin, Sparkles, Trash2, VolumeX, X } from "lucide-react";
+import { AudioLines, Calendar, FolderOpen, MessageCircle, MoreHorizontal, Pin, Sparkles, Trash2, VolumeX, X } from "lucide-react";
 import { useState } from "react";
-import { useFolders } from "../../data/hooks";
+import { useFolders, useSettings } from "../../data/hooks";
 import { useStore } from "../../data/StoreProvider";
 import type { Meeting } from "../../data/types";
 import { formatClock, formatDate, formatDuration } from "../../lib/format";
 import { navigate, routes } from "../../lib/router";
 import { Button, Chip, Field, Label, MenuItem, Popover, Select, Sheet, useToast } from "../../ui";
+import { useT } from "../../lib/i18n/I18nProvider";
+import { useLang } from "../../lib/i18n/I18nProvider";
 import { describeError } from "../../data/errors";
 
 interface Props {
@@ -19,9 +21,9 @@ interface Props {
   copied?: "text" | "email";
 }
 
-const languageName = (code: string) => {
+const languageName = (code: string, ui: string) => {
   try {
-    return new Intl.DisplayNames(["en"], { type: "language" }).of(code) ?? code;
+    return new Intl.DisplayNames([ui], { type: "language" }).of(code) ?? code;
   } catch {
     return code;
   }
@@ -30,11 +32,16 @@ const languageName = (code: string) => {
 export function MeetingHeader({ meeting, editing, canRevert, onToggleEdit, onRevert, onCopy, onExport, copied }: Props) {
   const store = useStore();
   const toast = useToast();
+  const t = useT();
+  const lang = useLang();
   const folders = useFolders();
   const [addingTag, setAddingTag] = useState(false);
   const [tagDraft, setTagDraft] = useState("");
   const [title, setTitle] = useState(meeting.title);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [retranscribing, setRetranscribing] = useState(false);
+  const { settings } = useSettings();
+  const speechModel = meeting.transcription && (settings?.speechModels.find((m) => m.id === meeting.transcription!.model)?.name ?? meeting.transcription.model);
 
   const ready = meeting.status === "ready";
 
@@ -45,10 +52,10 @@ export function MeetingHeader({ meeting, editing, canRevert, onToggleEdit, onRev
   };
 
   const commitTag = () => {
-    const t = tagDraft.trim().replace(/^#/, "");
+    const tag = tagDraft.trim().replace(/^#/, "");
     setAddingTag(false);
     setTagDraft("");
-    if (t && !meeting.tags.includes(t)) store.setTags(meeting.id, [...meeting.tags, t]);
+    if (tag && !meeting.tags.includes(tag)) store.setTags(meeting.id, [...meeting.tags, tag]);
   };
 
   return (
@@ -61,14 +68,14 @@ export function MeetingHeader({ meeting, editing, canRevert, onToggleEdit, onRev
               meeting.app !== "import" ? `${formatDate(meeting.startedAt)}, ${formatClock(meeting.startedAt)}` : undefined,
               meeting.appLabel,
               formatDuration(meeting.durationMs),
-              languageName(meeting.language),
-              meeting.hasAudio ? (meeting.pinned ? "audio kept" : meeting.audioKeptUntil ? `audio until ${formatDate(meeting.audioKeptUntil)}` : "audio kept") : "no audio kept",
+              languageName(meeting.language, lang),
+              meeting.hasAudio ? (meeting.pinned ? t("meeting.audioKept") : meeting.audioKeptUntil ? t("meeting.audioUntil", { date: formatDate(meeting.audioKeptUntil) }) : t("meeting.audioKept")) : t("meeting.noAudio"),
             ]
               .filter(Boolean)
               .join(" · ")}
           </Label>
           <input
-            aria-label="Meeting title"
+            aria-label={t("meeting.titleLabel")}
             value={title}
             onChange={(e) => setTitle(e.target.value)}
             onBlur={commitTitle}
@@ -83,26 +90,26 @@ export function MeetingHeader({ meeting, editing, canRevert, onToggleEdit, onRev
           />
           <div className="flex flex-wrap items-center gap-1.5">
             <Select
-              label="Folder"
+              label={t("meeting.folderLabel")}
               value={meeting.folderId ?? ""}
               onChange={(e) => store.moveToFolder(meeting.id, e.target.value || undefined)}
               className="h-6 rounded-full border border-line bg-surface py-0 pl-2 pr-6 font-mono text-[11px] text-subtle"
             >
-              <option value="">No folder</option>
+              <option value="">{t("meeting.noFolder")}</option>
               {folders.map((f) => (
                 <option key={f.id} value={f.id}>
                   {f.name}
                 </option>
               ))}
             </Select>
-            {meeting.tags.map((t) => (
-              <Chip key={t}>
-                #{t}
+            {meeting.tags.map((tag) => (
+              <Chip key={tag}>
+                #{tag}
                 <button
                   type="button"
-                  aria-label={`Remove tag ${t}`}
+                  aria-label={t("meeting.removeTag", { tag })}
                   className="-mr-1 grid cursor-pointer place-items-center border-0 bg-transparent p-0 text-subtle hover:text-ink"
-                  onClick={() => store.setTags(meeting.id, meeting.tags.filter((x) => x !== t))}
+                  onClick={() => store.setTags(meeting.id, meeting.tags.filter((x) => x !== tag))}
                 >
                   <X size={11} aria-hidden="true" />
                 </button>
@@ -110,9 +117,9 @@ export function MeetingHeader({ meeting, editing, canRevert, onToggleEdit, onRev
             ))}
             {addingTag ? (
               <Field
-                label="New tag"
+                label={t("meeting.newTag")}
                 autoFocus
-                placeholder="tag"
+                placeholder={t("meeting.tagPlaceholder")}
                 value={tagDraft}
                 onChange={(e) => setTagDraft(e.target.value)}
                 onBlur={commitTag}
@@ -127,24 +134,24 @@ export function MeetingHeader({ meeting, editing, canRevert, onToggleEdit, onRev
                 className="text-xs"
               />
             ) : (
-              <Chip onClick={() => setAddingTag(true)}>+ tag</Chip>
+              <Chip onClick={() => setAddingTag(true)}>{t("meeting.addTag")}</Chip>
             )}
           </div>
         </div>
 
         {ready && (
           <div className="flex flex-wrap items-center gap-2">
-            {editing && canRevert && <Button onClick={onRevert}>Revert to original</Button>}
+            {editing && canRevert && <Button onClick={onRevert}>{t("meeting.revert")}</Button>}
             <Button variant={editing ? "strong" : "default"} onClick={onToggleEdit}>
-              {editing ? "Done editing" : "Edit"}
+              {editing ? t("meeting.doneEditing") : t("meeting.edit")}
             </Button>
-            <Button onClick={onExport}>Export</Button>
+            <Button onClick={onExport}>{t("meeting.export")}</Button>
             <Button variant="primary" onClick={() => onCopy("text")}>
-              {copied === "text" ? "Copied" : "Copy as text"}
+              {copied === "text" ? t("meeting.copied") : t("meeting.copyText")}
             </Button>
             <Popover
               trigger={({ toggle }) => (
-                <Button size="icon" aria-label="More actions" onClick={toggle}>
+                <Button size="icon" aria-label={t("meeting.moreActions")} onClick={toggle}>
                   <MoreHorizontal size={16} aria-hidden="true" />
                 </Button>
               )}
@@ -157,7 +164,7 @@ export function MeetingHeader({ meeting, editing, canRevert, onToggleEdit, onRev
                       close();
                     }}
                   >
-                    {copied === "email" ? "Copied for email" : "Copy for email"}
+                    {copied === "email" ? t("meeting.copiedEmail") : t("meeting.copyEmail")}
                   </MenuItem>
                   <MenuItem
                     onClick={() => {
@@ -165,7 +172,7 @@ export function MeetingHeader({ meeting, editing, canRevert, onToggleEdit, onRev
                       close();
                     }}
                   >
-                    <MessageCircle size={14} aria-hidden="true" /> Ask about this meeting
+                    <MessageCircle size={14} aria-hidden="true" /> {t("meeting.askAbout")}
                   </MenuItem>
                   <MenuItem
                     disabled={!meeting.hasAudio}
@@ -174,7 +181,7 @@ export function MeetingHeader({ meeting, editing, canRevert, onToggleEdit, onRev
                       close();
                     }}
                   >
-                    <Pin size={14} aria-hidden="true" /> {meeting.pinned ? "Stop keeping audio" : "Keep audio"}
+                    <Pin size={14} aria-hidden="true" /> {meeting.pinned ? t("meeting.stopKeepAudio") : t("meeting.keepAudio")}
                   </MenuItem>
                   <MenuItem
                     disabled={meeting.transcript.length === 0}
@@ -183,19 +190,28 @@ export function MeetingHeader({ meeting, editing, canRevert, onToggleEdit, onRev
                       close();
                     }}
                   >
-                    <Sparkles size={14} aria-hidden="true" /> {meeting.summary ? "Write the summary again" : "Generate summary"}
+                    <Sparkles size={14} aria-hidden="true" /> {meeting.summary ? t("meeting.summaryAgain") : t("meeting.generateSummary")}
+                  </MenuItem>
+                  <MenuItem
+                    disabled={!meeting.hasAudio}
+                    onClick={() => {
+                      setRetranscribing(true);
+                      close();
+                    }}
+                  >
+                    <AudioLines size={14} aria-hidden="true" /> {t("meeting.retranscribeMenu")}
                   </MenuItem>
                   <MenuItem
                     disabled={!meeting.hasAudio || meeting.pinned}
                     onClick={() => {
                       store
                         .deleteAudio(meeting.id)
-                        .then(() => toast("Audio deleted. The transcript and summary stay."))
+                        .then(() => toast(t("meeting.audioDeleted")))
                         .catch((e) => toast(describeError(e)));
                       close();
                     }}
                   >
-                    <VolumeX size={14} aria-hidden="true" /> Delete audio now
+                    <VolumeX size={14} aria-hidden="true" /> {t("meeting.deleteAudio")}
                   </MenuItem>
                   <MenuItem
                     onClick={() => {
@@ -203,7 +219,7 @@ export function MeetingHeader({ meeting, editing, canRevert, onToggleEdit, onRev
                       close();
                     }}
                   >
-                    <FolderOpen size={14} aria-hidden="true" /> Open folder
+                    <FolderOpen size={14} aria-hidden="true" /> {t("meeting.openFolder")}
                   </MenuItem>
                   <MenuItem
                     className="text-danger"
@@ -212,8 +228,15 @@ export function MeetingHeader({ meeting, editing, canRevert, onToggleEdit, onRev
                       close();
                     }}
                   >
-                    <Trash2 size={14} aria-hidden="true" /> Delete meeting…
+                    <Trash2 size={14} aria-hidden="true" /> {t("meeting.deleteMenu")}
                   </MenuItem>
+                  {(speechModel || meeting.summary) && (
+                    <div className="mt-1 flex flex-col gap-1 border-t border-line px-2.5 pb-1 pt-2.5 text-xs text-subtle">
+                      <Label>{t("meeting.madeWith")}</Label>
+                      {speechModel && <span>{t("meeting.madeWithSpeech", { model: speechModel })}</span>}
+                      {meeting.summary && <span>{t("meeting.madeWithSummary", { engine: meeting.summary.engine })}</span>}
+                    </div>
+                  )}
                 </>
               )}
             </Popover>
@@ -224,20 +247,22 @@ export function MeetingHeader({ meeting, editing, canRevert, onToggleEdit, onRev
       {meeting.calendarEvent && (
         <div className="flex flex-wrap items-center gap-2 rounded-control border border-dashed border-line px-3 py-2">
           <Calendar size={15} aria-hidden="true" className="text-subtle" />
-          <Label>from calendar</Label>
+          <Label>{t("meeting.fromCalendar")}</Label>
           <span className="text-[13px] font-semibold">{meeting.calendarEvent.title}</span>
-          <span className="text-[13px] text-subtle">with {meeting.calendarEvent.attendees.join(", ")}</span>
+          <span className="text-[13px] text-subtle">{t("meeting.withAttendees", { names: meeting.calendarEvent.attendees.join(", ") })}</span>
         </div>
       )}
 
-      <Sheet open={confirmDelete} title="Delete meeting" onClose={() => setConfirmDelete(false)}>
+      <RetranscribeSheet meeting={meeting} open={retranscribing} onClose={() => setRetranscribing(false)} />
+
+      <Sheet open={confirmDelete} title={t("meeting.deleteTitle")} onClose={() => setConfirmDelete(false)}>
         <div className="flex flex-col gap-3 p-5">
-          <h2 className="m-0 font-display text-xl font-bold tracking-[-0.02em]">Delete “{meeting.title}”?</h2>
+          <h2 className="m-0 font-display text-xl font-bold tracking-[-0.02em]">{t("meeting.deleteQuestion", { title: meeting.title })}</h2>
           <p className="m-0 text-[13px] text-subtle">
-            This removes the transcript, summary and any audio from this computer. It can’t be undone.
+            {t("meeting.deleteBody")}
           </p>
           <div className="flex justify-end gap-2">
-            <Button onClick={() => setConfirmDelete(false)}>Cancel</Button>
+            <Button onClick={() => setConfirmDelete(false)}>{t("common.cancel")}</Button>
             <Button
               variant="danger"
               onClick={async () => {
@@ -246,11 +271,69 @@ export function MeetingHeader({ meeting, editing, canRevert, onToggleEdit, onRev
                 await store.deleteMeeting(meeting.id);
               }}
             >
-              Delete meeting
+              {t("meeting.deleteConfirm")}
             </Button>
           </div>
         </div>
       </Sheet>
     </header>
+  );
+}
+
+/** Transcribe again with another speech model: says what is replaced and what stays before it starts. */
+function RetranscribeSheet({ meeting, open, onClose }: { meeting: Meeting; open: boolean; onClose: () => void }) {
+  const t = useT();
+  const store = useStore();
+  const toast = useToast();
+  const { settings } = useSettings();
+  const ready = (settings?.speechModels ?? []).filter((m) => m.state === "downloaded" || m.state === "on_this_mac");
+  const used = meeting.transcription?.model;
+  const [choice, setChoice] = useState<string>();
+  const model = choice ?? ready.find((m) => m.id !== used)?.id ?? ready[0]?.id;
+  const edited = meeting.transcript.some((l) => l.edited);
+  const waits = meeting.transcriptOnly || settings?.summarizeAutomatically === false;
+
+  const start = async () => {
+    if (!model) return;
+    onClose();
+    try {
+      await store.retranscribe(meeting.id, model);
+    } catch (e) {
+      toast(describeError(e));
+    }
+  };
+
+  return (
+    <Sheet open={open} title={t("meeting.retranscribeTitle")} onClose={onClose}>
+      <div className="flex flex-col gap-3 p-5">
+        <h2 className="m-0 font-display text-xl font-bold tracking-[-0.02em]">{t("meeting.retranscribeTitle")}</h2>
+        <p className="m-0 text-[13px] text-subtle">{t("meeting.retranscribeBody")}</p>
+        {ready.length > 0 ? (
+          <Select label={t("meeting.retranscribeModel")} value={model} onChange={(e) => setChoice(e.target.value)}>
+            {ready.map((m) => (
+              <option key={m.id} value={m.id}>
+                {m.name}
+                {m.id === used ? t("meeting.retranscribeUsed") : ""}
+              </option>
+            ))}
+          </Select>
+        ) : (
+          <p className="m-0 text-[13px]">{t("meeting.retranscribeNoModel")}</p>
+        )}
+        <ul className="m-0 flex list-disc flex-col gap-1 pl-5 text-[13px]">
+          <li className={edited ? "font-semibold text-warn-fg" : undefined}>
+            {edited ? t("meeting.retranscribeEdits") : t("meeting.retranscribeReplaced")}
+          </li>
+          <li>{t("meeting.retranscribeNames")}</li>
+          <li>{waits ? t("meeting.retranscribeSummaryWaits") : t("meeting.retranscribeSummaryAgain")}</li>
+        </ul>
+        <div className="flex justify-end gap-2">
+          <Button onClick={onClose}>{t("common.cancel")}</Button>
+          <Button variant="primary" disabled={!model} onClick={start}>
+            {t("meeting.retranscribeTitle")}
+          </Button>
+        </div>
+      </div>
+    </Sheet>
   );
 }

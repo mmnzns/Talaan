@@ -2,6 +2,7 @@ import { MoreHorizontal } from "lucide-react";
 import { useState } from "react";
 import { useStore } from "../../data/StoreProvider";
 import type { Folder } from "../../data/types";
+import { useT } from "../../lib/i18n/I18nProvider";
 import { Chip, Field, MenuItem, Popover } from "../../ui";
 
 interface Props {
@@ -16,6 +17,7 @@ interface Props {
 
 export function FolderNav({ folders, tags, total, folderId, tag, onFolder, onTag }: Props) {
   const store = useStore();
+  const tr = useT();
   const [adding, setAdding] = useState(false);
   const [name, setName] = useState("");
   const [renaming, setRenaming] = useState<string>();
@@ -29,9 +31,9 @@ export function FolderNav({ folders, tags, total, folderId, tag, onFolder, onTag
 
   return (
     <div className="flex flex-col gap-2 border-b border-line px-[18px] pb-[18px] pt-2.5">
-      <div className="flex flex-wrap items-center gap-2" role="group" aria-label="Folders and tags">
+      <div className="flex flex-wrap items-center gap-2" role="group" aria-label={tr("shell.foldersAndTags")}>
         <Chip tone={!folderId && !tag ? "strong" : "default"} onClick={() => { onFolder(undefined); onTag(undefined); }} aria-pressed={!folderId && !tag}>
-          all · {total}
+          {tr("shell.all", { count: total })}
         </Chip>
         {folders.map((f) =>
           renaming === f.id ? (
@@ -69,15 +71,15 @@ export function FolderNav({ folders, tags, total, folderId, tag, onFolder, onTag
         ))}
         {!adding && (
           <Chip onClick={() => setAdding(true)} className="border-dashed">
-            + folder
+            {tr("shell.addFolder")}
           </Chip>
         )}
       </div>
       {adding && (
         <Field
-          label="Folder name"
+          label={tr("shell.folderName")}
           autoFocus
-          placeholder="Folder name"
+          placeholder={tr("shell.folderName")}
           value={name}
           onChange={(e) => setName(e.target.value)}
           onBlur={commit}
@@ -95,10 +97,11 @@ export function FolderNav({ folders, tags, total, folderId, tag, onFolder, onTag
 }
 
 function NameField({ initial, onDone }: { initial: string; onDone: (name?: string) => void }) {
+  const tr = useT();
   const [value, setValue] = useState(initial);
   return (
     <Field
-      label="Folder name"
+      label={tr("shell.folderName")}
       autoFocus
       value={value}
       onChange={(e) => setValue(e.target.value)}
@@ -113,6 +116,7 @@ function NameField({ initial, onDone }: { initial: string; onDone: (name?: strin
 
 /** Rename / Delete for one folder. Delete asks once more, in place. */
 function FolderMenu({ name, onRename, onDelete }: { name: string; onRename: () => void; onDelete: () => void }) {
+  const tr = useT();
   const [confirming, setConfirming] = useState(false);
   return (
     <Popover
@@ -120,7 +124,7 @@ function FolderMenu({ name, onRename, onDelete }: { name: string; onRename: () =
       trigger={({ toggle }) => (
         <button
           type="button"
-          aria-label={`${name} options`}
+          aria-label={tr("shell.folderOptions", { name })}
           onClick={() => {
             setConfirming(false);
             toggle();
@@ -134,7 +138,7 @@ function FolderMenu({ name, onRename, onDelete }: { name: string; onRename: () =
       {(close) =>
         confirming ? (
           <div className="flex flex-col gap-1.5 p-1">
-            <span className="text-[13px]">Delete “{name}”? Its meetings stay, just outside a folder.</span>
+            <span className="text-[13px]">{tr("shell.deleteFolderAsk", { name })}</span>
             <MenuItem
               className="font-semibold text-danger"
               onClick={() => {
@@ -142,7 +146,7 @@ function FolderMenu({ name, onRename, onDelete }: { name: string; onRename: () =
                 onDelete();
               }}
             >
-              Delete folder
+              {tr("shell.deleteFolder")}
             </MenuItem>
           </div>
         ) : (
@@ -153,10 +157,10 @@ function FolderMenu({ name, onRename, onDelete }: { name: string; onRename: () =
                 onRename();
               }}
             >
-              Rename
+              {tr("shell.rename")}
             </MenuItem>
             <MenuItem className="text-danger" onClick={() => setConfirming(true)}>
-              Delete…
+              {tr("shell.deleteMenu")}
             </MenuItem>
           </>
         )

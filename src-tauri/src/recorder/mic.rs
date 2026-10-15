@@ -33,7 +33,7 @@ pub fn input_devices() -> Vec<String> {
 fn open(feed: &SharedFeed, preferred: Option<&str>) -> Result<(Stream, String), String> {
     let host = cpal::default_host();
     let chosen = preferred.and_then(|want| host.input_devices().ok()?.find(|d| d.to_string() == want));
-    let device = chosen.or_else(|| host.default_input_device()).ok_or("No microphone found")?;
+    let device = chosen.or_else(|| host.default_input_device()).ok_or_else(|| crate::i18n::tr("recorder.no_mic_found"))?;
     let name = device.to_string();
     let supported = device.default_input_config().map_err(|e| e.to_string())?;
     let format = supported.sample_format();
@@ -167,5 +167,28 @@ mod tests {
         let id = e.stop(&storage, now()).unwrap();
         let path = storage.dir(&id).unwrap().join("me.wav");
         println!("wrote {} ({:?} ms), peak level {peak:.2}", path.display(), crate::recorder::wav::wav_duration_ms(&path));
+    }
+
+    /// The mic's buffer timestamps are on Talaan's host clock (within half a second of "now").
+    /// Run from src-tauri/ with a working mic: `cargo test mic_clock_smoke -- --ignored --nocapture`
+    #[test]
+    #[ignore]
+    fn mic_clock_smoke() {
+        let (producer, mut consumer) = crate::recorder::feed::feed();
+        let mut mic = MicSource::default();
+        mic.start(std::sync::Arc::new(std::sync::Mutex::new(producer))).unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(500));
+        let mut buf = vec![];
+        // The newest buffer: the first ones are the startup backlog, about the sleep's length old.
+        let mut newest = None;
+        while let Some(h) = consumer.pop(&mut buf) {
+            newest = Some(h);
+        }
+        let h = newest.expect("a mic buffer");
+        let now = crate::platform::host_now_ns();
+        mic.stop();
+        let diff = now.abs_diff(h.host_ns);
+        eprintln!("mic stamp {} · now {} · diff {} ms", h.host_ns, now, diff / 1_000_000);
+        assert!(diff < 200_000_000, "{diff}");
     }
 }

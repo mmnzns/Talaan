@@ -171,6 +171,37 @@ describe("TauriSettingsStore", () => {
     expect(invoke.mock.calls.filter((c) => c[0] === "models_list")).toHaveLength(2);
   });
 
+  it("connects a calendar address through Rust (secure key storage), never storing it in settings", async () => {
+    backend({});
+    const store = new TauriSettingsStore();
+    expect("calendarIcsUrl" in (await store.get())).toBe(false);
+    invoke.mockResolvedValueOnce(4);
+    expect(await store.connectCalendar("https://example.com/basic.ics")).toBe(4);
+    expect(invoke).toHaveBeenCalledWith("calendar_connect", { url: "https://example.com/basic.ics" });
+    const sets = invoke.mock.calls.filter((c) => c[0] === "settings_set");
+    const saved = sets[sets.length - 1][1] as { value: Record<string, unknown> };
+    expect(saved.value.calendarConnected).toBe(true);
+    expect(JSON.stringify(saved.value)).not.toContain("example.com");
+
+    invoke.mockRejectedValueOnce("The calendar address didn't work (HTTP 404). Copy it again from your calendar.");
+    await expect(store.connectCalendar("https://example.com/x")).rejects.toMatchObject({ message: "The calendar address didn't work (HTTP 404). Copy it again from your calendar." });
+
+    await store.disconnectCalendar();
+    expect(invoke).toHaveBeenCalledWith("calendar_disconnect", undefined);
+    expect((await store.get()).calendarConnected).toBe(false);
+  });
+
+  it("drops the old plain-text calendar address and never writes it back", async () => {
+    backend({ calendarConnected: true, calendarIcsUrl: "https://example.com/secret.ics" });
+    const store = new TauriSettingsStore();
+    expect("calendarIcsUrl" in (await store.get())).toBe(false);
+    await store.update({ theme: "dark" });
+    const sets = invoke.mock.calls.filter((c) => c[0] === "settings_set");
+    const saved = sets[sets.length - 1][1] as { value: Record<string, unknown> };
+    expect(JSON.stringify(saved.value)).not.toContain("secret.ics");
+    expect(saved.value.calendarConnected).toBe(true);
+  });
+
   it("deleting all data calls the backend", async () => {
     invoke.mockResolvedValue(undefined);
     await new TauriSettingsStore().deleteAllData();

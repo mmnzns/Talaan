@@ -1,4 +1,5 @@
 import type { Ms } from "../data/types";
+import { currentLocale, t } from "./i18n";
 
 /** 754000 -> "12:34"; 3_725_000 -> "1:02:05" */
 export function formatTime(ms: Ms): string {
@@ -27,24 +28,24 @@ export function dayGroup(iso: string, now: Date = new Date()): DayGroup {
   const d = new Date(iso);
   const startOf = (x: Date) => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
   const diffDays = Math.round((startOf(now) - startOf(d)) / 86_400_000);
-  if (diffDays === 0) return { key: "today", label: "today" };
-  if (diffDays === 1) return { key: "yesterday", label: "yesterday" };
-  const label = d.toLocaleDateString("en-US", { month: "short", day: "numeric" }).toLowerCase();
+  if (diffDays === 0) return { key: "today", label: t("common.today") };
+  if (diffDays === 1) return { key: "yesterday", label: t("common.yesterday") };
+  const label = d.toLocaleDateString(currentLocale(), { month: "short", day: "numeric" }).toLowerCase();
   return { key: label, label };
 }
 
 /** The big day number and short weekday shown beside a day's meetings: { day: "14", weekday: "tue" }. */
 export function dayMark(iso: string): { day: string; weekday: string } {
   const d = new Date(iso);
-  return { day: String(d.getDate()), weekday: d.toLocaleDateString("en-US", { weekday: "short" }).toLowerCase() };
+  return { day: String(d.getDate()), weekday: d.toLocaleDateString(currentLocale(), { weekday: "short" }).toLowerCase() };
 }
 
 export function formatClock(iso: string): string {
-  return new Date(iso).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
+  return new Date(iso).toLocaleTimeString(currentLocale(), { hour: "numeric", minute: "2-digit" });
 }
 
 export function formatDate(iso: string): string {
-  return new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric" });
+  return new Date(iso).toLocaleDateString(currentLocale(), { month: "short", day: "numeric" });
 }
 
 /** 1_200_000_000 -> "1.2 GB"; 45_000 -> "45 KB" */

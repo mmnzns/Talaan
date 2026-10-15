@@ -20,6 +20,19 @@ pub enum DownloadError {
     Io(String),
 }
 
+impl DownloadError {
+    /// The warning the app shows. `Display` stays English for logs.
+    pub fn user_message(&self) -> String {
+        use crate::i18n::{tr, tr_err, tr_with};
+        match self {
+            DownloadError::Cancelled => tr("error.cancelled"),
+            DownloadError::Network(name, e) => tr_with("download.network", &[("name", name), ("error", e)]),
+            DownloadError::Corrupt(name) => tr_with("download.corrupt", &[("name", name)]),
+            DownloadError::Io(e) => tr_err("download.save_failed", e),
+        }
+    }
+}
+
 impl From<std::io::Error> for DownloadError {
     fn from(e: std::io::Error) -> Self {
         DownloadError::Io(e.to_string())

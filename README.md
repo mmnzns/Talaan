@@ -2,11 +2,11 @@
 
 # Talaan
 
-**Meeting notes that stay on your computer.** Talaan records both sides of any call (your mic and the call's audio), then writes the transcript and a summary with decisions and action items. No bot joins your meeting, and it works with any app: Zoom, Google Meet, Teams, Slack huddles, FaceTime, Discord, WhatsApp.
+**Meeting notes that stay on your computer.** Talaan records both sides of any call (your mic and the call's audio), then writes the transcript and a summary with decisions and action items. No bot joins your meeting, and it works with any app: Zoom, Google Meet, Teams, Slack huddles, FaceTime (Mac), Discord, WhatsApp.
 
 *Talaan* is Tagalog for "record". The logo is "ta" in Baybayin, the native Filipino script.
 
-**Status:** v1.0 in final testing. macOS 14.4 or later on Apple silicon. Windows comes after v1.0.
+**Status:** v1.0 in final testing. Mac (macOS 14.4 or later, Apple silicon) and Windows (Windows 10 version 2004 or later, or Windows 11, on a 64-bit Intel or AMD PC).
 
 ## What it does
 
@@ -26,17 +26,19 @@ Everything runs on your computer by default: speech recognition, speaker separat
 | Transcript text | Only if you set Summary AI to your own key (Claude, OpenAI, Gemini, any OpenAI-compatible service). Never audio. |
 | Summary (and transcript if you tick it) | Only when you click Export › Notion. |
 | The latest version number from GitHub | At launch, if "Check for updates automatically" is on. |
+| Your calendar (Windows) | Downloaded from the private iCal address you paste, when a recording starts (at most every 15 minutes). Nothing is sent. |
 | Usage data, analytics | Never collected. |
 
-Audio is kept 7 days by default (1 day to forever, or not at all), then deleted; pin a meeting to keep its audio. Meetings are plain files in `~/Library/Application Support/Talaan`, readable without the app. Settings › Privacy › Delete everything removes it all, including models and keys.
+Audio is kept 7 days by default (1 day to forever, or not at all), then deleted; pin a meeting to keep its audio. Meetings are plain files, readable without the app: `~/Library/Application Support/Talaan` on the Mac, `%APPDATA%\Talaan` on Windows. Settings › Privacy › Delete everything removes it all, including models and keys.
 
 ## Install
 
-1. Download the `.dmg` from [Releases](https://github.com/mmnzns/Talaan/releases/latest), open it, drag Talaan to Applications.
-2. The first time, macOS says it can't check the app (Talaan isn't notarized; it's free and signed with its own certificate). Right-click Talaan › **Open**, or open it once, then System Settings › Privacy & Security › **Open Anyway**. Only once.
-3. Follow the setup: allow the microphone and system audio, pick a speech model, choose how summaries are written.
+Download from [Releases](https://github.com/mmnzns/Talaan/releases/latest). Step by step: [docs/INSTALL.md](docs/INSTALL.md).
 
-Updates install from Settings › General (or the "update ready" chip) and keep your permissions, meetings and settings.
+- **Windows:** run `Talaan_<version>_x64-setup.exe`. It installs for your account only, with no administrator password. Windows SmartScreen says "Windows protected your PC" the first time: click **More info**, then **Run anyway**. Talaan isn't signed with a paid certificate; it's free, and built from this source code.
+- **Mac:** open the `.dmg` and drag Talaan to Applications. macOS blocks it twice (the `.dmg`, then the app): click **Done**, then **System Settings › Privacy & Security › Open Anyway**. Only once.
+
+Then follow the setup: allow the microphone (and system audio on the Mac), pick a speech model, choose how summaries are written. Updates install from Settings › General and keep your meetings and settings.
 
 ## Models
 
@@ -44,8 +46,8 @@ Downloaded on demand, checked by checksum, kept on your computer. Licenses in [T
 
 | Job | Model | Size |
 |---|---|---|
-| Speech (recommended) | Whisper Large Turbo (OpenAI) | 575 MB |
-| Speech (fastest, 25 European languages) | Parakeet v3 (NVIDIA) | 671 MB |
+| Speech (recommended on the Mac) | Whisper Large Turbo (OpenAI) | 575 MB |
+| Speech (fastest; recommended on Windows, 25 European languages) | Parakeet v3 (NVIDIA) | 671 MB |
 | Speech (light) | Whisper Small (OpenAI) | 488 MB |
 | Summaries | Qwen3.5 4B (recommended) or 9B | 2.7 / 5.7 GB |
 | Speaker separation (optional) | Nemotron 3 Diarization (NVIDIA) | 401 MB |
@@ -55,7 +57,8 @@ Already have Ollama or LM Studio? Point Summary AI at it instead.
 
 ## Build from source
 
-Requires Rust, Node 22 and the Xcode Command Line Tools.
+- Mac: requires Rust, Node 22 and the Xcode Command Line Tools.
+- Windows: requires Rust (`x86_64-pc-windows-msvc`), Node 22, Visual Studio Build Tools with C++, CMake and LLVM (`LIBCLANG_PATH` set to its `bin`).
 
 ```bash
 npm install
@@ -64,7 +67,7 @@ npm run tauri dev
 
 Tests: `npm test` and `cargo test --manifest-path src-tauri/Cargo.toml --workspace`. `npm run dev` shows the UI in a browser with sample data.
 
-Permissions (microphone, system audio, calendar, browser automation) are tied to the app's signature, so test them in a signed build: `scripts/build-signed-debug.sh`. Releases: push a `v*` tag (see `.github/workflows/release.yml`), or `scripts/release-local.sh`.
+Permissions (microphone, system audio, calendar, browser automation) are tied to the app's signature, so test them in a signed build: `scripts/build-signed-debug.sh`. Releases: push a `v*` tag: CI builds Windows (`scripts/release-windows.ps1`) and drafts the release; build the Mac side with `scripts/release-local.sh`, then `scripts/upload-mac-release.sh <tag>`.
 
 ## Support
 

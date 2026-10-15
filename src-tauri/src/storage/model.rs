@@ -137,8 +137,18 @@ pub struct MeetingFile {
     /// Why there is no summary (meeting is `ready`, transcript-only): no engine set up, or the AI failed.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub summary_error: Option<ProcessingError>,
+    /// Keep this meeting transcript-only until the user asks for a summary (set from the recording controls).
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub transcript_only: bool,
+    /// "Transcribe again" with this speech model; cleared once the new transcript is saved.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub retranscribe_model: Option<String>,
     #[serde(flatten)]
     pub extra: Map<String, Value>,
+}
+
+fn is_false(b: &bool) -> bool {
+    !*b
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
@@ -204,6 +214,11 @@ pub struct Meeting {
     /// Why there is no summary yet.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub summary_error: Option<ProcessingError>,
+    /// How the transcript was made (the speech model), once there is one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub transcription: Option<TranscriptionInfo>,
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub transcript_only: bool,
 }
 
 #[cfg(test)]

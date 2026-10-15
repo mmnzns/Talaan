@@ -46,6 +46,11 @@ export class MockSettingsStore implements SettingsStore {
     this.emit();
   }
 
+  /** The settings right now, for other mock stores (no copy; don't change it). */
+  current(): Settings {
+    return this.state;
+  }
+
   async get(): Promise<Settings> {
     return structuredClone(this.state);
   }
@@ -137,6 +142,17 @@ export class MockSettingsStore implements SettingsStore {
     return "allowed" as const;
   }
 
+  async connectCalendar(url: string) {
+    await sleep(600);
+    if (!/^(https?|webcals?):\/\//i.test(url.trim())) throw new Error("That doesn't look like a calendar address. Copy the whole address, starting with https://.");
+    await this.update({ calendarConnected: true });
+    return 7;
+  }
+
+  async disconnectCalendar() {
+    await this.update({ calendarConnected: false });
+  }
+
   async deleteModel(id: string): Promise<void> {
     this.setModel(id, { state: "not_downloaded", progress: undefined });
   }
@@ -162,6 +178,8 @@ export class MockSettingsStore implements SettingsStore {
   async dataInfo() {
     return { path: "~/Library/Application Support/Talaan", bytes: 1_200_000_000 };
   }
+
+  async revealData(): Promise<void> {}
 
   async deleteAllData(): Promise<void> {
     await sleep(400);

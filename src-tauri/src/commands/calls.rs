@@ -3,7 +3,7 @@
 
 use super::recorder::{is_recording, start_recording, stop_recording};
 use super::{AppState, CmdResult};
-use crate::calls::apps::{identify, CALL_APPS};
+use crate::calls::apps::{call_app_ids, CALL_APPS};
 use crate::calls::rules::{Action, Detector, Rule, Settings, COUNTDOWN_MS};
 use crate::calls::tabs::{browser_for, classify, BrowserCall, Family, Tabs};
 use serde::Serialize;
@@ -74,8 +74,7 @@ fn note_access(name: &'static str, tabs: &Tabs) {
 
 /// With tab detection on, turns the "browser" entry into the call it is, drops it when no tab is a call, or
 /// leaves it (Ask) when Talaan can't tell.
-#[cfg(target_os = "macos")]
-fn resolve_browsers(users: &[crate::platform::macos::mic_users::MicUser], apps: &mut Vec<&str>, cache: &mut TabCache) {
+fn resolve_browsers(users: &[crate::platform::mic_users::MicUser], apps: &mut Vec<&str>, cache: &mut TabCache) {
     if !apps.contains(&"browser") {
         return;
     }
@@ -86,7 +85,7 @@ fn resolve_browsers(users: &[crate::platform::macos::mic_users::MicUser], apps: 
         .iter()
         .map(|(app, name, family)| {
             let fresh = cache.by_app.get(app).filter(|(t, _)| t.elapsed() < TAB_CACHE).map(|(_, r)| r.clone());
-            let r = fresh.unwrap_or_else(|| crate::platform::macos::browser_tabs::tab_urls(app, *family));
+            let r = fresh.unwrap_or_else(|| crate::platform::browser_tabs::tab_urls(app, *family));
             note_access(name, &r);
             cache.by_app.insert(app, (Instant::now(), r.clone()));
             r
@@ -140,7 +139,7 @@ fn show_prompt(app: &AppHandle, prompt: Prompt) {
         },
     };
     let _ = window.set_size(tauri::LogicalSize::new(w, h));
-    super::tray::place_under_icon(&window, w);
+    super::tray::place_near_icon_window(&window, (w, h), None);
     let _ = window.show();
     let _ = app.emit(PROMPT_EVENT, Some(prompt));
 }
@@ -183,7 +182,6 @@ fn run(app: &AppHandle, action: Action) {
 
 pub fn setup(app: &AppHandle) {
     app.manage(CallsState { detector: Mutex::new(Detector::default()), prompt: Mutex::new(None) });
-    #[cfg(target_os = "macos")]
     {
         let app = app.clone();
         std::thread::Builder::new()
@@ -196,16 +194,14 @@ pub fn setup(app: &AppHandle) {
                     let settings = app.state::<AppState>().lock().settings_get().ok().flatten().unwrap_or(Value::Null);
                     let (enabled, rules, ignored) = rules_from(&settings);
                     #[cfg_attr(not(debug_assertions), allow(unused_mut))] // only the debug hook below adds to it
-                    let mut users = crate::platform::macos::mic_users::mic_users();
+                    let mut users = crate::platform::mic_users::mic_users();
                     // Debug builds: `dev-mic-users.txt` in the data folder adds pretend mic users (one bundle id
                     // per line), so the rules can be exercised end to end without a real call.
                     #[cfg(debug_assertions)]
                     if let Ok(fake) = std::fs::read_to_string(app.state::<AppState>().lock().root().join("dev-mic-users.txt")) {
-                        users.extend(fake.lines().filter(|l| !l.trim().is_empty()).map(|b| crate::platform::macos::mic_users::MicUser { pid: 0, bundle_id: b.trim().into(), path: String::new() }));
+                        users.extend(fake.lines().filter(|l| !l.trim().is_empty()).map(|b| crate::platform::mic_users::MicUser { pid: 0, bundle_id: b.trim().into(), path: String::new() }));
                     }
-                    let mut apps: Vec<&str> = users.iter().filter_map(|u| identify(&u.bundle_id, &u.path, &ignored).map(|(id, _)| id)).collect();
-                    apps.sort();
-                    apps.dedup();
+                    let mut apps = call_app_ids(users.iter().map(|u| (u.bundle_id.as_str(), u.path.as_str())), &ignored);
                     if settings["tabDetection"].as_bool().unwrap_or(false) {
                         resolve_browsers(&users, &mut apps, &mut tab_cache);
                     }
@@ -237,20 +233,70 @@ pub struct BrowserStatus {
     state: &'static str,
 }
 
-/// The browsers tab detection works with, and whether Talaan may read their tabs (as last seen; macOS asks
-/// the first time a call happens in each one).
-#[tauri::command]
-pub fn browsers_status() -> Vec<BrowserStatus> {
-    let seen = browser_access();
+/// True when any of the candidate paths exists.
+#[cfg_attr(not(target_os = "windows"), allow(dead_code))]
+fn installed_from(candidates: &[std::path::PathBuf], exists: impl Fn(&std::path::Path) -> bool) -> bool {
+    candidates.iter().any(|c| exists(c))
+}
+
+/// (name, installed) for each browser Settings lists.
+#[cfg(not(target_os = "windows"))]
+fn installed_browsers() -> Vec<(&'static str, bool)> {
     let home = dirs::home_dir().unwrap_or_default();
     [("Chrome", "Google Chrome.app"), ("Safari", "Safari.app"), ("Arc", "Arc.app"), ("Edge", "Microsoft Edge.app"), ("Brave", "Brave Browser.app")]
         .into_iter()
         .map(|(name, bundle)| {
             let installed = name == "Safari" || std::path::Path::new("/Applications").join(bundle).exists() || home.join("Applications").join(bundle).exists();
-            let state = seen.iter().find(|(n, _)| *n == name).map(|(_, s)| *s).unwrap_or(if installed { "not_asked" } else { "not_installed" });
-            BrowserStatus { name, state }
+            (name, installed)
         })
         .collect()
+}
+
+/// Windows: each exe under Program Files, Program Files (x86) or %LOCALAPPDATA%; Arc is a packaged app.
+#[cfg(target_os = "windows")]
+fn installed_browsers() -> Vec<(&'static str, bool)> {
+    use std::path::PathBuf;
+    let roots: Vec<PathBuf> = ["ProgramFiles", "ProgramFiles(x86)", "LOCALAPPDATA"].iter().filter_map(|v| std::env::var_os(v)).map(PathBuf::from).collect();
+    let under = |rel: &str| -> Vec<PathBuf> { roots.iter().map(|r| r.join(rel)).collect() };
+    let arc = std::env::var_os("LOCALAPPDATA")
+        .and_then(|l| std::fs::read_dir(PathBuf::from(l).join("Packages")).ok())
+        .map(|d| d.filter_map(Result::ok).any(|e| e.file_name().to_string_lossy().starts_with("TheBrowserCompany.Arc_")))
+        .unwrap_or(false);
+    let exists = |p: &std::path::Path| p.exists();
+    vec![
+        ("Chrome", installed_from(&under(r"Google\Chrome\Application\chrome.exe"), exists)),
+        ("Arc", arc),
+        ("Edge", installed_from(&under(r"Microsoft\Edge\Application\msedge.exe"), exists)),
+        ("Brave", installed_from(&under(r"BraveSoftware\Brave-Browser\Application\brave.exe"), exists)),
+        ("Opera", installed_from(&under(r"Programs\Opera\opera.exe"), exists)),
+        ("Vivaldi", installed_from(&under(r"Vivaldi\Application\vivaldi.exe"), exists)),
+        ("Comet", installed_from(&under(r"Perplexity\Comet\Application\comet.exe"), exists)),
+    ]
+}
+
+/// The browsers tab detection works with, and whether Talaan may read their tabs (as last seen; macOS asks
+/// the first time a call happens in each one).
+#[tauri::command]
+pub fn browsers_status() -> Vec<BrowserStatus> {
+    let seen = browser_access();
+    installed_browsers()
+        .into_iter()
+        .map(|(name, installed)| {
+            let last = seen.iter().find(|(n, _)| *n == name).map(|(_, s)| *s);
+            BrowserStatus { name, state: browser_state(last, installed, cfg!(not(target_os = "windows"))) }
+        })
+        .collect()
+}
+
+/// A browser's state for Settings: the last answer seen, else "not_asked" where the system asks (macOS
+/// Automation), or "allowed" where there's no permission at all (Windows reads the address bar directly).
+fn browser_state(last: Option<&'static str>, installed: bool, needs_permission: bool) -> &'static str {
+    match last {
+        Some(s) => s,
+        None if !installed => "not_installed",
+        None if needs_permission => "not_asked",
+        None => "allowed",
+    }
 }
 
 /// What the prompt window should show right now (it asks when it first loads).
@@ -300,6 +346,28 @@ pub fn calls_hide(app: AppHandle) {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn a_browser_is_installed_when_any_candidate_exists() {
+        use std::path::{Path, PathBuf};
+        let found = PathBuf::from(r"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe");
+        let cands = [PathBuf::from(r"C:\Program Files\Google\Chrome\Application\chrome.exe"), found.clone()];
+        assert!(installed_from(&cands, |p: &Path| p == found));
+        assert!(!installed_from(&cands, |_| false));
+        assert!(!installed_from(&[], |_| true));
+    }
+
+    #[test]
+    fn browser_states_follow_the_platform() {
+        // macOS: the last answer, else "asks at the first call".
+        assert_eq!(browser_state(Some("denied"), true, true), "denied");
+        assert_eq!(browser_state(None, true, true), "not_asked");
+        assert_eq!(browser_state(None, false, true), "not_installed");
+        // Windows: nothing to ask, so an installed browser is ready.
+        assert_eq!(browser_state(None, true, false), "allowed");
+        assert_eq!(browser_state(None, false, false), "not_installed");
+        assert_eq!(browser_state(Some("allowed"), true, false), "allowed");
+    }
 
     #[test]
     fn settings_become_rules() {

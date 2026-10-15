@@ -2,7 +2,7 @@
 
 use super::{notify, AppState, MEETINGS_CHANGED};
 use crate::calendar::{pick, EARLY_MS};
-use crate::platform::macos::calendar::{self as system, Access};
+use crate::platform::calendar::{self as system, Access};
 use crate::storage::model::CalendarEvent;
 use tauri::{AppHandle, Manager};
 
@@ -23,6 +23,51 @@ pub fn calendar_access() -> &'static str {
 #[tauri::command]
 pub async fn calendar_request() -> &'static str {
     tauri::async_runtime::spawn_blocking(|| name(system::request())).await.unwrap_or("denied")
+}
+
+/// Startup, before `sync_source`: deletes the plain-text calendar address that Windows test builds kept in
+/// settings.json. Windows moves it into secure key storage when no address is saved there yet (the calendar stays
+/// connected), and turns the calendar off if that fails. Mac builds never wrote it: it's just dropped.
+pub fn remove_legacy_address(store: &mut crate::storage::Storage) {
+    #[cfg(target_os = "windows")]
+    let keep = |address: &str| {
+        crate::keys::get(crate::keys::CALENDAR_ICS).is_some()
+            || crate::calendar::fetch::normalize_url(address).is_ok_and(|url| crate::keys::set(crate::keys::CALENDAR_ICS, &url).is_ok())
+    };
+    #[cfg(not(target_os = "windows"))]
+    let keep = |_: &str| true;
+    if let Err(e) = store.remove_legacy_calendar_address(keep) {
+        eprintln!("talaan: couldn't remove the old calendar address from settings: {e}");
+    }
+}
+
+/// Windows: hands the saved calendar address (secure key storage) to the platform, at startup and whenever
+/// settings change.
+#[cfg(target_os = "windows")]
+pub fn sync_source(_app: &AppHandle) {
+    system::set_source(crate::keys::get(crate::keys::CALENDAR_ICS));
+}
+
+/// Windows: downloads a calendar address and, if it works, saves it in secure key storage (never in settings) and
+/// starts using it. Returns the number of events in the next 7 days. The frontend then sets `calendarConnected`.
+#[cfg(target_os = "windows")]
+#[tauri::command]
+pub async fn calendar_connect(url: String) -> Result<usize, String> {
+    let url = crate::calendar::fetch::normalize_url(&url)?;
+    let checked = url.clone();
+    let n = tauri::async_runtime::spawn_blocking(move || system::test_address(&checked)).await.map_err(|e| e.to_string())??;
+    crate::keys::set(crate::keys::CALENDAR_ICS, &url)?;
+    system::set_source(Some(url));
+    Ok(n)
+}
+
+/// Windows: forgets the calendar address. The frontend then clears `calendarConnected`.
+#[cfg(target_os = "windows")]
+#[tauri::command]
+pub fn calendar_disconnect() -> Result<(), String> {
+    crate::keys::clear(crate::keys::CALENDAR_ICS)?;
+    system::set_source(None);
+    Ok(())
 }
 
 fn enabled(app: &AppHandle) -> bool {
@@ -46,6 +91,15 @@ pub fn link_soon(app: &AppHandle, meeting_id: &str) {
         let Ok(start) = chrono::DateTime::parse_from_rfc3339(&file.started_at) else { return };
         let at = start.timestamp_millis();
         let events = system::events(at - EARLY_MS, at + EARLY_MS);
+        // Windows: when the calendar download just failed (a flaky network at the start of a call), try once more
+        // after the retry interval, on this same background thread.
+        #[cfg(target_os = "windows")]
+        let events = if pick(&events, at).is_none() && system::last_download_failed() {
+            std::thread::sleep(std::time::Duration::from_millis(crate::calendar::fetch::RETRY_MS as u64));
+            system::events(at - EARLY_MS, at + EARLY_MS)
+        } else {
+            events
+        };
         let Some(e) = pick(&events, at) else { return };
         let (title, attendees) = (e.title.trim().to_string(), e.attendees.clone());
         let saved = storage.lock().update_meeting_file(&id, |f| {

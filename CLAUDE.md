@@ -6,7 +6,7 @@
 
 A bot-free meeting recorder. It records the mic and system audio as two tracks, so no bot joins the call and it works with any app (Zoom, Meet, Teams, Slack huddles, FaceTime, browser calls). When the call ends: a local transcript labeled Me / Them (plus named speakers within Them), then a summary with action items, saved to an in-app meeting history. Fully offline by default; BYOK cloud summaries are optional and send transcript text only, never audio.
 
-Mac first (Apple silicon, built on Miguel's MacBook). Windows port is v1.1, built on the PC from this codebase.
+v1.0 ships Mac (Apple silicon, built on Miguel's MacBook) and Windows (x64, built on the PC and on CI) together, from this codebase.
 
 ## Build rules (follow exactly)
 
@@ -23,7 +23,7 @@ Mac first (Apple silicon, built on Miguel's MacBook). Windows port is v1.1, buil
 - Milestones M0 to M10 in order, continuously. At the start of each, write its task plan in `docs/plans/` (superpowers:writing-plans), then execute with tests and a commit per task.
 - Stop only at 🛑 checkpoints: **M1** (UI review), **M3** (real call test), **M5** (first real summary), **M8** (named speakers + Ask).
 - TDD where there's logic: transcript merge, echo dedupe, retention, chunking, call rules, summary parsing, storage. UI and native audio get manual checks.
-- Internal version `1.0.0-dev`. No tags or GitHub Releases until the v1.0 release gate passes.
+- Version `1.0.0` (bumped 2026-10-15, ready to tag). Miguel approved releasing v1.0.0 from the Mac session: tag `v1.0.0` on main, let CI draft the release with Windows, then add the Mac build (docs/TESTING.md, "Before publishing"). Later releases: bump, tag, same flow.
 - Verify, don't assume: macOS API availability, model licenses, model folder paths and sizes. Note findings in the Build Log.
 - Ask before pushing to GitHub.
 - **Never link llama.cpp into the main app.** It lives in the `talaan-llm` helper because whisper.cpp and llama.cpp each bundle ggml (see docs/plans/M5-summarizer.md).
@@ -36,7 +36,8 @@ Mac first (Apple silicon, built on Miguel's MacBook). Windows port is v1.1, buil
 ## Architecture
 
 - Tauri 2. Rust backend in focused modules (storage, recorder, transcriber, summarizer, call detection) behind Tauri commands. React + TypeScript + Vite + Tailwind 4 frontend talks only to those commands.
-- **Platform folders:** all OS-specific code lives in `src-tauri/src/platform/macos/`. `platform/mod.rs` re-exports the active platform; the Windows port adds `platform/windows/` plus one `cfg` line, without touching Mac code. Frontend platform differences follow the same rule.
+- **Platform facade:** OS-specific code lives in `src-tauri/src/platform/macos/` and `platform/windows/`, which expose the same items; `platform/mod.rs` re-exports the one being built, so callers say `crate::platform::…`. Where a flow differs, shared files also carry `cfg(target_os = …)` blocks or `cfg!(windows)` values (lib.rs, commands/calendar.rs, calls.rs, mod.rs, recorder.rs, settings.rs, tray.rs, summarizer/local.rs, the Whisper thread count in transcriber/engine.rs); the Windows port touched those shared files, so check both platforms when changing them. Frontend: `src/lib/platform.ts` (`onWindows`, and `usePlatform()` for the words that differ).
+- **Languages:** the UI is in English, French (Canadian) and Spanish: `src/lib/i18n` for the screens, `src-tauri/src/i18n.rs` (`tr`, `tr_with`, `tr_err`) for what Rust shows (tray, notifications, errors). Rules and what stays English: `docs/I18N.md`.
 - Frontend data comes from one `MeetingStore` interface (mock in M1, real in M2), so screens never change when data sources do.
 - Stack: whisper.cpp via whisper-rs with Metal (Whisper, default model Whisper Large Turbo), ONNX Runtime via parakeet-rs (Parakeet), llama.cpp in a separate helper process `talaan-llm` (local summary AI, default Qwen3.5 4B), Core Audio process taps (macOS 14.4+, no ScreenCaptureKit fallback), macOS Keychain, GitHub Actions.
 
@@ -52,7 +53,8 @@ src/
     StoreProvider.tsx   React context; hooks.ts = useMeetings/useMeeting/useSettings (live, subscribe-based)
     index.ts            the only place the mock stores are wired in
     mock/               sample data, MockMeetingStore, MockSettingsStore (localStorage)
-  lib/                  format, router (hash), share (Slack/email/Markdown/text), transcript, theme, windows
+  lib/                  format, router (hash), share (Slack/email/Markdown/text), transcript, theme, windows, platform
+    i18n/               UI strings in en/fr/es (messages/<area>.ts), t / useT; see docs/I18N.md
   ui/                   Talaan's component kit (Button, Chip, Sheet, Popover, Toast, ...) - no hex colors
   screens/
     Shell/              toolbar + main window layout
@@ -102,7 +104,9 @@ src-tauri/src/
   ask/                  Ask (no Tauri types): passages.rs (transcript windows + summary items), search.rs (BM25, cosine,
                         rank fusion), index.rs (search.bin vectors beside each meeting), answer.rs (prompt, schema, citations)
   commands/ask.rs       meetings_ask (scope -> passages -> rank -> summary engine) and the background indexer
-  keys.rs               API keys in the Keychain
+  keys.rs               secure key storage (Keychain on the Mac, Credential Manager on Windows): API keys, the Notion
+                        secret and the Windows calendar's iCal address (`calendar-ics`)
+  i18n.rs               Rust's strings in English, French and Spanish (docs/I18N.md)
   importer.rs           import audio: symphonia decode -> 16 kHz mono them.wav (commands/import.rs runs it)
   calls/                call detection (pure): apps.rs bundle-id tables (call apps, ignored apps), rules.rs state machine,
                         tabs.rs (browser helpers → browser, call URLs, what a browser on the mic is)
@@ -119,6 +123,13 @@ src-tauri/src/
     notify.rs thread.rs  Summary ready notifications (click opens the meeting), background thread priority
     mic_users.rs        which processes are using the mic (Core Audio process objects)
     calendar.rs browser_tabs.rs  EventKit access and events; a browser's tab URLs via Apple Events
+  platform/windows/     Windows-only code (mirrors macos/)
+    system_tap.rs       WASAPI process loopback (excludes Talaan's process tree), reconnects after errors
+    clock.rs com.rs     QPC host clock in ns (same grid as WASAPI/cpal), COM init per thread
+    permissions.rs devices.rs power.rs  microphone Privacy switches + Settings links, speakers warning / device watcher, sleep auto-pause
+    notify.rs thread.rs  Summary ready toasts (W3), background thread priority
+    mic_users.rs        apps using the mic (consent store; W2)
+    calendar.rs browser_tabs.rs  events from the private iCal address (calendar/fetch.rs, ics.rs); tab URLs via UI Automation
 docs/plans/             per-milestone task plans
 docs/WINDOWS-PORT.md    what the Windows port has to write, build and package (v1.0 ships Mac + Windows together)
 docs/TESTING.md         what Miguel tests before release
@@ -190,6 +201,9 @@ TALAAN_SMOKE_MEETING=<meeting dir> cargo test --release --manifest-path src-taur
 npm run build                                      # type-check + build frontend
 scripts/build-signed-debug.sh                      # signed debug .app (needed for real mic/system-audio permissions)
 scripts/build-llm-helper.sh                        # builds the talaan-llm helper (tauri dev/build run it first)
+powershell -File scripts/build-llm-helper.ps1       # Windows: builds the talaan-llm helper
 ```
+
+On Windows `npm run tauri dev` needs no signing for mic or system audio.
 
 `npm run tauri dev` attributes permissions to the terminal; check recording on the signed .app (`src-tauri/target/debug/bundle/macos/Talaan.app`).

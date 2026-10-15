@@ -1,8 +1,23 @@
-import type { Settings } from "./settings";
+import { onWindows } from "../lib/platform";
+import type { CallAppRule, IgnoredApp, Settings } from "./settings";
+
+/** Windows only: the extra ignored apps the user sees and edits (the "why" shows through settings.why_*).
+ *  The Rust side already ignores these ids on Windows (calls/apps.rs). */
+const windowsIgnoredApps = onWindows
+  ? [
+      { name: "NVIDIA Broadcast", why: "mic filter" },
+      { name: "SteelSeries Sonar", why: "mic filter" },
+      { name: "Voicemod", why: "mic filter" },
+      { name: "Krisp", why: "mic filter" },
+      { name: "Windows voice typing", why: "built in" },
+      { name: "Sound Recorder", why: "built in" },
+    ]
+  : [];
 
 /** Values used until the user changes something. Shared by the mock and the real settings store. */
 export const defaultSettings: Settings = {
   theme: "system",
+  yourName: "",
   detectCalls: true,
   autoTagApps: false,
   launchAtLogin: true,
@@ -35,6 +50,9 @@ export const defaultSettings: Settings = {
     { name: "MacWhisper", why: "transcription" },
     { name: "Apple Dictation", why: "built in" },
     { name: "Voice Memos", why: "built in" },
+    // Windows extras. Removing a row in Settings doesn't un-ignore the app: the Rust IGNORED table still applies
+    // (same as on the Mac for the rows above).
+    ...windowsIgnoredApps,
   ],
   speechModels: [
     // Mirrors the Rust catalog (src-tauri/src/transcriber/models.rs). In the app the list and states come from Rust.
@@ -48,8 +66,10 @@ export const defaultSettings: Settings = {
   searchModel: { id: "search", name: "Search by meaning", maker: "Qwen", note: "Lets Ask find answers phrased differently from the question, in 100+ languages.", engine: "search", sizeMb: 640, speed: 3, accuracy: 2, languages: "100+ languages", state: "not_downloaded" },
   reuseModels: true,
   meetingLanguage: "auto",
+  uiLanguage: "auto",
   useGpu: true,
   summaryEngine: "local",
+  summarizeAutomatically: true,
   summaryLanguage: "meeting",
   localModel: "recommended",
   // Mirrors the Rust catalog (src-tauri/src/summarizer/models.rs). In the app the states come from disk.
@@ -70,10 +90,28 @@ export const defaultSettings: Settings = {
   onboardingDone: true,
 };
 
+/** Apps that only exist on the Mac. They stay in settings (Mac behaviour and rules are unchanged) but Settings ›
+ *  Call apps doesn't list them on Windows, where they can't run. */
+const MAC_ONLY_CALL_APPS = new Set(["facetime"]);
+const MAC_ONLY_IGNORED_APPS = new Set(["MacWhisper", "Apple Dictation", "Voice Memos"]);
+
+/** The call apps to list on this computer. */
+export function shownCallApps(apps: CallAppRule[], windows = onWindows): CallAppRule[] {
+  return windows ? apps.filter((a) => !MAC_ONLY_CALL_APPS.has(a.id)) : apps;
+}
+
+/** The ignored apps to list on this computer. */
+export function shownIgnoredApps(apps: IgnoredApp[], windows = onWindows): IgnoredApp[] {
+  return windows ? apps.filter((a) => !MAC_ONLY_IGNORED_APPS.has(a.name)) : apps;
+}
+
 /** Stored settings over the defaults. Lists that later versions add to (call apps) keep the user's entries and
  *  gain the new defaults, so a new call app shows up without resetting anyone's rules. */
 export function withDefaults(stored: Partial<Settings>): Settings {
-  const merged = { ...structuredClone(defaultSettings), ...stored };
+  // Windows test builds kept the secret calendar address here in plain text (now in secure key storage, see
+  // storage/settings.rs). Dropped so update() never writes it back.
+  const { calendarIcsUrl: _legacy, ...rest } = stored as Partial<Settings> & { calendarIcsUrl?: unknown };
+  const merged = { ...structuredClone(defaultSettings), ...rest };
   if (stored.callApps) {
     const known = new Set(stored.callApps.map((a) => a.id));
     merged.callApps = [...stored.callApps, ...defaultSettings.callApps.filter((a) => !known.has(a.id))];

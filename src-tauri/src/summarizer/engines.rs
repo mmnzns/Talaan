@@ -2,6 +2,7 @@
 //! the network call is one small function. Only transcript text is ever sent, never audio.
 
 use super::local::LocalAi;
+use crate::i18n::tr_with;
 use super::prompt::Prompt;
 use super::summarize::{EngineError, SummaryEngine};
 use serde_json::{json, Value};
@@ -168,7 +169,7 @@ impl HttpEngine {
             Provider::Gemini => body["candidates"][0]["content"]["parts"][0]["text"].as_str(),
             Provider::OpenAi | Provider::Compatible => body["choices"][0]["message"]["content"].as_str(),
         };
-        text.map(str::to_string).ok_or_else(|| EngineError::Failed(format!("{} sent an empty reply", self.provider.name())))
+        text.map(str::to_string).ok_or_else(|| EngineError::Failed(tr_with("ai.empty_reply", &[("provider", self.provider.name())])))
     }
 }
 
@@ -176,10 +177,10 @@ impl HttpEngine {
 pub fn http_error(provider: Provider, status: u16, body: &Value) -> EngineError {
     let detail = body["error"]["message"].as_str().or_else(|| body["error"].as_str()).or_else(|| body["message"].as_str()).unwrap_or("");
     match status {
-        401 | 403 => EngineError::Unavailable(format!("{} didn't accept the API key. Check it in Settings › Summary AI.", provider.name())),
-        404 => EngineError::Unavailable(format!("{} doesn't have that model. Pick another in Settings › Summary AI. {detail}", provider.name()).trim().to_string()),
-        429 => EngineError::Failed(format!("{} is rate limiting or out of credit. Try again later. {detail}", provider.name()).trim().to_string()),
-        _ => EngineError::Failed(format!("{} returned an error ({status}). {detail}", provider.name()).trim().to_string()),
+        401 | 403 => EngineError::Unavailable(tr_with("ai.key_rejected", &[("provider", provider.name())])),
+        404 => EngineError::Unavailable(tr_with("ai.no_such_model", &[("provider", provider.name()), ("detail", detail)]).trim().to_string()),
+        429 => EngineError::Failed(tr_with("ai.rate_limited", &[("provider", provider.name()), ("detail", detail)]).trim().to_string()),
+        _ => EngineError::Failed(tr_with("ai.http_error", &[("provider", provider.name()), ("status", &status.to_string()), ("detail", detail)]).trim().to_string()),
     }
 }
 
@@ -202,11 +203,11 @@ fn send(provider: Provider, method: reqwest::Method, url: &str, headers: &[(Stri
     }
     let resp = req.send().map_err(|e| {
         if e.is_connect() {
-            EngineError::Unavailable(format!("Couldn't reach {} at {url}. Is it running, and is this computer online?", provider.name()))
+            EngineError::Unavailable(tr_with("ai.unreachable", &[("provider", provider.name()), ("url", url)]))
         } else if e.is_timeout() {
-            EngineError::Failed(format!("{} took too long to answer.", provider.name()))
+            EngineError::Failed(tr_with("ai.too_slow", &[("provider", provider.name())]))
         } else {
-            EngineError::Failed(format!("Couldn't reach {}: {e}", provider.name()))
+            EngineError::Failed(tr_with("ai.failed", &[("provider", provider.name()), ("error", &e.to_string())]))
         }
     })?;
     let status = resp.status().as_u16();
@@ -404,7 +405,7 @@ mod tests {
             }
         });
         let mut e = HttpEngine { provider: Provider::Compatible, base, key: Some("sk-local".into()), model: "qwen".into(), context: LOCAL_CONTEXT, label: "Test server".into() };
-        let m = meeting(vec![line("l0", 60_000, "them:1", "Pricing moves to Q1.")]);
+        let m = meeting(vec![line("l0", 55_000, "me", "Where did we land on pricing?"), line("l1", 60_000, "them:1", "Pricing moves to Q1."), line("l2", 66_000, "me", "Good, onboarding ships first then.")]);
         let out = summarize(&m, &mut e, "en", &AtomicBool::new(false), &mut |_| {}).unwrap();
         assert_eq!(out.summary.recap, "We chose onboarding first.");
         assert_eq!(out.summary.decisions[0].at, Some(60_000));

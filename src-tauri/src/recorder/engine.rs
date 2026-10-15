@@ -105,7 +105,7 @@ impl Engine {
         started_at: DateTime<FixedOffset>,
     ) -> Result<Status, String> {
         if self.active.is_some() {
-            return Err("Already recording".into());
+            return Err(crate::i18n::tr("recorder.already_recording"));
         }
         let file = storage.create_meeting(app, app_label, started_at).map_err(|e| e.to_string())?;
         let dir = storage.dir(&file.id).map_err(|e| e.to_string())?;
@@ -140,7 +140,7 @@ impl Engine {
             session,
             mic,
             system,
-            mic_name: mic_result.unwrap_or_else(|_| "No microphone".into()),
+            mic_name: mic_result.unwrap_or_else(|_| crate::i18n::tr("recorder.no_mic")),
             system_ok: system_result.is_ok(),
             stop,
             end_pos,
@@ -175,6 +175,11 @@ impl Engine {
         }
     }
 
+    /// True once system audio stopped coming through for good during this recording.
+    pub fn system_failed(&self) -> bool {
+        self.active.as_ref().is_some_and(|a| a.system.failed())
+    }
+
     pub fn pause(&mut self, now_ns: u64) -> bool {
         self.session().is_some_and(|mut s| s.pause(now_ns))
     }
@@ -199,14 +204,14 @@ impl Engine {
     }
 
     pub fn restart_mic(&mut self) -> Result<String, String> {
-        let a = self.active.as_mut().ok_or("Not recording")?;
+        let a = self.active.as_mut().ok_or_else(|| crate::i18n::tr("recorder.not_recording"))?;
         let name = a.mic.restart()?;
         a.mic_name = name.clone();
         Ok(name)
     }
 
     pub fn restart_system(&mut self) -> Result<String, String> {
-        let a = self.active.as_mut().ok_or("Not recording")?;
+        let a = self.active.as_mut().ok_or_else(|| crate::i18n::tr("recorder.not_recording"))?;
         let name = a.system.restart()?;
         a.system_ok = true;
         Ok(name)
@@ -228,7 +233,7 @@ impl Engine {
 
     /// Finishes the recording and marks the meeting ready. Returns its id.
     pub fn stop(&mut self, storage: &Storage, now_ns: u64) -> Result<String, String> {
-        let (session, _) = self.shutdown(now_ns).ok_or("Not recording")?;
+        let (session, _) = self.shutdown(now_ns).ok_or_else(|| crate::i18n::tr("recorder.not_recording"))?;
         let s = session.lock().unwrap_or_else(|e| e.into_inner());
         storage
             .update_meeting_file(&s.meeting_id, |f| {
@@ -243,7 +248,7 @@ impl Engine {
 
     /// Stops and deletes everything recorded.
     pub fn discard(&mut self, storage: &Storage, now_ns: u64) -> Result<(), String> {
-        let (session, _) = self.shutdown(now_ns).ok_or("Not recording")?;
+        let (session, _) = self.shutdown(now_ns).ok_or_else(|| crate::i18n::tr("recorder.not_recording"))?;
         let id = session.lock().unwrap_or_else(|e| e.into_inner()).meeting_id.clone();
         storage.delete_meeting(&id).map_err(|e| e.to_string())
     }
@@ -281,6 +286,39 @@ pub(crate) mod tests {
         fn stop(&mut self) {
             *self.handle.lock().unwrap() = None;
         }
+    }
+
+    /// A source that starts, then gives up on its own.
+    struct GaveUp;
+
+    impl AudioSource for GaveUp {
+        fn start(&mut self, _feed: SharedFeed) -> Result<String, String> {
+            Ok("Gone".into())
+        }
+        fn restart(&mut self) -> Result<String, String> {
+            Ok("Gone".into())
+        }
+        fn stop(&mut self) {}
+        fn failed(&self) -> bool {
+            true
+        }
+    }
+
+    #[test]
+    fn a_system_source_that_gave_up_is_reported() {
+        let (_d, storage) = storage();
+        let mut e = Engine::default();
+        assert!(!e.system_failed(), "not recording");
+        let (mic, _me) = fake(false);
+        e.start(&storage, "other", "Call", mic, Box::new(GaveUp), 0, at()).unwrap();
+        assert!(e.system_failed());
+        e.stop(&storage, 100 * MS).unwrap();
+        assert!(!e.system_failed());
+
+        let (mic, _me) = fake(false);
+        let (sys, _them) = fake(false);
+        e.start(&storage, "other", "Call", mic, sys, 0, at()).unwrap();
+        assert!(!e.system_failed(), "sources don't fail by default");
     }
 
     const MS: u64 = 1_000_000;

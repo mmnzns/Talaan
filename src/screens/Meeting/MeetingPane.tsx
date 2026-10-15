@@ -12,9 +12,11 @@ import { StatusBanner } from "./StatusBanner";
 import { SummaryCard } from "./SummaryCard";
 import { TranscriptCard } from "./TranscriptCard";
 import { SunCorner } from "../../brand/SunCorner";
+import { useT } from "../../lib/i18n/I18nProvider";
 
 export function MeetingPane({ id, jumpTo }: { id?: string; jumpTo?: Ms }) {
   const { meeting, loading } = useMeeting(id);
+  const t = useT();
 
   if (!id) return <EmptyPane />;
   if (loading) return null;
@@ -22,8 +24,8 @@ export function MeetingPane({ id, jumpTo }: { id?: string; jumpTo?: Ms }) {
     return (
       <div className="grid flex-1 place-items-center p-8 text-center">
         <div className="flex max-w-sm flex-col gap-2">
-          <span className="font-display text-lg font-bold">Meeting not found</span>
-          <p className="m-0 text-[13px] text-subtle">It may have been deleted. Pick another one from the list.</p>
+          <span className="font-display text-lg font-bold">{t("meeting.notFound")}</span>
+          <p className="m-0 text-[13px] text-subtle">{t("meeting.notFoundBody")}</p>
         </div>
       </div>
     );
@@ -34,22 +36,21 @@ export function MeetingPane({ id, jumpTo }: { id?: string; jumpTo?: Ms }) {
 function EmptyPane() {
   const { meetings, loading } = useMeetings();
   const startRecording = useStartRecording();
+  const t = useT();
   if (loading) return null;
   const first = meetings.length === 0;
   return (
     <div className="relative grid flex-1 place-items-center overflow-hidden p-8 text-center">
       <SunCorner className="absolute right-0 top-0" />
       <div className="relative flex max-w-sm flex-col items-center gap-2">
-        <span className="font-display text-xl font-bold tracking-[-0.02em]">{first ? "Your meetings will show up here" : "Select a meeting"}</span>
+        <span className="font-display text-xl font-bold tracking-[-0.02em]">{first ? t("meeting.emptyFirstTitle") : t("meeting.emptyTitle")}</span>
         <p className="m-0 text-[13px] text-subtle">
-          {first
-            ? "Start a call and Talaan asks before it records. Or press Record, or import a Voice Memo. Each one gets a transcript, a summary and action items."
-            : "Pick a call from the list to read its summary and transcript, or press Record to start a new one."}
+          {first ? t("meeting.emptyFirstBody") : t("meeting.emptyBody")}
         </p>
         {first && (
           <div className="mt-2 flex gap-2">
             <Button variant="primary" raised onClick={() => startRecording?.()}>
-              Record a call
+              {t("meeting.recordCall")}
             </Button>
           </div>
         )}

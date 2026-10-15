@@ -1,8 +1,13 @@
 import { useEffect, useState } from "react";
 import { useMeetings } from "../../data/hooks";
-import { useSettingsStore } from "../../data/StoreProvider";
+import { describeError } from "../../data/errors";
+import { useSettingsStore, useStore } from "../../data/StoreProvider";
+import { exportAll } from "../../lib/exportAll";
 import type { RetentionChoice, TranscriptRetention } from "../../data/settings";
 import { formatBytes, tildePath } from "../../lib/format";
+import { onWindows } from "../../lib/platform";
+import { useT } from "../../lib/i18n/I18nProvider";
+import type { MessageKey } from "../../lib/i18n";
 import { Button, Label, Select, Sheet, useToast } from "../../ui";
 import { Group, Row } from "./parts";
 import type { TabProps } from "./tabProps";
@@ -10,100 +15,133 @@ import type { TabProps } from "./tabProps";
 export function PrivacyTab({ settings: s, update }: TabProps) {
   const store = useSettingsStore();
   const toast = useToast();
+  const t = useT();
   const { meetings } = useMeetings();
   const [confirm, setConfirm] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [exporting, setExporting] = useState(false);
+  const meetingStore = useStore();
   const [info, setInfo] = useState<{ path: string; bytes: number }>();
 
   useEffect(() => {
     store.dataInfo().then(setInfo, () => setInfo(undefined));
   }, [store, meetings.length]);
 
-  const flows: [string, string][] = [
-    ["Audio", "Never"],
-    ["Transcripts and summaries", "Never"],
-    ["Transcript text, only if Summary AI uses your own key", s.summaryEngine === "byok" ? "On" : "Off"],
-    ["Summary (and the transcript if you tick it) to Notion, only when you click Export", s.notion.connected ? "When you export" : "Not connected"],
-    ["Update check: asks GitHub for the latest version number", s.checkUpdates ? "At launch" : "Off"],
-    ["Usage data or analytics", "Never collected"],
+  const flows: [MessageKey, MessageKey][] = [
+    ["settings.flow_audio", "settings.when_never"],
+    ["settings.flow_transcripts", "settings.when_never"],
+    ["settings.flow_byok", s.summaryEngine === "byok" ? "settings.when_on" : "settings.when_off"],
+    ["settings.flow_notion", s.notion.connected ? "settings.when_export" : "settings.when_not_connected"],
+    ["settings.flow_update", s.checkUpdates ? "settings.when_launch" : "settings.when_off"],
+    ...(onWindows && s.calendarConnected ? [["settings.flow_calendar_windows", "settings.when_recording_start"] as [MessageKey, MessageKey]] : []),
+    ["settings.flow_analytics", "settings.when_never_collected"],
   ];
 
   return (
     <div className="flex flex-col gap-3">
       <Group>
         <div className="flex flex-col gap-2.5 py-4">
-          <Label>what leaves this computer</Label>
+          <Label>{t("settings.leaves_label")}</Label>
           <div className="grid grid-cols-[1fr_auto] gap-x-4 gap-y-1.5 text-[13px]">
             {flows.map(([what, when]) => (
               <div key={what} className="contents">
-                <span>{what}</span>
-                <span className={when === "On" ? "font-bold text-danger" : "font-mono text-xs text-subtle"}>{when}</span>
+                <span>{t(what)}</span>
+                <span className={when === "settings.when_on" ? "font-bold text-danger" : "font-mono text-xs text-subtle"}>{t(when)}</span>
               </div>
             ))}
           </div>
         </div>
-        <Row title="Keep audio for" desc="Needed to replay moments from the transcript. Pinned meetings keep their audio.">
-          <Select label="Keep audio for" wrapperClassName="w-40" value={s.retention} onChange={(e) => update({ retention: e.target.value as RetentionChoice })}>
-            <option value="1d">1 day</option>
-            <option value="7d">7 days</option>
-            <option value="30d">30 days</option>
-            <option value="forever">Forever</option>
-            <option value="none">Don't keep</option>
+        <Row title={t("settings.audio_title")} desc={t("settings.audio_desc")}>
+          <Select label={t("settings.audio_title")} wrapperClassName="w-40" value={s.retention} onChange={(e) => update({ retention: e.target.value as RetentionChoice })}>
+            <option value="1d">{t("settings.keep_1d")}</option>
+            <option value="7d">{t("settings.keep_7d")}</option>
+            <option value="30d">{t("settings.keep_30d")}</option>
+            <option value="forever">{t("settings.keep_forever")}</option>
+            <option value="none">{t("settings.keep_none")}</option>
           </Select>
         </Row>
-        <Row title="Keep transcripts and summaries" desc="Until you delete them.">
-          <Select label="Keep transcripts" wrapperClassName="w-40" value={s.transcriptRetention} onChange={(e) => update({ transcriptRetention: e.target.value as TranscriptRetention })}>
-            <option value="forever">Forever</option>
-            <option value="1y">1 year</option>
-            <option value="90d">90 days</option>
+        <Row title={t("settings.transcripts_title")} desc={t("settings.transcripts_desc")}>
+          <Select label={t("settings.transcripts_aria")} wrapperClassName="w-40" value={s.transcriptRetention} onChange={(e) => update({ transcriptRetention: e.target.value as TranscriptRetention })}>
+            <option value="forever">{t("settings.keep_forever")}</option>
+            <option value="1y">{t("settings.keep_1y")}</option>
+            <option value="90d">{t("settings.keep_90d")}</option>
           </Select>
         </Row>
-        <Row title="Meetings folder" desc={info ? `${tildePath(info.path)} · ${formatBytes(info.bytes)} · ${meetings.length} ${meetings.length === 1 ? "meeting" : "meetings"}` : `${meetings.length} meetings`}>
+        <Row
+          title={t("settings.folder_title")}
+          desc={
+            info
+              ? t("settings.folder_info", { path: tildePath(info.path), size: formatBytes(info.bytes), count: meetings.length })
+              : t("settings.folder_count", { count: meetings.length })
+          }
+        >
           <div className="flex gap-2">
-            <Button onClick={() => toast("Opens the folder once storage is connected")}>Open folder</Button>
-            <Button onClick={() => toast("Export all arrives with storage")}>Export all</Button>
+            <Button onClick={() => store.revealData().catch((e) => toast(describeError(e)))}>{t("settings.folder_open")}</Button>
+            <Button
+              disabled={exporting || meetings.length === 0}
+              onClick={async () => {
+                setExporting(true);
+                try {
+                  const n = await exportAll(meetingStore);
+                  if (n !== undefined) toast(t("settings.folder_exported", { count: n }));
+                } catch (e) {
+                  toast(describeError(e));
+                } finally {
+                  setExporting(false);
+                }
+              }}
+            >
+              {exporting ? t("settings.folder_exporting") : t("settings.folder_export")}
+            </Button>
           </div>
         </Row>
-        <Row title="Saved API keys" desc="Stored in your system's secure key storage, never in Talaan's files.">
+        <Row title={t("settings.keys_title")} desc={t("settings.keys_desc")}>
           <Button
             disabled={!s.byokKeySet}
             onClick={() => {
               update({ byokKeySet: false });
-              toast("Saved keys removed");
+              toast(t("settings.keys_removed"));
             }}
           >
-            Remove keys
+            {t("settings.keys_remove")}
           </Button>
         </Row>
-        <Row title="Delete all Talaan data" desc="Meetings, audio, models, settings and keys. Then quits. Can't be undone.">
+        <Row title={t("settings.wipe_title")} desc={t("settings.wipe_desc")}>
           <Button variant="danger" onClick={() => setConfirm(true)}>
-            Delete everything
+            {t("settings.wipe_button")}
           </Button>
         </Row>
       </Group>
 
-      <Sheet open={confirm} title="Delete all Talaan data" onClose={() => !deleting && setConfirm(false)}>
+      <Sheet open={confirm} title={t("settings.wipe_title")} onClose={() => !deleting && setConfirm(false)}>
         <div className="flex flex-col gap-3 p-5">
-          <h2 className="m-0 font-display text-xl font-bold tracking-[-0.02em]">Delete everything?</h2>
+          <h2 className="m-0 font-display text-xl font-bold tracking-[-0.02em]">{t("settings.wipe_heading")}</h2>
           <p className="m-0 text-[13px] text-subtle">
-            This removes every meeting, all audio, downloaded models, settings and saved keys from this computer. Talaan will quit. It can’t be undone.
+            {t("settings.wipe_body")}
           </p>
           <div className="flex justify-end gap-2">
             <Button disabled={deleting} onClick={() => setConfirm(false)}>
-              Cancel
+              {t("settings.cancel")}
             </Button>
             <Button
               variant="danger"
               disabled={deleting}
               onClick={async () => {
                 setDeleting(true);
-                await store.deleteAllData();
+                try {
+                  await store.deleteAllData();
+                } catch (e) {
+                  // The sheet stays open (and closable) so the user can try again or cancel.
+                  setDeleting(false);
+                  toast(describeError(e));
+                  return;
+                }
                 setDeleting(false);
                 setConfirm(false);
-                toast("Everything was deleted");
+                toast(t("settings.wipe_done"));
               }}
             >
-              {deleting ? "Deleting…" : "Delete everything"}
+              {deleting ? t("settings.wipe_deleting") : t("settings.wipe_button")}
             </Button>
           </div>
         </div>

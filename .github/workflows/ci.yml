@@ -23,3 +23,23 @@ jobs:
       - run: npm run build
       - run: sh scripts/build-llm-helper.sh
       - run: cargo test --manifest-path src-tauri/Cargo.toml --workspace
+
+  windows:
+    runs-on: windows-latest
+    env:
+      LIBCLANG_PATH: C:\Program Files\LLVM\bin
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+      - run: npm ci
+      - run: npm test
+      - run: npm run build
+      - run: powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-llm-helper.ps1
+      - run: cargo test --manifest-path src-tauri/Cargo.toml --workspace

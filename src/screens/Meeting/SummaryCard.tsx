@@ -1,8 +1,10 @@
 import { Sparkles } from "lucide-react";
 import { useStore } from "../../data/StoreProvider";
 import type { Meeting, Ms, Summary } from "../../data/types";
-import { describeError } from "../../data/errors";
+import { describeError, summaryErrorText } from "../../data/errors";
 import { openSettings } from "../../lib/windows";
+import { ownerName } from "../../lib/transcript";
+import { useT } from "../../lib/i18n/I18nProvider";
 import { Button, Checkbox, Chip, Editable, Label, SectionLabel, Timestamp, cn, useToast } from "../../ui";
 
 interface Props {
@@ -18,6 +20,7 @@ const hit = "bg-gold-soft";
 export function SummaryCard({ meeting, activeAt, editing, onJump }: Props) {
   const store = useStore();
   const toast = useToast();
+  const t = useT();
   const { summary, status } = meeting;
   const busy = status === "summarizing" || status === "transcribing";
 
@@ -25,12 +28,12 @@ export function SummaryCard({ meeting, activeAt, editing, onJump }: Props) {
   const set = <K extends keyof Summary>(key: K, value: Summary[K]) => save({ ...summary!, [key]: value });
 
   return (
-    <section aria-label="Summary" className="flex min-h-0 flex-col overflow-hidden rounded-card border border-line bg-surface shadow-card">
+    <section aria-label={t("meeting.summary")} className="flex min-h-0 flex-col overflow-hidden rounded-card border border-line bg-surface shadow-card">
       <div className="flex items-center justify-between border-b border-line px-6 py-[18px]">
-        <h2 className="m-0 font-display text-base font-bold tracking-[-0.02em]">Summary</h2>
+        <h2 className="m-0 font-display text-base font-bold tracking-[-0.02em]">{t("meeting.summary")}</h2>
         <span className="flex items-center gap-2">
-          {summary?.edited && <Chip tone="gold">Edited</Chip>}
-          <Label>{editing ? "editing · revert anytime" : summary ? "click a time to jump" : ""}</Label>
+          {summary?.edited && <Chip tone="gold">{t("meeting.edited")}</Chip>}
+          <Label>{editing ? t("meeting.editingHint") : summary ? t("meeting.clickTime") : ""}</Label>
         </span>
       </div>
 
@@ -41,7 +44,7 @@ export function SummaryCard({ meeting, activeAt, editing, onJump }: Props) {
               <Editable text={summary.recap} editing={editing} onCommit={(v) => set("recap", v)} />
             </p>
 
-            <Group title="decisions" empty="No decisions recorded." show={summary.decisions.length > 0}>
+            <Group title={t("meeting.decisionsLabel")} empty={t("meeting.noDecisions")} show={summary.decisions.length > 0}>
               {summary.decisions.map((d) => (
                 <div key={d.id} className={cn(row, d.at !== undefined && d.at === activeAt && hit)}>
                   {d.at !== undefined && <Timestamp at={d.at} onJump={onJump} active={d.at === activeAt} />}
@@ -54,11 +57,11 @@ export function SummaryCard({ meeting, activeAt, editing, onJump }: Props) {
               ))}
             </Group>
 
-            <Group title="action items" empty="No action items." show={summary.actionItems.length > 0}>
+            <Group title={t("meeting.actionItemsLabel")} empty={t("meeting.noActionItems")} show={summary.actionItems.length > 0}>
               {summary.actionItems.map((a) => (
                 <div key={a.id} className={cn(row, a.at !== undefined && a.at === activeAt && hit)}>
                   <Checkbox
-                    aria-label={`Done: ${a.text}`}
+                    aria-label={t("meeting.doneAria", { text: a.text })}
                     checked={a.done}
                     onChange={(done) =>
                       store.updateSummary(meeting.id, {
@@ -73,7 +76,7 @@ export function SummaryCard({ meeting, activeAt, editing, onJump }: Props) {
                       editing={editing}
                       onCommit={(v) => set("actionItems", summary.actionItems.map((x) => (x.id === a.id ? { ...x, text: v } : x)))}
                     />{" "}
-                    {a.owner && <span className="rounded-full bg-sp1 px-[7px] py-0.5 text-[11px] font-semibold text-sp1-fg">{a.owner}</span>}{" "}
+                    {a.owner && <span className="rounded-full bg-sp1 px-[7px] py-0.5 text-[11px] font-semibold text-sp1-fg">{ownerName(meeting, a.owner)}</span>}{" "}
                     {a.due && <Chip>{a.due}</Chip>}
                   </span>
                   {a.at !== undefined && <Timestamp at={a.at} onJump={onJump} active={a.at === activeAt} />}
@@ -81,7 +84,7 @@ export function SummaryCard({ meeting, activeAt, editing, onJump }: Props) {
               ))}
             </Group>
 
-            <Group title="open questions" empty="Nothing left open." show={summary.openQuestions.length > 0}>
+            <Group title={t("meeting.openQuestionsLabel")} empty={t("meeting.noOpenQuestions")} show={summary.openQuestions.length > 0}>
               {summary.openQuestions.map((q) => (
                 <span key={q.id}>
                   <Editable
@@ -92,23 +95,25 @@ export function SummaryCard({ meeting, activeAt, editing, onJump }: Props) {
                 </span>
               ))}
             </Group>
-            <Label>Written by {summary.engine}</Label>
+            <Label>{t("meeting.writtenBy", { engine: summary.engine })}</Label>
           </>
         ) : busy ? (
-          <Progress label={status === "summarizing" ? "Writing the summary" : "Transcribing the audio"} value={meeting.progress} />
+          <Progress label={status === "summarizing" ? t("meeting.writingSummary") : t("meeting.transcribingAudio")} value={meeting.progress} />
         ) : meeting.transcript.length > 0 ? (
           <div className="flex flex-col items-start gap-2 py-2">
-            <span className="font-display text-base font-bold">No summary yet</span>
-            <p className="m-0 text-[13px] text-subtle">{meeting.summaryError?.message ?? "The transcript is saved. Write the summary whenever you’re ready."}</p>
+            <span className="font-display text-base font-bold">{t("meeting.noSummaryTitle")}</span>
+            <p className="m-0 text-[13px] text-subtle">{summaryErrorText(meeting.summaryError)}</p>
             <span className="flex flex-wrap gap-2">
-              <Button variant="primary" onClick={() => store.generateSummary(meeting.id).catch((e) => toast(describeError(e)))}>
-                <Sparkles size={14} aria-hidden="true" /> Generate summary
-              </Button>
-              {meeting.summaryError?.code === "no_engine" && <Button onClick={() => void openSettings("ai")}>Open Summary AI</Button>}
+              {meeting.summaryError?.code !== "too_short" && (
+                <Button variant="primary" onClick={() => store.generateSummary(meeting.id).catch((e) => toast(describeError(e)))}>
+                  <Sparkles size={14} aria-hidden="true" /> {t("meeting.generateSummary")}
+                </Button>
+              )}
+              {meeting.summaryError?.code === "no_engine" && <Button onClick={() => void openSettings("ai")}>{t("meeting.openSummaryAi")}</Button>}
             </span>
           </div>
         ) : (
-          <p className="m-0 py-2 text-[13px] text-subtle">Nothing to summarize yet.</p>
+          <p className="m-0 py-2 text-[13px] text-subtle">{t("meeting.nothingToSummarize")}</p>
         )}
       </div>
     </section>
@@ -125,6 +130,7 @@ function Group({ title, show, empty, children }: { title: string; show: boolean;
 }
 
 export function Progress({ label, value }: { label: string; value?: number }) {
+  const t = useT();
   const pct = Math.round((value ?? 0) * 100);
   return (
     <div className="flex flex-col gap-2 py-2" role="status">
@@ -135,7 +141,7 @@ export function Progress({ label, value }: { label: string; value?: number }) {
         </span>
         <Label>{pct}%</Label>
       </span>
-      <span className="text-xs text-subtle">You can keep using Talaan while this runs.</span>
+      <span className="text-xs text-subtle">{t("meeting.keepUsing")}</span>
     </div>
   );
 }
