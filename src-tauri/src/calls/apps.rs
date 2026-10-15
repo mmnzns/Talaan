@@ -58,6 +58,8 @@ pub const IGNORED: &[(&str, &[&str])] = &[
     ("Voicemod", &["voicemod.exe"]),
     ("Krisp", &["krisp.exe"]),
     ("Xbox Game Bar", &["Microsoft.XboxGamingOverlay_"]),
+    ("FxSound", &["fxsound.exe"]),
+    ("Windows audio engine", &["audiodg.exe"]),
 ];
 
 fn matches(bundle_id: &str, prefixes: &[&str]) -> bool {
@@ -129,6 +131,11 @@ mod tests {
     #[test]
     fn windows_dictation_and_mic_processors_never_count() {
         for b in ["parla.exe", "talaan.exe", "MicrosoftWindows.Client.CBS_cw5n1h2txyewy", "Microsoft.WindowsSoundRecorder_8wekyb3d8bbwe", "nvidia broadcast.exe", "steelseriessonar.exe", "voicemod.exe", "krisp.exe", "wispr flow.exe", "Microsoft.XboxGamingOverlay_8wekyb3d8bbwe"] {
+            assert_eq!(identify(b, "", &[]), None, "{b}");
+            assert!(ignored(b, "", &[]).is_some(), "{b}");
+        }
+        // Audio plumbing that may hold a capture session: an output enhancer and the Windows audio engine.
+        for b in ["fxsound.exe", "audiodg.exe"] {
             assert_eq!(identify(b, "", &[]), None, "{b}");
             assert!(ignored(b, "", &[]).is_some(), "{b}");
         }

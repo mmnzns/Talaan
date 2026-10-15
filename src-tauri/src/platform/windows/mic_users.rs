@@ -1,5 +1,17 @@
-//! Which apps are using the microphone right now: the per-app consent store Windows keeps in the registry
-//! (`LastUsedTimeStop` is 0 while an app holds the mic). No extra permission. Talaan itself is left out.
+//! Which apps are using the microphone right now, from two sources merged by `bundle_id`. No extra permission;
+//! Talaan itself is left out of both.
+//!
+//! 1. **Capture sessions (live).** Every active WASAPI session on every active capture endpoint, mapped from its
+//!    pid to the exe path and, for packaged apps, the package family name. This is what is capturing this
+//!    second, for any kind of process. Talaan is excluded by pid.
+//! 2. **Consent store (registry).** The per-app record Windows keeps under `CapabilityAccessManager\ConsentStore\
+//!    microphone` (`LastUsedTimeStop` is 0 while an app holds the mic). Talaan is excluded by path / `talaan.exe`.
+//!
+//! Why both: a live check showed the consent store has NO entry for console or dev processes that capture (a
+//! cargo test exe, python, a Tk app), and its 0 → non-zero stop transition was never seen live, so it can't be
+//! trusted alone. Sessions are live and cover desktop and packaged apps alike; the registry stays as a fallback
+//! for anything a session doesn't show (e.g. a process we can't open). When both name an app the session entry
+//! wins, since it carries a real pid and path.
 
 use winreg::enums::{HKEY_CURRENT_USER, REG_BINARY, REG_QWORD};
 use winreg::RegKey;
@@ -60,6 +72,46 @@ pub fn users_from(packaged: &[Entry], desktop: &[Entry], own_exe: &str) -> Vec<M
     packaged.chain(desktop).collect()
 }
 
+/// One audio session on a capture endpoint, as WASAPI reports it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Session {
+    pub pid: u32,
+    pub active: bool,
+    /// The shared "System Sounds" session.
+    pub system: bool,
+}
+
+/// The processes capturing right now: active, not the system-sounds session, not pid 0 (system) and not `own`.
+/// Sorted, each pid once (a process can hold sessions on several mics).
+pub fn live_pids(sessions: &[Session], own: Option<u32>) -> Vec<u32> {
+    let mut pids: Vec<u32> = sessions.iter().filter(|s| s.active && !s.system && s.pid != 0 && Some(s.pid) != own).map(|s| s.pid).collect();
+    pids.sort_unstable();
+    pids.dedup();
+    pids
+}
+
+/// The user behind a capturing pid: the package family name when the process is packaged, else its lowercased
+/// exe file name. `None` when Windows wouldn't tell us anything about it (no path, no package).
+pub fn session_user(pid: u32, path: &str, family: Option<&str>) -> Option<MicUser> {
+    let bundle_id = match family.filter(|f| !f.is_empty()) {
+        Some(f) => f.to_string(),
+        None => path.rsplit(['\\', '/']).next().unwrap_or("").to_lowercase(),
+    };
+    (!bundle_id.is_empty()).then(|| MicUser { pid: pid as i32, bundle_id, path: path.to_string() })
+}
+
+/// Sessions first, then registry entries for apps no session already names (case-insensitive `bundle_id`).
+/// Each `bundle_id` appears once; the session entry wins because it has a real pid and path.
+pub fn merge(sessions: Vec<MicUser>, registry: Vec<MicUser>) -> Vec<MicUser> {
+    let mut out: Vec<MicUser> = Vec::new();
+    for user in sessions.into_iter().chain(registry) {
+        if !out.iter().any(|o| o.bundle_id.eq_ignore_ascii_case(&user.bundle_id)) {
+            out.push(user);
+        }
+    }
+    out
+}
+
 fn entries(key: &RegKey) -> Vec<Entry> {
     key.enum_keys()
         .filter_map(Result::ok)
@@ -73,11 +125,79 @@ fn entries(key: &RegKey) -> Vec<Entry> {
         .collect()
 }
 
-/// Every app other than Talaan that has the microphone open right now.
+/// Every app other than Talaan that has the microphone open right now: live capture sessions, plus the
+/// consent store's "in use" apps no session already names.
 pub fn mic_users() -> Vec<MicUser> {
+    let sessions = live_pids(&capture_sessions(), Some(std::process::id()))
+        .into_iter()
+        .filter_map(|pid| {
+            let (path, family) = identity_of(pid);
+            session_user(pid, &path, family.as_deref())
+        })
+        .collect();
+    merge(sessions, registry_users())
+}
+
+/// The consent store's apps that hold the mic now, Talaan's own exe left out.
+fn registry_users() -> Vec<MicUser> {
     let (packaged, desktop) = read_store();
     let own = std::env::current_exe().map(|p| p.to_string_lossy().into_owned()).unwrap_or_default();
     users_from(&packaged, &desktop, &own)
+}
+
+/// Every audio session on every active capture endpoint, unfiltered. Empty if WASAPI can't be reached.
+pub fn capture_sessions() -> Vec<Session> {
+    use ::windows::core::Interface;
+    use ::windows::Win32::Media::Audio::{
+        eCapture, AudioSessionStateActive, IAudioSessionControl2, IAudioSessionManager2, IMMDeviceEnumerator, MMDeviceEnumerator, DEVICE_STATE_ACTIVE,
+    };
+    use ::windows::Win32::System::Com::{CoCreateInstance, CLSCTX_ALL};
+
+    super::com::init();
+    let mut out = Vec::new();
+    unsafe {
+        let Ok(enumerator) = CoCreateInstance::<_, IMMDeviceEnumerator>(&MMDeviceEnumerator, None, CLSCTX_ALL) else { return out };
+        let Ok(devices) = enumerator.EnumAudioEndpoints(eCapture, DEVICE_STATE_ACTIVE) else { return out };
+        for d in 0..devices.GetCount().unwrap_or(0) {
+            let Ok(device) = devices.Item(d) else { continue };
+            let Ok(manager) = device.Activate::<IAudioSessionManager2>(CLSCTX_ALL, None) else { continue };
+            let Ok(sessions) = manager.GetSessionEnumerator() else { continue };
+            for i in 0..sessions.GetCount().unwrap_or(0) {
+                let Ok(control) = sessions.GetSession(i).and_then(|c| c.cast::<IAudioSessionControl2>()) else { continue };
+                let active = control.GetState().map(|s| s == AudioSessionStateActive).unwrap_or(false);
+                // A session spanning several processes still reports one of them (AUDCLNT_S_NO_SINGLE_PROCESS is a success).
+                let pid = control.GetProcessId().unwrap_or(0);
+                let system = control.IsSystemSoundsSession() == ::windows::Win32::Foundation::S_OK;
+                out.push(Session { pid, active, system });
+            }
+        }
+    }
+    out
+}
+
+/// (full exe path, package family name) of a running process; empty / `None` for whatever Windows won't say.
+fn identity_of(pid: u32) -> (String, Option<String>) {
+    use ::windows::core::PWSTR;
+    use ::windows::Win32::Foundation::{CloseHandle, ERROR_SUCCESS};
+    use ::windows::Win32::Storage::Packaging::Appx::GetPackageFamilyName;
+    use ::windows::Win32::System::Threading::{OpenProcess, QueryFullProcessImageNameW, PROCESS_NAME_WIN32, PROCESS_QUERY_LIMITED_INFORMATION};
+
+    unsafe {
+        let Ok(handle) = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid) else { return (String::new(), None) };
+        let mut buf = [0u16; 1024];
+        let mut len = buf.len() as u32;
+        let path = match QueryFullProcessImageNameW(handle, PROCESS_NAME_WIN32, PWSTR(buf.as_mut_ptr()), &mut len) {
+            Ok(()) => String::from_utf16_lossy(&buf[..len as usize]),
+            Err(_) => String::new(),
+        };
+        let mut fam = [0u16; 256];
+        let mut fam_len = fam.len() as u32;
+        // Unpackaged processes return APPMODEL_ERROR_NO_PACKAGE; the length includes the trailing NUL.
+        let family = (GetPackageFamilyName(handle, &mut fam_len, Some(PWSTR(fam.as_mut_ptr()))) == ERROR_SUCCESS)
+            .then(|| String::from_utf16_lossy(&fam[..(fam_len as usize).saturating_sub(1)]));
+        let _ = CloseHandle(handle);
+        (path, family)
+    }
 }
 
 /// (packaged entries, desktop entries) as the registry holds them right now.
@@ -136,9 +256,95 @@ mod tests {
         assert_eq!(desktop_user(r"D:#SteamLibrary#x#Discord.EXE"), (r"D:\SteamLibrary\x\Discord.EXE".to_string(), "discord.exe".to_string()));
     }
 
+    fn s(pid: u32, active: bool, system: bool) -> Session {
+        Session { pid, active, system }
+    }
+
+    fn u(pid: i32, bundle_id: &str, path: &str) -> MicUser {
+        MicUser { pid, bundle_id: bundle_id.into(), path: path.into() }
+    }
+
+    #[test]
+    fn only_active_non_system_sessions_of_other_processes_count() {
+        let sessions = [s(40, true, false), s(0, true, false), s(7, true, true), s(12, false, false), s(99, true, false), s(40, true, false), s(5, true, false)];
+        assert_eq!(live_pids(&sessions, Some(99)), vec![5, 40]);
+        assert_eq!(live_pids(&sessions, None), vec![5, 40, 99]);
+        assert!(live_pids(&[], Some(1)).is_empty());
+    }
+
+    #[test]
+    fn a_desktop_process_is_its_lowercased_exe_name() {
+        assert_eq!(session_user(42, r"C:\Users\a\AppData\Roaming\Zoom\bin\Zoom.exe", None), Some(u(42, "zoom.exe", r"C:\Users\a\AppData\Roaming\Zoom\bin\Zoom.exe")));
+    }
+
+    #[test]
+    fn a_packaged_process_is_its_family_name() {
+        let path = r"C:\Program Files\WindowsApps\MSTeams_25.1.0.0_x64__8wekyb3d8bbwe\ms-teams.exe";
+        assert_eq!(session_user(7, path, Some("MSTeams_8wekyb3d8bbwe")), Some(u(7, "MSTeams_8wekyb3d8bbwe", path)));
+        assert_eq!(session_user(7, "", Some("MSTeams_8wekyb3d8bbwe")), Some(u(7, "MSTeams_8wekyb3d8bbwe", "")));
+        assert_eq!(session_user(7, path, Some("")), Some(u(7, "ms-teams.exe", path)), "an empty family is no family");
+    }
+
+    #[test]
+    fn a_process_windows_says_nothing_about_is_dropped() {
+        assert_eq!(session_user(8, "", None), None);
+        assert_eq!(session_user(8, "", Some("")), None);
+    }
+
+    #[test]
+    fn sessions_win_over_registry_entries_for_the_same_app() {
+        let sessions = vec![u(42, "zoom.exe", r"C:\z\Zoom.exe"), u(43, "zoom.exe", r"C:\z\Zoom.exe"), u(7, "MSTeams_8wekyb3d8bbwe", "")];
+        let registry = vec![u(0, "zoom.exe", r"C:\z\Zoom.exe"), u(0, "msteams_8wekyb3d8bbwe", ""), u(0, "discord.exe", r"C:\d\Discord.exe")];
+        assert_eq!(merge(sessions, registry), vec![u(42, "zoom.exe", r"C:\z\Zoom.exe"), u(7, "MSTeams_8wekyb3d8bbwe", ""), u(0, "discord.exe", r"C:\d\Discord.exe")]);
+        assert_eq!(merge(vec![], vec![u(0, "a.exe", "")]), vec![u(0, "a.exe", "")]);
+        assert_eq!(merge(vec![u(1, "a.exe", "")], vec![]), vec![u(1, "a.exe", "")]);
+    }
+
     #[test]
     fn reading_the_real_registry_does_not_fail() {
-        eprintln!("{:#?}", mic_users());
+        let t = std::time::Instant::now();
+        let users = mic_users();
+        eprintln!("mic_users() took {:?}: {users:#?}", t.elapsed());
+        eprintln!("registry only: {:#?}", registry_users());
+        let raw = capture_sessions();
+        let all: Vec<_> = raw.iter().map(|s| (s, identity_of(s.pid))).collect();
+        eprintln!("all capture sessions (active or not) with (path, family): {all:#?}");
+    }
+
+    /// Records from the real mic and checks that our own pid shows up as an active capture session while it
+    /// does, is kept out of `mic_users()`, and is gone once the mic stops. Run by hand:
+    /// `cargo test capture_sessions_live_smoke -- --ignored --nocapture`
+    #[test]
+    #[ignore]
+    fn capture_sessions_live_smoke() {
+        use crate::recorder::feed::feed;
+        use crate::recorder::mic::MicSource;
+        use crate::recorder::source::AudioSource;
+        let own = std::process::id();
+        let active = || live_pids(&capture_sessions(), None);
+
+        eprintln!("own pid {own}; active before: {:?}", active());
+        let (producer, _consumer) = feed();
+        let mut mic = MicSource::default();
+        eprintln!("recording from {}", mic.start(std::sync::Arc::new(std::sync::Mutex::new(producer))).unwrap());
+        std::thread::sleep(std::time::Duration::from_secs(1));
+
+        let t = std::time::Instant::now();
+        let during = active();
+        eprintln!("active while recording ({:?}): {during:?}", t.elapsed());
+        assert!(during.contains(&own), "our pid {own} should be an active capture session");
+        let t = std::time::Instant::now();
+        let users = mic_users();
+        eprintln!("mic_users() while recording ({:?}): {users:#?}", t.elapsed());
+        assert!(users.iter().all(|u| u.pid as u32 != own), "Talaan's own pid must be excluded");
+        let exe = std::env::current_exe().unwrap().file_name().unwrap().to_string_lossy().to_lowercase();
+        assert!(users.iter().all(|u| u.bundle_id != exe), "Talaan's own exe must be excluded");
+
+        mic.stop();
+        std::thread::sleep(std::time::Duration::from_millis(1500));
+        let after = active();
+        eprintln!("active after stopping: {after:?}");
+        assert!(!after.contains(&own), "our pid {own} should no longer be an active session");
     }
 
     /// Records from the real mic and prints this test exe's consent-store entry while recording and after.
