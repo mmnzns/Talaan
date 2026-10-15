@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.0.1 (2026-10-15)
 
 - **Your own key:** Groq, Cerebras, Mistral and OpenRouter join Claude, OpenAI and Gemini. The model is now a menu of the supported models per provider (Recommended picks the first one your key can use), with "Other model ID…" for anything newer. Requests are tuned per model: short or hidden reasoning, and no temperature for the models that refuse one.
 - **Fixed:** the dot on switches slid out of the pill when turned on.

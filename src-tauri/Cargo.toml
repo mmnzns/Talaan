@@ -1,6 +1,6 @@
 [package]
 name = "talaan"
-version = "1.0.0"
+version = "1.0.1"
 description = "Bot-free meeting recorder"
 authors = ["Miguel Monzones"]
 license = "MIT"
