@@ -174,7 +174,7 @@ fn process(deps: &Deps, id: &str, cancel: &AtomicBool) {
             let s = lock(&deps.storage);
             if s.save_summary(id, &out.summary).is_err() {
                 drop(s);
-                return without_summary(deps, id, FAILED, "Couldn't save the summary.".into());
+                return without_summary(deps, id, FAILED, crate::i18n::tr("error.save_summary"));
             }
             let mut title = String::new();
             let _ = s.update_meeting_file(id, |f| {

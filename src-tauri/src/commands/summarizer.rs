@@ -3,6 +3,7 @@
 use super::{notify, AppState, CmdResult, MEETINGS_CHANGED};
 use crate::keys;
 use crate::storage::model::MeetingStatus;
+use crate::i18n::{tr, tr_with};
 use crate::storage::StorageError;
 use crate::summarizer::engines::{compatible_base, default_base, list_models, recommended_model, HttpEngine, LocalEngine, Provider, CLOUD_CONTEXT, LOCAL_CONTEXT};
 use crate::summarizer::local::{helper_path, LocalAi};
@@ -45,7 +46,7 @@ pub fn make_engine(cfg: &Config, data_dir: &Path) -> Result<Box<dyn SummaryEngin
                 None => list_models(Provider::Compatible, &base, "")?
                     .into_iter()
                     .find(|m| !m.contains("embed"))
-                    .ok_or_else(|| EngineError::Unavailable("Ollama or LM Studio has no models yet. Download one there first.".into()))?,
+                    .ok_or_else(|| EngineError::Unavailable(tr("ai.server_no_models")))?,
             };
             Ok(Box::new(HttpEngine { provider: Provider::Compatible, base, key: None, label: format!("Local server · {model}"), model, context: LOCAL_CONTEXT }))
         }
@@ -53,7 +54,7 @@ pub fn make_engine(cfg: &Config, data_dir: &Path) -> Result<Box<dyn SummaryEngin
             let provider = Provider::parse(s["byokProvider"].as_str().unwrap_or("claude")).unwrap_or(Provider::Claude);
             let key = keys::get(provider.key_id());
             if key.is_none() && provider != Provider::Compatible {
-                return Err(EngineError::Unavailable(format!("Add your {} API key in Settings › Summary AI.", provider.name())));
+                return Err(EngineError::Unavailable(tr_with("ai.add_key", &[("provider", provider.name())])));
             }
             let key = key.unwrap_or_default();
             let base = match provider {
@@ -63,7 +64,7 @@ pub fn make_engine(cfg: &Config, data_dir: &Path) -> Result<Box<dyn SummaryEngin
             let model = match s["byokModel"].as_str().filter(|m| !m.is_empty() && *m != "recommended") {
                 Some(m) => m.to_string(),
                 None => recommended_model(provider, &list_models(provider, &base, &key)?)
-                    .ok_or_else(|| EngineError::Unavailable(format!("Couldn't find a suitable {} model for this key. Pick one in Settings › Summary AI.", provider.name())))?,
+                    .ok_or_else(|| EngineError::Unavailable(tr_with("ai.no_suitable_model", &[("provider", provider.name())])))?,
             };
             let context = if provider == Provider::Compatible { LOCAL_CONTEXT } else { CLOUD_CONTEXT };
             Ok(Box::new(HttpEngine { provider, base, key: Some(key).filter(|k| !k.is_empty()), label: format!("{} · {model}", provider.name()), model, context }))
@@ -71,11 +72,8 @@ pub fn make_engine(cfg: &Config, data_dir: &Path) -> Result<Box<dyn SummaryEngin
         _ => {
             let model = local_model(s["localModel"].as_str().unwrap_or("recommended"));
             let Location::Own(dir) = ModelStore::new(data_dir, false).locate(model) else {
-                return Err(EngineError::Unavailable(format!(
-                    "Download the local AI model ({}, {:.1} GB) in Settings › Summary AI.",
-                    model.name,
-                    model.size() as f64 / 1e9
-                )));
+                let size = crate::i18n::decimal(model.size() as f64 / 1e9);
+                return Err(EngineError::Unavailable(tr_with("ai.download_local", &[("name", model.name), ("size", &size)])));
             };
             Ok(Box::new(LocalEngine { ai: LocalAi::new(&helper_path()), model_path: dir.join(model.files[0].name), model_name: model.name.into() }))
         }
@@ -148,10 +146,10 @@ pub fn meetings_generate_summary(app: AppHandle, state: State<AppState>, s: Stat
     let storage = state.lock();
     let meeting = storage.get_meeting(&id)?;
     if meeting.transcript.is_empty() {
-        return Err(refused("There's no transcript to summarize yet."));
+        return Err(refused(tr("error.no_transcript_yet")));
     }
     if matches!(meeting.item.status, MeetingStatus::Recording | MeetingStatus::Transcribing) {
-        return Err(refused("Wait for the transcript to finish first."));
+        return Err(refused(tr("error.wait_transcript")));
     }
     storage.update_meeting_file(&id, |f| {
         f.status = MeetingStatus::Summarizing;
@@ -217,13 +215,13 @@ pub fn keys_save(provider: String, key: String, base_url: Option<String>) -> Cmd
             keys::set(p.key_id(), &key).map_err(refused)?;
             let model = recommended_model(p, &ids);
             let message = match &model {
-                Some(m) => format!("Connected. Summaries will use {m}."),
-                None => "Connected.".into(),
+                Some(m) => tr_with("ai.connected_model", &[("model", m)]),
+                None => tr("ai.connected"),
             };
             Ok(KeyTest { ok: true, message, model })
         }
         Err(EngineError::Unavailable(m)) | Err(EngineError::Failed(m)) => Ok(KeyTest { ok: false, message: m, model: None }),
-        Err(EngineError::Cancelled) => Ok(KeyTest { ok: false, message: "Cancelled.".into(), model: None }),
+        Err(EngineError::Cancelled) => Ok(KeyTest { ok: false, message: tr("error.cancelled"), model: None }),
     }
 }
 
@@ -238,6 +236,6 @@ pub fn keys_clear(provider: String) -> CmdResult<()> {
 pub fn local_server_models(address: String) -> CmdResult<Vec<String>> {
     list_models(Provider::Compatible, &compatible_base(&address), "").map_err(|e| match e {
         EngineError::Unavailable(m) | EngineError::Failed(m) => refused(m),
-        EngineError::Cancelled => refused("Cancelled."),
+        EngineError::Cancelled => refused(tr("error.cancelled")),
     })
 }

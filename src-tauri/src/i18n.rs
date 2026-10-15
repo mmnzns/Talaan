@@ -1,5 +1,5 @@
-//! The few strings only Rust shows: the menu bar menu, the "Summary ready" notification, recorder warnings and the
-//! Notion export's headings. The screens have their own tables (src/lib/i18n); this mirrors its rules: every string in
+//! The strings only Rust shows: the menu bar menu, the "Summary ready" notification, recorder warnings, the Notion
+//! export's headings, and the errors and refusals the app shows (`tr_err` keeps the technical detail in English). The screens have their own tables (src/lib/i18n); this mirrors its rules: every string in
 //! English, French (Canadian) and Spanish, proper accents, `{name}` placeholders. The frontend resolves "Auto" against
 //! the system language and tells us the result through `i18n_set_language`, so there is one answer for both sides.
 
@@ -139,6 +139,214 @@ const TABLE: &[(&str, &str, &str, &str)] = &[
     ("notion.open_questions", "Open questions", "Questions en suspens", "Preguntas abiertas"),
     ("notion.transcript", "Transcript", "Transcription", "Transcripción"),
     ("notion.due", "due {due}", "échéance {due}", "vence {due}"),
+    // Errors and refusals the app shows (toasts, Settings results, meeting banners). `{error}` is the system's own
+    // technical detail and stays in English.
+    ("error.cancelled", "Cancelled.", "Annulé.", "Cancelado."),
+    ("error.open_folder", "Couldn't open the folder: {error}", "Impossible d’ouvrir le dossier : {error}", "No se pudo abrir la carpeta: {error}"),
+    ("error.save_file", "Couldn't save the file: {error}", "Impossible d’enregistrer le fichier : {error}", "No se pudo guardar el archivo: {error}"),
+    ("error.wait_meeting", "Wait for this meeting to finish first.", "Attendez d’abord que cette réunion soit terminée.", "Primero espera a que termine esta reunión."),
+    (
+        "error.audio_gone",
+        "The audio for this call is gone, so it can't be transcribed again.",
+        "L’audio de cet appel a été supprimé, il ne peut donc pas être transcrit de nouveau.",
+        "El audio de esta llamada ya no está, así que no se puede volver a transcribir.",
+    ),
+    (
+        "error.audio_needed",
+        "The audio is still needed for the transcript.",
+        "L’audio est encore nécessaire pour la transcription.",
+        "El audio todavía se necesita para la transcripción.",
+    ),
+    (
+        "error.download_speech_model",
+        "Download {name} in Settings › Speech models first.",
+        "Téléchargez d’abord {name} dans Paramètres › Modèles vocaux.",
+        "Primero descarga {name} en Ajustes › Modelos de voz.",
+    ),
+    ("error.delete_model", "Couldn't delete the model: {error}", "Impossible de supprimer le modèle : {error}", "No se pudo eliminar el modelo: {error}"),
+    ("error.save_transcript", "Couldn't save the transcript.", "Impossible d’enregistrer la transcription.", "No se pudo guardar la transcripción."),
+    ("error.save_summary", "Couldn't save the summary.", "Impossible d’enregistrer le résumé.", "No se pudo guardar el resumen."),
+    (
+        "error.no_transcript_yet",
+        "There's no transcript to summarize yet.",
+        "Il n’y a pas encore de transcription à résumer.",
+        "Todavía no hay una transcripción para resumir.",
+    ),
+    (
+        "error.wait_transcript",
+        "Wait for the transcript to finish first.",
+        "Attendez d’abord que la transcription soit terminée.",
+        "Primero espera a que termine la transcripción.",
+    ),
+    ("error.summary_empty", "There's no transcript to summarize.", "Il n’y a pas de transcription à résumer.", "No hay una transcripción para resumir."),
+    (
+        "error.summary_too_short",
+        "This recording is too short to summarize, so only the transcript is saved.",
+        "Cet enregistrement est trop court pour être résumé, donc seule la transcription est enregistrée.",
+        "Esta grabación es demasiado corta para resumirla, así que solo se guarda la transcripción.",
+    ),
+    (
+        "error.summary_bad_output",
+        "The summary AI gave an answer Talaan couldn't use ({error}).",
+        "L’IA de résumé a donné une réponse que Talaan n’a pas pu utiliser ({error}).",
+        "La IA de resumen dio una respuesta que Talaan no pudo usar ({error}).",
+    ),
+    // Summary AI setup and the AI services' answers.
+    (
+        "ai.server_no_models",
+        "Ollama or LM Studio has no models yet. Download one there first.",
+        "Ollama ou LM Studio n’a pas encore de modèle. Téléchargez-en un d’abord dans cette application.",
+        "Ollama o LM Studio todavía no tiene modelos. Primero descarga uno ahí.",
+    ),
+    (
+        "ai.add_key",
+        "Add your {provider} API key in Settings › Summary AI.",
+        "Ajoutez votre clé d’API {provider} dans Paramètres › IA de résumé.",
+        "Agrega tu clave de API de {provider} en Ajustes › IA de resumen.",
+    ),
+    (
+        "ai.no_suitable_model",
+        "Couldn't find a suitable {provider} model for this key. Pick one in Settings › Summary AI.",
+        "Aucun modèle {provider} adapté n’a été trouvé pour cette clé. Choisissez-en un dans Paramètres › IA de résumé.",
+        "No se encontró un modelo de {provider} adecuado para esta clave. Elige uno en Ajustes › IA de resumen.",
+    ),
+    (
+        "ai.download_local",
+        "Download the local AI model ({name}, {size} GB) in Settings › Summary AI.",
+        "Téléchargez le modèle d’IA local ({name}, {size} Go) dans Paramètres › IA de résumé.",
+        "Descarga el modelo de IA local ({name}, {size} GB) en Ajustes › IA de resumen.",
+    ),
+    ("ai.connected", "Connected.", "Connecté.", "Conectado."),
+    ("ai.connected_model", "Connected. Summaries will use {model}.", "Connecté. Les résumés utiliseront {model}.", "Conectado. Los resúmenes usarán {model}."),
+    (
+        "ai.key_rejected",
+        "{provider} didn't accept the API key. Check it in Settings › Summary AI.",
+        "{provider} n’a pas accepté la clé d’API. Vérifiez-la dans Paramètres › IA de résumé.",
+        "{provider} no aceptó la clave de API. Revísala en Ajustes › IA de resumen.",
+    ),
+    (
+        "ai.no_such_model",
+        "{provider} doesn't have that model. Pick another in Settings › Summary AI. {detail}",
+        "{provider} n’a pas ce modèle. Choisissez-en un autre dans Paramètres › IA de résumé. {detail}",
+        "{provider} no tiene ese modelo. Elige otro en Ajustes › IA de resumen. {detail}",
+    ),
+    (
+        "ai.rate_limited",
+        "{provider} is rate limiting or out of credit. Try again later. {detail}",
+        "{provider} limite les requêtes ou n’a plus de crédit. Réessayez plus tard. {detail}",
+        "{provider} está limitando las solicitudes o se quedó sin crédito. Inténtalo más tarde. {detail}",
+    ),
+    ("ai.http_error", "{provider} returned an error ({status}). {detail}", "{provider} a renvoyé une erreur ({status}). {detail}", "{provider} devolvió un error ({status}). {detail}"),
+    (
+        "ai.unreachable",
+        "Couldn't reach {provider} at {url}. Is it running, and is this computer online?",
+        "Impossible de joindre {provider} à {url}. Est-il ouvert, et cet ordinateur est-il en ligne ?",
+        "No se pudo conectar con {provider} en {url}. ¿Está abierto y esta computadora tiene conexión?",
+    ),
+    ("ai.too_slow", "{provider} took too long to answer.", "{provider} a mis trop de temps à répondre.", "{provider} tardó demasiado en responder."),
+    ("ai.failed", "Couldn't reach {provider}: {error}", "Impossible de joindre {provider} : {error}", "No se pudo conectar con {provider}: {error}"),
+    ("ai.empty_reply", "{provider} sent an empty reply", "{provider} a envoyé une réponse vide", "{provider} envió una respuesta vacía"),
+    // The local AI (Talaan's own helper process)
+    ("local_ai.no_start", "The local AI didn't start.", "L’IA locale n’a pas démarré.", "La IA local no se inició."),
+    ("local_ai.too_slow", "The local AI took too long.", "L’IA locale a mis trop de temps.", "La IA local tardó demasiado."),
+    (
+        "local_ai.crashed",
+        "The local AI stopped unexpectedly, probably out of memory. Try the smaller model, or close other apps.",
+        "L’IA locale s’est arrêtée de façon inattendue, probablement par manque de mémoire. Essayez le modèle plus petit ou fermez d’autres applications.",
+        "La IA local se detuvo de forma inesperada, probablemente por falta de memoria. Prueba el modelo más pequeño o cierra otras apps.",
+    ),
+    // Ask
+    ("ask.stopped", "Ask stopped unexpectedly: {error}", "Demander s’est arrêté de façon inattendue : {error}", "Preguntar se detuvo de forma inesperada: {error}"),
+    ("ask.empty", "Type a question first.", "Tapez d’abord une question.", "Primero escribe una pregunta."),
+    ("ask.needs_ai", "Ask uses your summary AI. {message}", "Demander utilise votre IA de résumé. {message}", "Preguntar usa tu IA de resumen. {message}"),
+    (
+        "ask.unreadable",
+        "The summary AI's answer couldn't be read ({error}). Try again.",
+        "La réponse de l’IA de résumé n’a pas pu être lue ({error}). Réessayez.",
+        "No se pudo leer la respuesta de la IA de resumen ({error}). Inténtalo de nuevo.",
+    ),
+    // Updates
+    ("update.check_failed", "Couldn't check for updates: {error}", "Impossible de vérifier les mises à jour : {error}", "No se pudo buscar actualizaciones: {error}"),
+    (
+        "update.offline",
+        "Couldn't check for updates. Is this computer online? ({error})",
+        "Impossible de vérifier les mises à jour. Cet ordinateur est-il en ligne ? ({error})",
+        "No se pudo buscar actualizaciones. ¿Esta computadora tiene conexión? ({error})",
+    ),
+    (
+        "update.stop_recording",
+        "Stop the recording first, then update.",
+        "Arrêtez d’abord l’enregistrement, puis faites la mise à jour.",
+        "Primero detén la grabación y luego actualiza.",
+    ),
+    ("update.up_to_date", "Talaan is up to date.", "Talaan est à jour.", "Talaan está actualizado."),
+    ("update.install_failed", "The update didn't install: {error}", "La mise à jour ne s’est pas installée : {error}", "La actualización no se instaló: {error}"),
+    // Notion
+    (
+        "notion.connect_first",
+        "Connect Notion in Settings › Connections first.",
+        "Connectez d’abord Notion dans Paramètres › Connexions.",
+        "Primero conecta Notion en Ajustes › Conexiones.",
+    ),
+    ("notion.stopped", "Notion stopped unexpectedly: {error}", "Notion s’est arrêté de façon inattendue : {error}", "Notion se detuvo de forma inesperada: {error}"),
+    ("notion.paste_secret", "Paste your integration secret first.", "Collez d’abord le secret de votre intégration.", "Primero pega el secreto de tu integración."),
+    (
+        "notion.offline",
+        "Couldn't reach Notion. Is this computer online?",
+        "Impossible de joindre Notion. Cet ordinateur est-il en ligne ?",
+        "No se pudo conectar con Notion. ¿Esta computadora tiene conexión?",
+    ),
+    ("notion.unreachable", "Couldn't reach Notion: {error}", "Impossible de joindre Notion : {error}", "No se pudo conectar con Notion: {error}"),
+    (
+        "notion.bad_secret",
+        "Notion didn't accept that secret. Copy it again from your integration's page in Notion.",
+        "Notion n’a pas accepté ce secret. Copiez-le de nouveau depuis la page de votre intégration dans Notion.",
+        "Notion no aceptó ese secreto. Cópialo otra vez desde la página de tu integración en Notion.",
+    ),
+    (
+        "notion.no_access",
+        "Talaan can't see that page. In Notion, open it, then ••• › Connections › add your Talaan integration.",
+        "Talaan ne voit pas cette page. Dans Notion, ouvrez-la, puis ••• › Connexions › ajoutez votre intégration Talaan.",
+        "Talaan no puede ver esa página. En Notion, ábrela y luego ••• › Conexiones › agrega tu integración de Talaan.",
+    ),
+    ("notion.busy", "Notion is busy. Try again in a minute.", "Notion est occupé. Réessayez dans une minute.", "Notion está ocupado. Inténtalo de nuevo en un minuto."),
+    ("notion.said", "Notion said: {message}", "Notion a répondu : {message}", "Notion respondió: {message}"),
+    ("notion.no_page", "Notion didn't return the new page.", "Notion n’a pas renvoyé la nouvelle page.", "Notion no devolvió la página nueva."),
+    // Importing an audio file
+    ("import.file_gone", "That file isn't there anymore.", "Ce fichier n’est plus là.", "Ese archivo ya no está."),
+    ("import.save_failed", "Couldn't save the imported audio: {error}", "Impossible d’enregistrer l’audio importé : {error}", "No se pudo guardar el audio importado: {error}"),
+    (
+        "import.unreadable",
+        "Talaan can't read this file ({error}). Try an M4A, MP3, WAV or FLAC file.",
+        "Talaan ne peut pas lire ce fichier ({error}). Essayez un fichier M4A, MP3, WAV ou FLAC.",
+        "Talaan no puede leer este archivo ({error}). Prueba con un archivo M4A, MP3, WAV o FLAC.",
+    ),
+    ("import.open_failed", "Couldn't open the file: {error}", "Impossible d’ouvrir le fichier : {error}", "No se pudo abrir el archivo: {error}"),
+    ("import.no_audio", "The file has no audio in it.", "Ce fichier ne contient pas d’audio.", "El archivo no tiene audio."),
+    ("import.write_failed", "Couldn't write the audio: {error}", "Impossible d’écrire l’audio : {error}", "No se pudo escribir el audio: {error}"),
+    // Secure key storage (Keychain on the Mac, Credential Manager on Windows)
+    ("keys.open_failed", "Couldn't open secure key storage: {error}", "Impossible d’ouvrir le stockage sécurisé des clés : {error}", "No se pudo abrir el almacén seguro de claves: {error}"),
+    (
+        "keys.save_failed",
+        "Couldn't save the key in secure key storage: {error}",
+        "Impossible d’enregistrer la clé dans le stockage sécurisé des clés : {error}",
+        "No se pudo guardar la clave en el almacén seguro de claves: {error}",
+    ),
+    (
+        "keys.remove_failed",
+        "Couldn't remove the key from secure key storage: {error}",
+        "Impossible de retirer la clé du stockage sécurisé des clés : {error}",
+        "No se pudo quitar la clave del almacén seguro de claves: {error}",
+    ),
+    // Recorder
+    ("recorder.already_recording", "Already recording", "Enregistrement déjà en cours", "Ya se está grabando"),
+    ("recorder.not_recording", "Not recording", "Aucun enregistrement en cours", "No se está grabando"),
+    ("recorder.no_mic_found", "No microphone found", "Aucun microphone trouvé", "No se encontró ningún micrófono"),
+    ("recorder.no_mic", "No microphone", "Aucun microphone", "Sin micrófono"),
+    // Model downloads (shown as a warning notice)
+    ("download.network", "Couldn't download {name}: {error}", "Impossible de télécharger {name} : {error}", "No se pudo descargar {name}: {error}"),
+    ("download.corrupt", "{name} was damaged in transit. Try again.", "{name} a été endommagé pendant le téléchargement. Réessayez.", "{name} se dañó durante la descarga. Inténtalo de nuevo."),
+    ("download.save_failed", "Couldn't save the model: {error}", "Impossible d’enregistrer le modèle : {error}", "No se pudo guardar el modelo: {error}"),
 ];
 
 fn pick(lang: Lang, key: &str) -> Option<&'static str> {
@@ -157,6 +365,17 @@ pub fn tr(key: &str) -> String {
 /// Like `tr`, filling `{name}` placeholders.
 pub fn tr_with(key: &str, vars: &[(&str, &str)]) -> String {
     tr_in(current(), key, vars)
+}
+
+/// A number with one decimal, written the way the current language writes it ("2.7" / "2,7").
+pub fn decimal(n: f64) -> String {
+    let s = format!("{n:.1}");
+    if current() == Lang::Fr { s.replace('.', ",") } else { s }
+}
+
+/// Like `tr`, with the technical detail of an error (left in English) in `{error}`.
+pub fn tr_err(key: &str, error: impl std::fmt::Display) -> String {
+    tr_with(key, &[("error", &error.to_string())])
 }
 
 pub fn tr_in(lang: Lang, key: &str, vars: &[(&str, &str)]) -> String {
@@ -208,6 +427,50 @@ mod tests {
         assert_eq!(tr_in(Lang::Fr, "notice.mic_switched", &[("name", "AirPods")]), "Passage à AirPods. L’enregistrement continue.");
         assert_eq!(tr_in(Lang::Es, "tray.quit", &[]), "Salir de Talaan");
         assert_eq!(tr_in(Lang::Fr, "no.such.key", &[]), "no.such.key");
+    }
+
+    #[test]
+    fn every_key_the_code_asks_for_exists() {
+        fn walk(dir: &std::path::Path, out: &mut Vec<(String, String)>) {
+            for e in std::fs::read_dir(dir).unwrap().flatten() {
+                let p = e.path();
+                if p.is_dir() {
+                    walk(&p, out);
+                } else if p.extension().is_some_and(|x| x == "rs") {
+                    let text = std::fs::read_to_string(&p).unwrap();
+                    for call in ["tr(\"", "tr_with(\"", "tr_err(\""] {
+                        for (at, _) in text.match_indices(call) {
+                            // `tr(` itself, not `from_str(`.
+                            if text[..at].ends_with(|c: char| c.is_alphanumeric() || c == '_') {
+                                continue;
+                            }
+                            let key = text[at + call.len()..].split('"').next().unwrap_or("");
+                            out.push((p.display().to_string(), key.to_string()));
+                        }
+                    }
+                }
+            }
+        }
+        let mut used = vec![];
+        walk(&std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src"), &mut used);
+        assert!(used.len() > 50, "found {} tr calls", used.len());
+        for (file, key) in used {
+            if key == "no.such.key" || key.contains('{') {
+                continue;
+            }
+            assert!(pick(Lang::En, &key).is_some(), "{file} asks for missing key {key}");
+        }
+    }
+
+    #[test]
+    fn errors_come_in_the_chosen_language_with_their_detail() {
+        assert_eq!(tr_in(Lang::Fr, "update.up_to_date", &[]), "Talaan est à jour.");
+        assert_eq!(
+            tr_in(Lang::Es, "update.install_failed", &[("error", "signature mismatch")]),
+            "La actualización no se instaló: signature mismatch"
+        );
+        assert_eq!(tr_err("error.open_folder", "denied"), "Couldn't open the folder: denied");
+        assert_eq!(decimal(2.74), "2.7");
     }
 
     #[test]

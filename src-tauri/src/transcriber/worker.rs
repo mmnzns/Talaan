@@ -236,7 +236,7 @@ fn process(deps: &Deps, id: &str, loaded: &mut Option<Loaded>, cancel: &AtomicBo
             let s = lock(&deps.storage);
             if s.save_transcript(id, &out.lines).is_err() {
                 drop(s);
-                return fail(deps, id, "failed", "Couldn't save the transcript.".into());
+                return fail(deps, id, "failed", crate::i18n::tr("error.save_transcript"));
             }
             let _ = s.update_meeting_file(id, |f| {
                 if summarize {

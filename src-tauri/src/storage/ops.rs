@@ -110,7 +110,7 @@ impl Storage {
     pub fn delete_audio(&self, id: &str) -> Result<()> {
         let file = self.read_meeting_file(id)?;
         if matches!(file.status, MeetingStatus::Recording | MeetingStatus::Transcribing | MeetingStatus::NeedsRecovery) {
-            return Err(StorageError::Refused("The audio is still needed for the transcript.".into()));
+            return Err(StorageError::Refused(crate::i18n::tr("error.audio_needed")));
         }
         let dir = self.dir(id)?;
         for name in [ME_WAV, THEM_WAV, PLAYBACK_WAV] {

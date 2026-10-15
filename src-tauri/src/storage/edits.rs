@@ -78,10 +78,10 @@ impl Storage {
         let dir = self.dir(id)?;
         let file = self.read_meeting_file(id)?;
         if !matches!(file.status, MeetingStatus::Ready | MeetingStatus::Failed) {
-            return Err(StorageError::Refused("Wait for this meeting to finish first.".into()));
+            return Err(StorageError::Refused(crate::i18n::tr("error.wait_meeting")));
         }
         if !self.has_audio(&dir, &file) {
-            return Err(StorageError::Refused("The audio for this call is gone, so it can't be transcribed again.".into()));
+            return Err(StorageError::Refused(crate::i18n::tr("error.audio_gone")));
         }
         for name in [TRANSCRIPT_EDITS, SUMMARY, SUMMARY_EDITED, SUMMARY_DONE] {
             remove_if_exists(&dir.join(name))?;

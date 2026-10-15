@@ -1,6 +1,7 @@
 //! Importing an audio file (a Voice Memo, a recording from another app): decode whatever it is, mix to mono,
 //! resample to 16 kHz and write the "Them" track, streaming so a long file never sits in memory.
 
+use crate::i18n::{tr, tr_err};
 use crate::recorder::resample::{to_i16, Resampler16k};
 use std::fs::File;
 use std::path::Path;
@@ -18,8 +19,8 @@ pub const EXTENSIONS: &[&str] = &["m4a", "mp4", "aac", "mp3", "wav", "aif", "aif
 
 /// Decodes `src` into a 16 kHz mono 16-bit WAV at `out`. Returns the duration in ms.
 pub fn import_to_wav(src: &Path, out: &Path, cancel: &AtomicBool, progress: &mut dyn FnMut(f32)) -> Result<u64, String> {
-    let unreadable = |e: &dyn std::fmt::Display| format!("Talaan can't read this file ({e}). Try an M4A, MP3, WAV or FLAC file.");
-    let file = File::open(src).map_err(|e| format!("Couldn't open the file: {e}"))?;
+    let unreadable = |e: &dyn std::fmt::Display| tr_err("import.unreadable", e);
+    let file = File::open(src).map_err(|e| tr_err("import.open_failed", e))?;
     let mss = MediaSourceStream::new(Box::new(file), Default::default());
     let mut hint = Hint::new();
     if let Some(ext) = src.extension().and_then(|e| e.to_str()) {
@@ -27,21 +28,21 @@ pub fn import_to_wav(src: &Path, out: &Path, cancel: &AtomicBool, progress: &mut
     }
     let probed = symphonia::default::get_probe().format(&hint, mss, &FormatOptions::default(), &MetadataOptions::default()).map_err(|e| unreadable(&e))?;
     let mut format = probed.format;
-    let track = format.tracks().iter().find(|t| t.codec_params.codec != CODEC_TYPE_NULL).ok_or_else(|| "The file has no audio in it.".to_string())?;
+    let track = format.tracks().iter().find(|t| t.codec_params.codec != CODEC_TYPE_NULL).ok_or_else(|| tr("import.no_audio"))?;
     let track_id = track.id;
     let total_frames = track.codec_params.n_frames;
     let mut decoder = symphonia::default::get_codecs().make(&track.codec_params, &DecoderOptions::default()).map_err(|e| unreadable(&e))?;
 
     let spec = hound::WavSpec { channels: 1, sample_rate: 16_000, bits_per_sample: 16, sample_format: hound::SampleFormat::Int };
     let tmp = out.with_extension("wav.tmp");
-    let mut writer = hound::WavWriter::create(&tmp, spec).map_err(|e| format!("Couldn't write the audio: {e}"))?;
+    let mut writer = hound::WavWriter::create(&tmp, spec).map_err(|e| tr_err("import.write_failed", e))?;
     let mut resampler: Option<Resampler16k> = None;
     let mut buf: Option<SampleBuffer<f32>> = None;
     let (mut frames_in, mut written) = (0u64, 0u64);
     let mut write = |samples: Vec<f32>, w: &mut hound::WavWriter<_>| -> Result<(), String> {
         written += samples.len() as u64;
         for s in to_i16(&samples) {
-            w.write_sample(s).map_err(|e| format!("Couldn't write the audio: {e}"))?;
+            w.write_sample(s).map_err(|e| tr_err("import.write_failed", e))?;
         }
         Ok(())
     };
@@ -84,12 +85,12 @@ pub fn import_to_wav(src: &Path, out: &Path, cancel: &AtomicBool, progress: &mut
     if let Some(mut r) = resampler {
         write(r.finish(), &mut writer)?;
     }
-    writer.finalize().map_err(|e| format!("Couldn't write the audio: {e}"))?;
+    writer.finalize().map_err(|e| tr_err("import.write_failed", e))?;
     if written == 0 {
         let _ = std::fs::remove_file(&tmp);
-        return Err("The file has no audio in it.".into());
+        return Err(tr("import.no_audio"));
     }
-    std::fs::rename(&tmp, out).map_err(|e| format!("Couldn't write the audio: {e}"))?;
+    std::fs::rename(&tmp, out).map_err(|e| tr_err("import.write_failed", e))?;
     progress(1.0);
     Ok(written * 1000 / 16_000)
 }

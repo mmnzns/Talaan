@@ -1,6 +1,7 @@
 //! Updates (GitHub Releases, signed with Talaan's own key) and Open at login.
 
 use super::{AppState, CmdResult};
+use crate::i18n::{tr, tr_err};
 use crate::storage::StorageError;
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager};
@@ -22,8 +23,8 @@ pub struct Available {
 /// The newer version on GitHub, if there is one. Nothing is downloaded.
 #[tauri::command]
 pub async fn updates_check(app: AppHandle) -> CmdResult<Option<Available>> {
-    let updater = app.updater().map_err(|e| refused(format!("Couldn't check for updates: {e}")))?;
-    let update = updater.check().await.map_err(|e| refused(format!("Couldn't check for updates. Is this computer online? ({e})")))?;
+    let updater = app.updater().map_err(|e| refused(tr_err("update.check_failed", e)))?;
+    let update = updater.check().await.map_err(|e| refused(tr_err("update.offline", e)))?;
     Ok(update.map(|u| Available { version: u.version, notes: u.body }))
 }
 
@@ -31,13 +32,13 @@ pub async fn updates_check(app: AppHandle) -> CmdResult<Option<Available>> {
 #[tauri::command]
 pub async fn updates_install(app: AppHandle) -> CmdResult<()> {
     if super::recorder::is_recording(&app) {
-        return Err(refused("Stop the recording first, then update."));
+        return Err(refused(tr("update.stop_recording")));
     }
-    let updater = app.updater().map_err(|e| refused(e.to_string()))?;
-    let Some(update) = updater.check().await.map_err(|e| refused(format!("Couldn't check for updates: {e}")))? else {
-        return Err(refused("Talaan is up to date."));
+    let updater = app.updater().map_err(|e| refused(tr_err("update.check_failed", e)))?;
+    let Some(update) = updater.check().await.map_err(|e| refused(tr_err("update.check_failed", e)))? else {
+        return Err(refused(tr("update.up_to_date")));
     };
-    update.download_and_install(|_, _| {}, || {}).await.map_err(|e| refused(format!("The update didn't install: {e}")))?;
+    update.download_and_install(|_, _| {}, || {}).await.map_err(|e| refused(tr_err("update.install_failed", e)))?;
     app.restart()
 }
 

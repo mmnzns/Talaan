@@ -2,7 +2,7 @@
 //! internal integration in Notion, shares the pages or databases it may write to, and pastes its secret, which is
 //! kept in secure key storage like API keys. Nothing is sent unless the user clicks Export.
 
-use crate::i18n::{tr, tr_with};
+use crate::i18n::{tr, tr_err, tr_with};
 use crate::storage::model::Meeting;
 use crate::summarizer::prompt::{speaker_name, stamp};
 use serde::Serialize;
@@ -104,15 +104,15 @@ impl Notion {
         if let Some(b) = body {
             req = req.json(b);
         }
-        let res = req.send().map_err(|e| if e.is_connect() || e.is_timeout() { "Couldn't reach Notion. Is this computer online?".to_string() } else { format!("Couldn't reach Notion: {e}") })?;
+        let res = req.send().map_err(|e| if e.is_connect() || e.is_timeout() { tr("notion.offline") } else { tr_err("notion.unreachable", e) })?;
         let status = res.status().as_u16();
         let v: Value = res.json().unwrap_or(Value::Null);
         match status {
             200..=299 => Ok(v),
-            401 => Err("Notion didn't accept that secret. Copy it again from your integration's page in Notion.".into()),
-            403 | 404 => Err("Talaan can't see that page. In Notion, open it, then ••• › Connections › add your Talaan integration.".into()),
-            429 => Err("Notion is busy. Try again in a minute.".into()),
-            _ => Err(format!("Notion said: {}", v["message"].as_str().unwrap_or("something went wrong"))),
+            401 => Err(tr("notion.bad_secret")),
+            403 | 404 => Err(tr("notion.no_access")),
+            429 => Err(tr("notion.busy")),
+            _ => Err(tr_with("notion.said", &[("message", v["message"].as_str().unwrap_or("something went wrong"))])),
         }
     }
 
@@ -159,7 +159,7 @@ impl Notion {
         let mut chunks = body.chunks(BLOCKS_PER_CALL);
         let first = chunks.next().unwrap_or(&[]);
         let page = self.call(reqwest::Method::POST, "/v1/pages", Some(&json!({ "parent": parent, "properties": properties, "children": first })))?;
-        let id = page["id"].as_str().ok_or("Notion didn't return the new page")?.to_string();
+        let id = page["id"].as_str().ok_or_else(|| tr("notion.no_page"))?.to_string();
         for rest in chunks {
             self.call(reqwest::Method::PATCH, &format!("/v1/blocks/{id}/children"), Some(&json!({ "children": rest })))?;
         }

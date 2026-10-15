@@ -27,7 +27,7 @@ const EVENT: &str = "import-audio";
 pub fn meetings_import(app: AppHandle, path: String) -> CmdResult<()> {
     let src = PathBuf::from(&path);
     if !src.is_file() {
-        return Err(StorageError::Refused("That file isn't there anymore.".into()));
+        return Err(StorageError::Refused(crate::i18n::tr("import.file_gone")));
     }
     std::thread::spawn(move || {
         let send = |e: ImportEvent| {
@@ -75,7 +75,7 @@ pub fn meetings_import(app: AppHandle, path: String) -> CmdResult<()> {
             }
             Err(e) => {
                 let _ = std::fs::remove_file(&tmp);
-                send(ImportEvent::Failed { message: format!("Couldn't save the imported audio: {e}") });
+                send(ImportEvent::Failed { message: crate::i18n::tr_err("import.save_failed", e) });
             }
         }
     });

@@ -1,6 +1,7 @@
 //! Notion: connect with an integration secret (kept in secure key storage), list where it can write, export.
 
 use super::{AppState, CmdResult};
+use crate::i18n::{tr, tr_err};
 use crate::keys;
 use crate::notion::{blocks, Destination, Notion, API, KEY_ID};
 use crate::storage::StorageError;
@@ -12,12 +13,12 @@ fn refused(m: impl Into<String>) -> StorageError {
 }
 
 fn client() -> CmdResult<Notion> {
-    let secret = keys::get(KEY_ID).ok_or_else(|| refused("Connect Notion in Settings › Connections first."))?;
+    let secret = keys::get(KEY_ID).ok_or_else(|| refused(tr("notion.connect_first")))?;
     Ok(Notion::new(API, &secret))
 }
 
 async fn blocking<T: Send + 'static>(f: impl FnOnce() -> CmdResult<T> + Send + 'static) -> CmdResult<T> {
-    tauri::async_runtime::spawn_blocking(f).await.map_err(|e| refused(format!("Notion stopped unexpectedly: {e}")))?
+    tauri::async_runtime::spawn_blocking(f).await.map_err(|e| refused(tr_err("notion.stopped", e)))?
 }
 
 #[derive(Serialize)]
@@ -31,7 +32,7 @@ pub async fn notion_connect(secret: String) -> CmdResult<Connected> {
     blocking(move || {
         let secret = secret.trim().to_string();
         if secret.is_empty() {
-            return Err(refused("Paste your integration secret first."));
+            return Err(refused(tr("notion.paste_secret")));
         }
         let workspace = Notion::new(API, &secret).whoami().map_err(refused)?;
         keys::set(KEY_ID, &secret).map_err(refused)?;

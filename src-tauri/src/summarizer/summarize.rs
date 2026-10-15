@@ -49,11 +49,11 @@ pub enum SummarizeError {
 impl SummarizeError {
     pub fn message(&self) -> String {
         match self {
-            SummarizeError::Empty => "There's no transcript to summarize.".into(),
-            SummarizeError::TooShort => "This recording is too short to summarize, so only the transcript is saved.".into(),
+            SummarizeError::Empty => crate::i18n::tr("error.summary_empty"),
+            SummarizeError::TooShort => crate::i18n::tr("error.summary_too_short"),
             SummarizeError::Engine(EngineError::Unavailable(m)) | SummarizeError::Engine(EngineError::Failed(m)) => m.clone(),
-            SummarizeError::Engine(EngineError::Cancelled) => "Cancelled.".into(),
-            SummarizeError::BadOutput(m) => format!("The summary AI gave an answer Talaan couldn't use ({m})."),
+            SummarizeError::Engine(EngineError::Cancelled) => crate::i18n::tr("error.cancelled"),
+            SummarizeError::BadOutput(m) => crate::i18n::tr_err("error.summary_bad_output", m),
         }
     }
 }

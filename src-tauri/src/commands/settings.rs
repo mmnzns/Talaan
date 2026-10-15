@@ -48,7 +48,7 @@ pub struct DataInfo {
 #[tauri::command]
 pub fn data_reveal(state: State<AppState>) -> CmdResult<()> {
     let meetings = crate::storage::paths::meetings_dir(state.lock().root());
-    tauri_plugin_opener::reveal_item_in_dir(meetings).map_err(|e| crate::storage::StorageError::Refused(format!("Couldn't open the folder: {e}")))
+    tauri_plugin_opener::reveal_item_in_dir(meetings).map_err(|e| crate::storage::StorageError::Refused(crate::i18n::tr_err("error.open_folder", e)))
 }
 
 /// Where the data lives and how big it is, for the Privacy tab.

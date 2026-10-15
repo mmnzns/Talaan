@@ -99,7 +99,7 @@ pub fn meetings_retry(app: AppHandle, state: State<AppState>, t: State<Transcrib
     let storage = state.lock();
     let dir = storage.dir(&id)?;
     if !dir.join("me.wav").exists() && !dir.join("them.wav").exists() {
-        return Err(err("The audio for this call is gone, so it can't be transcribed again.".into()));
+        return Err(err(crate::i18n::tr("error.audio_gone")));
     }
     storage.update_meeting_file(&id, |f| {
         f.status = MeetingStatus::Transcribing;
@@ -120,7 +120,7 @@ pub fn meetings_retranscribe(app: AppHandle, state: State<AppState>, t: State<Tr
     let storage = state.lock();
     let config = Config::from_settings(storage.settings_get()?.as_ref());
     if ModelStore::new(&t.data_dir, config.reuse).locate(m) == Location::Missing {
-        return Err(err(format!("Download {} in Settings › Speech models first.", m.name)));
+        return Err(err(crate::i18n::tr_with("error.download_speech_model", &[("name", m.name)])));
     }
     app.state::<super::summarizer::SummarizerState>().cancel_if_running(&id);
     storage.start_retranscribe(&id, m.id)?;
@@ -239,7 +239,7 @@ pub fn models_download(app: AppHandle, t: State<TranscriberState>, id: String) -
             Ok(()) => {}
             Err(DownloadError::Cancelled) => {}
             Err(e) => {
-                let _ = app.emit("recorder-notice", serde_json::json!({ "text": e.to_string(), "kind": "warning" }));
+                let _ = app.emit("recorder-notice", serde_json::json!({ "text": e.user_message(), "kind": "warning" }));
             }
         }
     });
@@ -261,7 +261,7 @@ pub fn models_delete(app: AppHandle, t: State<TranscriberState>, id: String) -> 
     let model = find_any(&id).ok_or_else(|| err(format!("No model called {id}")))?;
     let dir = ModelStore::new(&t.data_dir, false).own_dir(model);
     if dir.exists() {
-        std::fs::remove_dir_all(&dir).map_err(|e| err(format!("Couldn't delete the model: {e}")))?;
+        std::fs::remove_dir_all(&dir).map_err(|e| err(crate::i18n::tr_err("error.delete_model", e)))?;
     }
     let _ = app.emit(MODELS_CHANGED, ());
     Ok(())

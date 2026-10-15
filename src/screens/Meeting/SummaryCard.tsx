@@ -1,7 +1,7 @@
 import { Sparkles } from "lucide-react";
 import { useStore } from "../../data/StoreProvider";
 import type { Meeting, Ms, Summary } from "../../data/types";
-import { describeError } from "../../data/errors";
+import { describeError, summaryErrorText } from "../../data/errors";
 import { openSettings } from "../../lib/windows";
 import { ownerName } from "../../lib/transcript";
 import { useT } from "../../lib/i18n/I18nProvider";
@@ -102,7 +102,7 @@ export function SummaryCard({ meeting, activeAt, editing, onJump }: Props) {
         ) : meeting.transcript.length > 0 ? (
           <div className="flex flex-col items-start gap-2 py-2">
             <span className="font-display text-base font-bold">{t("meeting.noSummaryTitle")}</span>
-            <p className="m-0 text-[13px] text-subtle">{meeting.summaryError?.message ?? t("meeting.noSummaryBody")}</p>
+            <p className="m-0 text-[13px] text-subtle">{summaryErrorText(meeting.summaryError)}</p>
             <span className="flex flex-wrap gap-2">
               {meeting.summaryError?.code !== "too_short" && (
                 <Button variant="primary" onClick={() => store.generateSummary(meeting.id).catch((e) => toast(describeError(e)))}>

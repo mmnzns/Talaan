@@ -68,7 +68,7 @@ impl LocalAi {
             match r.events.recv_timeout(Duration::from_secs(60)) {
                 Ok(Event::Ready) => {}
                 Ok(Event::Error { message }) => return Err(message),
-                _ => return Err("the local AI didn't start".into()),
+                _ => return Err(crate::i18n::tr("local_ai.no_start")),
             }
             self.running = Some(r);
         }
@@ -95,12 +95,12 @@ impl LocalAi {
                     // A summary should never take this long; something is stuck.
                     if started.elapsed() > Duration::from_secs(30 * 60) {
                         self.stop();
-                        return Err("the local AI took too long".into());
+                        return Err(crate::i18n::tr("local_ai.too_slow"));
                     }
                 }
                 Err(RecvTimeoutError::Disconnected) => {
                     self.stop();
-                    return Err("the local AI stopped unexpectedly, probably out of memory. Try the smaller model, or close other apps.".into());
+                    return Err(crate::i18n::tr("local_ai.crashed"));
                 }
             }
         }
