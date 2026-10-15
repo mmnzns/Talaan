@@ -22,12 +22,47 @@ name: Release
 on:
   push:
     tags: ["v*"]
+  # Test build: Actions › Release › Run workflow. Builds the signed Windows installer exactly like a release and
+  # keeps it as a workflow artifact; no tag, no release, no latest.json.
+  workflow_dispatch:
 
 permissions:
   contents: write
 
 jobs:
+  windows-test:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: windows-latest
+    env:
+      LIBCLANG_PATH: C:\Program Files\LLVM\bin
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+          key: release-windows
+      - run: npm ci
+      - name: Build the installer
+        shell: pwsh
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: ./scripts/release-windows.ps1
+      - uses: actions/upload-artifact@v4
+        with:
+          name: talaan-windows-installer
+          path: |
+            src-tauri/target/release/bundle/nsis/*_x64-setup.exe
+            src-tauri/target/release/bundle/nsis/*_x64-setup.exe.sig
+          if-no-files-found: error
+
   draft:
+    if: github.event_name == 'push'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

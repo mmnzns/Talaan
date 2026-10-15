@@ -23,7 +23,7 @@ v1.0 ships Mac (Apple silicon, built on Miguel's MacBook) and Windows (x64, buil
 - Milestones M0 to M10 in order, continuously. At the start of each, write its task plan in `docs/plans/` (superpowers:writing-plans), then execute with tests and a commit per task.
 - Stop only at 🛑 checkpoints: **M1** (UI review), **M3** (real call test), **M5** (first real summary), **M8** (named speakers + Ask).
 - TDD where there's logic: transcript merge, echo dedupe, retention, chunking, call rules, summary parsing, storage. UI and native audio get manual checks.
-- Internal version `1.0.0-dev`. No tags or GitHub Releases until the v1.0 release gate passes (Mac and Windows, docs/TESTING.md); only Miguel pushes the tag.
+- Version `1.0.0` (bumped 2026-10-15, ready to tag). Miguel approved releasing v1.0.0 from the Mac session: tag `v1.0.0` on main, let CI draft the release with Windows, then add the Mac build (docs/TESTING.md, "Before publishing"). Later releases: bump, tag, same flow.
 - Verify, don't assume: macOS API availability, model licenses, model folder paths and sizes. Note findings in the Build Log.
 - Ask before pushing to GitHub.
 - **Never link llama.cpp into the main app.** It lives in the `talaan-llm` helper because whisper.cpp and llama.cpp each bundle ggml (see docs/plans/M5-summarizer.md).
