@@ -1,15 +1,18 @@
 //! Events from an iCalendar (.ics) file, such as a calendar's private iCal address (Google, Outlook,
-//! iCloud). Pure: text in, events out, no network or OS calls. Used by the Windows calendar; compiles everywhere.
-
+//! iCloud). Pure: bytes in, events out, no network or OS calls. Used by the Windows calendar; compiles everywhere.
+//!
+//! Real feeds are messy, so reading is tolerant and per event: a byte order mark, any line ends, folds that
+//! split a UTF-8 character, unknown or broken lines, stray END lines, garbage after the calendar and several
+//! calendars in one file are all fine, and an event that can't be read is skipped without losing the others.
+//! Reading (`Calendar::read`) is done once per download; expanding (`Calendar::events`) is cheap per window.
 //!
 //! Times: `Z` is UTC; `TZID=` is an IANA name (Google, iCloud) or a Windows zone name (Outlook, e.g. "Eastern
 //! Standard Time", mapped through `WINDOWS_ZONES`), or a custom id whose VTIMEZONE names its IANA zone in
 //! `X-LIC-LOCATION`; anything else, and floating times, are local. `VALUE=DATE` (all-day) starts at local midnight.
 
 use super::Event;
-use chrono::{DateTime, LocalResult, NaiveDate, NaiveDateTime, TimeZone, Utc};
-use icalendar::parser::{read_calendar, unfold, Component, Property};
-use rrule::{RRule, Tz, Unvalidated};
+use chrono::{DateTime, Days, LocalResult, NaiveDate, NaiveDateTime, TimeZone, Utc};
+use rrule::{RRule, RRuleSet, Tz, Unvalidated, Validated};
 use std::collections::HashMap;
 
 /// At most this many occurrences of one recurring event, so a pathological rule can't hang or flood.
@@ -21,75 +24,415 @@ const MAX_STEPS: usize = 100_000;
 /// The events overlapping [`from_ms`, `to_ms`), with recurring ones expanded into occurrences. `me` holds the
 /// user's own email addresses, which are left out of the attendees. A file that can't be read gives no events.
 pub fn parse(ics: &str, from_ms: i64, to_ms: i64, me: &[String]) -> Vec<Event> {
-    let text = unfold(ics);
-    let Ok(cal) = read_calendar(&text) else { return vec![] };
-    let zones = vtimezone_locations(&cal.components);
-    let vevents: Vec<&Component> = cal.components.iter().filter(|c| c.name.as_str().eq_ignore_ascii_case("VEVENT")).collect();
+    Calendar::read(ics.as_bytes(), me).events(from_ms, to_ms)
+}
 
-    // Occurrences that an override (RECURRENCE-ID) replaces or cancels, by UID.
-    let mut replaced: HashMap<String, Vec<DateTime<Tz>>> = HashMap::new();
-    for ev in &vevents {
-        if let Some(rid) = prop(ev, "RECURRENCE-ID").and_then(|p| when(p, &zones)) {
-            replaced.entry(uid(ev)).or_default().push(rid.at);
+/// A calendar file, read once and expanded for any window.
+pub struct Calendar {
+    items: Vec<Item>,
+}
+
+/// One event (or one series) as read.
+struct Item {
+    title: String,
+    attendees: Vec<String>,
+    start: DateTime<Tz>,
+    all_day: bool,
+    length: Length,
+    recurrence: Option<Recurrence>,
+}
+
+struct Recurrence {
+    rule: RRule<Validated>,
+    rdates: Vec<DateTime<Tz>>,
+    exdates: Vec<DateTime<Tz>>,
+    until_ms: Option<i64>,
+}
+
+#[derive(Clone, Copy)]
+enum Length {
+    Ms(i64),
+    /// All-day: ends at local midnight this many days later.
+    Days(u32),
+}
+
+impl Length {
+    /// The end of an occurrence that starts at `start`.
+    fn end_ms(self, start: &DateTime<Tz>) -> i64 {
+        match self {
+            Length::Ms(ms) => start.timestamp_millis() + ms,
+            Length::Days(n) => start
+                .with_timezone(&chrono::Local)
+                .date_naive()
+                .checked_add_days(Days::new(n.into()))
+                .and_then(|d| in_zone(Tz::LOCAL, d.and_hms_opt(0, 0, 0)?))
+                .map(|d| d.timestamp_millis())
+                .unwrap_or(start.timestamp_millis() + i64::from(n) * 86_400_000),
         }
     }
 
-    let mut out = Vec::new();
-    for ev in vevents {
-        if prop(ev, "STATUS").is_some_and(|p| p.val.as_str().trim().eq_ignore_ascii_case("CANCELLED")) {
-            continue;
+    /// The longest an occurrence can last, for cheap window checks.
+    fn max_ms(self) -> i64 {
+        match self {
+            Length::Ms(ms) => ms,
+            Length::Days(n) => i64::from(n) * 86_400_000 + 3_600_000,
         }
-        let Some(start) = prop(ev, "DTSTART").and_then(|p| when(p, &zones)) else { continue };
-        let duration_ms = duration_ms(ev, &start, &zones);
-        let title = prop(ev, "SUMMARY").map(|p| p.val.clone().unescape_text().as_str().trim().to_string()).unwrap_or_default();
-        let attendees = attendees(ev, me);
-        let is_override = prop(ev, "RECURRENCE-ID").is_some();
+    }
+}
 
-        let starts = match prop(ev, "RRULE").filter(|_| !is_override) {
-            Some(rule) => {
-                let mut skip = times(ev, "EXDATE", &zones);
-                skip.extend(replaced.get(&uid(ev)).cloned().unwrap_or_default());
-                expand(rule.val.as_str(), start.at, times(ev, "RDATE", &zones), skip, duration_ms, from_ms, to_ms)
+impl Calendar {
+    /// Reads a calendar file. Never fails: what can't be read is left out.
+    pub fn read(bytes: &[u8], me: &[String]) -> Calendar {
+        let text = unfold(bytes);
+        let blocks = blocks(&text);
+        let zones: HashMap<String, Tz> = blocks.zones;
+
+        let mut masters: Vec<(Option<String>, Item)> = Vec::new();
+        let mut overrides: Vec<(String, DateTime<Tz>)> = Vec::new(); // (UID, original start) replaced or cancelled
+        let mut items: Vec<Item> = Vec::new();
+        for lines in &blocks.events {
+            let ev = Block(lines);
+            let uid = ev.value("UID").map(|u| u.trim().to_string()).filter(|u| !u.is_empty());
+            let cancelled = ev.value("STATUS").is_some_and(|s| s.trim().eq_ignore_ascii_case("CANCELLED"));
+            if let Some(rid) = ev.get("RECURRENCE-ID") {
+                if let (Some(uid), Some(rid)) = (&uid, when(rid, &zones)) {
+                    overrides.push((uid.clone(), rid.at));
+                }
+                if !cancelled {
+                    items.extend(item(&ev, &zones, me, false));
+                }
+            } else if !cancelled {
+                if let Some(it) = item(&ev, &zones, me, true) {
+                    masters.push((uid, it));
+                }
             }
-            None => vec![start.at.timestamp_millis()],
-        };
-        for s in starts.into_iter().filter(|&s| s < to_ms && s + duration_ms > from_ms) {
-            out.push(Event { title: title.clone(), start_ms: s, end_ms: s + duration_ms, all_day: start.all_day, attendees: attendees.clone() });
+        }
+
+        // An override replaces its occurrence in the series with the same UID. Series without a UID match nothing.
+        let mut by_uid: HashMap<&str, Vec<usize>> = HashMap::new();
+        for (i, (uid, _)) in masters.iter().enumerate() {
+            if let Some(u) = uid {
+                by_uid.entry(u.as_str()).or_default().push(i);
+            }
+        }
+        let mut replaced: Vec<(usize, DateTime<Tz>)> = Vec::new();
+        for (uid, at) in &overrides {
+            for &i in by_uid.get(uid.as_str()).map(Vec::as_slice).unwrap_or_default() {
+                replaced.push((i, *at));
+            }
+        }
+        for (i, at) in replaced {
+            if let Some(r) = masters[i].1.recurrence.as_mut() {
+                r.exdates.push(at);
+            }
+        }
+        items.extend(masters.into_iter().map(|(_, it)| it));
+        Calendar { items }
+    }
+
+    /// How many events (series count once) were read.
+    pub fn len(&self) -> usize {
+        self.items.len()
+    }
+
+    /// The events overlapping [`from_ms`, `to_ms`), recurring ones expanded, sorted by start.
+    pub fn events(&self, from_ms: i64, to_ms: i64) -> Vec<Event> {
+        let mut out = Vec::new();
+        for it in &self.items {
+            let start_ms = it.start.timestamp_millis();
+            if start_ms >= to_ms {
+                continue;
+            }
+            let occurrences: Vec<(i64, i64)> = match &it.recurrence {
+                None => {
+                    let end = it.length.end_ms(&it.start);
+                    if end <= from_ms {
+                        continue;
+                    }
+                    vec![(start_ms, end)]
+                }
+                Some(r) => {
+                    if r.until_ms.is_some_and(|u| u + it.length.max_ms() <= from_ms) {
+                        continue;
+                    }
+                    expand(it, r, from_ms, to_ms)
+                }
+            };
+            for (s, e) in occurrences {
+                if s < to_ms && e > from_ms {
+                    out.push(Event { title: it.title.clone(), start_ms: s, end_ms: e, all_day: it.all_day, attendees: it.attendees.clone() });
+                }
+            }
+        }
+        out.sort_by_key(|e| e.start_ms);
+        out
+    }
+}
+
+/// Occurrences (start, end) of a series that can overlap the window, at most `MAX_OCCURRENCES`.
+fn expand(it: &Item, r: &Recurrence, from_ms: i64, to_ms: i64) -> Vec<(i64, i64)> {
+    let set = RRuleSet::new(it.start).rrule(r.rule.clone()).set_rdates(r.rdates.clone()).set_exdates(r.exdates.clone()).limit();
+    let reach = it.length.max_ms();
+    let mut out = Vec::new();
+    for at in set.into_iter().take(MAX_STEPS) {
+        let s = at.timestamp_millis();
+        if s >= to_ms {
+            break;
+        }
+        if s + reach > from_ms {
+            let e = it.length.end_ms(&at);
+            if e > from_ms {
+                out.push((s, e));
+                if out.len() >= MAX_OCCURRENCES {
+                    break;
+                }
+            }
         }
     }
-    out.sort_by_key(|e| e.start_ms);
     out
 }
+
+/// Builds an item from an event's lines; `None` when it has no readable start. `series` reads RRULE/RDATE/EXDATE.
+fn item(ev: &Block, zones: &HashMap<String, Tz>, me: &[String], series: bool) -> Option<Item> {
+    let start = when(ev.get("DTSTART")?, zones)?;
+    let length = length(ev, &start, zones);
+    let recurrence = if series { ev.value("RRULE").and_then(|rule| recurrence(rule, ev, &start, zones)) } else { None };
+    // A rule that can't be read leaves the first occurrence, unless it's excluded.
+    if recurrence.is_none() && series && ev.value("RRULE").is_some() && ev.times("EXDATE", zones).contains(&start.at) {
+        return None;
+    }
+    Some(Item {
+        title: ev.value("SUMMARY").map(|s| unescape(s).trim().to_string()).unwrap_or_default(),
+        attendees: attendees(ev, me),
+        start: start.at,
+        all_day: start.all_day,
+        length,
+        recurrence,
+    })
+}
+
+fn recurrence(rule: &str, ev: &Block, start: &When, zones: &HashMap<String, Tz>) -> Option<Recurrence> {
+    let rule = until_in_utc(rule, start.at.timezone()).parse::<RRule<Unvalidated>>().ok()?.validate(start.at).ok()?;
+    let until_ms = rule.get_until().map(|u| u.timestamp_millis());
+    Some(Recurrence { rule, rdates: ev.times("RDATE", zones), exdates: ev.times("EXDATE", zones), until_ms })
+}
+
+/// DTEND − DTSTART, else DURATION, else a day for all-day events and nothing for the rest (RFC 5545).
+fn length(ev: &Block, start: &When, zones: &HashMap<String, Tz>) -> Length {
+    let end = ev.get("DTEND").and_then(|p| when(p, zones));
+    if start.all_day {
+        let days = match (&end, ev.value("DURATION").and_then(iso_duration_ms)) {
+            (Some(e), _) if e.all_day => (e.at.date_naive() - start.at.date_naive()).num_days(),
+            (Some(e), _) => return Length::Ms((e.at.timestamp_millis() - start.at.timestamp_millis()).max(0)),
+            (None, Some(d)) => d / 86_400_000,
+            (None, None) => 1,
+        };
+        return Length::Days(days.clamp(0, 3660) as u32);
+    }
+    if let Some(e) = end {
+        return Length::Ms((e.at.timestamp_millis() - start.at.timestamp_millis()).max(0));
+    }
+    Length::Ms(ev.value("DURATION").and_then(iso_duration_ms).unwrap_or(0).max(0))
+}
+
+// ---- Reading lines and blocks ----
+
+/// Strips a byte order mark, turns CRLF / CR / LF into LF and joins folded lines, all before UTF-8 decoding so a
+/// fold inside a multibyte character comes out whole. Invalid UTF-8 becomes U+FFFD.
+fn unfold(bytes: &[u8]) -> String {
+    let b = bytes.strip_prefix(b"\xEF\xBB\xBF").unwrap_or(bytes);
+    let mut out = Vec::with_capacity(b.len());
+    let mut i = 0;
+    while i < b.len() {
+        let c = b[i];
+        if c == b'\r' || c == b'\n' {
+            i += if c == b'\r' && b.get(i + 1) == Some(&b'\n') { 2 } else { 1 };
+            if matches!(b.get(i), Some(b' ' | b'\t')) {
+                i += 1; // a fold: the next line continues this one
+            } else {
+                out.push(b'\n');
+            }
+        } else {
+            out.push(c);
+            i += 1;
+        }
+    }
+    String::from_utf8_lossy(&out).into_owned()
+}
+
+/// One content line: `NAME;PARAM=value;PARAM="quoted; value":value`.
+struct Line<'a> {
+    name: &'a str,
+    params: Vec<(&'a str, String)>,
+    value: &'a str,
+}
+
+/// Splits a content line; `None` for a line that isn't one (no colon, a name with odd characters).
+fn content_line(line: &str) -> Option<Line<'_>> {
+    let name_end = line.find([';', ':'])?;
+    let name = &line[..name_end];
+    if name.is_empty() || !name.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-') {
+        return None;
+    }
+    let mut params = Vec::new();
+    let mut rest = &line[name_end..];
+    loop {
+        if let Some(value) = rest.strip_prefix(':') {
+            return Some(Line { name, params, value });
+        }
+        rest = rest.strip_prefix(';')?;
+        let key_end = rest.find(['=', ';', ':'])?;
+        let key = &rest[..key_end];
+        rest = &rest[key_end..];
+        let Some(after_eq) = rest.strip_prefix('=') else {
+            params.push((key, String::new()));
+            continue;
+        };
+        // The value runs to the next ';' or ':' outside double quotes; the quotes themselves are dropped.
+        let (mut value, mut quoted, mut end) = (String::new(), false, None);
+        for (i, ch) in after_eq.char_indices() {
+            match ch {
+                '"' => quoted = !quoted,
+                ';' | ':' if !quoted => {
+                    end = Some(i);
+                    break;
+                }
+                _ => value.push(ch),
+            }
+        }
+        params.push((key, value));
+        rest = &after_eq[end?..];
+    }
+}
+
+/// The lines of one event (its own, not those of a VALARM inside it).
+struct Block<'a, 'b>(&'b [Line<'a>]);
+
+impl Block<'_, '_> {
+    fn get(&self, name: &str) -> Option<&Line<'_>> {
+        self.0.iter().find(|l| l.name.eq_ignore_ascii_case(name))
+    }
+
+    fn value(&self, name: &str) -> Option<&str> {
+        self.get(name).map(|l| l.value)
+    }
+
+    /// Every value of a list property that may repeat (EXDATE, RDATE), e.g. `EXDATE;TZID=…:20261019T093000,20261026T093000`.
+    fn times(&self, name: &str, zones: &HashMap<String, Tz>) -> Vec<DateTime<Tz>> {
+        self.0
+            .iter()
+            .filter(|l| l.name.eq_ignore_ascii_case(name))
+            .flat_map(|l| {
+                let date = param(l, "VALUE").is_some_and(|v| v.eq_ignore_ascii_case("DATE"));
+                l.value.split(',').filter_map(move |v| parse_time(v, param(l, "TZID"), date, zones)).map(|w| w.at)
+            })
+            .collect()
+    }
+}
+
+fn param<'a>(l: &'a Line, key: &str) -> Option<&'a str> {
+    l.params.iter().find(|(k, _)| k.eq_ignore_ascii_case(key)).map(|(_, v)| v.trim())
+}
+
+struct Blocks<'a> {
+    events: Vec<Vec<Line<'a>>>,
+    zones: HashMap<String, Tz>,
+}
+
+/// Walks the lines with a stack of open components. Collects each VEVENT inside a VCALENDAR (one left open ends
+/// at the next BEGIN:VEVENT or END:VCALENDAR) and the VTIMEZONEs that name an IANA zone. An END that matches
+/// nothing open is ignored; text outside any VCALENDAR is ignored.
+fn blocks(text: &str) -> Blocks<'_> {
+    let mut stack: Vec<String> = Vec::new();
+    let mut events = Vec::new();
+    let mut zones = HashMap::new();
+    let mut event: Option<Vec<Line>> = None;
+    let mut tz: (Option<String>, Option<String>) = (None, None);
+
+    fn close<'a>(name: &str, event: &mut Option<Vec<Line<'a>>>, events: &mut Vec<Vec<Line<'a>>>, tz: &mut (Option<String>, Option<String>), zones: &mut HashMap<String, Tz>) {
+        if name == "VEVENT" {
+            events.extend(event.take());
+        } else if name == "VTIMEZONE" {
+            if let (Some(id), Some(z)) = (tz.0.take(), tz.1.take().as_deref().and_then(iana)) {
+                zones.insert(id, z);
+            }
+            *tz = (None, None);
+        }
+    }
+
+    for raw in text.split('\n') {
+        let Some(line) = content_line(raw.trim_end_matches([' ', '\t', '\0'])) else { continue };
+        if line.name.eq_ignore_ascii_case("BEGIN") {
+            let what = line.value.trim().to_ascii_uppercase();
+            let in_calendar = stack.iter().any(|s| s == "VCALENDAR");
+            if what == "VEVENT" {
+                // An event left open ends here.
+                if let Some(pos) = stack.iter().rposition(|s| s == "VEVENT") {
+                    for name in stack.split_off(pos).iter().rev() {
+                        close(name, &mut event, &mut events, &mut tz, &mut zones);
+                    }
+                }
+                if in_calendar {
+                    event = Some(Vec::new());
+                }
+            }
+            if what == "VTIMEZONE" {
+                tz = (None, None);
+            }
+            if what == "VCALENDAR" || in_calendar {
+                stack.push(what);
+            }
+        } else if line.name.eq_ignore_ascii_case("END") {
+            let what = line.value.trim().to_ascii_uppercase();
+            if let Some(pos) = stack.iter().rposition(|s| *s == what) {
+                for name in stack.split_off(pos).iter().rev() {
+                    close(name, &mut event, &mut events, &mut tz, &mut zones);
+                }
+            }
+        } else {
+            match stack.last().map(String::as_str) {
+                Some("VEVENT") => {
+                    if let Some(ev) = event.as_mut() {
+                        ev.push(line);
+                    }
+                }
+                Some("VTIMEZONE") if line.name.eq_ignore_ascii_case("TZID") => tz.0 = Some(line.value.trim().trim_matches('"').to_string()),
+                Some("VTIMEZONE") if line.name.eq_ignore_ascii_case("X-LIC-LOCATION") => tz.1 = Some(line.value.trim().to_string()),
+                _ => {}
+            }
+        }
+    }
+    // A file cut short: keep what was read of the open event.
+    for name in std::mem::take(&mut stack).iter().rev() {
+        close(name, &mut event, &mut events, &mut tz, &mut zones);
+    }
+    Blocks { events, zones }
+}
+
+/// TEXT unescaping (RFC 5545 3.3.11), done once: `\,` `\;` `\\` and `\n`/`\N` (a newline).
+fn unescape(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    let mut chars = s.chars();
+    while let Some(c) = chars.next() {
+        if c != '\\' {
+            out.push(c);
+            continue;
+        }
+        match chars.next() {
+            Some('n' | 'N') => out.push('\n'),
+            Some(other) => out.push(other),
+            None => out.push('\\'),
+        }
+    }
+    out
+}
+
+// ---- Times ----
 
 /// A parsed DTSTART-like value.
 struct When {
     at: DateTime<Tz>,
     all_day: bool,
-}
-
-fn prop<'a>(c: &'a Component, name: &str) -> Option<&'a Property<'a>> {
-    c.properties.iter().find(|p| p.name.as_str().eq_ignore_ascii_case(name))
-}
-
-fn param<'a>(p: &'a Property, key: &str) -> Option<&'a str> {
-    p.params.iter().find(|x| x.key.as_str().eq_ignore_ascii_case(key)).and_then(|x| x.val.as_ref()).map(|v| v.as_str().trim().trim_matches('"'))
-}
-
-fn uid(c: &Component) -> String {
-    prop(c, "UID").map(|p| p.val.as_str().trim().to_string()).unwrap_or_default()
-}
-
-/// Custom TZIDs whose VTIMEZONE says which IANA zone they are (`X-LIC-LOCATION`, written by Thunderbird and others).
-fn vtimezone_locations(components: &[Component]) -> HashMap<String, Tz> {
-    components
-        .iter()
-        .filter(|c| c.name.as_str().eq_ignore_ascii_case("VTIMEZONE"))
-        .filter_map(|c| {
-            let id = prop(c, "TZID")?.val.as_str().trim().trim_matches('"').to_string();
-            let tz = iana(prop(c, "X-LIC-LOCATION")?.val.as_str().trim())?;
-            Some((id, tz))
-        })
-        .collect()
 }
 
 fn iana(name: &str) -> Option<Tz> {
@@ -131,30 +474,9 @@ fn parse_time(value: &str, tzid: Option<&str>, date_param: bool, vtimezones: &Ha
     Some(When { at: in_zone(tz, n)?, all_day: false })
 }
 
-fn when(p: &Property, vtimezones: &HashMap<String, Tz>) -> Option<When> {
-    let date = param(p, "VALUE").is_some_and(|v| v.eq_ignore_ascii_case("DATE"));
-    parse_time(p.val.as_str(), param(p, "TZID"), date, vtimezones)
-}
-
-/// Every value of a list property that may repeat (EXDATE, RDATE), e.g. `EXDATE;TZID=…:20261019T093000,20261026T093000`.
-fn times(c: &Component, name: &str, vtimezones: &HashMap<String, Tz>) -> Vec<DateTime<Tz>> {
-    let date = |p: &Property| param(p, "VALUE").is_some_and(|v| v.eq_ignore_ascii_case("DATE"));
-    c.properties
-        .iter()
-        .filter(|p| p.name.as_str().eq_ignore_ascii_case(name))
-        .flat_map(|p| p.val.as_str().split(',').filter_map(move |v| parse_time(v, param(p, "TZID"), date(p), vtimezones)).map(|w| w.at))
-        .collect()
-}
-
-/// DTEND − DTSTART, else DURATION, else a day for all-day events and nothing for the rest (RFC 5545).
-fn duration_ms(ev: &Component, start: &When, vtimezones: &HashMap<String, Tz>) -> i64 {
-    if let Some(end) = prop(ev, "DTEND").and_then(|p| when(p, vtimezones)) {
-        return (end.at.timestamp_millis() - start.at.timestamp_millis()).max(0);
-    }
-    if let Some(d) = prop(ev, "DURATION").and_then(|p| iso_duration_ms(p.val.as_str())) {
-        return d.max(0);
-    }
-    if start.all_day { 86_400_000 } else { 0 }
+fn when(l: &Line, vtimezones: &HashMap<String, Tz>) -> Option<When> {
+    let date = param(l, "VALUE").is_some_and(|v| v.eq_ignore_ascii_case("DATE"));
+    parse_time(l.value, param(l, "TZID"), date, vtimezones)
 }
 
 /// An RFC 5545 duration such as `PT45M`, `P1D`, `P1W` or `-PT15M`.
@@ -173,7 +495,7 @@ fn iso_duration_ms(s: &str) -> Option<i64> {
             unit => {
                 let n: i64 = num.parse().ok()?;
                 num.clear();
-                total += n * match (unit, in_time) {
+                let unit_ms = match (unit, in_time) {
                     ('W', false) => 7 * 86_400_000,
                     ('D', false) => 86_400_000,
                     ('H', true) => 3_600_000,
@@ -181,6 +503,7 @@ fn iso_duration_ms(s: &str) -> Option<i64> {
                     ('S', true) => 1000,
                     _ => return None,
                 };
+                total = total.checked_add(n.checked_mul(unit_ms)?)?;
             }
         }
     }
@@ -210,43 +533,24 @@ fn until_in_utc(rule: &str, tz: Tz) -> String {
         .join(";")
 }
 
-/// Start times (ms) of a recurring event's occurrences that can overlap the window. A rule that can't be read
-/// leaves just the first occurrence.
-fn expand(rule: &str, start: DateTime<Tz>, rdates: Vec<DateTime<Tz>>, exdates: Vec<DateTime<Tz>>, duration_ms: i64, from_ms: i64, to_ms: i64) -> Vec<i64> {
-    let Some(set) = until_in_utc(rule, start.timezone()).parse::<RRule<Unvalidated>>().ok().and_then(|r| r.build(start).ok()) else {
-        return if exdates.contains(&start) { vec![] } else { vec![start.timestamp_millis()] };
-    };
-    let set = set.set_rdates(rdates).set_exdates(exdates).limit();
-    let mut out = Vec::new();
-    for at in set.into_iter().take(MAX_STEPS) {
-        let s = at.timestamp_millis();
-        if s >= to_ms {
-            break;
-        }
-        if s + duration_ms > from_ms {
-            out.push(s);
-            if out.len() >= MAX_OCCURRENCES {
-                break;
-            }
-        }
-    }
-    out
-}
-
-/// Who else is invited: the CN, else the address's local part. The user's own addresses and rooms are left out.
-fn attendees(ev: &Component, me: &[String]) -> Vec<String> {
+/// Who else is invited: the CN, else the email address's local part. Left out: the user's own addresses, people
+/// who declined, rooms and resources, and non-email entries without a name.
+fn attendees(ev: &Block, me: &[String]) -> Vec<String> {
     let mut names: Vec<String> = Vec::new();
-    for p in ev.properties.iter().filter(|p| p.name.as_str().eq_ignore_ascii_case("ATTENDEE")) {
-        let value = p.val.as_str().trim();
-        let address = if value.len() >= 7 && value[..7].eq_ignore_ascii_case("mailto:") { &value[7..] } else { value };
-        if me.iter().any(|m| m.trim().eq_ignore_ascii_case(address)) {
+    for l in ev.0.iter().filter(|l| l.name.eq_ignore_ascii_case("ATTENDEE")) {
+        if param(l, "PARTSTAT").is_some_and(|p| p.eq_ignore_ascii_case("DECLINED")) {
             continue;
         }
-        if param(p, "CUTYPE").is_some_and(|t| t.eq_ignore_ascii_case("ROOM") || t.eq_ignore_ascii_case("RESOURCE")) {
+        if param(l, "CUTYPE").is_some_and(|t| t.eq_ignore_ascii_case("ROOM") || t.eq_ignore_ascii_case("RESOURCE")) {
             continue;
         }
-        let name = param(p, "CN").filter(|n| !n.is_empty() && !n.eq_ignore_ascii_case(address)).map(str::to_string);
-        let name = name.or_else(|| address.split('@').next().filter(|l| !l.is_empty()).map(str::to_string));
+        let value = l.value.trim();
+        let email = value.get(..7).filter(|p| p.eq_ignore_ascii_case("mailto:")).map(|_| value[7..].trim());
+        if email.is_some_and(|a| me.iter().any(|m| m.trim().eq_ignore_ascii_case(a))) {
+            continue;
+        }
+        let cn = param(l, "CN").filter(|n| !n.is_empty() && email.is_none_or(|a| !n.eq_ignore_ascii_case(a))).map(unescape);
+        let name = cn.or_else(|| email.and_then(|a| a.split('@').next()).filter(|l| !l.is_empty()).map(str::to_string));
         if let Some(n) = name.filter(|n| !names.contains(n)) {
             names.push(n);
         }
@@ -559,17 +863,156 @@ mod tests {
 
     #[test]
     fn a_malformed_file_gives_no_events() {
-        for bad in [
-            "",
-            "not a calendar",
-            "BEGIN:VCALENDAR\r\nBEGIN:VEVENT\r\nSUMMARY:x\r\n",
-            &cal("BEGIN:VEVENT\nSUMMARY:No start\nEND:VEVENT"),
-            &cal("BEGIN:VEVENT\nSUMMARY:Bad start\nDTSTART:2026-10-20\nEND:VEVENT"),
-            &cal("BEGIN:VEVENT\nSUMMARY:Bad rule\nDTSTART:20261020T170000Z\nRRULE:FREQ=SOMETIMES\nEND:VEVENT"),
+        for (bad, count) in [
+            ("", 0),
+            ("not a calendar", 0),
+            ("BEGIN:VCALENDAR\r\nBEGIN:VEVENT\r\nSUMMARY:x\r\n", 0),
+            // An event outside any VCALENDAR is ignored.
+            ("BEGIN:VEVENT\r\nSUMMARY:Loose\r\nDTSTART:20261020T170000Z\r\nEND:VEVENT\r\n", 0),
+            (&cal("BEGIN:VEVENT\nSUMMARY:No start\nEND:VEVENT"), 0),
+            (&cal("BEGIN:VEVENT\nSUMMARY:Bad start\nDTSTART:2026-10-20\nEND:VEVENT"), 0),
+            // A rule that can't be read keeps the first occurrence.
+            (&cal("BEGIN:VEVENT\nSUMMARY:Bad rule\nDTSTART:20261020T170000Z\nDTEND:20261020T180000Z\nRRULE:FREQ=SOMETIMES\nEND:VEVENT"), 1),
         ] {
             let e = parse(bad, utc(2026, 1, 1, 0, 0), utc(2027, 1, 1, 0, 0), &[]);
-            assert!(e.iter().all(|e| e.title != "No start" && e.title != "Bad start"), "{bad:?}");
+            assert_eq!(e.len(), count, "{bad:?}");
         }
+    }
+
+    const GOOD: &str = "BEGIN:VEVENT\r\nUID:good@test\r\nSUMMARY:Good\r\nDTSTART:20261020T170000Z\r\nDTEND:20261020T173000Z\r\nEND:VEVENT\r\n";
+
+    fn titles(ics: &str) -> Vec<String> {
+        parse(ics, utc(2026, 10, 1, 0, 0), utc(2026, 11, 1, 0, 0), &[]).into_iter().map(|e| e.title).collect()
+    }
+
+    #[test]
+    fn a_byte_order_mark_bare_cr_and_trailing_garbage_are_tolerated() {
+        let body = format!("BEGIN:VCALENDAR\r\nVERSION:2.0\r\n{GOOD}END:VCALENDAR\r\n");
+        assert_eq!(titles(&format!("\u{feff}{body}")), vec!["Good"]);
+        assert_eq!(titles(&body.replace("\r\n", "\r")), vec!["Good"]);
+        assert_eq!(titles(&body.replace("\r\n", "\n")), vec!["Good"]);
+        assert_eq!(titles(&format!("{body}\r\n<html>502 Bad Gateway</html>\r\n\0\0")), vec!["Good"]);
+    }
+
+    #[test]
+    fn a_bad_event_next_to_a_good_one_leaves_the_good_one() {
+        let bad = "BEGIN:VEVENT\r\nUID:bad@test\r\nX-FOO+BAR:what\r\nthis line has no colon\r\nSUMMARY:Bad\r\nDTSTART:soon\r\nEND:VEVENT\r\n";
+        let odd = "BEGIN:VEVENT\r\nUID:odd@test\r\nX-FOO+BAR:what\r\nSUMMARY:Odd but fine\r\nDTSTART:20261021T170000Z\r\nDTEND:20261021T173000Z\r\nEND:VTODO\r\nEND:VEVENT\r\n";
+        let ics = format!("BEGIN:VCALENDAR\r\n{bad}{GOOD}{odd}END:VCALENDAR\r\n");
+        assert_eq!(titles(&ics), vec!["Good", "Odd but fine"]);
+    }
+
+    #[test]
+    fn an_unclosed_event_ends_at_the_next_one() {
+        let ics = format!("BEGIN:VCALENDAR\r\nBEGIN:VEVENT\r\nUID:open@test\r\nSUMMARY:Open\r\nDTSTART:20261019T170000Z\r\nDTEND:20261019T173000Z\r\n{GOOD}END:VCALENDAR\r\n");
+        assert_eq!(titles(&ics), vec!["Open", "Good"]);
+    }
+
+    #[test]
+    fn two_concatenated_calendars_are_both_read() {
+        let second = GOOD.replace("good@test", "second@test").replace("Good", "Second").replace("20261020", "20261022");
+        let ics = format!("BEGIN:VCALENDAR\r\n{GOOD}END:VCALENDAR\r\nBEGIN:VCALENDAR\r\n{second}END:VCALENDAR\r\n");
+        assert_eq!(titles(&ics), vec!["Good", "Second"]);
+    }
+
+    #[test]
+    fn a_fold_inside_a_multibyte_character_is_joined_before_decoding() {
+        // "Café" with the fold between the two bytes of "é" (C3 A9).
+        let mut bytes = b"BEGIN:VCALENDAR\r\nBEGIN:VEVENT\r\nUID:f@test\r\nSUMMARY:Caf\xC3\r\n \xA9 sync\r\nDTSTART:20261020T170000Z\r\nDTEND:20261020T173000Z\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n".to_vec();
+        let cal = Calendar::read(&bytes, &[]);
+        assert_eq!(cal.events(utc(2026, 10, 1, 0, 0), utc(2026, 11, 1, 0, 0))[0].title, "Café sync");
+        bytes.truncate(40); // cut mid-file: no panic, no events
+        assert!(Calendar::read(&bytes, &[]).events(0, i64::MAX).is_empty());
+    }
+
+    #[test]
+    fn a_valarm_inside_an_event_does_not_change_its_title() {
+        let ics = cal("
+            BEGIN:VEVENT
+            UID:alarm@test
+            SUMMARY:Board meeting
+            DTSTART:20261020T170000Z
+            DTEND:20261020T180000Z
+            BEGIN:VALARM
+            ACTION:DISPLAY
+            SUMMARY:Reminder
+            TRIGGER:-PT10M
+            END:VALARM
+            END:VEVENT");
+        assert_eq!(titles(&ics), vec!["Board meeting"]);
+    }
+
+    #[test]
+    fn text_is_unescaped_exactly_once() {
+        let ics = cal(r"
+            BEGIN:VEVENT
+            UID:esc@test
+            SUMMARY:Q3 plan\, budget\; risks \\n not a newline
+            DTSTART:20261020T170000Z
+            DTEND:20261020T180000Z
+            END:VEVENT");
+        assert_eq!(titles(&ics), vec![r"Q3 plan, budget; risks \n not a newline"]);
+    }
+
+    #[test]
+    fn odd_attendee_values_do_not_panic_and_declined_or_unnamed_ones_are_left_out() {
+        let ics = cal("
+            BEGIN:VEVENT
+            UID:att@test
+            SUMMARY:Sync
+            DTSTART:20261020T170000Z
+            DTEND:20261020T173000Z
+            ATTENDEE:abcdefé@x.com
+            ATTENDEE:é
+            ATTENDEE:MAILTO:rené@example.com
+            ATTENDEE;PARTSTAT=DECLINED;CN=Nope:mailto:nope@example.com
+            ATTENDEE;CUTYPE=ROOM;CN=Room 4:mailto:room4@example.com
+            ATTENDEE;CN=Phone Guest:tel:+15555550100
+            END:VEVENT");
+        let e = parse(&ics, utc(2026, 10, 20, 0, 0), utc(2026, 10, 21, 0, 0), &[]);
+        assert_eq!(e[0].attendees, vec!["rené", "Phone Guest"]);
+    }
+
+    #[test]
+    fn a_multi_day_all_day_event_ends_at_local_midnight() {
+        let ics = cal("
+            BEGIN:VEVENT
+            UID:trip@test
+            SUMMARY:Offsite
+            DTSTART;VALUE=DATE:20261030
+            DTEND;VALUE=DATE:20261103
+            END:VEVENT");
+        let e = parse(&ics, utc(2026, 10, 1, 0, 0), utc(2026, 12, 1, 0, 0), &[]);
+        // Spans the end of daylight saving in most northern zones; still ends exactly at local midnight.
+        assert_eq!((e[0].start_ms, e[0].end_ms), (local(2026, 10, 30, 0, 0), local(2026, 11, 3, 0, 0)));
+    }
+
+    #[test]
+    fn an_override_without_a_uid_does_not_touch_other_series() {
+        let ics = cal("
+            BEGIN:VEVENT
+            SUMMARY:Series without UID
+            DTSTART:20261019T170000Z
+            DTEND:20261019T173000Z
+            RRULE:FREQ=DAILY;COUNT=3
+            END:VEVENT
+            BEGIN:VEVENT
+            SUMMARY:Moved without UID
+            RECURRENCE-ID:20261020T170000Z
+            DTSTART:20261020T190000Z
+            DTEND:20261020T193000Z
+            END:VEVENT");
+        let e = parse(&ics, utc(2026, 10, 1, 0, 0), utc(2026, 11, 1, 0, 0), &[]);
+        assert_eq!(e.iter().filter(|e| e.title == "Series without UID").count(), 3);
+        assert_eq!(e.iter().filter(|e| e.title == "Moved without UID").count(), 1);
+    }
+
+    #[test]
+    fn a_parsed_calendar_can_be_expanded_for_several_windows() {
+        let cal = Calendar::read(super::tests::cal(STANDUP).as_bytes(), &[]);
+        assert_eq!(cal.events(utc(2026, 10, 12, 0, 0), utc(2026, 10, 13, 0, 0)).len(), 1);
+        assert_eq!(cal.events(utc(2026, 10, 12, 0, 0), utc(2026, 10, 27, 0, 0)).len(), 3);
+        assert!(cal.events(utc(2026, 9, 1, 0, 0), utc(2026, 10, 1, 0, 0)).is_empty());
     }
 
     #[test]
@@ -641,5 +1084,29 @@ mod tests {
         let picked = crate::calendar::pick(&e, utc(2026, 10, 19, 13, 35)).unwrap();
         assert_eq!((picked.title.as_str(), picked.start_ms), ("Stand-up", utc(2026, 10, 19, 13, 30)));
         assert_eq!(crate::calendar::pick(&e, utc(2026, 10, 19, 14, 0)).unwrap().title, "Focus block");
+    }
+
+    /// Timing on a ~20 MB feed (years of history, a few hundred series). Run with
+    /// `cargo test --release large_feed_timing -- --ignored --nocapture`.
+    #[test]
+    #[ignore]
+    fn large_feed_timing() {
+        let mut body = String::new();
+        for i in 0..45_000 {
+            let day = NaiveDate::from_ymd_opt(2015, 1, 1).unwrap() + chrono::Days::new(i / 12);
+            let rule = if i % 150 == 0 { "RRULE:FREQ=WEEKLY;BYDAY=MO,WE\n" } else { "" };
+            body += &format!(
+                "BEGIN:VEVENT\nUID:e{i}@test\nSUMMARY:Meeting number {i} about the quarterly plan\nDTSTART;TZID=America/Toronto:{d}T{h:02}0000\nDTEND;TZID=America/Toronto:{d}T{h:02}3000\n{rule}DESCRIPTION:Notes for meeting {i}\\, with a fairly long description line that pads the size out a bit more.\nATTENDEE;CN=Ana Reyes;PARTSTAT=ACCEPTED:mailto:ana@example.com\nATTENDEE;CN=Sam Lee;PARTSTAT=ACCEPTED:mailto:sam@example.com\nORGANIZER;CN=Miguel:mailto:miguel@example.com\nEND:VEVENT\n",
+                d = day.format("%Y%m%d"),
+                h = 8 + i % 10
+            );
+        }
+        let ics = cal(&body);
+        let t = std::time::Instant::now();
+        let parsed = Calendar::read(ics.as_bytes(), &[]);
+        let read = t.elapsed();
+        let t = std::time::Instant::now();
+        let week = parsed.events(utc(2026, 10, 19, 0, 0), utc(2026, 10, 26, 0, 0));
+        println!("{} MB, {} items: read {:?}, one week ({} events) {:?}", ics.len() / 1_000_000, parsed.len(), read, week.len(), t.elapsed());
     }
 }
