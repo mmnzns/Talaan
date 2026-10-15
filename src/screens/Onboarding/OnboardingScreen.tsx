@@ -1,10 +1,11 @@
 import { useEffect, useState, type ReactNode } from "react";
-import { Check } from "lucide-react";
+import { Check, Headphones } from "lucide-react";
 import { Logo } from "../../brand/Logo";
 import { useSettings } from "../../data/hooks";
 import { useSettingsStore } from "../../data/StoreProvider";
 import type { Settings } from "../../data/settings";
-import { Button, Chip, Switch, cn, useToast } from "../../ui";
+import { Button, Chip, Label, Radio, Switch, cn, useToast } from "../../ui";
+import { SunCorner } from "../../brand/SunCorner";
 
 const STEPS = ["Welcome", "Audio access", "Speech model", "Summaries", "Call apps", "Extras", "Done"] as const;
 
@@ -20,60 +21,69 @@ export function OnboardingScreen() {
 
   const finish = () => update({ onboardingDone: true });
 
+  const next = () => (last ? finish() : setStep(step + 1));
+
   return (
     <div className="grid h-full place-items-center bg-paper p-6">
-      <div className="flex h-[600px] max-h-full w-[780px] max-w-full overflow-hidden rounded-card border border-edge bg-surface shadow-pop">
-        <aside className="flex w-[220px] flex-none flex-col gap-[18px] bg-aside px-[18px] py-[22px] text-aside-fg max-[640px]:hidden">
-          <div className="flex items-center gap-2.5">
-            <Logo size={28} />
-            <span className="text-lg font-extrabold tracking-[-0.03em]">Talaan</span>
-          </div>
-          <ol className="m-0 flex list-none flex-col gap-1 p-0" aria-label="Setup steps">
-            {STEPS.map((name, k) => (
-              <li
-                key={name}
-                aria-current={k === step ? "step" : undefined}
-                className={cn(
-                  "flex items-center gap-2 rounded-control px-2 py-1.5 text-[13px]",
-                  k === step ? "bg-gold font-bold text-on-gold" : k < step ? "text-aside-fg" : "text-aside-muted",
-                )}
-              >
-                <span className="w-[18px] font-mono text-[11px]">{k < step ? "✓" : String(k + 1).padStart(2, "0")}</span>
-                {name}
-              </li>
-            ))}
-          </ol>
-          <span className="mt-auto font-mono text-[11px] text-aside-muted">Everything stays on this computer.</span>
-        </aside>
-
-        <div className="flex min-w-0 flex-1 flex-col gap-4 overflow-auto px-8 pb-[22px] pt-[30px]">
-          <div className="flex flex-1 flex-col gap-4">
-            {step === 0 && <Welcome />}
-            {step === 1 && <AudioAccess systemAudio={systemAudio} setSystemAudio={setSystemAudio} />}
-            {step === 2 && <ModelStep settings={settings} update={update} />}
-            {step === 3 && <SummaryStep settings={settings} update={update} />}
-            {step === 4 && <AppsStep settings={settings} update={update} />}
-            {step === 5 && <ExtrasStep settings={settings} update={update} />}
-            {step === 6 && <Done systemAudio={systemAudio} />}
-          </div>
-          <div className="flex items-center gap-2">
-            <span className="font-mono text-[11px] text-subtle">
-              step {step + 1} of {STEPS.length}
-            </span>
-            <span className="flex-1" />
-            {step > 0 && <Button variant="ghost" onClick={() => setStep(step - 1)}>Back</Button>}
-            <Button variant="primary" raised onClick={() => (last ? finish() : setStep(step + 1))}>
-              {step === 0 ? "Get started" : last ? "Open Talaan" : "Continue"}
-            </Button>
-          </div>
-        </div>
+      <div className="relative flex h-[620px] max-h-full w-[800px] max-w-full flex-col overflow-hidden rounded-[18px] border border-line bg-surface shadow-[0_16px_40px_rgba(17,19,24,0.12)]">
+        <SunCorner size={step === 0 ? 220 : 170} className="absolute right-0 top-0" />
+        {step === 0 ? (
+          <>
+            <div className="relative flex flex-1 flex-col items-center gap-5 px-16 pt-14 text-center">
+              <Welcome />
+            </div>
+            <div className="relative flex justify-center pb-[34px]">
+              <Button variant="primary" className="h-[42px] px-6 text-sm" onClick={next}>
+                Get started
+              </Button>
+            </div>
+          </>
+        ) : (
+          <>
+            <div className="relative flex items-center gap-2.5 px-7 py-[22px]">
+              <Logo size={28} />
+              <span className="font-display text-[17px] font-bold tracking-[-0.02em]">talaan</span>
+              <span className="flex-1" />
+              <ol className="m-0 mr-24 flex list-none gap-1.5 p-0" aria-label="Setup steps">
+                {STEPS.map((name, k) => (
+                  <li
+                    key={name}
+                    aria-label={name}
+                    aria-current={k === step ? "step" : undefined}
+                    className={cn("h-1.5 rounded-full transition-[width]", k === step ? "w-[22px]" : "w-1.5", k <= step ? "bg-gold" : "bg-edge")}
+                  />
+                ))}
+              </ol>
+            </div>
+            <div className="relative flex min-h-0 flex-1 flex-col gap-[26px] overflow-auto px-16 pt-[18px]">
+              {step === 1 && <AudioAccess systemAudio={systemAudio} setSystemAudio={setSystemAudio} />}
+              {step === 2 && <ModelStep settings={settings} update={update} />}
+              {step === 3 && <SummaryStep settings={settings} update={update} />}
+              {step === 4 && <AppsStep settings={settings} update={update} />}
+              {step === 5 && <ExtrasStep settings={settings} update={update} />}
+              {step === 6 && <Done systemAudio={systemAudio} />}
+            </div>
+            <div className="relative flex items-center gap-2 border-t border-line px-7 py-[18px]">
+              <Label>
+                step {step + 1} of {STEPS.length} · {STEPS[step]}
+              </Label>
+              <span className="flex-1" />
+              <Button variant="ghost" onClick={() => setStep(step - 1)}>
+                Back
+              </Button>
+              <Button variant="primary" onClick={next}>
+                {last ? "Open Talaan" : "Continue"}
+              </Button>
+            </div>
+          </>
+        )}
       </div>
     </div>
   );
 }
 
-const h1 = "m-0 text-[26px] font-extrabold leading-[30px] tracking-[-0.035em]";
-const desc = "m-0 text-[13px] leading-[18px] text-subtle";
+const h1 = "m-0 font-display text-[30px] font-bold leading-[34px] tracking-[-0.02em]";
+const desc = "m-0 max-w-[520px] text-sm leading-[21px] text-subtle";
 
 function Option({ on, onClick, title, tag, children, role = "radio" }: { on: boolean; onClick?: () => void; title: string; tag?: string; children: ReactNode; role?: "radio" | "group" }) {
   return (
@@ -83,10 +93,11 @@ function Option({ on, onClick, title, tag, children, role = "radio" }: { on: boo
       aria-checked={role === "radio" ? on : undefined}
       onClick={onClick}
       className={cn(
-        "flex w-full cursor-pointer items-center gap-3 rounded-[10px] border px-3 py-2.5 text-left font-[inherit] text-ink",
-        on ? "border-edge bg-gold-soft" : "border-line bg-surface",
+        "flex w-full cursor-pointer items-center gap-3.5 rounded-card border px-4 py-3.5 text-left font-[inherit] text-ink",
+        on ? "border-gold bg-surface shadow-[0_0_0_3px_var(--t-gold-soft)]" : "border-line bg-surface hover:border-edge",
       )}
     >
+      {role === "radio" && <Radio checked={on} />}
       <span className="flex-1">
         <span className="flex items-center gap-2 font-bold">
           {title}
@@ -101,22 +112,19 @@ function Option({ on, onClick, title, tag, children, role = "radio" }: { on: boo
 function Welcome() {
   return (
     <>
-      <span className="font-mono text-[11px] text-subtle">talaan · tagalog for “record”</span>
-      <h1 className="m-0 text-[30px] font-extrabold leading-[34px] tracking-[-0.035em]">Meeting notes that stay on your computer.</h1>
-      <p className="m-0 text-[15px] leading-[22px] text-subtle">
-        Talaan records both sides of any call, writes the transcript and a summary with decisions and action items, without a bot joining your meeting.
+      <div className="flex items-center gap-3.5">
+        <Logo size={56} />
+        <span className="font-display text-[44px] font-bold leading-none tracking-[-0.02em]">talaan</span>
+      </div>
+      <Label className="text-balance">tagalog for “record” · the logo is “ta” in baybayin, the native filipino script</Label>
+      <h1 className="m-0 max-w-[540px] font-display text-[40px] font-bold leading-[44px] tracking-[-0.02em]">Meeting notes that stay on your computer.</h1>
+      <p className="m-0 max-w-[470px] text-[15px] leading-[23px] text-subtle">
+        Records both sides of any call, then writes the transcript and a summary with decisions and action items. No bot joins your meeting.
       </p>
-      <div className="mt-1.5 grid grid-cols-3 gap-2.5 max-[860px]:grid-cols-1">
-        {[
-          ["No bot", "Works with any call app"],
-          ["Offline", "Speech and AI on this computer"],
-          ["You decide", "Asks before it records"],
-        ].map(([t, d]) => (
-          <div key={t} className="flex flex-col gap-1 rounded-[10px] border border-line bg-surface px-3 py-2.5">
-            <span className="font-bold">{t}</span>
-            <span className="text-xs text-subtle">{d}</span>
-          </div>
-        ))}
+      <div className="flex flex-wrap justify-center gap-2">
+        <Chip>no bot</Chip>
+        <Chip>fully offline</Chip>
+        <Chip>asks before it records</Chip>
       </div>
     </>
   );
@@ -124,9 +132,9 @@ function Welcome() {
 
 function PermRow({ title, desc: d, state, onAllow, onDeny }: { title: string; desc: string; state: Perm; onAllow?: () => void; onDeny?: () => void }) {
   return (
-    <div className="flex items-center gap-3 rounded-[10px] border border-line bg-surface px-3 py-2.5">
+    <div className="flex items-center gap-3.5 rounded-card border border-line bg-surface px-[18px] py-4 shadow-card">
       <span className="flex-1">
-        <span className="block font-bold">{title}</span>
+        <span className="block font-semibold">{title}</span>
         <span className="text-xs leading-[17px] text-subtle">{d}</span>
       </span>
       {state === "allowed" ? (
@@ -159,14 +167,14 @@ function AudioAccess({ systemAudio, setSystemAudio }: { systemAudio: Perm; setSy
         onDeny={() => setSystemAudio("denied")}
       />
       {systemAudio === "denied" ? (
-        <div role="alert" className="flex flex-wrap items-center gap-3 rounded-control border border-warn-fg bg-warn-bg px-3 py-2.5 text-[13px] text-warn-fg">
+        <div role="alert" className="flex flex-wrap items-center gap-3 rounded-card bg-warn-bg px-3 py-2.5 text-[13px] text-warn-fg">
           <span className="flex-1 basis-56">
-            <strong>System audio is off.</strong> Talaan will record your side only, so the transcript won’t include other people. Turn it on any time in System Settings › Privacy &amp; Security.
+            <strong>System audio is off.</strong> Talaan will record your side only, so the transcript won’t include other people. Turn it on any time in system settings › Privacy &amp; Security.
           </span>
           <Button onClick={() => toast("Opens System Settings")}>Open System Settings</Button>
         </div>
       ) : (
-        <p className={desc}>If you say no, Talaan still works for your side only, and you can turn it on later in System Settings.</p>
+        <p className={desc}>If you say no, Talaan still works for your side only, and you can turn it on later in system settings.</p>
       )}
     </>
   );
@@ -231,7 +239,7 @@ function SummaryStep({ settings: s, update }: StepProps) {
       {local && (
         <div className="flex items-center gap-2.5" role="status">
           <span aria-hidden="true" className="h-1.5 flex-1 overflow-hidden rounded-full bg-line">
-            <span className="block h-full bg-ink" style={{ width: `${pct}%` }} />
+            <span className="block h-full bg-gold" style={{ width: `${pct}%` }} />
           </span>
           <span className="font-mono text-[11px] text-subtle">
             {pct < 100 ? `downloading ${pct}% · keeps going in the background` : "Local AI is ready"}
@@ -253,8 +261,8 @@ function AppsStep({ settings: s, update }: StepProps) {
         const app = s.callApps.find((a) => a.id === id);
         if (!app) return null;
         return (
-          <div key={id} className="flex items-center gap-3 rounded-[10px] border border-line bg-surface px-3 py-2.5">
-            <span className="flex-1 font-bold">{app.name}</span>
+          <div key={id} className="flex items-center gap-3 rounded-card border border-line bg-surface px-[18px] py-4 shadow-card">
+            <span className="flex-1 font-semibold">{app.name}</span>
             <span className="text-[13px]">Always record</span>
             <Switch aria-label={`Always record ${app.name}`} checked={app.rule === "always"} onChange={(v) => setAlways(id, v)} />
           </div>
@@ -295,9 +303,9 @@ function ExtrasStep({ settings: s, update }: StepProps) {
       <h1 className={h1}>Optional extras</h1>
       <p className={desc}>All off by default. Turn on what helps, now or later in Settings.</p>
       {rows.map(([t, d, control]) => (
-        <div key={t} className="flex items-center gap-3 rounded-[10px] border border-line bg-surface px-3 py-2.5">
+        <div key={t} className="flex items-center gap-3 rounded-card border border-line bg-surface px-[18px] py-4 shadow-card">
           <span className="flex-1">
-            <span className="block font-bold">{t}</span>
+            <span className="block font-semibold">{t}</span>
             <span className="text-xs text-subtle">{d}</span>
           </span>
           {control}
@@ -310,15 +318,17 @@ function ExtrasStep({ settings: s, update }: StepProps) {
 function Done({ systemAudio }: { systemAudio: Perm }) {
   return (
     <>
-      <h1 className="m-0 text-[30px] font-extrabold leading-[34px] tracking-[-0.035em]">You’re set.</h1>
-      <p className="m-0 text-[15px] leading-[22px] text-subtle">
-        Talaan lives in your menu bar. Join a call and it will ask to record, or click the menu bar icon to start.
-      </p>
-      <Option on={false} role="group" title="Tip: use headphones">
-        So other people’s voices aren’t picked up twice by your mic.
-      </Option>
+      <h1 className={h1}>You’re set.</h1>
+      <p className={desc}>Talaan lives in your menu bar. Join a call and it will ask to record, or click the Talaan icon to start.</p>
+      <div className="flex items-center gap-3.5 rounded-card bg-sp1 px-[18px] py-4">
+        <Headphones size={22} aria-hidden="true" className="flex-none text-sp1-fg" />
+        <div>
+          <div className="font-semibold text-sp1-fg">Tip: use headphones</div>
+          <div className="mt-0.5 text-xs leading-[17px] text-subtle">So other people’s voices aren’t picked up twice by your mic.</div>
+        </div>
+      </div>
       {systemAudio === "denied" && (
-        <p className={desc}>Reminder: system audio is off, so only your side will be recorded until you allow it in System Settings.</p>
+        <p className={desc}>Reminder: system audio is off, so only your side will be recorded until you allow it in system settings.</p>
       )}
     </>
   );

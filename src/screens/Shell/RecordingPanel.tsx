@@ -90,7 +90,7 @@ export function useRecording() {
       )}
       <Sheet open={micDenied} title="Microphone is off" onClose={() => setMicDenied(false)}>
         <div className="flex flex-col gap-3 p-5">
-          <h2 className="m-0 text-lg font-extrabold tracking-tight">Talaan can’t use the microphone</h2>
+          <h2 className="m-0 font-display text-xl font-bold tracking-[-0.02em]">Talaan can’t use the microphone</h2>
           <p className="m-0 text-[13px] text-subtle">
             Your side of the call won’t be recorded. Turn Talaan on in System Settings › Privacy &amp; Security › Microphone, or record only the other people for now.
           </p>

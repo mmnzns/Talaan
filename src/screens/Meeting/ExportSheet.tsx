@@ -3,10 +3,11 @@ import { useState } from "react";
 import { useSettings } from "../../data/hooks";
 import type { Meeting } from "../../data/types";
 import { formatDate } from "../../lib/format";
+import { SunCorner } from "../../brand/SunCorner";
 import { exportMeeting } from "../../lib/exportFile";
 import { describeError } from "../../data/errors";
 import { openSettings } from "../../lib/windows";
-import { Button, Radio, Select, Sheet, Switch, cn } from "../../ui";
+import { Label, Button, Radio, Select, Sheet, Switch, cn } from "../../ui";
 
 type Format = "md" | "pdf" | "txt" | "notion";
 
@@ -60,21 +61,22 @@ export function ExportSheet({ open, meeting, onClose }: Props) {
   };
 
   return (
-    <Sheet open={open} title="Export meeting" onClose={close} className="max-w-[540px]">
-      <div className="border-b border-line px-[18px] pb-3 pt-4">
-        <div className="text-lg font-extrabold tracking-[-0.02em]">Export meeting</div>
-        <div className="text-xs text-subtle">
+    <Sheet open={open} title="Export meeting" onClose={close} className="relative max-w-[540px] rounded-2xl">
+      <SunCorner size={110} className="absolute right-0 top-0" />
+      <div className="relative flex flex-col gap-1.5 px-[26px] pb-5 pt-[26px]">
+        <Label>
           {meeting.title} · {formatDate(meeting.startedAt)}
           {edited ? " · includes your edits" : ""}
-        </div>
+        </Label>
+        <div className="font-display text-2xl font-bold leading-7 tracking-[-0.02em]">Export meeting</div>
       </div>
 
       {done ? (
-        <div className="flex flex-col items-start gap-3 px-[18px] py-6" role="status">
-          <span className="grid size-9 place-items-center rounded-full border border-edge bg-gold text-on-gold">
+        <div className="relative flex flex-col items-start gap-3 px-[26px] pb-[26px]" role="status">
+          <span className="grid size-9 place-items-center rounded-full bg-gold text-on-gold">
             <Check size={18} aria-hidden="true" />
           </span>
-          <div className="text-[15px] font-bold">Done</div>
+          <div className="font-display text-lg font-bold">Done</div>
           <p className="m-0 text-[13px] text-subtle">{done}</p>
           <Button variant="primary" onClick={close}>
             Close
@@ -82,7 +84,7 @@ export function ExportSheet({ open, meeting, onClose }: Props) {
         </div>
       ) : (
         <>
-          <div role="radiogroup" aria-label="Format" className="flex flex-col gap-2 px-[18px] py-3.5">
+          <div role="radiogroup" aria-label="Format" className="relative flex flex-col gap-2.5 px-[26px] pb-[18px] pt-1">
             {FORMATS.map((f) => {
               const on = f.id === format;
               return (
@@ -93,22 +95,22 @@ export function ExportSheet({ open, meeting, onClose }: Props) {
                   aria-checked={on}
                   onClick={() => setFormat(f.id)}
                   className={cn(
-                    "flex cursor-pointer items-center gap-3 rounded-[10px] border px-3 py-2.5 text-left font-[inherit] text-ink",
-                    on ? "border-edge bg-gold-soft" : "border-line bg-surface",
+                    "flex cursor-pointer items-center gap-3.5 rounded-xl border px-3.5 py-3 text-left font-[inherit] text-ink",
+                    on ? "border-gold bg-gold-soft" : "border-line bg-surface hover:border-edge",
                   )}
                 >
                   <Radio checked={on} />
                   <span className="flex flex-1 flex-col">
-                    <span className="font-bold">{f.name}</span>
-                    <span className="text-xs text-subtle">{f.note}</span>
+                    <span className="font-semibold">{f.name}</span>
+                    <span className="text-xs leading-[17px] text-subtle">{f.note}</span>
                   </span>
                 </button>
               );
             })}
           </div>
 
-          <div className="flex flex-col px-[18px]">
-            <div className="flex items-center justify-between gap-3 border-t border-line py-2.5">
+          <div className="flex flex-col px-[26px]">
+            <div className="flex items-center justify-between gap-5 border-t border-line py-4">
               <div>
                 <div className="font-semibold">Include transcript</div>
                 <div className="text-xs text-subtle">Summary is always included.</div>
@@ -119,7 +121,7 @@ export function ExportSheet({ open, meeting, onClose }: Props) {
             {format === "notion" &&
               (notionReady ? (
                 <>
-                  <div className="flex items-center justify-between gap-3 border-t border-line py-2.5">
+                  <div className="flex items-center justify-between gap-5 border-t border-line py-4">
                     <div>
                       <div className="font-semibold">Notion destination</div>
                       <div className="text-xs text-subtle">Connected as {settings?.notion.workspace ?? "you"}</div>
@@ -130,19 +132,19 @@ export function ExportSheet({ open, meeting, onClose }: Props) {
                       ))}
                     </Select>
                   </div>
-                  <div className="mb-3 rounded-control bg-warn-bg px-2.5 py-2 text-xs text-warn-fg">
+                  <div className="mb-4 rounded-[10px] bg-sp1 px-3 py-2.5 text-xs leading-[17px] text-sp1-fg">
                     This sends the summary text to Notion. Audio never leaves this computer.
                   </div>
                 </>
               ) : (
-                <div className="mb-3 flex flex-wrap items-center gap-3 rounded-control border border-dashed border-line px-3 py-2.5 text-[13px]">
+                <div className="mb-4 flex flex-wrap items-center gap-3 rounded-[10px] border border-dashed border-edge px-3 py-2.5 text-[13px]">
                   <span className="flex-1 basis-48 text-subtle">Notion isn’t connected yet.</span>
                   <Button onClick={() => openSettings("connections")}>Connect Notion</Button>
                 </div>
               ))}
           </div>
 
-          <div className="flex justify-end gap-2 border-t border-line px-[18px] py-3.5">
+          <div className="flex justify-end gap-2 border-t border-line px-[26px] py-4">
             <Button variant="ghost" onClick={close}>
               Cancel
             </Button>

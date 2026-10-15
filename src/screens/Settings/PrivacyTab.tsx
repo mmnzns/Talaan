@@ -83,7 +83,7 @@ export function PrivacyTab({ settings: s, update }: TabProps) {
 
       <Sheet open={confirm} title="Delete all Talaan data" onClose={() => !deleting && setConfirm(false)}>
         <div className="flex flex-col gap-3 p-5">
-          <h2 className="m-0 text-lg font-extrabold tracking-tight">Delete everything?</h2>
+          <h2 className="m-0 font-display text-xl font-bold tracking-[-0.02em]">Delete everything?</h2>
           <p className="m-0 text-[13px] text-subtle">
             This removes every meeting, all audio, downloaded models, settings and saved keys from this computer. Talaan will quit. It can’t be undone.
           </p>

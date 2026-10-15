@@ -29,7 +29,7 @@ export function PrintView({ id, withTranscript }: { id: string; withTranscript: 
   return (
     <article className="mx-auto max-w-[680px] bg-paper px-10 py-10 text-ink print:p-0">
       <header className="mb-6 border-b border-edge pb-4">
-        <h1 className="m-0 text-[26px] font-extrabold tracking-[-0.02em]">{meeting.title}</h1>
+        <h1 className="m-0 font-display text-[28px] font-bold tracking-[-0.02em]">{meeting.title}</h1>
         <div className="mt-1 font-mono text-xs text-subtle">
           {meeting.appLabel} · {formatDate(meeting.startedAt)} · {formatDuration(meeting.durationMs)}
         </div>
@@ -49,7 +49,7 @@ export function PrintView({ id, withTranscript }: { id: string; withTranscript: 
       )}
       {withTranscript && meeting.transcript.length > 0 && (
         <section className="mt-6 break-before-page">
-          <h2 className="mb-3 text-[15px] font-extrabold uppercase tracking-wide">Transcript</h2>
+          <h2 className="mb-3 text-[15px] font-bold lowercase font-mono tracking-normal">Transcript</h2>
           {meeting.transcript.map((l) => (
             <p key={l.id} className="m-0 mb-2 text-[13px] leading-[19px] [break-inside:avoid]">
               {time(l.at)}
@@ -66,7 +66,7 @@ function Section({ title, items }: { title: string; items: [string, React.ReactN
   if (items.length === 0) return null;
   return (
     <section className="mb-5 [break-inside:avoid]">
-      <h2 className="mb-2 text-[13px] font-extrabold uppercase tracking-wide">{title}</h2>
+      <h2 className="mb-2 text-[13px] font-bold lowercase font-mono tracking-normal">{title}</h2>
       <ul className="m-0 list-none p-0">
         {items.map(([k, node]) => (
           <li key={k} className="mb-1.5 text-[14px] leading-[20px]">

@@ -62,7 +62,7 @@ export function ImportSheet({ open, dropped, onClose }: Props) {
     <Sheet open={open} title="Import audio" onClose={close}>
       <div className="flex flex-col gap-4 p-5">
         <div>
-          <h2 className="m-0 text-lg font-extrabold tracking-tight">Import audio</h2>
+          <h2 className="m-0 font-display text-xl font-bold tracking-[-0.02em]">Import audio</h2>
           <p className="m-0 mt-1 text-[13px] text-subtle">
             Drop a Voice Memo or a meeting recording. It becomes a meeting with a transcript and summary.
           </p>

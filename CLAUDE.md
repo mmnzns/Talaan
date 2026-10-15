@@ -15,7 +15,7 @@ Mac first (Apple silicon, built on Miguel's MacBook). Windows port is v1.1, buil
 3. **License:** MIT.
 4. **Baseline first:** empty Tauri app building and running (done in M0), then the full v1 UI with sample data, approved, then components one at a time: Recorder, Transcriber, Meeting history, Summarizer, Call detector.
 5. **Commit after every change that builds and works.** CI must stay green.
-6. **Parlato's look, Talaan's code.** Match Parlato's design language (values and feel); Talaan has its own token file (`src/styles/tokens.css`) and its own components. Don't copy Parlato's component files.
+6. **Talaan's own look ("Sinag", UI v3).** Talaan has its own identity reflecting Miguel's Filipino heritage (decided 2026-10-14, replacing the shared Parlato look). Its own token file (`src/styles/tokens.css`) and components. Don't copy Parlato's component files.
 7. **Notion first:** keep the Talaan Journey decisions and Build Log updated as work happens. Repo docs are generated from Notion.
 
 ## How the build runs
@@ -147,11 +147,14 @@ settings.json   library.json   meetings/<YYYY-MM-DD_HHMM_xxxx>/
 
 ## Design language
 
-- Shared with Parlato: Bricolage Grotesque (sans) + IBM Plex Mono (mono), bundled offline via fontsource. Cream `#F3F2EE`, ink `#141416`, lime `#B5E61D`. 1.5px edges, hard offset shadows (3px / 5px), 12px radius.
-- Main window background: **plain cream, no pattern**.
+- **Sinag** (Tagalog for "ray of light"), Design/UI v3. Syne (headings, wordmark, day numbers; `font-display`), Instrument Sans (UI text), DM Mono (timestamps, lowercase labels), all bundled offline via fontsource.
+- Colors: warm off-white `#FAFAF7` and white, near-black ink `#111318`. **Primary buttons are ink, never a color.** Sun gold `#F5B700` for highlights, progress and the active moment; pastel gold `#FFF3C4`, blue `#E8EEFB` and red `#FCE8E8` for tags, highlights and people; flag red `#E0262F` only for the recording dot. Hairline borders, soft shadows, 9 to 18px corners, generous spacing.
+- Logo: the Baybayin "ta" (traced from Miguel's reference) in gold ink (`src/brand/Logo.tsx`). Never put a dot directly above or below the letter (a kudlit changes the sound). The faint sun with three stars grouped beside it sits small in top-right corners (`src/brand/SunCorner.tsx`); it is not the national emblem.
+- Labels are lowercase mono (`Label`, `SectionLabel` with the short gold rule). Copy is platform-neutral (one design for Mac and Windows).
 - UX is Talaan's own (UI v2): recording lives in the menu bar; main window is a split view (meetings by day | open meeting); meeting view shows summary and transcript side by side with clickable timestamps; Settings is a separate Mac-style window with tabs (General, Call apps, Speech models, Summary AI, Connections, Privacy).
 - Dark mode follows the system with a manual override (`src/lib/theme.ts`, `data-theme` on `<html>`).
-- Design reference: Google Drive › MAIN DRIVE - Miguel › FILES - Projects & Work › Talaan - Meeting Minutes › `Design/UI v2/` (README lists every screen). Canvas: https://claude.ai/artifact/6rLWVFfTWDZEBF8ix7UGLv
+- Light/dark only in Settings › General (Auto, Light, Dark); no theme button in the toolbar.
+- Design reference: Google Drive › MAIN DRIVE - Miguel › FILES - Projects & Work › Talaan - Meeting Minutes › `Design/UI v3/` (README, one `*3.dc.html` per screen, logo and motif SVGs). Canvas: https://claude.ai/artifact/6rLWVFfTWDZEBF8ix7UGLv
 
 ## Key product decisions
 
