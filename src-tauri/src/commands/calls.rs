@@ -139,7 +139,7 @@ fn show_prompt(app: &AppHandle, prompt: Prompt) {
         },
     };
     let _ = window.set_size(tauri::LogicalSize::new(w, h));
-    super::tray::place_under_icon(&window, w);
+    super::tray::place_near_icon_window(&window, (w, h), None);
     let _ = window.show();
     let _ = app.emit(PROMPT_EVENT, Some(prompt));
 }
