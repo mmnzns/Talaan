@@ -1,5 +1,10 @@
 # W5. Windows release: installer, release workflow, docs and release gate — task plan
 
+> **Later change:** the calendar's iCal address no longer lives in settings.json (`calendarIcsUrl`). It moved to
+> secure key storage, key `calendar-ics` (Credential Manager target `calendar-ics.Talaan`), through `keys.rs`;
+> settings keep only `calendarConnected`, and startup removes any old `calendarIcsUrl`. The plan below is kept as
+> written.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: use superpowers:subagent-driven-development (recommended) or
 > superpowers:executing-plans to implement this plan task by task. Steps use checkbox (`- [ ]`) syntax.
 

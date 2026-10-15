@@ -109,7 +109,7 @@ quit the dev app first: one Talaan at a time.
   TAURI_SIGNING_PRIVATE_KEY=$env:TEMP\talaan-test.key and _PASSWORD=test. Copy the setup .exe and .sig to a
   folder, run `node scripts/latest-json.mjs v1.0.0 --dir <folder>`, change each url to
   `http://127.0.0.1:8765/<file>`, save as `<folder>\latest.json`, serve it: `npx http-server <folder> -p 8765`.
-- [ ] In the old build: Settings › General › Updates › Check, then Update now. The installer runs by itself,
+- [ ] In the old build: Settings › General › Updates › Check now, then Update now. The installer runs by itself,
   Talaan reopens as the new version; the meeting, settings and Open at login are still there.
 - [ ] Delete the throwaway key files from %TEMP% afterwards.
 

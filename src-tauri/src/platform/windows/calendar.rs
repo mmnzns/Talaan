@@ -1,5 +1,6 @@
 //! Calendar on Windows: the calendar's private iCal address (Google, Outlook, iCloud), downloaded every 15
-//! minutes. The address comes from settings through `set_source` (this module never reads settings). The file is
+//! minutes. The address comes from secure key storage through `set_source` (commands/calendar.rs; this module never
+//! reads keys or settings). The file is
 //! read once per download; each `events` call only expands the window asked for. Windows' own calendar store
 //! (AppointmentStore) doesn't see new Outlook or Google calendars: see docs/WINDOWS-PORT.md.
 

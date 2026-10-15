@@ -33,7 +33,7 @@ Audio is kept 7 days by default (1 day to forever, or not at all), then deleted;
 
 ## Install
 
-Download from [Releases](https://github.com/mmnzns/Talaan/releases/latest). Step by step, with screenshots of what to click: [docs/INSTALL.md](docs/INSTALL.md).
+Download from [Releases](https://github.com/mmnzns/Talaan/releases/latest). Step by step: [docs/INSTALL.md](docs/INSTALL.md).
 
 - **Windows:** run `Talaan_<version>_x64-setup.exe`. It installs for your account only, with no administrator password. Windows SmartScreen says "Windows protected your PC" the first time: click **More info**, then **Run anyway**. Talaan isn't signed with a paid certificate; it's free, and built from this source code.
 - **Mac:** open the `.dmg` and drag Talaan to Applications. macOS blocks it twice (the `.dmg`, then the app): click **Done**, then **System Settings › Privacy & Security › Open Anyway**. Only once.

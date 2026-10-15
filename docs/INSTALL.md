@@ -159,9 +159,9 @@ Same as on Windows: an **update ready** chip in the toolbar, or **Settings › G
 
 Talaan notices when a call app starts using your microphone: Zoom, Microsoft Teams, Slack, Webex, Discord, WhatsApp, FaceTime (Mac) and browser calls. It then shows **Record this call?** with **Record**, **Not now** and **Always for (app)**.
 
-- Set each app to **Ask**, **Always** or **Never** in **Settings › Call apps**. Zoom starts on **Always**; the others start on **Ask**.
+- Set each app to **Ask**, **Always** or **Never** in **Settings › Call apps**. Zoom starts on **Always** and FaceTime (Mac) on **Never**; the others, browser calls included, start on **Ask**. FaceTime and the Mac-only dictation apps aren't listed on Windows.
 - **Always** still shows a banner, with **Copy notice** (a message to paste in the call chat) and **Stop**.
-- When the call app lets go of the mic, Talaan says **Call ended. Stop recording?** and stops by itself a few seconds later unless you click **Keep recording**.
+- When the call app lets go of the mic, Talaan says **Call ended. Stop recording?** and stops by itself 30 seconds later unless you click **Keep recording**.
 - Dictation and voice apps (Parlato, Wispr Flow, Windows voice typing, NVIDIA Broadcast, Krisp and others) never trigger it. The list is in **Settings › Call apps › Ignored apps**.
 - To turn detection off entirely: **Settings › General › Detect calls**.
 
@@ -287,7 +287,9 @@ If you can't open Talaan any more, skip this and remove the folders by hand as s
 2. Open **Windows Settings › Apps › Installed apps**, find **Talaan**, click **...** › **Uninstall**.
 3. In the uninstaller, tick **Delete the application data** if you want, then **Uninstall**.
 
-Ticking **Delete the application data** removes everything Talaan stored: your meetings, audio, models and settings (`%APPDATA%\Talaan`), the app's window data, saved API keys, the Notion secret and the calendar address, and the startup entry. Leave it unticked to keep your meetings for a later reinstall.
+Ticking **Delete the application data** removes everything Talaan stored: your meetings, audio, models and settings (`%APPDATA%\Talaan`), the app's window data, saved API keys, the Notion secret and the calendar address. Leave it unticked to keep your meetings for a later reinstall. The startup entry (**Open at login**) is removed on every uninstall, ticked or not.
+
+Talaan has no setting to keep meetings in another folder: they're always in `%APPDATA%\Talaan`. If you started it with the `TALAAN_DATA_DIR` environment variable (testing only), the uninstaller doesn't know about that folder; delete it by hand. Files you exported, and models Talaan was reusing from another app, are never touched.
 
 If you uninstalled without it and want everything gone, delete these by hand:
 
