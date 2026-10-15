@@ -1,0 +1,87 @@
+name: Release
+
+# Push a tag like v1.0.0 to build a signed Apple-silicon release as a draft on GitHub Releases, with the
+# updater files (Talaan.app.tar.gz, its .sig and latest.json). Publish the draft by hand after checking it.
+#
+# Secrets:
+#   TAURI_SIGNING_PRIVATE_KEY / _PASSWORD   Talaan's updater key (minisign)
+#   APPLE_CERTIFICATE                       base64 of the exported code-signing .p12 (self-signed, free)
+#   APPLE_CERTIFICATE_PASSWORD              its export password
+#   APPLE_SIGNING_IDENTITY                  the certificate's name
+# A stable signature is what keeps the microphone, system audio, calendar and automation permissions across
+# updates, so the release fails rather than ship unsigned.
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+          key: release-arm64
+      - run: npm ci
+
+      - name: Version matches the tag
+        run: |
+          want="${GITHUB_REF_NAME#v}"
+          have=$(node -p "require('./src-tauri/tauri.conf.json').version")
+          [ "$want" = "$have" ] || { echo "::error::tag $GITHUB_REF_NAME but tauri.conf.json says $have"; exit 1; }
+
+      - name: Turn on updater artifacts
+        run: node -e "const f='src-tauri/tauri.conf.json',fs=require('fs'),c=JSON.parse(fs.readFileSync(f));c.bundle.createUpdaterArtifacts=true;fs.writeFileSync(f,JSON.stringify(c,null,2))"
+
+      - name: Signing certificate into a temporary keychain
+        env:
+          CERT: ${{ secrets.APPLE_CERTIFICATE }}
+          CERT_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+        run: |
+          set -euo pipefail
+          [ -n "$CERT" ] && [ -n "$IDENTITY" ] || { echo "::error::APPLE_CERTIFICATE / APPLE_SIGNING_IDENTITY secrets are missing"; exit 1; }
+          kc="$RUNNER_TEMP/talaan.keychain-db"; kcpass="$(uuidgen)"
+          echo "$CERT" | base64 --decode > "$RUNNER_TEMP/cert.p12"
+          security create-keychain -p "$kcpass" "$kc"
+          security set-keychain-settings -lut 21600 "$kc"
+          security unlock-keychain -p "$kcpass" "$kc"
+          security import "$RUNNER_TEMP/cert.p12" -k "$kc" -P "$CERT_PASSWORD" -T /usr/bin/codesign
+          rm -f "$RUNNER_TEMP/cert.p12"
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$kcpass" "$kc" >/dev/null
+          security list-keychains -d user -s "$kc" $(security list-keychains -d user | tr -d '"')
+          # Self-signed: trust it for code signing on this runner.
+          security find-certificate -c "$IDENTITY" -p "$kc" > "$RUNNER_TEMP/cert.pem"
+          sudo security add-trusted-cert -d -r trustRoot -p codeSign -k /Library/Keychains/System.keychain "$RUNNER_TEMP/cert.pem"
+
+      - name: Build, sign and draft the release
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+        with:
+          tagName: ${{ github.ref_name }}
+          releaseName: "Talaan ${{ github.ref_name }}"
+          releaseBody: "See CHANGELOG.md for what's new. First install: open the .dmg, drag Talaan to Applications, then right-click › Open (or System Settings › Privacy & Security › Open Anyway) once."
+          releaseDraft: true
+          args: --target aarch64-apple-darwin
+
+      - name: Signature check
+        run: |
+          app="src-tauri/target/aarch64-apple-darwin/release/bundle/macos/Talaan.app"
+          codesign --verify --deep --strict --verbose=2 "$app"
+          codesign -d --entitlements - "$app" | grep -q device.audio-input

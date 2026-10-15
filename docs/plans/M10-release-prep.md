@@ -21,3 +21,10 @@
 5. About.
 6. Release workflow (tag → draft release, signed updater artifacts, latest.json) and local release script.
 7. README, CHANGELOG, notices; Build Log.
+
+## Outcome (2026-10-14)
+
+Done: updater (launch check when allowed, Settings › Updates, never while recording), Open at login, real microphone list, onboarding on real permissions and downloads, About with Buy Me a Coffee, release workflow, local release script, README, CHANGELOG, notices. `scripts/release-local.sh` built a signed release on this Mac: Talaan.app, helper and .dmg signed by "Parlato Code Signing" with hardened runtime and the microphone, calendar and Apple Events entitlements; the updater tarball signed with Talaan's key.
+
+Open: the release workflow needs the `APPLE_CERTIFICATE`, `APPLE_CERTIFICATE_PASSWORD` and `APPLE_SIGNING_IDENTITY` secrets (Miguel's call: export the certificate as .p12). Until then, release from this Mac. The update path from one build to the next is on docs/TESTING.md.
+
