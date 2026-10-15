@@ -89,9 +89,23 @@ Mirror each macOS item with the same names, so callers don't change:
 | `devices.rs` | Built-in speakers warning, device change watcher | IMMNotificationClient for default-device changes; form factor `Speakers` + `EnumeratorName` for built-in. |
 | `power.rs` `SleepWatcher` | Auto-pause on sleep | `WM_POWERBROADCAST` / `RegisterSuspendResumeNotification`. |
 | `notify.rs` | "Summary ready" notification, click opens the meeting | Windows toast (tauri-plugin-notification or WinRT `ToastNotificationManager` with an activation argument). |
-| `calendar.rs` | Calendar events (title, attendees) | WinRT `AppointmentStore` (needs the appointments capability) or leave Calendar hidden on Windows for v1; the pure picker in `calendar/` is ready either way. |
+| `calendar.rs` | Calendar events (title, attendees) | The calendar's private iCal address (W4): download, then `calendar/ics.rs` parses and expands recurrences; the pure picker in `calendar/` is shared. WinRT `AppointmentStore` was ruled out by the W4 spike (below). |
 | `browser_tabs.rs` | Tab URLs of a browser using the mic | No AppleScript: UI Automation on the browser's address bar (active tab only), or leave browser calls on Ask/Never on Windows. `calls/tabs.rs` classification is shared. |
 | `thread.rs` | Background thread priority | `SetThreadPriority(THREAD_PRIORITY_BELOW_NORMAL)` / `THREAD_MODE_BACKGROUND_BEGIN`. |
+
+**W4 spike, AppointmentStore (2026-10-15, Miguel's PC, new Outlook installed, unpackaged debug test):**
+`AppointmentManager::RequestStoreAsync(AllCalendarsReadOnly)` succeeded without the `appointments` capability,
+but the store holds only the retired Mail and Calendar app's local calendar and nothing from new Outlook or
+Google. The test printed:
+
+```
+calendars: 1
+  calendar: Ok("Calendar")
+appointments in the next 7 days: 0
+```
+
+Decision: go with the iCal address. The spike test was not kept, since it needed three extra `windows`
+features (`ApplicationModel_Appointments`, `Foundation`, `Foundation_Collections`) used nowhere else.
 
 Files outside `platform/` that call `platform::macos::…` directly and need a `cfg` or a platform-neutral
 re-export: `lib.rs`, `calendar/mod.rs`, `commands/{ask,recorder,calendar,calls,summarizer}.rs`.
