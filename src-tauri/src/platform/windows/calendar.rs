@@ -52,7 +52,8 @@ pub fn request() -> Access {
 }
 
 /// Events overlapping the window, downloading the calendar first when the copy is older than 15 minutes. A
-/// failed download keeps the old copy. Blocks for up to 15 s, so call it off the main thread.
+/// failed download keeps the old copy. A download blocks the caller for at most about 15 s in all (`fetch::download`
+/// has one overall deadline), so call this off the main thread.
 pub fn events(from_ms: i64, to_ms: i64) -> Vec<Event> {
     refresh_if_due();
     let calendar = source().calendar.clone();

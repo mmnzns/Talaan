@@ -2,7 +2,7 @@
 //! address; nothing about meetings is sent. The pure helpers decide when to refetch and what the address says.
 
 use std::io::Read;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 /// A downloaded calendar is fresh for this long.
 pub const REFRESH_MS: i64 = 15 * 60_000;
@@ -79,13 +79,28 @@ pub fn looks_like_calendar(body: &[u8]) -> bool {
     body[start..].get(..15).is_some_and(|head| head.eq_ignore_ascii_case(b"BEGIN:VCALENDAR"))
 }
 
-/// Downloads the calendar (15 s timeout, at most 20 MB). Errors are written for the user.
+const TOO_SLOW: &str = "The calendar didn't finish downloading within 15 seconds. Check your connection and try again.";
+
+/// Downloads the calendar: 15 s in all (connecting, waiting and reading together), at most 20 MB. Errors are
+/// written for the user. The work runs on its own thread so a stalled read can't hold the caller past the deadline.
 pub fn download(url: &str) -> Result<Vec<u8>, String> {
     let url = normalize_url(url)?;
+    let (tx, rx) = std::sync::mpsc::channel();
+    std::thread::Builder::new()
+        .name("calendar-download".into())
+        .spawn(move || {
+            let _ = tx.send(download_until(&url, Instant::now() + TIMEOUT));
+        })
+        .map_err(|_| TOO_SLOW.to_string())?;
+    rx.recv_timeout(TIMEOUT + Duration::from_millis(500)).unwrap_or_else(|_| Err(TOO_SLOW.to_string()))
+}
+
+fn download_until(url: &str, deadline: Instant) -> Result<Vec<u8>, String> {
+    // Each network step gets at most the full timeout; the deadline also bounds the body as a whole.
     let client = reqwest::blocking::Client::builder().timeout(TIMEOUT).build().map_err(|e| e.to_string())?;
-    let response = client.get(&url).send().map_err(|e| {
+    let response = client.get(url).send().map_err(|e| {
         if e.is_timeout() {
-            "The calendar didn't answer within 15 seconds. Check your connection and try again.".to_string()
+            TOO_SLOW.to_string()
         } else {
             "Couldn't reach the calendar address. Check your connection and the address.".to_string()
         }
@@ -94,15 +109,30 @@ pub fn download(url: &str) -> Result<Vec<u8>, String> {
     if !status.is_success() {
         return Err(format!("The calendar address didn't work (HTTP {}). Copy it again from your calendar.", status.as_u16()));
     }
-    let mut body = Vec::new();
-    response.take(MAX_BYTES + 1).read_to_end(&mut body).map_err(|_| "The download was interrupted. Try again.".to_string())?;
-    if body.len() as u64 > MAX_BYTES {
-        return Err("This calendar is larger than 20 MB, which Talaan doesn't read.".to_string());
-    }
+    let body = read_body(response, MAX_BYTES, || Instant::now() >= deadline)?;
     if !looks_like_calendar(&body) {
         return Err("That address didn't return a calendar. Copy the address in iCal format (it ends in .ics).".to_string());
     }
     Ok(body)
+}
+
+/// Reads a body in chunks, refusing more than `max` bytes and stopping once `out_of_time` says so.
+fn read_body(mut r: impl Read, max: u64, out_of_time: impl Fn() -> bool) -> Result<Vec<u8>, String> {
+    let mut body = Vec::new();
+    let mut chunk = vec![0u8; 64 * 1024];
+    loop {
+        if out_of_time() {
+            return Err(TOO_SLOW.to_string());
+        }
+        let n = r.read(&mut chunk).map_err(|e| if e.kind() == std::io::ErrorKind::TimedOut { TOO_SLOW.to_string() } else { "The download was interrupted. Try again.".to_string() })?;
+        if n == 0 {
+            return Ok(body);
+        }
+        body.extend_from_slice(&chunk[..n]);
+        if body.len() as u64 > max {
+            return Err("This calendar is larger than 20 MB, which Talaan doesn't read.".to_string());
+        }
+    }
 }
 
 #[cfg(test)]
@@ -152,6 +182,40 @@ mod tests {
         assert!(me_from_url("https://outlook.office365.com/owa/calendar/abc@example.com/def/calendar.ics").is_empty());
         assert!(me_from_url("https://calendar.google.com/calendar/ical/%E0%40x/basic.ics").is_empty());
         assert!(me_from_url("not a url").is_empty());
+    }
+
+    /// Hands out `chunk` bytes per read, `total` in all.
+    struct Chunks {
+        left: usize,
+        chunk: usize,
+        reads: std::rc::Rc<std::cell::Cell<usize>>,
+    }
+    impl Read for Chunks {
+        fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+            self.reads.set(self.reads.get() + 1);
+            let n = self.left.min(self.chunk).min(buf.len());
+            buf[..n].fill(b'x');
+            self.left -= n;
+            Ok(n)
+        }
+    }
+
+    #[test]
+    fn the_body_is_read_against_one_deadline_and_a_size_cap() {
+        let reads = std::rc::Rc::new(std::cell::Cell::new(0));
+        let body = |left, chunk| Chunks { left, chunk, reads: reads.clone() };
+        assert_eq!(read_body(body(1000, 100), 5000, || false).unwrap().len(), 1000);
+        assert!(read_body(body(6000, 100), 5000, || false).unwrap_err().contains("20 MB"));
+        // The deadline is checked between reads: a slow trickle stops instead of running on.
+        reads.set(0);
+        let ticks = std::cell::Cell::new(0);
+        let err = read_body(body(1_000_000, 10), 5_000_000, || {
+            ticks.set(ticks.get() + 1);
+            ticks.get() > 3
+        })
+        .unwrap_err();
+        assert!(err.contains("15 seconds"), "{err}");
+        assert!(reads.get() <= 4, "{}", reads.get());
     }
 
     #[test]
