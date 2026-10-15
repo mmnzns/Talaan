@@ -43,6 +43,10 @@ export function platformCopy(os: OS, lang: Lang = "en"): PlatformCopy {
 
 export const os: OS = detectOS(typeof navigator === "undefined" ? "" : navigator.userAgent);
 
+/** For the few flows (not words) that differ: the Windows calendar address, Ctrl vs Cmd, the macOS title bar inset. */
+export const onWindows = os === "windows";
+export const onMac = os === "mac";
+
 /** The platform words in the current UI language. Re-renders when the language changes. */
 export function usePlatform(): PlatformCopy {
   return platformCopy(os, useLang());

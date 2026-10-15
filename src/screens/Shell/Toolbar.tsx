@@ -4,7 +4,7 @@ import { useSettings } from "../../data/hooks";
 import { onEvent } from "../../data/tauri/invoke";
 import type { RecorderState } from "../../data/recorder";
 import { formatTime } from "../../lib/format";
-import { onMac } from "../../lib/os";
+import { onMac } from "../../lib/platform";
 import { Logo } from "../../brand/Logo";
 import { inTauri, openSettings } from "../../lib/windows";
 import { navigate, routes } from "../../lib/router";

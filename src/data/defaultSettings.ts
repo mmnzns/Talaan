@@ -1,8 +1,8 @@
-import { onWindows } from "../lib/os";
+import { onWindows } from "../lib/platform";
 import type { Settings } from "./settings";
 
-/** Windows only. Kept in one place until the per-OS table in src/lib/platform.ts (another branch) can hold it.
- *  The Rust side already ignores these ids on Windows (calls/apps.rs); this is the list the user sees and edits. */
+/** Windows only: the extra ignored apps the user sees and edits (the "why" shows through settings.why_*).
+ *  The Rust side already ignores these ids on Windows (calls/apps.rs). */
 const windowsIgnoredApps = onWindows
   ? [
       { name: "NVIDIA Broadcast", why: "mic filter" },

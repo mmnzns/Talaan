@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { detectOS, platformCopy } from "./platform";
+import { detectOS, onMac, onWindows, os, platformCopy } from "./platform";
 
 const MAC_UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)";
 const WIN_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36 Edg/130.0.0.0";
@@ -15,6 +15,12 @@ describe("detectOS", () => {
 
   it("falls back to the Mac when the agent says nothing useful", () => {
     expect(detectOS("")).toBe("mac");
+  });
+
+  it("gives onWindows and onMac, never both", () => {
+    expect(onWindows).toBe(os === "windows");
+    expect(onMac).toBe(os === "mac");
+    expect(onWindows && onMac).toBe(false);
   });
 });
 

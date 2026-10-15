@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { onWindows } from "../../lib/os";
+import { onWindows } from "../../lib/platform";
 import type { Route } from "../../lib/router";
 import { navigate, routes } from "../../lib/router";
 import { inTauri, openSettings } from "../../lib/windows";

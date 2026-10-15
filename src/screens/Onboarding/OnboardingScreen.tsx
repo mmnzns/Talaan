@@ -7,8 +7,7 @@ import { useSettingsStore } from "../../data/StoreProvider";
 import type { Settings } from "../../data/settings";
 import { Button, Chip, Label, Radio, Switch, cn, useToast } from "../../ui";
 import { SunCorner } from "../../brand/SunCorner";
-import { onWindows } from "../../lib/os";
-import { systemAudioNeedsPermission, usePlatform } from "../../lib/platform";
+import { onWindows, systemAudioNeedsPermission, usePlatform } from "../../lib/platform";
 import { useT } from "../../lib/i18n/I18nProvider";
 
 const STEPS = ["step0", "step1", "step2", "step3", "step4", "step5", "step6"] as const;

@@ -5,7 +5,7 @@ import { useSettingsStore, useStore } from "../../data/StoreProvider";
 import { exportAll } from "../../lib/exportAll";
 import type { RetentionChoice, TranscriptRetention } from "../../data/settings";
 import { formatBytes, tildePath } from "../../lib/format";
-import { onWindows } from "../../lib/os";
+import { onWindows } from "../../lib/platform";
 import { useT } from "../../lib/i18n/I18nProvider";
 import type { MessageKey } from "../../lib/i18n";
 import { Button, Label, Select, Sheet, useToast } from "../../ui";

@@ -2,13 +2,12 @@ import { useEffect, useState } from "react";
 import { recorderClient } from "../../data";
 import type { BrowserState, CalendarAccess, NotionDestination } from "../../data/settings";
 import { describeError, toStoreError } from "../../data/errors";
-import { onWindows } from "../../lib/os";
 import { openLink } from "../../lib/windows";
 import { useSettingsStore } from "../../data/StoreProvider";
 import { Button, Chip, Field, Select, Switch, useToast } from "../../ui";
 import { Group, Row, SectionIntro } from "./parts";
 import type { TabProps } from "./tabProps";
-import { usePlatform } from "../../lib/platform";
+import { onWindows, usePlatform } from "../../lib/platform";
 import { useT } from "../../lib/i18n/I18nProvider";
 import type { MessageKey } from "../../lib/i18n";
 

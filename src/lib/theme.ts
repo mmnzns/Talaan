@@ -1,5 +1,5 @@
 import { inTauri } from "./windows";
-import { onWindows } from "./os";
+import { onWindows } from "./platform";
 
 export type ThemePreference = "system" | "light" | "dark";
 export type ResolvedTheme = "light" | "dark";
