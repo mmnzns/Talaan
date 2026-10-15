@@ -36,7 +36,7 @@ export interface SpeechModel {
   progress?: number; // 0..1 while downloading
 }
 
-/** A local summary AI model (downloaded once, runs on this Mac). */
+/** A local summary AI model (downloaded once, runs on this computer). */
 export interface LocalModel {
   id: string;
   choice: "recommended" | "larger";

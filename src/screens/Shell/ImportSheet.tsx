@@ -90,7 +90,7 @@ export function ImportSheet({ open, dropped, onClose }: Props) {
           )}
         </div>
         <p className="m-0 text-xs text-subtle">
-          One track is labeled “Them” unless you split it by speaker later. The file stays on this Mac.
+          One track is labeled “Them” unless you split it by speaker later. The file stays on this computer.
         </p>
         <div className="flex justify-end">
           <Button onClick={close}>{phase.kind === "working" ? "Hide" : "Cancel"}</Button>

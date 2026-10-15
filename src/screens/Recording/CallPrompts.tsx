@@ -18,7 +18,7 @@ export function Nudge({ app = "Zoom", onRecord, onDismiss }: { app?: string; onR
       <div className="flex min-w-0 flex-1 flex-col gap-1">
         <Label>{app.toLowerCase()} is using your mic</Label>
         <span className="text-[17px] font-extrabold leading-[22px] tracking-[-0.02em]">Record this call?</span>
-        <span className="text-xs leading-4 text-subtle">Stays on this Mac. You’ll get a notice to paste in the chat.</span>
+        <span className="text-xs leading-4 text-subtle">Stays on this computer. You’ll get a notice to paste in the chat.</span>
         <div className="mt-2 flex gap-2">
           <Button variant="primary" raised onClick={onRecord}>
             Record

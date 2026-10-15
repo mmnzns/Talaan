@@ -131,7 +131,7 @@ export function ExportSheet({ open, meeting, onClose }: Props) {
                     </Select>
                   </div>
                   <div className="mb-3 rounded-control bg-warn-bg px-2.5 py-2 text-xs text-warn-fg">
-                    This sends the summary text to Notion. Audio never leaves this Mac.
+                    This sends the summary text to Notion. Audio never leaves this computer.
                   </div>
                 </>
               ) : (

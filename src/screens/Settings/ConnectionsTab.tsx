@@ -16,10 +16,10 @@ export function ConnectionsTab({ settings: s, update }: TabProps) {
     <div className="flex flex-col gap-3">
       <SectionIntro title="Connections" desc="All optional. Talaan works fully without them." />
       <Group>
-        <Row title="Calendar" desc="Uses the event at recording time for the meeting title, attendees and speaker names. Reads macOS Calendar on this Mac only.">
+        <Row title="Calendar" desc="Uses the event at recording time for the meeting title, attendees and speaker names. Reads your system calendar, on this computer only.">
           <Switch aria-label="Calendar" checked={s.calendarConnected} onChange={(v) => update({ calendarConnected: v })} />
         </Row>
-        <Row title="Browser call detection" desc="Recognizes Google Meet, Zoom web and Teams web tabs, so Browser calls can use Always. macOS asks once per browser.">
+        <Row title="Browser call detection" desc="Recognizes Google Meet, Zoom web and Teams web tabs, so Browser calls can use Always. Your system asks once per browser.">
           <Switch aria-label="Browser call detection" checked={s.tabDetection} onChange={(v) => update({ tabDetection: v })} />
           {s.tabDetection && (
             <div className="flex basis-full flex-wrap gap-2">

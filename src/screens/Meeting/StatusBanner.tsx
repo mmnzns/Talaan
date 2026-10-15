@@ -20,7 +20,7 @@ export function StatusBanner({ meeting }: { meeting: Meeting }) {
     return (
       <Banner
         title="This recording was interrupted"
-        text="Talaan closed or the Mac slept before the call was saved. Recover what was captured, or discard it."
+        text="Talaan closed or the computer slept before the call was saved. Recover what was captured, or discard it."
       >
         <Button variant="primary" onClick={() => run(store.recoverMeeting(meeting.id))}>Recover</Button>
         <Button onClick={leave}>Discard</Button>
@@ -36,7 +36,7 @@ export function StatusBanner({ meeting }: { meeting: Meeting }) {
   }
   if (meeting.status === "failed") {
     return (
-      <Banner title="Processing failed" text={`${meeting.error ? `${meeting.error.message} ` : ""}The audio is safe on this Mac. Try again, or delete the meeting.`}>
+      <Banner title="Processing failed" text={`${meeting.error ? `${meeting.error.message} ` : ""}The audio is safe on this computer. Try again, or delete the meeting.`}>
         <Button variant="primary" onClick={() => run(store.retryProcessing(meeting.id))}>Try again</Button>
         <Button onClick={leave}>Delete</Button>
       </Banner>

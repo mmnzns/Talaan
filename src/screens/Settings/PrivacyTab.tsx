@@ -31,7 +31,7 @@ export function PrivacyTab({ settings: s, update }: TabProps) {
     <div className="flex flex-col gap-3">
       <Group>
         <div className="flex flex-col gap-2 px-4 py-3">
-          <span className="font-mono text-[11px] text-subtle">What leaves this Mac</span>
+          <span className="font-mono text-[11px] text-subtle">What leaves this computer</span>
           <div className="grid grid-cols-[1fr_auto] gap-x-4 gap-y-1.5 text-[13px]">
             {flows.map(([what, when]) => (
               <div key={what} className="contents">
@@ -59,11 +59,11 @@ export function PrivacyTab({ settings: s, update }: TabProps) {
         </Row>
         <Row title="Meetings folder" desc={info ? `${tildePath(info.path)} · ${formatBytes(info.bytes)} · ${meetings.length} ${meetings.length === 1 ? "meeting" : "meetings"}` : `${meetings.length} meetings`}>
           <div className="flex gap-2">
-            <Button onClick={() => toast("Opens Finder once storage is connected")}>Show in Finder</Button>
+            <Button onClick={() => toast("Opens the folder once storage is connected")}>Open folder</Button>
             <Button onClick={() => toast("Export all arrives with storage")}>Export all</Button>
           </div>
         </Row>
-        <Row title="Saved API keys" desc="Stored in the Keychain, never in Talaan's files.">
+        <Row title="Saved API keys" desc="Stored in your system's secure key storage, never in Talaan's files.">
           <Button
             disabled={!s.byokKeySet}
             onClick={() => {
@@ -85,7 +85,7 @@ export function PrivacyTab({ settings: s, update }: TabProps) {
         <div className="flex flex-col gap-3 p-5">
           <h2 className="m-0 text-lg font-extrabold tracking-tight">Delete everything?</h2>
           <p className="m-0 text-[13px] text-subtle">
-            This removes every meeting, all audio, downloaded models, settings and saved keys from this Mac. Talaan will quit. It can’t be undone.
+            This removes every meeting, all audio, downloaded models, settings and saved keys from this computer. Talaan will quit. It can’t be undone.
           </p>
           <div className="flex justify-end gap-2">
             <Button disabled={deleting} onClick={() => setConfirm(false)}>

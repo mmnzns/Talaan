@@ -212,7 +212,7 @@ export function MeetingHeader({ meeting, editing, canRevert, onToggleEdit, onRev
                       close();
                     }}
                   >
-                    <FolderOpen size={14} aria-hidden="true" /> Show in Finder
+                    <FolderOpen size={14} aria-hidden="true" /> Open folder
                   </MenuItem>
                   <MenuItem
                     className="text-danger"
@@ -243,7 +243,7 @@ export function MeetingHeader({ meeting, editing, canRevert, onToggleEdit, onRev
         <div className="flex flex-col gap-3 p-5">
           <h2 className="m-0 text-lg font-extrabold tracking-tight">Delete “{meeting.title}”?</h2>
           <p className="m-0 text-[13px] text-subtle">
-            This removes the transcript, summary and any audio from this Mac. It can’t be undone.
+            This removes the transcript, summary and any audio from this computer. It can’t be undone.
           </p>
           <div className="flex justify-end gap-2">
             <Button onClick={() => setConfirmDelete(false)}>Cancel</Button>

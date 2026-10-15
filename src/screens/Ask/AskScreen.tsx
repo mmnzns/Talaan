@@ -75,7 +75,7 @@ export function AskScreen({ meetingId }: { meetingId?: string }) {
           <ArrowLeft size={14} aria-hidden="true" /> {meetingId ? "Back to meeting" : "Meetings"}
         </Button>
         <span className="text-base font-extrabold tracking-[-0.03em]">Ask</span>
-        <Chip>{local ? "Local AI · offline · searches stay on this Mac" : "Your key · transcript text is sent · searches stay on this Mac"}</Chip>
+        <Chip>{local ? "Local AI · offline · searches stay on this computer" : "Your key · transcript text is sent · searches stay on this computer"}</Chip>
       </div>
 
       <div className="mx-auto flex w-full max-w-[820px] flex-1 flex-col gap-[18px] px-6 pb-5 pt-6">

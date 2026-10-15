@@ -43,7 +43,7 @@ export function OnboardingScreen() {
               </li>
             ))}
           </ol>
-          <span className="mt-auto font-mono text-[11px] text-aside-muted">Everything stays on this Mac.</span>
+          <span className="mt-auto font-mono text-[11px] text-aside-muted">Everything stays on this computer.</span>
         </aside>
 
         <div className="flex min-w-0 flex-1 flex-col gap-4 overflow-auto px-8 pb-[22px] pt-[30px]">
@@ -102,14 +102,14 @@ function Welcome() {
   return (
     <>
       <span className="font-mono text-[11px] text-subtle">talaan · tagalog for “record”</span>
-      <h1 className="m-0 text-[30px] font-extrabold leading-[34px] tracking-[-0.035em]">Meeting notes that stay on your Mac.</h1>
+      <h1 className="m-0 text-[30px] font-extrabold leading-[34px] tracking-[-0.035em]">Meeting notes that stay on your computer.</h1>
       <p className="m-0 text-[15px] leading-[22px] text-subtle">
         Talaan records both sides of any call, writes the transcript and a summary with decisions and action items, without a bot joining your meeting.
       </p>
       <div className="mt-1.5 grid grid-cols-3 gap-2.5 max-[860px]:grid-cols-1">
         {[
           ["No bot", "Works with any call app"],
-          ["Offline", "Speech and AI on this Mac"],
+          ["Offline", "Speech and AI on this computer"],
           ["You decide", "Asks before it records"],
         ].map(([t, d]) => (
           <div key={t} className="flex flex-col gap-1 rounded-[10px] border-[1.5px] border-line bg-surface px-3 py-2.5">
@@ -149,11 +149,11 @@ function AudioAccess({ systemAudio, setSystemAudio }: { systemAudio: Perm; setSy
   return (
     <>
       <h1 className={h1}>Allow two kinds of audio</h1>
-      <p className={desc}>Talaan needs your microphone (your side) and system audio (everyone else). macOS will ask for each one next.</p>
+      <p className={desc}>Talaan needs your microphone (your side) and system audio (everyone else). Your system will ask for each one next.</p>
       <PermRow title="Microphone" desc={`Records what you say. Labeled “Me”.`} state={mic} onAllow={() => setMic("allowed")} />
       <PermRow
         title="System audio"
-        desc="Records the other people on the call. macOS calls this screen and system audio recording; Talaan only uses the audio."
+        desc="Records the other people on the call. Your system may list this as screen and system audio recording; Talaan only uses the audio."
         state={systemAudio}
         onAllow={() => setSystemAudio("allowed")}
         onDeny={() => setSystemAudio("denied")}
@@ -177,7 +177,7 @@ type StepProps = { settings: Settings; update: (p: Partial<Settings>) => Promise
 function ModelStep({ settings: s, update }: StepProps) {
   const store = useSettingsStore();
   const status = (m: Settings["speechModels"][number]) => {
-    if (m.state === "on_this_mac") return "Already on this Mac, no download.";
+    if (m.state === "on_this_mac") return "Already on this computer, no download.";
     if (m.state === "downloaded") return "Downloaded.";
     if (m.state === "downloading") return `Downloading ${Math.round((m.progress ?? 0) * 100)}%…`;
     return `${(m.sizeMb / 1000).toFixed(1)} GB download.`;
@@ -185,7 +185,7 @@ function ModelStep({ settings: s, update }: StepProps) {
   return (
     <>
       <h1 className={h1}>Choose a speech model</h1>
-      <p className={desc}>Turns audio into text on this Mac. You can change it later.</p>
+      <p className={desc}>Turns audio into text on this computer. You can change it later.</p>
       <div role="radiogroup" aria-label="Speech model" className="flex flex-col gap-2">
         {s.speechModels.map((m) => (
           <Option

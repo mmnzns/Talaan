@@ -7,8 +7,8 @@ import { Group, Row, SectionIntro } from "./parts";
 import type { TabProps } from "./tabProps";
 
 const ENGINES: { id: SummaryEngineKind; name: string; tag: string; note: string }[] = [
-  { id: "local", name: "Local AI", tag: "default", note: "Built in. Offline. Nothing leaves your Mac." },
-  { id: "ollama", name: "Ollama / LM Studio", tag: "offline", note: "Use a model you already run on this Mac." },
+  { id: "local", name: "Local AI", tag: "default", note: "Built in. Offline. Nothing leaves your computer." },
+  { id: "ollama", name: "Ollama / LM Studio", tag: "offline", note: "Use a model you already run on this computer." },
   { id: "byok", name: "Your own key", tag: "cloud", note: "Claude, OpenAI or Gemini. Sends text only." },
 ];
 
@@ -99,7 +99,7 @@ function LocalPanel({ settings: s, update }: TabProps) {
   const pct = Math.round((model?.progress ?? 0) * 100);
   return (
     <Group>
-      <Row title="Local model" desc="Downloaded once. Runs on the Mac's GPU, with Wi-Fi off too.">
+      <Row title="Local model" desc="Downloaded once. Runs on this computer's GPU, with Wi-Fi off too.">
         <Select label="Local model" wrapperClassName="w-60" value={s.localModel} onChange={(e) => update({ localModel: e.target.value as "recommended" | "larger" })}>
           {s.localModels.map((m) => (
             <option key={m.id} value={m.choice}>
@@ -157,7 +157,7 @@ function OllamaPanel({ settings: s, update }: TabProps) {
 
   return (
     <Group>
-      <Row title="Connection" desc="Ollama (port 11434) or LM Studio (port 1234) on this Mac.">
+      <Row title="Connection" desc="Ollama (port 11434) or LM Studio (port 1234) on this computer.">
         <Field label="Address" value={s.ollamaAddress} onChange={(e) => update({ ollamaAddress: e.target.value })} wrapperClassName="w-60" />
         {problem && (
           <div role="status" className="basis-full text-xs font-semibold text-danger">
@@ -215,7 +215,7 @@ function ByokPanel({ settings: s, update }: TabProps) {
           <Field label="Server address" value={s.byokBaseUrl ?? ""} onChange={(e) => update({ byokBaseUrl: e.target.value })} wrapperClassName="w-60" />
         </Row>
       )}
-      <Row title="API key" desc={s.byokKeySet ? "A key is saved in the Mac's Keychain." : "Checked, then stored in the Mac's Keychain."}>
+      <Row title="API key" desc={s.byokKeySet ? "A key is saved in your system's secure key storage." : "Checked, then stored in your system's secure key storage."}>
         <div className="flex items-center gap-2">
           <Field label="API key" type="password" placeholder={s.byokKeySet ? "••••••••••••" : "Paste key"} value={key} onChange={(e) => setKey(e.target.value)} wrapperClassName="w-52" />
           <Button onClick={test} disabled={testing || !key.trim()}>

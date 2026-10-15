@@ -202,7 +202,7 @@ fn send(provider: Provider, method: reqwest::Method, url: &str, headers: &[(Stri
     }
     let resp = req.send().map_err(|e| {
         if e.is_connect() {
-            EngineError::Unavailable(format!("Couldn't reach {} at {url}. Is it running, and is this Mac online?", provider.name()))
+            EngineError::Unavailable(format!("Couldn't reach {} at {url}. Is it running, and is this computer online?", provider.name()))
         } else if e.is_timeout() {
             EngineError::Failed(format!("{} took too long to answer.", provider.name()))
         } else {

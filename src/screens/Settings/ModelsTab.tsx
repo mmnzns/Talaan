@@ -6,7 +6,7 @@ import { Dots, Group, Row, SectionIntro } from "./parts";
 import type { TabProps } from "./tabProps";
 
 const SOURCE: Record<SpeechModel["state"], string> = {
-  on_this_mac: "On this Mac",
+  on_this_mac: "On this computer",
   downloaded: "Downloaded",
   downloading: "Downloading",
   not_downloaded: "Not downloaded",
@@ -22,12 +22,12 @@ export function ModelsTab({ settings: s, update }: TabProps) {
   const reused = s.speechModels.filter((m) => m.state === "on_this_mac");
   const reuseDesc = reused.length
     ? `Found ${reused.length} downloaded by another speech app. Used read-only, so that app keeps working. Saves about ${size(reused.reduce((a, m) => a + m.sizeMb, 0))}.`
-    : "Talaan looks for speech models other apps already downloaded and uses them read-only instead of downloading again. None found on this Mac.";
+    : "Talaan looks for speech models other apps already downloaded and uses them read-only instead of downloading again. None found on this computer.";
 
   return (
     <div className="flex flex-col gap-6">
       <div className="flex flex-col gap-3">
-        <SectionIntro title="Speech model" desc="Turns each side of the call into text, on this Mac. Pick one; you can switch any time." />
+        <SectionIntro title="Speech model" desc="Turns each side of the call into text, on this computer. Pick one; you can switch any time." />
         <div className="flex flex-col gap-2.5" role="radiogroup" aria-label="Speech model">
           {s.speechModels.map((m) => {
             const on = s.activeSpeechModel === m.id;
@@ -95,20 +95,20 @@ export function ModelsTab({ settings: s, update }: TabProps) {
         <ExtraModelRow
           model={s.speakerModel}
           title="Tell speakers apart"
-          desc={`Splits the other side of the call into Speaker 1, 2, 3 so the summary knows who said what. Runs on this Mac with ${s.speakerModel.maker}'s speaker model, up to 8 people.`}
+          desc={`Splits the other side of the call into Speaker 1, 2, 3 so the summary knows who said what. Runs on this computer with ${s.speakerModel.maker}'s speaker model, up to 8 people.`}
           on={s.separateSpeakers}
           onToggle={(v) => update({ separateSpeakers: v })}
         />
         <ExtraModelRow
           model={s.searchModel}
           title="Search by meaning"
-          desc="Helps Ask find answers worded differently from your question, in any language. Without it, Ask matches keywords. Runs on this Mac."
+          desc="Helps Ask find answers worded differently from your question, in any language. Without it, Ask matches keywords. Runs on this computer."
         />
       </Group>
 
       <Group>
-        <Row title="Reuse models already on this Mac" desc={reuseDesc}>
-          <Switch aria-label="Reuse models already on this Mac" checked={s.reuseModels} onChange={(v) => update({ reuseModels: v })} />
+        <Row title="Reuse models already on this computer" desc={reuseDesc}>
+          <Switch aria-label="Reuse models already on this computer" checked={s.reuseModels} onChange={(v) => update({ reuseModels: v })} />
         </Row>
         <Row title="Meeting language" desc="Detected per meeting. Whisper knows 99 languages; Parakeet knows 25 European ones.">
           <Select label="Meeting language" wrapperClassName="w-40" value={s.meetingLanguage} onChange={(e) => update({ meetingLanguage: e.target.value })}>

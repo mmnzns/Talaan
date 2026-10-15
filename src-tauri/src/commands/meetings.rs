@@ -115,7 +115,7 @@ pub fn meetings_delete_audio(app: AppHandle, state: State<AppState>, id: String)
 #[tauri::command]
 pub fn meetings_reveal(state: State<AppState>, id: String) -> CmdResult<()> {
     let dir = state.lock().dir(&id)?;
-    tauri_plugin_opener::reveal_item_in_dir(dir.join(crate::storage::paths::META)).map_err(|e| StorageError::Refused(format!("Couldn't open Finder: {e}")))
+    tauri_plugin_opener::reveal_item_in_dir(dir.join(crate::storage::paths::META)).map_err(|e| StorageError::Refused(format!("Couldn't open the folder: {e}")))
 }
 
 /// Writes an exported file where the user chose in the save dialog.

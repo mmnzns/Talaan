@@ -4,11 +4,11 @@
 const SERVICE: &str = "Talaan";
 
 fn entry(provider: &str) -> Result<keyring::Entry, String> {
-    keyring::Entry::new(SERVICE, provider).map_err(|e| format!("Couldn't open the Keychain: {e}"))
+    keyring::Entry::new(SERVICE, provider).map_err(|e| format!("Couldn't open secure key storage: {e}"))
 }
 
 pub fn set(provider: &str, key: &str) -> Result<(), String> {
-    entry(provider)?.set_password(key.trim()).map_err(|e| format!("Couldn't save the key in the Keychain: {e}"))
+    entry(provider)?.set_password(key.trim()).map_err(|e| format!("Couldn't save the key in secure key storage: {e}"))
 }
 
 pub fn get(provider: &str) -> Option<String> {
@@ -18,7 +18,7 @@ pub fn get(provider: &str) -> Option<String> {
 pub fn clear(provider: &str) -> Result<(), String> {
     match entry(provider)?.delete_credential() {
         Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
-        Err(e) => Err(format!("Couldn't remove the key from the Keychain: {e}")),
+        Err(e) => Err(format!("Couldn't remove the key from secure key storage: {e}")),
     }
 }
 

@@ -31,9 +31,9 @@ export function GeneralTab({ settings: s, update }: TabProps) {
       <Row title="Warn when using speakers" desc="Recommends headphones so other voices aren't recorded twice.">
         <Switch aria-label="Warn when using speakers" checked={s.warnOnSpeakers} onChange={(v) => update({ warnOnSpeakers: v })} />
       </Row>
-      <Row title="Appearance" desc="Follows your Mac by default.">
+      <Row title="Appearance" desc="Auto matches your computer.">
         <Select label="Appearance" wrapperClassName="w-40" value={s.theme} onChange={(e) => update({ theme: e.target.value as TabProps["settings"]["theme"] })}>
-          <option value="system">Same as Mac</option>
+          <option value="system">Auto</option>
           <option value="light">Light</option>
           <option value="dark">Dark</option>
         </Select>
