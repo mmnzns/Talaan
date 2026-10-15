@@ -23,7 +23,7 @@ mod tests {
     #[ignore]
     fn embed_smoke() {
         let model = dirs::data_dir().unwrap().join("Talaan/models/search/Qwen3-Embedding-0.6B-Q8_0.gguf");
-        let exe = std::env::current_exe().unwrap().parent().unwrap().parent().unwrap().join(format!("{}{}", crate::summarizer::local::HELPER, std::env::consts::EXE_SUFFIX));
+        let exe = std::env::current_exe().unwrap().parent().unwrap().parent().unwrap().join(crate::summarizer::local::helper_file());
         let mut ai = crate::summarizer::local::LocalAi::new(&exe);
         let passages = [
             "Speaker 1: The numbers are final as of this morning. Daniel, can you chase legal for the copy?",

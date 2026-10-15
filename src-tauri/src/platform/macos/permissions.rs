@@ -9,6 +9,9 @@ use objc2_av_foundation::{AVAuthorizationStatus, AVCaptureDevice, AVMediaTypeAud
 use std::sync::mpsc::channel;
 use std::time::Duration;
 
+/// macOS asks the first time the tap opens.
+pub const SYSTEM_AUDIO_PROMPT: bool = true;
+
 pub fn mic_status() -> &'static str {
     let Some(media) = (unsafe { AVMediaTypeAudio }) else { return "unknown" };
     match unsafe { AVCaptureDevice::authorizationStatusForMediaType(media) } {

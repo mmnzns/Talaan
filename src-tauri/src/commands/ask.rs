@@ -259,7 +259,7 @@ mod tests {
             std::fs::create_dir_all(&d).unwrap();
             dirs.push(d);
         }
-        let exe = std::env::current_exe().unwrap().parent().unwrap().parent().unwrap().join(format!("{}{}", crate::summarizer::local::HELPER, std::env::consts::EXE_SUFFIX));
+        let exe = std::env::current_exe().unwrap().parent().unwrap().parent().unwrap().join(crate::summarizer::local::helper_file());
         let embedder = Mutex::new(LocalAi::new(&exe));
         let settings = serde_json::json!({ "summaryEngine": "local", "localModel": "recommended" });
         for (q, want_meeting, want_at) in [

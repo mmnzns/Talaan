@@ -11,10 +11,15 @@ use talaan_llm_protocol::{encode, Completion, Embedding, Event, Phase, Reply, Re
 
 pub const HELPER: &str = "talaan-llm";
 
+/// The helper's file name on this OS (`talaan-llm`, or `talaan-llm.exe` on Windows).
+pub fn helper_file() -> String {
+    format!("{HELPER}{}", std::env::consts::EXE_SUFFIX)
+}
+
 /// Where the helper lives: next to Talaan's own binary (in the app bundle, `Contents/MacOS/`; next to
 /// `Talaan.exe` on Windows; in `target/<profile>/` during development).
 pub fn helper_path() -> PathBuf {
-    let name = format!("{HELPER}{}", std::env::consts::EXE_SUFFIX);
+    let name = helper_file();
     std::env::current_exe().ok().and_then(|p| p.parent().map(|d| d.join(&name))).unwrap_or_else(|| PathBuf::from(name))
 }
 
@@ -184,7 +189,7 @@ mod tests {
     #[ignore]
     fn local_ai_smoke() {
         let model = std::env::var("TALAAN_LLM_MODEL").unwrap();
-        let exe = std::env::current_exe().unwrap().parent().unwrap().parent().unwrap().join(format!("{HELPER}{}", std::env::consts::EXE_SUFFIX));
+        let exe = std::env::current_exe().unwrap().parent().unwrap().parent().unwrap().join(helper_file());
         eprintln!("helper: {} exists={}", exe.display(), exe.exists());
         let mut ai = LocalAi::new(&exe);
         let c = Completion {
@@ -222,7 +227,7 @@ mod bakeoff {
         m.marks = serde_json::from_value(fixture["marks"].clone()).unwrap();
         m.item.duration_ms = fixture["durationMs"].as_u64().unwrap();
         let prompt = summary_prompt(&m, &lines, "en", None);
-        let exe = std::env::current_exe().unwrap().parent().unwrap().parent().unwrap().join(format!("{HELPER}{}", std::env::consts::EXE_SUFFIX));
+        let exe = std::env::current_exe().unwrap().parent().unwrap().parent().unwrap().join(helper_file());
         let dir = std::env::var("TALAAN_LLM_DIR").unwrap();
         let mut models: Vec<_> = std::fs::read_dir(&dir).unwrap().filter_map(|e| e.ok().map(|e| e.path())).filter(|p| p.extension().is_some_and(|x| x == "gguf")).collect();
         models.sort();

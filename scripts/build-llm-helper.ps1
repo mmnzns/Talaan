@@ -8,4 +8,4 @@ cargo build --release -p talaan-llm
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 New-Item -ItemType Directory -Force binaries, target\debug | Out-Null
 Copy-Item target\release\talaan-llm.exe "binaries\talaan-llm-$triple.exe" -Force
-Copy-Item target\release\talaan-llm.exe target\debug\talaan-llm.exe -Force
+try { Copy-Item target\release\talaan-llm.exe target\debug\talaan-llm.exe -Force -ErrorAction Stop } catch { Write-Warning "Could not update target\debug\talaan-llm.exe (is tauri dev running?): $_" }

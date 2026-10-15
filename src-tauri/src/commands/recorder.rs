@@ -225,8 +225,10 @@ pub async fn permissions_request_system_audio(app: AppHandle) -> bool {
         let (producer, _consumer) = crate::recorder::feed::feed();
         let mut tap = platform::system_tap::SystemTap::default();
         let ok = tap.start(std::sync::Arc::new(std::sync::Mutex::new(producer))).is_ok();
-        // Long enough for the system to show its prompt; the prompt stays up on its own after this.
-        std::thread::sleep(std::time::Duration::from_millis(1500));
+        if platform::permissions::SYSTEM_AUDIO_PROMPT {
+            // Long enough for the system to show its prompt; the prompt stays up on its own after this.
+            std::thread::sleep(std::time::Duration::from_millis(1500));
+        }
         tap.stop();
         ok
     })
@@ -277,72 +279,59 @@ fn restart_later(app: AppHandle, flag: Arc<AtomicBool>, mic: bool) {
 pub fn setup(app: &AppHandle) {
     app.manage(RecorderState::default());
 
-    {
-        use platform::{devices::DeviceEvent, devices::DeviceWatcher, power::SleepWatcher};
-        let rec = app.state::<RecorderState>();
-        let (a1, mic_flag, out_flag) = (app.clone(), rec.restarting_mic.clone(), rec.restarting_output.clone());
-        let devices = DeviceWatcher::new(move |e| match e {
-            DeviceEvent::InputChanged => restart_later(a1.clone(), mic_flag.clone(), true),
-            DeviceEvent::OutputChanged => restart_later(a1.clone(), out_flag.clone(), false),
-        });
-        let a2 = app.clone();
-        let sleep = SleepWatcher::new(move |sleeping| {
-            let rec = a2.state::<RecorderState>();
-            let mut engine = rec.lock();
-            if sleeping {
-                if engine.pause(platform::host_now_ns()) {
-                    rec.auto_paused.store(true, Ordering::Relaxed);
-                }
-            } else if rec.auto_paused.swap(false, Ordering::Relaxed) {
-                engine.resume(platform::host_now_ns());
+    use platform::{devices::DeviceEvent, devices::DeviceWatcher, power::SleepWatcher};
+    let rec = app.state::<RecorderState>();
+    let (a1, mic_flag, out_flag) = (app.clone(), rec.restarting_mic.clone(), rec.restarting_output.clone());
+    let devices = DeviceWatcher::new(move |e| match e {
+        DeviceEvent::InputChanged => restart_later(a1.clone(), mic_flag.clone(), true),
+        DeviceEvent::OutputChanged => restart_later(a1.clone(), out_flag.clone(), false),
+    });
+    let a2 = app.clone();
+    let sleep = SleepWatcher::new(move |sleeping| {
+        let rec = a2.state::<RecorderState>();
+        let mut engine = rec.lock();
+        if sleeping {
+            if engine.pause(platform::host_now_ns()) {
+                rec.auto_paused.store(true, Ordering::Relaxed);
             }
-            drop(engine);
-            emit_state(&a2);
-        });
-        if let Ok(devices) = devices {
-            *rec.watchers.lock().unwrap() = Some((devices, sleep));
+        } else if rec.auto_paused.swap(false, Ordering::Relaxed) {
+            engine.resume(platform::host_now_ns());
         }
+        drop(engine);
+        emit_state(&a2);
+    });
+    if let Ok(devices) = devices {
+        *rec.watchers.lock().unwrap() = Some((devices, sleep));
     }
 
     let app = app.clone();
     std::thread::spawn(move || {
         let mut last_state = Instant::now();
-        #[cfg(target_os = "macos")]
         let mut silent_since: Option<Instant> = None;
-        #[cfg(target_os = "macos")]
         let mut warned = false;
         // A blocked tap delivers zeros from the first sample. Once any sound came through, it isn't blocked.
-        #[cfg(target_os = "macos")]
         let mut heard_them = false;
         loop {
             std::thread::sleep(Duration::from_millis(100));
             let rec = app.state::<RecorderState>();
             let engine = rec.lock();
             if !engine.is_active() {
-                #[cfg(target_os = "macos")]
-                {
-                    silent_since = None;
-                    warned = false;
-                    heard_them = false;
-                }
+                silent_since = None;
+                warned = false;
+                heard_them = false;
                 continue;
             }
             let (me, them) = engine.levels();
-            #[cfg(target_os = "macos")]
             let paused = engine.status(platform::host_now_ns()).state == "paused";
             drop(engine);
             let _ = app.emit(LEVELS, Levels { me, them });
 
-            #[cfg(target_os = "macos")]
-            {
-                heard_them |= them > 0.0;
-            }
+            heard_them |= them > 0.0;
 
             // Digital silence from the tap since the start while something plays = system audio is blocked.
             // (Apps keep output streams running while quiet, so silence after real sound means nothing.)
-            #[cfg(target_os = "macos")]
             if !heard_them {
-                let playing = platform::macos::devices::others_playing();
+                let playing = platform::devices::others_playing();
                 if them == 0.0 && playing && !paused {
                     let since = *silent_since.get_or_insert_with(Instant::now);
                     if !warned && since.elapsed() > Duration::from_secs(10) {

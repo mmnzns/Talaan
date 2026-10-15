@@ -1,5 +1,8 @@
 //! Microphone permission and settings links (Windows has no per-app prompt for desktop apps yet).
 
+/// Windows never asks for loopback capture.
+pub const SYSTEM_AUDIO_PROMPT: bool = false;
+
 pub fn mic_status() -> &'static str {
     "granted"
 }
