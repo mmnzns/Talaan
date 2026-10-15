@@ -4,7 +4,7 @@
 $ErrorActionPreference = 'Stop'
 Set-Location (Join-Path $PSScriptRoot '..')
 $version = node -p "require('./src-tauri/tauri.conf.json').version"
-if ($env:GITHUB_REF_NAME -and $env:GITHUB_REF_NAME -ne "v$version") { throw "Tag $env:GITHUB_REF_NAME but tauri.conf.json says $version" }
+if ($env:GITHUB_REF_TYPE -eq 'tag' -and $env:GITHUB_REF_NAME -ne "v$version") { throw "Tag $env:GITHUB_REF_NAME but tauri.conf.json says $version" }
 
 # ONNX Runtime (Parakeet, diarization) is linked statically but imports DirectML.dll. ort-sys's build script
 # drops it next to the binaries (as a link into its cache); copy the real file where the bundle can take it.
