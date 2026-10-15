@@ -39,20 +39,20 @@ pub fn current() -> Lang {
 /// (key, English, French, Spanish)
 const TABLE: &[(&str, &str, &str, &str)] = &[
     ("tray.open", "Open Talaan", "Ouvrir Talaan", "Abrir Talaan"),
-    ("tray.settings", "Settings…", "Réglages…", "Ajustes…"),
+    ("tray.settings", "Settings…", "Paramètres…", "Ajustes…"),
     ("tray.quit", "Quit Talaan", "Quitter Talaan", "Salir de Talaan"),
     ("notify.summary_ready", "Summary ready", "Résumé prêt", "Resumen listo"),
     (
         "notice.no_system_audio",
         "Talaan can't hear the call audio, so only your side is recorded. Allow system audio recording in System Settings.",
-        "Talaan n’entend pas l’audio de l’appel; seul votre côté est donc enregistré. Autorisez l’enregistrement de l’audio système dans les Réglages Système.",
+        "Talaan n’entend pas l’audio de l’appel, donc seul votre côté est enregistré. Autorisez l’enregistrement de l’audio système dans les Réglages Système.",
         "Talaan no oye el audio de la llamada, así que solo se graba tu lado. Permite la grabación del audio del sistema en Ajustes del Sistema.",
     ),
     (
         "notice.no_call_audio",
         "No call audio is coming through. If the other people are talking, allow Talaan under Screen & System Audio Recording.",
-        "Aucun audio d’appel n’arrive. Si les autres personnes parlent, autorisez Talaan sous Enregistrement de l’écran et de l’audio système.",
-        "No llega audio de la llamada. Si las demás personas están hablando, permite a Talaan en Grabación de pantalla y audio del sistema.",
+        "Aucun audio d’appel n’est reçu. Si les autres personnes parlent, autorisez Talaan sous « Enregistrement de l’écran et de l’audio système ».",
+        "No llega audio de la llamada. Si las demás personas están hablando, permite el acceso a Talaan en Grabación de pantalla y audio del sistema.",
     ),
     ("notice.mic_switched", "Switched to {name}. Recording continues.", "Passage à {name}. L’enregistrement continue.", "Se cambió a {name}. La grabación continúa."),
     (
@@ -70,14 +70,14 @@ const TABLE: &[(&str, &str, &str, &str)] = &[
     (
         "notice.output_failed",
         "Couldn't follow the new output device: {error}",
-        "Impossible de suivre le nouveau périphérique de sortie : {error}",
+        "Impossible de passer au nouveau périphérique de sortie : {error}",
         "No se pudo seguir el nuevo dispositivo de salida: {error}",
     ),
     ("notion.recorded_with", "recorded with Talaan", "enregistré avec Talaan", "grabado con Talaan"),
-    ("notion.recap", "Recap", "Récapitulatif", "Resumen"),
+    ("notion.recap", "Recap", "Récapitulatif", "Resumen breve"),
     ("notion.decisions", "Decisions", "Décisions", "Decisiones"),
-    ("notion.action_items", "Action items", "Actions à faire", "Tareas pendientes"),
-    ("notion.open_questions", "Open questions", "Questions ouvertes", "Preguntas abiertas"),
+    ("notion.action_items", "Action items", "Tâches", "Tareas pendientes"),
+    ("notion.open_questions", "Open questions", "Questions en suspens", "Preguntas abiertas"),
     ("notion.transcript", "Transcript", "Transcription", "Transcripción"),
     ("notion.due", "due {due}", "échéance {due}", "vence {due}"),
 ];
