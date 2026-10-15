@@ -36,13 +36,17 @@ pub fn load(model: &ModelInfo, dir: &Path, use_gpu: bool) -> Result<Box<dyn Engi
 }
 
 fn threads() -> usize {
-    thread_count(std::thread::available_parallelism().map(|n| n.get()).unwrap_or(4))
+    thread_count(std::thread::available_parallelism().map(|n| n.get()).unwrap_or(4), cfg!(windows))
 }
 
-/// Three quarters of the logical cores, 2..=12. Measured on a 16-thread Ryzen: 12 threads is fastest and 16 is
-/// 2-3x slower (same finding as Parlato).
-fn thread_count(logical: usize) -> usize {
-    (logical * 3 / 4).clamp(2, 12)
+/// Mac: all cores, 2..=8 (the original formula). Windows: three quarters of the logical cores, 2..=12. Measured on a
+/// 16-thread Ryzen: 12 threads is fastest and 16 is 2-3x slower (same finding as Parlato).
+fn thread_count(logical: usize, windows: bool) -> usize {
+    if windows {
+        (logical * 3 / 4).clamp(2, 12)
+    } else {
+        logical.clamp(2, 8)
+    }
 }
 
 /// Text that engines produce for non-speech ("[BLANK_AUDIO]", "(music)", "*laughs*") or nothing at all.
@@ -199,9 +203,16 @@ mod tests {
     use super::*;
 
     #[test]
-    fn thread_count_is_three_quarters_clamped() {
+    fn windows_thread_count_is_three_quarters_clamped() {
         for (logical, want) in [(16, 12), (8, 6), (4, 3), (2, 2), (1, 2), (32, 12)] {
-            assert_eq!(thread_count(logical), want, "{logical} cores");
+            assert_eq!(thread_count(logical, true), want, "{logical} cores");
+        }
+    }
+
+    #[test]
+    fn mac_thread_count_is_all_cores_clamped() {
+        for (logical, want) in [(16, 8), (10, 8), (8, 8), (4, 4), (2, 2), (1, 2)] {
+            assert_eq!(thread_count(logical, false), want, "{logical} cores");
         }
     }
 
