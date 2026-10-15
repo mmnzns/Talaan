@@ -7,6 +7,7 @@ import { describeError } from "../../data/errors";
 import { formatTime } from "../../lib/format";
 import { navigate, routes } from "../../lib/router";
 import { Button, Chip, Label, Select, cn } from "../../ui";
+import { SunCorner } from "../../brand/SunCorner";
 
 type Turn = { id: number; question: string; scope: string; state: "loading" | "done" | "error"; answer?: AskAnswer; error?: string };
 
@@ -69,18 +70,19 @@ export function AskScreen({ meetingId }: { meetingId?: string }) {
     );
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col overflow-auto">
-      <div className="flex flex-wrap items-center gap-2.5 border-b border-line px-6 py-3">
+    <div className="relative flex min-h-0 flex-1 flex-col overflow-auto">
+      <SunCorner className="absolute right-0 top-0" />
+      <div className="relative flex flex-wrap items-center gap-2.5 border-b border-line px-6 py-3">
         <Button size="md" className="h-7" onClick={() => navigate(meetingId ? routes.meeting(meetingId) : routes.meetings())}>
           <ArrowLeft size={14} aria-hidden="true" /> {meetingId ? "Back to meeting" : "Meetings"}
         </Button>
-        <span className="text-base font-extrabold tracking-[-0.03em]">Ask</span>
-        <Chip>{local ? "Local AI · offline · searches stay on this computer" : "Your key · transcript text is sent · searches stay on this computer"}</Chip>
+        <Chip>{local ? "local ai · searches stay on this computer" : "your key · transcript text is sent · searches stay on this computer"}</Chip>
       </div>
 
-      <div className="mx-auto flex w-full max-w-[820px] flex-1 flex-col gap-[18px] px-6 pb-5 pt-6">
-        <div className="flex flex-wrap items-center gap-2" role="group" aria-label="What to ask about">
-          <Label>asking</Label>
+      <div className="relative mx-auto flex w-full max-w-[820px] flex-1 flex-col gap-7 px-8 pb-8 pt-11">
+        <h1 className="m-0 font-display text-[32px] font-bold leading-9 tracking-[-0.02em]">{scope.kind === "meeting" ? "Ask about this meeting" : "Ask your meetings"}</h1>
+        <div className="-mt-3.5 flex flex-wrap items-center gap-2" role="group" aria-label="What to ask about">
+          <Label className="mr-1">asking</Label>
           {meetingId && (
             <button type="button" className={pill(scope.kind === "meeting")} onClick={() => setScope({ kind: "meeting", id: meetingId })}>
               This meeting
@@ -118,16 +120,13 @@ export function AskScreen({ meetingId }: { meetingId?: string }) {
         </div>
 
         {turns.length === 0 && (
-          <div className="flex flex-col gap-1 py-2">
-            <span className="text-lg font-extrabold tracking-tight">Ask about your meetings</span>
-            <p className="m-0 text-[13px] text-subtle">Answers come only from your own meetings and link to the exact moment.</p>
-          </div>
+          <p className="m-0 text-[13px] text-subtle">Answers come only from your own meetings and link to the exact moment.</p>
         )}
 
         {turns.map((t) => (
           <div key={t.id} className="flex flex-col gap-3.5">
             <div className="flex justify-end">
-              <div className="max-w-[80%] rounded-[12px_12px_2px_12px] bg-strong px-3.5 py-2.5 text-strong-fg">{t.question}</div>
+              <div className="max-w-[80%] rounded-[14px_14px_4px_14px] bg-strong px-4 py-3 text-strong-fg">{t.question}</div>
             </div>
             <AnswerCard turn={t} onRetry={() => ask(t.question)} />
           </div>
@@ -135,7 +134,7 @@ export function AskScreen({ meetingId }: { meetingId?: string }) {
 
         <div className="flex flex-wrap gap-2">
           {SUGGESTIONS.map((s) => (
-            <Chip key={s} onClick={() => ask(s)}>
+            <Chip key={s} onClick={() => ask(s)} className="normal-case">
               {s}
             </Chip>
           ))}
@@ -143,7 +142,7 @@ export function AskScreen({ meetingId }: { meetingId?: string }) {
         <div ref={end} />
 
         <form
-          className="mt-auto flex items-center gap-2 rounded-card border border-edge bg-surface p-2"
+          className="mt-auto flex items-center gap-2 rounded-card border border-edge bg-surface py-2 pl-4 pr-2 shadow-card"
           onSubmit={(e) => {
             e.preventDefault();
             ask(draft);
@@ -155,10 +154,10 @@ export function AskScreen({ meetingId }: { meetingId?: string }) {
               value={draft}
               onChange={(e) => setDraft(e.target.value)}
               placeholder={scope.kind === "meeting" ? "Ask about this meeting" : "Ask about your meetings"}
-              className="flex-1 border-0 bg-transparent px-2 py-1.5 font-[inherit] text-sm text-ink outline-none placeholder:text-subtle"
+              className="flex-1 border-0 bg-transparent py-1.5 font-[inherit] text-sm text-ink outline-none placeholder:text-faint"
             />
           </label>
-          <Button type="submit" variant="primary" disabled={!draft.trim()}>
+          <Button type="submit" variant="primary" size="lg" disabled={!draft.trim()}>
             <Send size={14} aria-hidden="true" /> Ask
           </Button>
         </form>
@@ -168,7 +167,7 @@ export function AskScreen({ meetingId }: { meetingId?: string }) {
 }
 
 function AnswerCard({ turn, onRetry }: { turn: Turn; onRetry: () => void }) {
-  const card = "flex flex-col gap-2.5 rounded-card border border-edge bg-surface px-4 py-3.5 shadow-pop";
+  const card = "flex flex-col gap-3.5 rounded-card border border-line bg-surface px-6 py-[22px] shadow-card";
   if (turn.state === "loading") {
     return (
       <div className={card} role="status">
@@ -212,8 +211,8 @@ function AnswerCard({ turn, onRetry }: { turn: Turn; onRetry: () => void }) {
           ))}
         </ul>
       )}
-      <Label>
-        From {a.fromMeetings} of {a.totalMeetings} meetings · answers only use your meetings
+      <Label className="border-t border-line pt-2.5">
+        from {a.fromMeetings} of {a.totalMeetings} meetings · answers only use your meetings
       </Label>
     </div>
   );
@@ -224,8 +223,11 @@ function Cite({ c }: { c: AskCitation }) {
     <button
       type="button"
       onClick={() => navigate(routes.meeting(c.meetingId, c.at))}
-      className="inline-flex cursor-pointer items-center gap-1.5 whitespace-nowrap rounded-md border border-edge bg-gold-soft px-2 py-[3px] font-mono text-[11px] leading-[14px] text-ink hover:bg-gold"
+      className="inline-flex cursor-pointer items-center gap-1.5 whitespace-nowrap rounded-full border-0 bg-gold-soft px-[9px] py-1 align-middle font-mono text-[11px] leading-[14px] text-gold-ink hover:bg-gold hover:text-on-gold"
     >
+      <svg aria-hidden="true" width="13" height="13" viewBox="0 0 100 100" className="text-gold">
+        <polygon points="50,5 61,38 95,38 67,58 78,92 50,72 22,92 33,58 5,38 39,38" fill="currentColor" />
+      </svg>
       {c.meetingTitle} · {c.date} · {formatTime(c.at)}
     </button>
   );

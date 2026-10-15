@@ -86,7 +86,7 @@ pub static CATALOG: &[ModelInfo] = &[
         id: "whisper-small",
         name: "Whisper Small",
         maker: "OpenAI",
-        note: "Light and quick on older Macs. Lower accuracy.",
+        note: "Light and quick on older computers. Lower accuracy.",
         engine: EngineKind::Whisper,
         languages: "99 languages",
         speed: 3,

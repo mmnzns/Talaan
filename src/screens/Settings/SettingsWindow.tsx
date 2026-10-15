@@ -1,6 +1,8 @@
 import { useSettings } from "../../data/hooks";
 import { navigate, routes } from "../../lib/router";
-import { cn } from "../../ui";
+import { Label, cn } from "../../ui";
+import { Logo } from "../../brand/Logo";
+import { SunCorner } from "../../brand/SunCorner";
 import { CallAppsTab } from "./CallAppsTab";
 import { ConnectionsTab } from "./ConnectionsTab";
 import { GeneralTab } from "./GeneralTab";
@@ -25,7 +27,7 @@ export function SettingsWindow({ tab }: { tab: string }) {
   const props = { settings, update };
   const onKey = (e: React.KeyboardEvent) => {
     const i = SETTINGS_TABS.findIndex((t) => t.id === current.id);
-    const next = e.key === "ArrowRight" ? i + 1 : e.key === "ArrowLeft" ? i - 1 : undefined;
+    const next = e.key === "ArrowDown" || e.key === "ArrowRight" ? i + 1 : e.key === "ArrowUp" || e.key === "ArrowLeft" ? i - 1 : undefined;
     if (next !== undefined) {
       e.preventDefault();
       navigate(routes.settings(SETTINGS_TABS[(next + SETTINGS_TABS.length) % SETTINGS_TABS.length].id));
@@ -33,9 +35,13 @@ export function SettingsWindow({ tab }: { tab: string }) {
   };
 
   return (
-    <div className="flex h-full flex-col bg-paper">
-      <div className="border-b border-edge bg-rail px-4 py-2.5">
-        <div role="tablist" aria-label="Settings" onKeyDown={onKey} className="flex flex-wrap justify-center gap-1">
+    <div className="flex h-full bg-paper">
+      <nav aria-label="Settings" className="flex w-[220px] flex-none flex-col gap-1 border-r border-line bg-rail px-3.5 py-[22px]">
+        <div className="flex items-center gap-2.5 px-2 pb-[22px]">
+          <Logo size={26} />
+          <span className="font-display text-[17px] font-bold tracking-[-0.02em]">settings</span>
+        </div>
+        <div role="tablist" aria-label="Settings" aria-orientation="vertical" onKeyDown={onKey} className="flex flex-col gap-1">
           {SETTINGS_TABS.map((t) => {
             const on = t.id === current.id;
             return (
@@ -49,8 +55,8 @@ export function SettingsWindow({ tab }: { tab: string }) {
                 tabIndex={on ? 0 : -1}
                 onClick={() => navigate(routes.settings(t.id))}
                 className={cn(
-                  "h-[30px] cursor-pointer rounded-control border px-3 font-[inherit] text-[13px] font-semibold",
-                  on ? "border-strong bg-strong text-strong-fg" : "border-transparent bg-transparent text-ink hover:bg-hover",
+                  "flex h-9 cursor-pointer items-center rounded-control border-0 px-3 text-left font-[inherit] text-[13px] text-ink",
+                  on ? "bg-surface font-bold shadow-[inset_3px_0_0_var(--t-gold),var(--t-shadow)]" : "bg-transparent font-medium hover:bg-hover",
                 )}
               >
                 {t.label}
@@ -58,9 +64,12 @@ export function SettingsWindow({ tab }: { tab: string }) {
             );
           })}
         </div>
-      </div>
-      <div id="settings-panel" role="tabpanel" aria-labelledby={`tab-${current.id}`} className="min-h-0 flex-1 overflow-auto px-6 py-5">
-        <div className="mx-auto max-w-[720px]">
+        <span className="flex-1" />
+        <Label className="px-2.5">talaan {__APP_VERSION__} · mit license</Label>
+      </nav>
+      <div id="settings-panel" role="tabpanel" aria-labelledby={`tab-${current.id}`} className="relative min-h-0 min-w-0 flex-1 overflow-auto">
+        <SunCorner size={200} className="absolute right-0 top-0" />
+        <div className="relative mx-auto max-w-[720px] px-11 pb-11 pt-10">
           {current.id === "general" && <GeneralTab {...props} />}
           {current.id === "apps" && <CallAppsTab {...props} />}
           {current.id === "models" && <ModelsTab {...props} />}

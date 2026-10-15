@@ -1,8 +1,11 @@
 import { X } from "lucide-react";
 import type { CallRule } from "../../data/settings";
-import { Switch } from "../../ui";
+import { Switch, cn } from "../../ui";
 import { Group, InlineAdd, Row, SectionIntro, Segmented } from "./parts";
 import type { TabProps } from "./tabProps";
+
+/** App badge tints, cycling pastel blue, gold and red. */
+const TINTS = ["bg-sp1 text-sp1-fg", "bg-sp3 text-sp3-fg", "bg-sp2 text-sp2-fg"];
 
 const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, "-");
 
@@ -17,11 +20,11 @@ export function CallAppsTab({ settings: s, update }: TabProps) {
           desc="What Talaan does when one of these starts using your mic. Ask is the default. Always record still shows a banner with the recording notice and Stop."
         />
         <Group>
-          {s.callApps.map((a) => {
+          {s.callApps.map((a, i) => {
             const lockAlways = a.isBrowser && !s.tabDetection;
             return (
-              <div key={a.id} className="flex flex-wrap items-center gap-x-3 gap-y-2 px-4 py-3">
-                <span aria-hidden="true" className="grid size-8 flex-none place-items-center rounded-control border border-edge bg-sunken text-sm font-extrabold">
+              <div key={a.id} className="flex flex-wrap items-center gap-x-3 gap-y-2 py-4">
+                <span aria-hidden="true" className={cn("grid size-[34px] flex-none place-items-center rounded-[10px] text-sm font-bold", TINTS[i % TINTS.length])}>
                   {a.name.charAt(0)}
                 </span>
                 <div className="min-w-0 flex-1 basis-48">
@@ -71,14 +74,14 @@ export function CallAppsTab({ settings: s, update }: TabProps) {
         />
         <div className="flex flex-wrap gap-2">
           {s.ignoredApps.map((g) => (
-            <span key={g.name} className="inline-flex items-center gap-1.5 rounded-full border border-line bg-surface py-[3px] pl-2.5 pr-1.5 text-xs">
-              {g.name}
-              <span className="font-mono text-[10px] text-subtle">{g.why}</span>
+            <span key={g.name} className="inline-flex h-8 items-center gap-2 rounded-full border border-line bg-surface pl-3 pr-1.5">
+              <span className="text-[13px] font-semibold">{g.name}</span>
+              <span className="font-mono text-[11px] lowercase text-faint">{g.why}</span>
               <button
                 type="button"
                 aria-label={`Stop ignoring ${g.name}`}
                 onClick={() => update({ ignoredApps: s.ignoredApps.filter((x) => x.name !== g.name) })}
-                className="grid cursor-pointer place-items-center border-0 bg-transparent p-0.5 text-subtle hover:text-ink"
+                className="grid size-[22px] cursor-pointer place-items-center rounded-full border-0 bg-rail text-subtle hover:text-ink"
               >
                 <X size={12} aria-hidden="true" />
               </button>

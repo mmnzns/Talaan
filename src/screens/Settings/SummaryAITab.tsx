@@ -39,7 +39,7 @@ export function SummaryAITab({ settings: s, update }: TabProps) {
                 onClick={() => update({ summaryEngine: e.id })}
                 className={cn(
                   "flex cursor-pointer flex-col gap-1.5 rounded-card border p-3 text-left font-[inherit] text-ink",
-                  on ? "border-edge bg-gold-soft shadow-card" : "border-line bg-surface",
+                  on ? "border-line bg-surface shadow-[inset_3px_0_0_var(--t-gold),var(--t-shadow)]" : "border-line bg-surface hover:border-edge",
                 )}
               >
                 <span className="flex items-center gap-2">

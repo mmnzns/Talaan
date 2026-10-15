@@ -38,7 +38,7 @@ export function ModelsTab({ settings: s, update }: TabProps) {
                 key={m.id}
                 className={cn(
                   "flex flex-wrap items-center gap-x-4 gap-y-3 rounded-card border px-3.5 py-3",
-                  on ? "border-edge bg-gold-soft shadow-card" : "border-line bg-surface",
+                  on ? "border-line bg-surface shadow-[inset_3px_0_0_var(--t-gold),var(--t-shadow)]" : "border-line bg-surface hover:border-edge",
                 )}
               >
                 <button
@@ -121,7 +121,7 @@ export function ModelsTab({ settings: s, update }: TabProps) {
             <option value="pt">Portuguese</option>
           </Select>
         </Row>
-        <Row title="Use the GPU" desc="Faster transcription on Apple silicon (Metal).">
+        <Row title="Use the GPU" desc="Faster transcription using your graphics chip.">
           <Switch aria-label="Use the GPU" checked={s.useGpu} onChange={(v) => update({ useGpu: v })} />
         </Row>
       </Group>

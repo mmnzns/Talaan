@@ -39,7 +39,7 @@ export const defaultSettings: Settings = {
     // Mirrors the Rust catalog (src-tauri/src/transcriber/models.rs). In the app the list and states come from Rust.
     { id: "whisper-turbo", name: "Whisper Large Turbo", maker: "OpenAI", note: "Recommended. Most accurate, 99 languages including Filipino.", engine: "whisper", sizeMb: 575, speed: 2, accuracy: 3, languages: "99 languages", state: "downloaded" },
     { id: "parakeet-v3", name: "Parakeet", maker: "NVIDIA", note: "Fastest. Good for quick notes in 25 European languages.", engine: "parakeet", sizeMb: 671, speed: 3, accuracy: 1, languages: "25 European languages", state: "on_this_mac" },
-    { id: "whisper-small", name: "Whisper Small", maker: "OpenAI", note: "Light and quick on older Macs. Lower accuracy.", engine: "whisper", sizeMb: 488, speed: 3, accuracy: 1, languages: "99 languages", state: "not_downloaded" },
+    { id: "whisper-small", name: "Whisper Small", maker: "OpenAI", note: "Light and quick on older computers. Lower accuracy.", engine: "whisper", sizeMb: 488, speed: 3, accuracy: 1, languages: "99 languages", state: "not_downloaded" },
   ],
   activeSpeechModel: "whisper-turbo",
   speakerModel: { id: "diarization", name: "Speaker separation", maker: "NVIDIA", note: "Tells the other people on a call apart: Speaker 1, 2, 3. Up to 8 people.", engine: "diarization", sizeMb: 401, speed: 3, accuracy: 2, languages: "Any language", state: "not_downloaded" },

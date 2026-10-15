@@ -4,9 +4,9 @@ import { Button, Field, Label, cn } from "../../ui";
 /** Section heading with a short explanation, used above a group of settings. */
 export function SectionIntro({ title, desc }: { title: string; desc?: string }) {
   return (
-    <div className="flex flex-col gap-0.5">
-      <h3 className="m-0 text-[15px] font-extrabold tracking-tight">{title}</h3>
-      {desc && <p className="m-0 text-[13px] leading-[18px] text-subtle">{desc}</p>}
+    <div className="flex flex-col gap-1.5">
+      <h2 className="m-0 font-display text-[22px] font-bold leading-7 tracking-[-0.02em]">{title}</h2>
+      {desc && <p className="m-0 max-w-[560px] text-[13px] leading-[19px] text-subtle">{desc}</p>}
     </div>
   );
 }
@@ -14,16 +14,16 @@ export function SectionIntro({ title, desc }: { title: string; desc?: string }) 
 /** A card of settings rows separated by hairlines. */
 export function Group({ children, className }: { children: ReactNode; className?: string }) {
   return (
-    <div className={cn("flex flex-col divide-y divide-line rounded-card border border-edge bg-surface", className)}>{children}</div>
+    <div className={cn("flex flex-col divide-y divide-line rounded-card border border-line bg-surface px-[22px] shadow-card", className)}>{children}</div>
   );
 }
 
 export function Row({ title, desc, children, stack }: { title: string; desc?: ReactNode; children?: ReactNode; stack?: boolean }) {
   return (
-    <div className={cn("flex gap-x-4 gap-y-2 px-4 py-3", stack ? "flex-col" : "flex-wrap items-center justify-between")}>
+    <div className={cn("flex gap-x-5 gap-y-2.5 py-4", stack ? "flex-col" : "flex-wrap items-center justify-between")}>
       <div className={cn("min-w-0", !stack && "flex-1 basis-56")}>
-        <div className="text-[13px] font-semibold">{title}</div>
-        {desc && <div className="text-xs leading-[17px] text-subtle">{desc}</div>}
+        <div className="font-semibold">{title}</div>
+        {desc && <div className="mt-0.5 text-xs leading-[17px] text-subtle">{desc}</div>}
       </div>
       {children}
     </div>
@@ -43,8 +43,8 @@ export function Segmented<T extends string>({
   onChange: (v: T) => void;
 }) {
   return (
-    <div role="radiogroup" aria-label={label} className="inline-flex overflow-hidden rounded-control border border-edge">
-      {options.map((o, i) => {
+    <div role="radiogroup" aria-label={label} className="inline-flex flex-none gap-0.5 rounded-[10px] border border-line bg-rail p-[3px]">
+      {options.map((o) => {
         const on = o.value === value;
         return (
           <button
@@ -56,10 +56,9 @@ export function Segmented<T extends string>({
             title={o.title}
             onClick={() => onChange(o.value)}
             className={cn(
-              "h-7 cursor-pointer border-0 px-2.5 font-[inherit] text-xs font-semibold",
-              i > 0 && "border-l border-l-edge",
-              on ? "bg-strong text-strong-fg" : "bg-surface text-ink hover:bg-gold-soft",
-              o.disabled && "cursor-not-allowed bg-sunken text-subtle opacity-60 hover:bg-sunken",
+              "h-7 cursor-pointer rounded-[7px] border-0 px-3 font-[inherit] text-xs font-semibold",
+              on ? "bg-strong text-strong-fg" : "bg-transparent text-subtle hover:text-ink",
+              o.disabled && "cursor-not-allowed opacity-50 hover:text-subtle",
             )}
           >
             {o.label}
@@ -112,7 +111,7 @@ export function Dots({ n, label }: { n: number; label: string }) {
       <Label>{label}</Label>
       <span className="flex gap-[3px]" role="img" aria-label={`${label} ${n} of 3`}>
         {[1, 2, 3].map((i) => (
-          <span key={i} className={cn("size-2 rounded-full border border-edge", i <= n ? "bg-ink" : "bg-transparent")} />
+          <span key={i} className={cn("size-2 rounded-full", i <= n ? "bg-gold" : "bg-line")} />
         ))}
       </span>
     </span>

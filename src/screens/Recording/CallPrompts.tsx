@@ -1,31 +1,39 @@
-import { Mic } from "lucide-react";
 import { useState } from "react";
 import { formatTime } from "../../lib/format";
 import { copyText } from "../../lib/share";
 import { Button, Label, cn } from "../../ui";
 import { useCountdown, useElapsed } from "./useClock";
 import { useSettings } from "../../data/hooks";
+import { Logo } from "../../brand/Logo";
+import { SunCorner } from "../../brand/SunCorner";
 
-const card = "w-[420px] max-w-full rounded-card border border-edge bg-surface shadow-pop";
+const card = "relative w-[420px] max-w-full overflow-hidden rounded-2xl border border-line bg-surface shadow-[0_16px_40px_rgba(17,19,24,0.14)]";
+const ghost = "border-transparent bg-transparent";
 
-/** "Record this call?" prompt for apps set to Ask. */
-export function Nudge({ app = "Zoom", onRecord, onDismiss }: { app?: string; onRecord: () => void; onDismiss: () => void }) {
+/** "Record this call?" prompt for apps set to Ask. `onAlways` (not for browser calls) sets the app to Always and records. */
+export function Nudge({ app = "Zoom", onRecord, onDismiss, onAlways }: { app?: string; onRecord: () => void; onDismiss: () => void; onAlways?: () => void }) {
   return (
-    <div role="alertdialog" aria-label="Record this call?" className={cn(card, "flex gap-3.5 p-4")}>
-      <span aria-hidden="true" className="grid size-10 flex-none place-items-center rounded-control border border-edge bg-gold text-on-gold">
-        <Mic size={20} />
-      </span>
-      <div className="flex min-w-0 flex-1 flex-col gap-1">
-        <Label>{app.toLowerCase()} is using your mic</Label>
-        <span className="text-[17px] font-extrabold leading-[22px] tracking-[-0.02em]">Record this call?</span>
-        <span className="text-xs leading-4 text-subtle">Stays on this computer. You’ll get a notice to paste in the chat.</span>
-        <div className="mt-2 flex gap-2">
-          <Button variant="primary" raised onClick={onRecord}>
-            Record
-          </Button>
-          <Button variant="ghost" onClick={onDismiss}>
-            Not now
-          </Button>
+    <div role="alertdialog" aria-label="Record this call?" className={card}>
+      <SunCorner size={96} className="absolute right-0 top-0" />
+      <div className="relative flex gap-4 px-[22px] py-5">
+        <Logo size={40} />
+        <div className="flex min-w-0 flex-1 flex-col gap-1.5">
+          <Label>{app} is using your mic</Label>
+          <span className="font-display text-xl font-bold leading-6 tracking-[-0.02em]">Record this call?</span>
+          <span className="text-xs leading-[17px] text-subtle">Stays on this computer. You’ll get a notice to paste in the chat.</span>
+          <div className="mt-2.5 flex gap-2">
+            <Button variant="primary" onClick={onRecord}>
+              Record
+            </Button>
+            <Button className={ghost} onClick={onDismiss}>
+              Not now
+            </Button>
+            {onAlways && (
+              <Button className={cn(ghost, "ml-auto text-subtle")} onClick={onAlways}>
+                Always for {app}
+              </Button>
+            )}
+          </div>
         </div>
       </div>
     </div>
@@ -39,34 +47,31 @@ export function AlwaysBanner({ app = "Zoom", elapsedMs, onStop, onChangeRule }: 
   const elapsed = elapsedMs ?? demo;
   const [copied, setCopied] = useState(false);
   return (
-    <div
-      role="status"
-      aria-label={`Recording ${app} automatically`}
-      className="flex w-[420px] max-w-full flex-col gap-2.5 rounded-card border border-edge bg-aside px-4 py-3.5 text-aside-fg shadow-[5px_5px_0_var(--t-gold)]"
-    >
-      <div className="flex items-center gap-2.5">
-        <span className="size-2.5 rounded-full bg-gold shadow-[0_0_0_4px_color-mix(in_srgb,var(--t-gold)_30%,transparent)]" />
-        <span className="text-[15px] font-extrabold">Recording {app} automatically</span>
-        <span className="ml-auto font-mono text-[13px] text-gold">{formatTime(elapsed)}</span>
-      </div>
-      <span className="text-xs leading-4 text-aside-muted">{app} is set to Always. Let people know with the notice.</span>
-      <div className="flex gap-2">
-        <Button
-          size="lg"
-          className={cn("border-gold", copied ? "bg-gold-soft text-ink" : "bg-gold text-on-gold hover:bg-gold")}
-          onClick={async () => {
-            await copyText(settings?.recordingNotice ?? "");
-            setCopied(true);
-          }}
-        >
-          {copied ? "Copied" : "Copy notice"}
-        </Button>
-        <Button size="lg" variant="ghost" className="border-aside-muted text-aside-fg hover:bg-white/10" onClick={onStop}>
-          Stop
-        </Button>
-        <Button size="lg" variant="ghost" className="ml-auto text-aside-muted hover:bg-white/10 hover:text-aside-fg" onClick={onChangeRule}>
-          Change rule
-        </Button>
+    <div role="status" aria-label={`Recording ${app} automatically`} className={card}>
+      <SunCorner size={96} className="absolute right-0 top-0" />
+      <div className="relative flex flex-col gap-2 px-[22px] py-5">
+        <div className="flex items-center gap-2.5">
+          <span className="size-[9px] flex-none animate-pulse rounded-full bg-red shadow-[0_0_0_4px_color-mix(in_srgb,var(--t-red)_20%,transparent)]" />
+          <Label>recording {app} automatically</Label>
+          <span className="ml-auto font-mono text-[13px]">{formatTime(elapsed)}</span>
+        </div>
+        <span className="font-display text-xl font-bold leading-6 tracking-[-0.02em]">Let people know</span>
+        <span className="text-xs leading-[17px] text-subtle">{app} is set to Always. Paste the notice in the call chat.</span>
+        <div className="mt-2.5 flex gap-2">
+          <Button
+            variant="primary"
+            onClick={async () => {
+              await copyText(settings?.recordingNotice ?? "");
+              setCopied(true);
+            }}
+          >
+            {copied ? "Copied" : "Copy notice"}
+          </Button>
+          <Button onClick={onStop}>Stop</Button>
+          <Button className={cn(ghost, "ml-auto text-subtle")} onClick={onChangeRule}>
+            Change rule
+          </Button>
+        </div>
       </div>
     </div>
   );
@@ -99,19 +104,21 @@ export function CallEndedPrompt({
     (onTimeout ?? onStop)();
   });
   return (
-    <div role="alertdialog" aria-label="Call ended" className={cn(card, "flex flex-col gap-2 px-4 py-3.5")}>
+    <div role="alertdialog" aria-label="Call ended" className={card}>
+      <SunCorner size={96} className="absolute right-0 top-0" />
+      <div className="relative flex flex-col gap-2 px-[22px] py-5">
       <Label>
         {app.toLowerCase()} stopped using the mic · {formatTime(recordedMs)} recorded
       </Label>
-      <span className="text-[17px] font-extrabold tracking-[-0.02em]">Call ended. Stop recording?</span>
-      <div className="flex items-center gap-2" role="timer" aria-label={`Stops in ${left} seconds`}>
-        <span aria-hidden="true" className="h-[5px] flex-1 overflow-hidden rounded-full bg-line">
-          <span className="block h-full bg-ink transition-[width] duration-1000 ease-linear" style={{ width: `${(left / total) * 100}%` }} />
+      <span className="font-display text-xl font-bold leading-6 tracking-[-0.02em]">Call ended. Stop recording?</span>
+      <div className="mt-0.5 flex items-center gap-2.5" role="timer" aria-label={`Stops in ${left} seconds`}>
+        <span aria-hidden="true" className="h-1 flex-1 overflow-hidden rounded-full bg-line">
+          <span className="block h-full bg-gold transition-[width] duration-1000 ease-linear" style={{ width: `${(left / total) * 100}%` }} />
         </span>
         <Label>{running ? `stops in ${left}s` : "stopped"}</Label>
       </div>
-      <div className="mt-0.5 flex gap-2">
-        <Button variant="primary" raised className="flex-1" onClick={() => { setRunning(false); onStop(); }}>
+      <div className="mt-2.5 flex gap-2">
+        <Button variant="primary" className="flex-1" onClick={() => { setRunning(false); onStop(); }}>
           Stop and save now
         </Button>
         <Button
@@ -123,6 +130,7 @@ export function CallEndedPrompt({
         >
           Keep recording
         </Button>
+      </div>
       </div>
     </div>
   );
