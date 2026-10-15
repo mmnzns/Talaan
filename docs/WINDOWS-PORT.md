@@ -33,8 +33,7 @@ the coloured `32x32.png` icon on Windows and shows the timer in the tooltip ("Ta
 prompts open above the taskbar (`place_near_icon` in `commands/tray.rs`). Windows keeps its native title bar (the 84 px inset
 is macOS only), Ctrl+, opens Settings, and the native window theme follows the app theme (`core:window:allow-set-theme`).
 "Summary ready" is a Windows toast (`tauri-winrt-notification`): installed builds use the bundle id
-`com.craftconceptsdigital.talaan` as app id, dev builds borrow PowerShell's. **W5 must confirm** the NSIS shortcut carries
-that AppUserModelID, or toasts won't show for installed builds.
+`com.craftconceptsdigital.talaan` as app id, dev builds borrow PowerShell's. The NSIS shortcut carries it (W5).
 
 **Check by hand before release (W3):**
 
@@ -93,6 +92,30 @@ Firefox stays Ask, as on the Mac.
 - With YouTube in front and the mic in use (e.g. a voice-search or recorder site), it asks instead (Browser rule).
 - The "Where do I find this?" links (Google, Outlook, iCloud) open the right help pages; the Outlook and iCloud links
   were written from memory and haven't been opened yet.
+
+**W5 done.** *Installer:* Tauri's NSIS template, per user (`%LOCALAPPDATA%\Talaan`, no administrator prompt),
+publisher Craft Concepts Digital. WebView2 comes from the embedded bootstrapper (silent) on the rare PC without it. The
+VC++ runtime (`bundleVCRuntime`) and ONNX Runtime's `DirectML.dll` sit next to `talaan.exe`, so a PC without the VC++
+Redistributable still starts Talaan; both are release-only (`scripts/release-windows.ps1`), so `tauri dev` is unchanged.
+*Uninstall:* `src-tauri/windows/installer-hooks.nsh` closes a running `talaan-llm.exe` before install and uninstall, and
+always removes the `StartupApproved\Run\Talaan` value. With "Delete the application data" ticked it also removes
+`%APPDATA%\Talaan` (meetings, audio, models, settings) and every Credential Manager entry in `keys::ACCOUNTS` (a test
+fails if the two lists differ); Tauri itself removes the `com.craftconceptsdigital.talaan` folders and the Run value.
+Updates never delete anything. *Toasts:* the Start Menu shortcut's AppUserModelID is the bundle id, the same as
+`APP_ID` in `notify.rs` (a test ties `APP_ID` to `tauri.conf.json`). *Release flow:* `scripts/release-windows.ps1` builds
+the installer (and its updater `.sig` when the key is set) and fails unless whisper.cpp and llama.cpp were built with
+-O2; the `windows` job in `release.yml` runs it on a tag and uploads to the draft; `scripts/latest-json.mjs` rebuilds
+`latest.json` from every `.sig` on the release, so Windows (CI) and the Mac (`scripts/upload-mac-release.sh` after
+`release-local.sh`) can upload in any order. The `macos` CI job only runs when the repo variable `MAC_RELEASE_ON_CI` is
+`true`. *Delete everything* now quits (as the Privacy tab says) and drops a live recording first, on both platforms.
+The release gate is in docs/TESTING.md ("Windows release gate (W5)").
+Checked on the PC (2026-10-15, `Talaan_1.0.0-dev_x64-setup.exe`, 21.1 MB): installs per user without elevation;
+`talaan.exe` starts and loads the VC++ DLLs and `DirectML.dll` from its install folder; `dumpbin /dependents` finds
+every non-system import of the installed exes and DLLs next to them; the shortcut's AppUserModelID is the bundle id;
+uninstall without the box keeps `%APPDATA%\Talaan` and fake `*.Talaan` keys but removes the Run and StartupApproved
+values; with the box ticked `%APPDATA%\Talaan`, `%LOCALAPPDATA%\com.craftconceptsdigital.talaan`, the fake
+`notion.Talaan` and `calendar-ics.Talaan` keys and the publisher registry key are gone too. **Not checked:** a clean PC
+(Windows Sandbox isn't enabled on this PC), toasts and Delete everything in the installed app (need the UI).
 
 **Smoke tests** (all `#[ignore]`; run from `src-tauri/`, most need a working mic):
 
@@ -163,9 +186,9 @@ re-export: `lib.rs`, `calendar/mod.rs`, `commands/{ask,recorder,calendar,calls,s
   optional.
 - `scripts/build-llm-helper.sh` names the helper by target triple; Windows needs a `.ps1` (or Git Bash) version
   producing `binaries/talaan-llm-x86_64-pc-windows-msvc.exe`.
-- `tauri.windows.conf.json`: NSIS installer, icon from `icons/icon.ico` (already generated).
+- Done (W5): `tauri.windows.conf.json`: NSIS installer, icon from `icons/icon.ico` (already generated).
 - `.github/workflows/ci.yml`: add a `windows-latest` job (`cargo check`, tests) early in the port.
-- `.github/workflows/release.yml`: add a Windows job (NSIS + updater artifacts) that merges into the same
+- Done (W5): `.github/workflows/release.yml`: add a Windows job (NSIS + updater artifacts) that merges into the same
   `latest.json` (platform `windows-x86_64`). The updater secrets are already on the repo. No paid Windows
   certificate (decision log): users click More info › Run anyway once; the README explains it.
 

@@ -63,3 +63,69 @@ app (`scripts/build-signed-debug.sh` → `src-tauri/target/debug/bundle/macos/Ta
 - [ ] The release build: `scripts/release-local.sh` made a signed .dmg (src-tauri/target/aarch64-apple-darwin/release/bundle/dmg). Install it from the .dmg, Open Anyway once.
 - [ ] Update path: install a build, then publish a newer version; "update ready" appears, Update now installs and relaunches with permissions and meetings intact.
 
+
+## Windows release gate (W5)
+
+Use an installer from `scripts/release-windows.ps1` (or the draft release). On a PC that has run `tauri dev`,
+quit the dev app first: one Talaan at a time.
+
+**Install**
+- [ ] Clean PC (Windows Sandbox): install, Talaan starts, Parakeet transcribes, the local summary works (VC++
+  runtime and DirectML.dll are in the installer).
+- [ ] Download from the draft release in Edge: the browser warning, then SmartScreen "Windows protected your
+  PC" › More info › Run anyway. No administrator prompt. Installed to %LOCALAPPDATA%\Talaan.
+- [ ] Start menu has Talaan; its shortcut's AppUserModelID is com.craftconceptsdigital.talaan (command in W5
+  plan, Task 4).
+
+**First run**
+- [ ] Onboarding end to end: mic Allow, system audio (no prompt), Parakeet download with progress, Local AI
+  download, call app rules, extras, Open Talaan.
+- [ ] Mic switch off in Privacy & security: Talaan says so and the button opens the right page.
+
+**Calls**
+- [ ] A real Microsoft Teams call (app) on Always: recording starts with the banner; leave → Call ended → stops.
+- [ ] A real Zoom call: same.
+- [ ] Google Meet in Edge or Chrome, tab in front, Browser calls on Always: starts by itself. Meet in a
+  background tab: asks instead.
+- [ ] Both sides in the transcript, Me/Them right, no echo lines (headphones). Summary written offline.
+- [ ] Calendar: paste the Google "Secret address in iCal format", Test and connect shows events; a recording
+  during an event takes its title and attendees.
+
+**Shell**
+- [ ] Tray icon visible on light and dark taskbars; popover opens above the tray; hover shows the timer.
+- [ ] "Summary ready" toast appears and opens the meeting; a click from Action Center after the banner is
+  gone also opens it (if not: note it; the shortcut needs a ToastActivatorCLSID, a v1.0.1 follow-up).
+- [ ] Second launch focuses the first window. Ctrl+, opens Settings. Title bar follows dark mode.
+- [ ] Open at login: sign out and in, the tray icon is back.
+- [ ] Sleep mid-recording for 30 s: a pause gap, recording continues.
+
+**Update from a previous build** (local, before any tag; the real key isn't needed)
+- [ ] Make a throwaway key: `npm run tauri signer generate -- --ci -p test -f -w "$env:TEMP\talaan-test.key"`,
+  copy the public key from `$env:TEMP\talaan-test.key.pub`.
+- [ ] Old build: temporarily set the version to 0.9.9 in a config file and point the updater at this PC:
+  `{"version":"0.9.9","plugins":{"updater":{"pubkey":"<pub>","endpoints":["http://127.0.0.1:8765/latest.json"],"dangerousInsecureTransportProtocol":true}}}`
+  → `npm run tauri build -- --config <that file>`; install it, record one meeting.
+- [ ] New build: same file without "version", plus `"bundle":{"createUpdaterArtifacts":true}`, with
+  TAURI_SIGNING_PRIVATE_KEY=$env:TEMP\talaan-test.key and _PASSWORD=test. Copy the setup .exe and .sig to a
+  folder, run `node scripts/latest-json.mjs v1.0.0 --dir <folder>`, change each url to
+  `http://127.0.0.1:8765/<file>`, save as `<folder>\latest.json`, serve it: `npx http-server <folder> -p 8765`.
+- [ ] In the old build: Settings › General › Updates › Check, then Update now. The installer runs by itself,
+  Talaan reopens as the new version; the meeting, settings and Open at login are still there.
+- [ ] Delete the throwaway key files from %TEMP% afterwards.
+
+**Delete and uninstall**
+- [ ] Settings › Privacy › Delete everything: Talaan quits; next launch is onboarding; `%APPDATA%\Talaan` holds
+  only an empty `meetings`; `cmdkey /list` has no Talaan entries.
+- [ ] Same while recording: Talaan quits, and there is no half meeting afterwards.
+- [ ] Mac: Delete everything quits too (instead of restarting); start it again from the Dock: onboarding.
+- [ ] Uninstall without "Delete the application data": %APPDATA%\Talaan stays.
+- [ ] Uninstall with it ticked: %APPDATA%\Talaan, the com.craftconceptsdigital.talaan folders, every
+  `*.Talaan` credential and the Run / StartupApproved entries are gone; no Talaan process left.
+
+**Before publishing**
+- [ ] Version is 1.0.0 in tauri.conf.json, Cargo.toml and package.json (not -dev).
+- [ ] The draft has the .exe, .exe.sig, .dmg, Talaan_aarch64.app.tar.gz, its .sig and latest.json with four
+  keys (windows-x86_64, windows-x86_64-nsis, darwin-aarch64, darwin-aarch64-app).
+- [ ] If the first tag shows that `gh release upload/download <tag>` can't find the draft (never tried on a test
+  repo), look the draft up with `gh api repos/mmnzns/Talaan/releases --jq '.[] | select(.tag_name=="vX") | .id'`
+  and upload through `gh api` instead (scripts/latest-json.mjs, scripts/upload-mac-release.sh, release.yml).

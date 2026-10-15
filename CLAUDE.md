@@ -6,7 +6,7 @@
 
 A bot-free meeting recorder. It records the mic and system audio as two tracks, so no bot joins the call and it works with any app (Zoom, Meet, Teams, Slack huddles, FaceTime, browser calls). When the call ends: a local transcript labeled Me / Them (plus named speakers within Them), then a summary with action items, saved to an in-app meeting history. Fully offline by default; BYOK cloud summaries are optional and send transcript text only, never audio.
 
-Mac first (Apple silicon, built on Miguel's MacBook). Windows port is v1.1, built on the PC from this codebase.
+v1.0 ships Mac (Apple silicon, built on Miguel's MacBook) and Windows (x64, built on the PC and on CI) together, from this codebase.
 
 ## Build rules (follow exactly)
 
@@ -23,7 +23,7 @@ Mac first (Apple silicon, built on Miguel's MacBook). Windows port is v1.1, buil
 - Milestones M0 to M10 in order, continuously. At the start of each, write its task plan in `docs/plans/` (superpowers:writing-plans), then execute with tests and a commit per task.
 - Stop only at 🛑 checkpoints: **M1** (UI review), **M3** (real call test), **M5** (first real summary), **M8** (named speakers + Ask).
 - TDD where there's logic: transcript merge, echo dedupe, retention, chunking, call rules, summary parsing, storage. UI and native audio get manual checks.
-- Internal version `1.0.0-dev`. No tags or GitHub Releases until the v1.0 release gate passes.
+- Internal version `1.0.0-dev`. No tags or GitHub Releases until the v1.0 release gate passes (Mac and Windows, docs/TESTING.md); only Miguel pushes the tag.
 - Verify, don't assume: macOS API availability, model licenses, model folder paths and sizes. Note findings in the Build Log.
 - Ask before pushing to GitHub.
 - **Never link llama.cpp into the main app.** It lives in the `talaan-llm` helper because whisper.cpp and llama.cpp each bundle ggml (see docs/plans/M5-summarizer.md).
