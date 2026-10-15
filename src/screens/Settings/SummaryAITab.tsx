@@ -4,7 +4,7 @@ import { useSettingsStore } from "../../data/StoreProvider";
 import type { ByokProvider, SummaryEngineKind } from "../../data/settings";
 import { useLang, useT } from "../../lib/i18n/I18nProvider";
 import { messageOr, type MessageKey } from "../../lib/i18n";
-import { Button, Chip, Field, Label, Select, cn, useToast } from "../../ui";
+import { Button, Chip, Field, Label, Select, Switch, cn, useToast } from "../../ui";
 import { Group, Row, SectionIntro } from "./parts";
 import type { TabProps } from "./tabProps";
 
@@ -75,6 +75,9 @@ export function SummaryAITab({ settings: s, update }: TabProps) {
               </div>
             ))}
           </div>
+          <Row title={t("settings.summarize_auto")} desc={t("settings.summarize_auto_desc")}>
+            <Switch aria-label={t("settings.summarize_auto")} checked={s.summarizeAutomatically} onChange={(v) => update({ summarizeAutomatically: v })} />
+          </Row>
           <Row title={t("settings.summary_language")}>
             <Select label={t("settings.summary_language")} wrapperClassName="w-44" value={s.summaryLanguage} onChange={(e) => update({ summaryLanguage: e.target.value })}>
               <option value="meeting">{t("settings.summary_language_meeting")}</option>

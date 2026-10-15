@@ -3,6 +3,7 @@ import type { Settings } from "./settings";
 /** Values used until the user changes something. Shared by the mock and the real settings store. */
 export const defaultSettings: Settings = {
   theme: "system",
+  yourName: "",
   detectCalls: true,
   autoTagApps: false,
   launchAtLogin: true,
@@ -51,6 +52,7 @@ export const defaultSettings: Settings = {
   uiLanguage: "auto",
   useGpu: true,
   summaryEngine: "local",
+  summarizeAutomatically: true,
   summaryLanguage: "meeting",
   localModel: "recommended",
   // Mirrors the Rust catalog (src-tauri/src/summarizer/models.rs). In the app the states come from disk.

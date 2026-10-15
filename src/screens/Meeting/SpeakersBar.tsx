@@ -6,7 +6,7 @@ import { speakerName } from "../../lib/transcript";
 import { useT } from "../../lib/i18n/I18nProvider";
 import { Button, Field, Label, Popover, cn, toneFor } from "../../ui";
 
-/** Speaker chips. Diarized speakers (Speaker 1, 2, 3) can be renamed once; every line updates. */
+/** Speaker chips. Anyone can be renamed (Me, Them, Speaker 1, 2, 3); every line and action item updates. */
 export function SpeakersBar({ meeting }: { meeting: Meeting }) {
   const t = useT();
   // Everyone in the transcript (or the stored names before there is one), Me first, then Speaker 1, 2, 3.
@@ -22,10 +22,8 @@ export function SpeakersBar({ meeting }: { meeting: Meeting }) {
       {speakers.map((s) => {
         const name = speakerName(meeting, s);
         const chip = cn("inline-flex items-center gap-1 rounded-full border px-2 py-[3px] font-mono text-[11px] leading-[14px]", toneFor(s));
-        const renameable = s !== "me" && s !== "them:0";
-        if (!renameable) return <span key={s} className={chip}>{name}</span>;
         return (
-          <RenameChip key={s} meetingId={meeting.id} speaker={s} name={name} className={chip} suggestions={suggestions} />
+          <RenameChip key={s} meetingId={meeting.id} speaker={s} name={name} className={chip} suggestions={s === "me" ? [] : suggestions} />
         );
       })}
       {suggestions.length > 0 && <Label className="ml-auto">{t("meeting.namesFromCalendar")}</Label>}
@@ -55,7 +53,7 @@ function RenameChip({ meetingId, speaker, name, className, suggestions }: { meet
         };
         return (
           <div className="flex flex-col gap-2 p-1.5">
-            <Label>{t("meeting.renameSpeaker")}</Label>
+            <Label>{speaker === "me" ? t("meeting.renameMe") : t("meeting.renameSpeaker")}</Label>
             <Field label={t("meeting.speakerNameLabel")} autoFocus value={draft} onChange={(e) => setDraft(e.target.value)} onKeyDown={(e) => e.key === "Enter" && save(draft)} />
             {suggestions.length > 0 && (
               <div className="flex flex-wrap gap-1.5">

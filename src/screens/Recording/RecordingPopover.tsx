@@ -1,10 +1,11 @@
 import { AlertTriangle, Pause, Play, Square, Star } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import { useSettings } from "../../data/hooks";
+import { useMeeting, useSettings } from "../../data/hooks";
+import { useStore } from "../../data/StoreProvider";
 import type { RecorderLevels, RecorderNotice, RecorderState } from "../../data/recorder";
 import { formatTime } from "../../lib/format";
 import { copyText } from "../../lib/share";
-import { Button, Label, cn } from "../../ui";
+import { Button, Label, Switch, cn } from "../../ui";
 import { SunCorner } from "../../brand/SunCorner";
 import { usePlatform } from "../../lib/platform";
 import { useT } from "../../lib/i18n/I18nProvider";
@@ -48,6 +49,24 @@ function Bars({ levels, tone }: { levels: number[]; tone: "me" | "them" }) {
         />
       ))}
     </div>
+  );
+}
+
+/** "Transcript only" for this recording: it waits for Generate summary instead of going to the summary engine. */
+function TranscriptOnly({ meetingId }: { meetingId?: string }) {
+  const t = useT();
+  const store = useStore();
+  const { meeting } = useMeeting(meetingId || undefined);
+  const [preview, setPreview] = useState(false); // the Screens stage has no meeting on disk
+  const on = meetingId ? Boolean(meeting?.transcriptOnly) : preview;
+  return (
+    <label className="flex cursor-pointer items-start gap-3">
+      <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+        <span className="text-[13px] font-bold">{t("recording.transcriptOnly")}</span>
+        <span className="text-xs leading-[17px] text-subtle">{t("recording.transcriptOnlyDesc")}</span>
+      </span>
+      <Switch aria-label={t("recording.transcriptOnly")} checked={on} onChange={(v) => (meetingId ? void store.setTranscriptOnly(meetingId, v) : setPreview(v))} />
+    </label>
   );
 }
 
@@ -183,6 +202,8 @@ export function RecordingPopover({ state, levels, notice, app, onPause, onResume
           </form>
           <Label>{info}</Label>
         </div>
+
+        <TranscriptOnly meetingId={state.meetingId} />
 
         <div className="mt-1 flex gap-2.5">
           <Button variant="primary" className="h-[42px] flex-1 text-sm" onClick={onStop}>

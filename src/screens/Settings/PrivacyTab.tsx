@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import { useMeetings } from "../../data/hooks";
-import { useSettingsStore } from "../../data/StoreProvider";
+import { describeError } from "../../data/errors";
+import { useSettingsStore, useStore } from "../../data/StoreProvider";
+import { exportAll } from "../../lib/exportAll";
 import type { RetentionChoice, TranscriptRetention } from "../../data/settings";
 import { formatBytes, tildePath } from "../../lib/format";
 import { useT } from "../../lib/i18n/I18nProvider";
@@ -16,6 +18,8 @@ export function PrivacyTab({ settings: s, update }: TabProps) {
   const { meetings } = useMeetings();
   const [confirm, setConfirm] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [exporting, setExporting] = useState(false);
+  const meetingStore = useStore();
   const [info, setInfo] = useState<{ path: string; bytes: number }>();
 
   useEffect(() => {
@@ -70,8 +74,23 @@ export function PrivacyTab({ settings: s, update }: TabProps) {
           }
         >
           <div className="flex gap-2">
-            <Button onClick={() => toast(t("settings.folder_open_toast"))}>{t("settings.folder_open")}</Button>
-            <Button onClick={() => toast(t("settings.folder_export_toast"))}>{t("settings.folder_export")}</Button>
+            <Button onClick={() => store.revealData().catch((e) => toast(describeError(e)))}>{t("settings.folder_open")}</Button>
+            <Button
+              disabled={exporting || meetings.length === 0}
+              onClick={async () => {
+                setExporting(true);
+                try {
+                  const n = await exportAll(meetingStore);
+                  if (n !== undefined) toast(t("settings.folder_exported", { count: n }));
+                } catch (e) {
+                  toast(describeError(e));
+                } finally {
+                  setExporting(false);
+                }
+              }}
+            >
+              {exporting ? t("settings.folder_exporting") : t("settings.folder_export")}
+            </Button>
           </div>
         </Row>
         <Row title={t("settings.keys_title")} desc={t("settings.keys_desc")}>

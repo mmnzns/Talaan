@@ -3,6 +3,7 @@ import { useStore } from "../../data/StoreProvider";
 import type { Meeting, Ms, Summary } from "../../data/types";
 import { describeError } from "../../data/errors";
 import { openSettings } from "../../lib/windows";
+import { ownerName } from "../../lib/transcript";
 import { useT } from "../../lib/i18n/I18nProvider";
 import { Button, Checkbox, Chip, Editable, Label, SectionLabel, Timestamp, cn, useToast } from "../../ui";
 
@@ -75,7 +76,7 @@ export function SummaryCard({ meeting, activeAt, editing, onJump }: Props) {
                       editing={editing}
                       onCommit={(v) => set("actionItems", summary.actionItems.map((x) => (x.id === a.id ? { ...x, text: v } : x)))}
                     />{" "}
-                    {a.owner && <span className="rounded-full bg-sp1 px-[7px] py-0.5 text-[11px] font-semibold text-sp1-fg">{a.owner}</span>}{" "}
+                    {a.owner && <span className="rounded-full bg-sp1 px-[7px] py-0.5 text-[11px] font-semibold text-sp1-fg">{ownerName(meeting, a.owner)}</span>}{" "}
                     {a.due && <Chip>{a.due}</Chip>}
                   </span>
                   {a.at !== undefined && <Timestamp at={a.at} onJump={onJump} active={a.at === activeAt} />}
@@ -103,9 +104,11 @@ export function SummaryCard({ meeting, activeAt, editing, onJump }: Props) {
             <span className="font-display text-base font-bold">{t("meeting.noSummaryTitle")}</span>
             <p className="m-0 text-[13px] text-subtle">{meeting.summaryError?.message ?? t("meeting.noSummaryBody")}</p>
             <span className="flex flex-wrap gap-2">
-              <Button variant="primary" onClick={() => store.generateSummary(meeting.id).catch((e) => toast(describeError(e)))}>
-                <Sparkles size={14} aria-hidden="true" /> {t("meeting.generateSummary")}
-              </Button>
+              {meeting.summaryError?.code !== "too_short" && (
+                <Button variant="primary" onClick={() => store.generateSummary(meeting.id).catch((e) => toast(describeError(e)))}>
+                  <Sparkles size={14} aria-hidden="true" /> {t("meeting.generateSummary")}
+                </Button>
+              )}
               {meeting.summaryError?.code === "no_engine" && <Button onClick={() => void openSettings("ai")}>{t("meeting.openSummaryAi")}</Button>}
             </span>
           </div>

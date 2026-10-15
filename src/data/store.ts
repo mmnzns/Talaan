@@ -30,6 +30,8 @@ export interface MeetingStore {
   recoverMeeting(id: MeetingId): Promise<void>;
   /** Failed processing: run transcription again. */
   retryProcessing(id: MeetingId): Promise<void>;
+  /** Transcribe a finished meeting again with another speech model. Edits and the summary are replaced; names stay. */
+  retranscribe(id: MeetingId, model: string): Promise<void>;
   /** Transcript-only meeting: write the summary now (M5). */
   generateSummary(id: MeetingId): Promise<void>;
   /** A URL to play the meeting's audio (both sides mixed), or undefined when there is none (or in the browser). */
@@ -39,6 +41,8 @@ export interface MeetingStore {
   /** Shows the meeting's folder in Finder. */
   revealMeeting(id: MeetingId): Promise<void>;
   renameSpeaker(id: MeetingId, speaker: Speaker, name: string): Promise<void>;
+  /** Transcript only: the meeting waits for Generate summary (works while recording too). */
+  setTranscriptOnly(id: MeetingId, on: boolean): Promise<void>;
   setTags(id: MeetingId, tags: string[]): Promise<void>;
   moveToFolder(id: MeetingId, folderId?: string): Promise<void>;
   listFolders(): Promise<Folder[]>;

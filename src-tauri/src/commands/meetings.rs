@@ -74,6 +74,11 @@ pub fn meetings_rename_speaker(app: AppHandle, state: State<AppState>, id: Strin
 }
 
 #[tauri::command]
+pub fn meetings_set_transcript_only(app: AppHandle, state: State<AppState>, id: String, on: bool) -> CmdResult<()> {
+    changed(&app, state.lock().set_transcript_only(&id, on))
+}
+
+#[tauri::command]
 pub fn meetings_set_tags(app: AppHandle, state: State<AppState>, id: String, tags: Vec<String>) -> CmdResult<()> {
     changed(&app, state.lock().set_tags(&id, &tags))
 }

@@ -1,0 +1,144 @@
+import type { RecorderClient } from "../data/recorder";
+import type { Settings, SettingsStore } from "../data/settings";
+import { formatBytes, tildePath } from "./format";
+import { currentLang, t } from "./i18n";
+import { os, platformCopy } from "./platform";
+
+/** `unknown`: can't be told without a test (call audio has no permission to read). */
+export type CheckStatus = "ok" | "warn" | "fail" | "unknown";
+export type FixAction = "allowMic" | "micSettings" | "testSystemAudio" | "systemAudioSettings" | "speechModels" | "summaryAI" | "openData";
+
+export interface CheckResult {
+  id: "mic" | "device" | "systemAudio" | "speech" | "speakers" | "summary" | "data";
+  title: string;
+  status: CheckStatus;
+  detail: string;
+  fix?: { label: string; action: FixAction };
+}
+
+/** What was found on this computer. Gathered by `probeSetup`, judged by `checkSetup`. */
+export interface Probe {
+  settings: Settings;
+  mic: Awaited<ReturnType<RecorderClient["microphonePermission"]>>;
+  /** Connected microphones; undefined when they couldn't be listed. */
+  inputs?: string[];
+  /** Result of "Test call audio"; undefined until it runs. */
+  systemAudio?: boolean;
+  /** Ollama / LM Studio, when that is the summary engine. */
+  localServer?: { ok: true; models: string[] } | { ok: false; message: string };
+  data: { path: string; bytes: number } | { error: string };
+  /** macOS asks for call audio; Windows loopback needs no permission, so there is nothing to open. Default true. */
+  systemAudioNeedsPermission?: boolean;
+}
+
+const READY = new Set(["downloaded", "on_this_mac"]);
+const openSettings = () => platformCopy(os, currentLang()).openSettings;
+const pct = (p?: number) => Math.round((p ?? 0) * 100);
+
+/** One line per thing a call needs, in the order a call uses them, each with what to do about it. */
+export function checkSetup(p: Probe): CheckResult[] {
+  const s = p.settings;
+  return [mic(p), device(p), systemAudio(p), speech(s), speakers(s), summary(p), data(p)];
+}
+
+function mic(p: Probe): CheckResult {
+  const title = t("settings.setup_mic");
+  switch (p.mic) {
+    case "granted":
+      return { id: "mic", title, status: "ok", detail: t("settings.setup_mic_ok") };
+    case "undetermined":
+      return { id: "mic", title, status: "warn", detail: t("settings.setup_mic_ask"), fix: { label: t("settings.setup_mic_allow"), action: "allowMic" } };
+    case "denied":
+    case "restricted":
+      return { id: "mic", title, status: "fail", detail: t("settings.setup_mic_off"), fix: { label: openSettings(), action: "micSettings" } };
+    default:
+      return { id: "mic", title, status: "warn", detail: t("settings.setup_mic_unknown") };
+  }
+}
+
+function device(p: Probe): CheckResult {
+  const title = t("settings.setup_device");
+  const chosen = p.settings.microphone !== "default" ? p.settings.microphone : undefined;
+  if (!p.inputs) return { id: "device", title, status: "warn", detail: t("settings.setup_device_unknown") };
+  if (p.inputs.length === 0) return { id: "device", title, status: "fail", detail: t("settings.setup_device_none") };
+  if (chosen && !p.inputs.includes(chosen)) return { id: "device", title, status: "warn", detail: t("settings.setup_device_gone", { name: chosen }) };
+  return { id: "device", title, status: "ok", detail: chosen ?? t("settings.setup_device_default", { count: p.inputs.length }) };
+}
+
+function systemAudio(p: Probe): CheckResult {
+  const title = t("settings.setup_audio");
+  if (p.systemAudio === undefined) {
+    return { id: "systemAudio", title, status: "unknown", detail: t("settings.setup_audio_untested"), fix: { label: t("settings.setup_audio_test"), action: "testSystemAudio" } };
+  }
+  if (p.systemAudio) return { id: "systemAudio", title, status: "ok", detail: t("settings.setup_audio_ok") };
+  const fix = p.systemAudioNeedsPermission === false ? undefined : { label: openSettings(), action: "systemAudioSettings" as const };
+  return { id: "systemAudio", title, status: "fail", detail: t("settings.setup_audio_fail"), fix };
+}
+
+function speech(s: Settings): CheckResult {
+  const title = t("settings.setup_speech");
+  const fix = { label: t("settings.tab_models"), action: "speechModels" as const };
+  const active = s.speechModels.find((m) => m.id === s.activeSpeechModel) ?? s.speechModels[0];
+  if (active && READY.has(active.state)) return { id: "speech", title, status: "ok", detail: t("settings.setup_ready", { name: active.name }) };
+  if (active?.state === "downloading") {
+    return { id: "speech", title, status: "warn", detail: t("settings.setup_speech_downloading", { name: active.name, pct: pct(active.progress) }) };
+  }
+  const other = s.speechModels.find((m) => READY.has(m.state));
+  if (other) return { id: "speech", title, status: "warn", detail: t("settings.setup_speech_pick", { name: active?.name ?? "?", other: other.name }), fix };
+  return { id: "speech", title, status: "fail", detail: t("settings.setup_speech_none"), fix };
+}
+
+function speakers(s: Settings): CheckResult {
+  const title = t("settings.split_title");
+  if (!s.separateSpeakers) return { id: "speakers", title, status: "ok", detail: t("settings.setup_speakers_off") };
+  if (READY.has(s.speakerModel.state)) return { id: "speakers", title, status: "ok", detail: t("settings.setup_speakers_ok") };
+  return { id: "speakers", title, status: "warn", detail: t("settings.setup_speakers_missing"), fix: { label: t("settings.tab_models"), action: "speechModels" } };
+}
+
+function summary(p: Probe): CheckResult {
+  const s = p.settings;
+  const title = t("settings.tab_ai");
+  const fix = { label: t("settings.tab_ai"), action: "summaryAI" as const };
+  const waits = s.summarizeAutomatically ? "" : ` ${t("settings.setup_summary_waits")}`;
+  const r = (status: CheckStatus, detail: string): CheckResult => ({ id: "summary", title, status, detail: detail + waits, fix: status !== "ok" ? fix : undefined });
+
+  if (s.summaryEngine === "byok") return s.byokKeySet ? r("ok", t("settings.setup_summary_key")) : r("fail", t("settings.setup_summary_nokey"));
+  if (s.summaryEngine === "ollama") {
+    const server = p.localServer;
+    if (!server) return r("unknown", t("settings.setup_summary_unchecked", { address: s.ollamaAddress }));
+    if (!server.ok) return r("fail", t("settings.setup_summary_unreachable", { address: s.ollamaAddress, error: server.message }));
+    if (server.models.length === 0) return r("fail", t("settings.setup_summary_nomodels"));
+    if (s.ollamaModel && !server.models.includes(s.ollamaModel)) return r("warn", t("settings.setup_summary_gone", { name: s.ollamaModel }));
+    return r("ok", s.ollamaModel ? t("settings.setup_summary_server_model", { name: s.ollamaModel }) : t("settings.setup_summary_server"));
+  }
+  const model = s.localModels.find((m) => m.choice === s.localModel) ?? s.localModels[0];
+  if (model?.state === "downloaded") return r("ok", t("settings.setup_ready", { name: `${t("settings.engine_local")} · ${model.name}` }));
+  if (model?.state === "downloading") return r("warn", t("settings.setup_summary_downloading", { name: model.name, pct: pct(model.progress) }));
+  return r("fail", t("settings.setup_summary_nolocal", { name: model?.name ?? "?" }));
+}
+
+function data(p: Probe): CheckResult {
+  const title = t("settings.setup_data");
+  if ("error" in p.data) return { id: "data", title, status: "fail", detail: t("settings.setup_data_fail", { error: p.data.error }) };
+  return { id: "data", title, status: "ok", detail: `${tildePath(p.data.path)} · ${formatBytes(p.data.bytes)}`, fix: { label: t("settings.folder_open"), action: "openData" } };
+}
+
+const message = (e: unknown) => (e instanceof Error ? e.message : String(e));
+
+/** Looks at this computer. Never prompts: call audio is only tested when the user asks (`testSystemAudio`). */
+export async function probeSetup(store: SettingsStore, recorder: RecorderClient, testSystemAudio?: boolean): Promise<Probe> {
+  const settings = await store.get();
+  const [mic, inputs, data, localServer] = await Promise.all([
+    recorder.microphonePermission().catch(() => "unknown" as const),
+    store.audioInputs().catch(() => undefined),
+    store.dataInfo().catch((e) => ({ error: message(e) })),
+    settings.summaryEngine === "ollama"
+      ? store.localServerModels(settings.ollamaAddress).then(
+          (models) => ({ ok: true as const, models }),
+          (e) => ({ ok: false as const, message: message(e) }),
+        )
+      : Promise.resolve(undefined),
+  ]);
+  const systemAudio = testSystemAudio ? await recorder.requestSystemAudio().catch(() => false) : undefined;
+  return { settings, mic, inputs, data, localServer, systemAudio, systemAudioNeedsPermission: os === "mac" };
+}

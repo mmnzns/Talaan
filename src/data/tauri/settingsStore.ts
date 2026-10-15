@@ -158,6 +158,10 @@ export class TauriSettingsStore implements SettingsStore {
     return call("data_info");
   }
 
+  revealData(): Promise<void> {
+    return call<void>("data_reveal");
+  }
+
   async deleteAllData(): Promise<void> {
     await call<void>("data_delete_all"); // the app restarts into first-run
   }

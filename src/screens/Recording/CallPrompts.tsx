@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { formatTime } from "../../lib/format";
 import { copyText } from "../../lib/share";
-import { Button, Label, cn } from "../../ui";
+import { Button, Checkbox, Label, cn } from "../../ui";
 import { useT } from "../../lib/i18n/I18nProvider";
 import { useCountdown, useElapsed } from "./useClock";
 import { useSettings } from "../../data/hooks";
@@ -12,8 +12,20 @@ const card = "relative w-[420px] max-w-full overflow-hidden rounded-2xl border b
 const ghost = "border-transparent bg-transparent";
 
 /** "Record this call?" prompt for apps set to Ask. `onAlways` (not for browser calls) sets the app to Always and records. */
-export function Nudge({ app = "Zoom", onRecord, onDismiss, onAlways }: { app?: string; onRecord: () => void; onDismiss: () => void; onAlways?: () => void }) {
+export function Nudge({
+  app = "Zoom",
+  onRecord,
+  onDismiss,
+  onAlways,
+}: {
+  app?: string;
+  /** `transcriptOnly`: save this call without a summary until the user asks for one. */
+  onRecord: (transcriptOnly: boolean) => void;
+  onDismiss: () => void;
+  onAlways?: () => void;
+}) {
   const t = useT();
+  const [transcriptOnly, setTranscriptOnly] = useState(false);
   return (
     <div role="alertdialog" aria-label={t("recording.nudgeAria")} className={card}>
       <SunCorner size={96} className="absolute right-0 top-0" />
@@ -24,7 +36,7 @@ export function Nudge({ app = "Zoom", onRecord, onDismiss, onAlways }: { app?: s
           <span className="font-display text-xl font-bold leading-6 tracking-[-0.02em]">{t("recording.nudgeTitle")}</span>
           <span className="text-xs leading-[17px] text-subtle">{t("recording.nudgeBody")}</span>
           <div className="mt-2.5 flex gap-2">
-            <Button variant="primary" onClick={onRecord}>
+            <Button variant="primary" onClick={() => onRecord(transcriptOnly)}>
               {t("recording.record")}
             </Button>
             <Button className={ghost} onClick={onDismiss}>
@@ -36,6 +48,10 @@ export function Nudge({ app = "Zoom", onRecord, onDismiss, onAlways }: { app?: s
               </Button>
             )}
           </div>
+          <label className="mt-1 flex cursor-pointer items-center gap-2 text-xs text-subtle">
+            <Checkbox aria-label={t("recording.nudgeTranscriptOnly")} checked={transcriptOnly} onChange={setTranscriptOnly} className="mt-0" />
+            {t("recording.nudgeTranscriptOnly")}
+          </label>
         </div>
       </div>
     </div>

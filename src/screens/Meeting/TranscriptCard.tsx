@@ -1,11 +1,12 @@
-import { Pause, Play } from "lucide-react";
-import { useEffect, useMemo, useRef } from "react";
+import { ChevronDown, ChevronUp, Pause, Play, Search, X } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useStore } from "../../data/StoreProvider";
 import type { Meeting, Ms } from "../../data/types";
 import { formatDuration, formatTime } from "../../lib/format";
+import { findMatches, segments } from "../../lib/find";
 import { buildRows, lineAt, speakerName } from "../../lib/transcript";
 import { useT } from "../../lib/i18n/I18nProvider";
-import { Button, Chip, Editable, Label, SpeakerTag, cn } from "../../ui";
+import { Button, Chip, Editable, Field, Label, SpeakerTag, cn } from "../../ui";
 import { Progress } from "./SummaryCard";
 import { SpeakersBar } from "./SpeakersBar";
 
@@ -38,6 +39,24 @@ export function TranscriptCard({ meeting, activeAt, jumpSeq, editing, playing, o
   const busy = meeting.status === "transcribing";
   const nameOf = (s: string) => speakerName(meeting, s);
 
+  // Find in transcript: every match highlighted, one current, stepped with the arrows or Enter / Shift+Enter.
+  const [query, setQuery] = useState("");
+  const [picked, setCurrent] = useState(0);
+  const ordered = useMemo(() => buildRows(meeting.transcript, [], []).flatMap((r) => (r.kind === "line" ? [r.line] : [])), [meeting.transcript]);
+  const matches = useMemo(() => findMatches(ordered, query).map((m, index) => ({ ...m, index })), [ordered, query]);
+  const byLine = useMemo(() => {
+    const map = new Map<string, typeof matches>();
+    for (const m of matches) map.set(m.lineId, [...(map.get(m.lineId) ?? []), m]);
+    return map;
+  }, [matches]);
+  const current = Math.max(0, Math.min(picked, matches.length - 1));
+  const step = (by: number) => matches.length && setCurrent((c) => (c + by + matches.length) % matches.length);
+  useEffect(() => setCurrent(0), [query]);
+  useEffect(() => {
+    if (!matches.length) return;
+    scroller.current?.querySelector<HTMLElement>(`[data-match="${current}"]`)?.scrollIntoView({ block: "center", behavior: "smooth" });
+  }, [current, matches]);
+
   return (
     <section aria-label={t("meeting.transcript")} className="flex min-h-0 flex-col overflow-hidden rounded-card border border-line bg-surface shadow-card">
       <div className="flex items-center gap-3 border-b border-line px-6 py-4">
@@ -61,6 +80,37 @@ export function TranscriptCard({ meeting, activeAt, jumpSeq, editing, playing, o
           {formatTime(activeAt ?? 0)} / {formatTime(meeting.durationMs)}
         </Label>
       </div>
+
+      {meeting.transcript.length > 0 && !busy && (
+        <div className="flex items-center gap-2 border-b border-line px-6 py-2">
+          <Field
+            label={t("meeting.find")}
+            icon={<Search size={13} aria-hidden="true" />}
+            placeholder={t("meeting.find")}
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") step(e.shiftKey ? -1 : 1);
+              if (e.key === "Escape") setQuery("");
+            }}
+            wrapperClassName="h-7 min-w-0 flex-1 px-2.5"
+          />
+          {query.trim() && (
+            <>
+              <Label aria-live="polite">{matches.length ? t("meeting.findCount", { n: current + 1, total: matches.length }) : t("meeting.findNone")}</Label>
+              <Button size="icon" className="h-7 w-7" aria-label={t("meeting.findPrev")} disabled={!matches.length} onClick={() => step(-1)}>
+                <ChevronUp size={14} aria-hidden="true" />
+              </Button>
+              <Button size="icon" className="h-7 w-7" aria-label={t("meeting.findNext")} disabled={!matches.length} onClick={() => step(1)}>
+                <ChevronDown size={14} aria-hidden="true" />
+              </Button>
+              <Button size="icon" variant="ghost" className="h-7 w-7" aria-label={t("meeting.findClear")} onClick={() => setQuery("")}>
+                <X size={14} aria-hidden="true" />
+              </Button>
+            </>
+          )}
+        </div>
+      )}
 
       {meeting.transcript.length > 0 && <SpeakersBar meeting={meeting} />}
 
@@ -104,7 +154,19 @@ export function TranscriptCard({ meeting, activeAt, jumpSeq, editing, playing, o
                 <SpeakerTag speaker={line.speaker} name={nameOf(line.speaker)} />
                 <span className="[text-wrap:pretty]">
                   {marks.length > 0 && <span aria-label={t("meeting.markedMoment")}>★ </span>}
-                  <Editable text={line.text} editing={editing} onCommit={(v) => store.updateTranscriptLine(meeting.id, line.id, v)} />
+                  {byLine.has(line.id) && !editing ? (
+                    segments(line.text, byLine.get(line.id)!).map((seg, i) =>
+                      seg.match === undefined ? (
+                        <span key={i}>{seg.text}</span>
+                      ) : (
+                        <mark key={i} data-match={seg.match} className={cn("rounded-[3px] px-px text-ink", seg.match === current ? "bg-gold" : "bg-gold-soft")}>
+                          {seg.text}
+                        </mark>
+                      ),
+                    )
+                  ) : (
+                    <Editable text={line.text} editing={editing} onCommit={(v) => store.updateTranscriptLine(meeting.id, line.id, v)} />
+                  )}
                   {line.edited && !editing && <Chip tone="gold" className="ml-2 align-middle">{t("meeting.editedChip")}</Chip>}
                   {marks.filter((m) => m.note).map((m) => (
                     <span key={m.id} className="ml-3 text-[13px] text-subtle">

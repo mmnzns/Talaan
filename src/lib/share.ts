@@ -1,7 +1,7 @@
 import type { Meeting, Ms } from "../data/types";
 import { t } from "./i18n";
 import { formatDate, formatDuration, formatTime } from "./format";
-import { speakerName } from "./transcript";
+import { ownerName, speakerName } from "./transcript";
 
 const nameOf = (m: Meeting, speaker: string) => speakerName(m, speaker);
 const when = (at?: Ms) => (at === undefined ? "" : ` (${formatTime(at)})`);
@@ -19,7 +19,7 @@ export function toShareText(m: Meeting): string {
   const out = [heading(m), "", s.recap];
   if (s.decisions.length) out.push("", t("meeting.shDecisions"), ...s.decisions.map((d) => `• ${d.text}${when(d.at)}`));
   if (s.actionItems.length)
-    out.push("", t("meeting.shActionItems"), ...s.actionItems.map((a) => `• ${a.done ? "✅" : "☐"} ${a.text}${owner(a.owner)}${due(a.due)}`));
+    out.push("", t("meeting.shActionItems"), ...s.actionItems.map((a) => `• ${a.done ? "✅" : "☐"} ${a.text}${owner(a.owner && ownerName(m, a.owner))}${due(a.due)}`));
   if (s.openQuestions.length) out.push("", t("meeting.shOpenQuestions"), ...s.openQuestions.map((q) => `• ${q.text}`));
   return out.join("\n");
 }
@@ -31,7 +31,7 @@ export function toEmail(m: Meeting): string {
   if (!s) return [...out, t("meeting.shNoSummaryParen")].join("\n");
   out.push(s.recap);
   if (s.decisions.length) out.push("", t("meeting.shDecisions"), ...s.decisions.map((d) => `- ${d.text}`));
-  if (s.actionItems.length) out.push("", t("meeting.shActionItems"), ...s.actionItems.map((a) => `- ${a.text}${owner(a.owner)}${due(a.due)}`));
+  if (s.actionItems.length) out.push("", t("meeting.shActionItems"), ...s.actionItems.map((a) => `- ${a.text}${owner(a.owner && ownerName(m, a.owner))}${due(a.due)}`));
   if (s.openQuestions.length) out.push("", t("meeting.shOpenQuestions"), ...s.openQuestions.map((q) => `- ${q.text}`));
   return out.join("\n");
 }
@@ -47,7 +47,7 @@ export function toMarkdown(m: Meeting, includeTranscript: boolean): string {
     out.push(s.recap);
     if (s.decisions.length) out.push("", `### ${t("meeting.shDecisions")}`, "", ...s.decisions.map((d) => `- ${d.text}${when(d.at)}`));
     if (s.actionItems.length)
-      out.push("", `### ${t("meeting.shActionItems")}`, "", ...s.actionItems.map((a) => `- [${a.done ? "x" : " "}] ${a.text}${owner(a.owner)}${due(a.due)}${when(a.at)}`));
+      out.push("", `### ${t("meeting.shActionItems")}`, "", ...s.actionItems.map((a) => `- [${a.done ? "x" : " "}] ${a.text}${owner(a.owner && ownerName(m, a.owner))}${due(a.due)}${when(a.at)}`));
     if (s.openQuestions.length) out.push("", `### ${t("meeting.shOpenQuestions")}`, "", ...s.openQuestions.map((q) => `- ${q.text}`));
   }
   if (includeTranscript && m.transcript.length) {

@@ -1,6 +1,6 @@
-import { Calendar, FolderOpen, MessageCircle, MoreHorizontal, Pin, Sparkles, Trash2, VolumeX, X } from "lucide-react";
+import { AudioLines, Calendar, FolderOpen, MessageCircle, MoreHorizontal, Pin, Sparkles, Trash2, VolumeX, X } from "lucide-react";
 import { useState } from "react";
-import { useFolders } from "../../data/hooks";
+import { useFolders, useSettings } from "../../data/hooks";
 import { useStore } from "../../data/StoreProvider";
 import type { Meeting } from "../../data/types";
 import { formatClock, formatDate, formatDuration } from "../../lib/format";
@@ -39,6 +39,9 @@ export function MeetingHeader({ meeting, editing, canRevert, onToggleEdit, onRev
   const [tagDraft, setTagDraft] = useState("");
   const [title, setTitle] = useState(meeting.title);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [retranscribing, setRetranscribing] = useState(false);
+  const { settings } = useSettings();
+  const speechModel = meeting.transcription && (settings?.speechModels.find((m) => m.id === meeting.transcription!.model)?.name ?? meeting.transcription.model);
 
   const ready = meeting.status === "ready";
 
@@ -190,6 +193,15 @@ export function MeetingHeader({ meeting, editing, canRevert, onToggleEdit, onRev
                     <Sparkles size={14} aria-hidden="true" /> {meeting.summary ? t("meeting.summaryAgain") : t("meeting.generateSummary")}
                   </MenuItem>
                   <MenuItem
+                    disabled={!meeting.hasAudio}
+                    onClick={() => {
+                      setRetranscribing(true);
+                      close();
+                    }}
+                  >
+                    <AudioLines size={14} aria-hidden="true" /> {t("meeting.retranscribeMenu")}
+                  </MenuItem>
+                  <MenuItem
                     disabled={!meeting.hasAudio || meeting.pinned}
                     onClick={() => {
                       store
@@ -218,6 +230,13 @@ export function MeetingHeader({ meeting, editing, canRevert, onToggleEdit, onRev
                   >
                     <Trash2 size={14} aria-hidden="true" /> {t("meeting.deleteMenu")}
                   </MenuItem>
+                  {(speechModel || meeting.summary) && (
+                    <div className="mt-1 flex flex-col gap-1 border-t border-line px-2.5 pb-1 pt-2.5 text-xs text-subtle">
+                      <Label>{t("meeting.madeWith")}</Label>
+                      {speechModel && <span>{t("meeting.madeWithSpeech", { model: speechModel })}</span>}
+                      {meeting.summary && <span>{t("meeting.madeWithSummary", { engine: meeting.summary.engine })}</span>}
+                    </div>
+                  )}
                 </>
               )}
             </Popover>
@@ -233,6 +252,8 @@ export function MeetingHeader({ meeting, editing, canRevert, onToggleEdit, onRev
           <span className="text-[13px] text-subtle">{t("meeting.withAttendees", { names: meeting.calendarEvent.attendees.join(", ") })}</span>
         </div>
       )}
+
+      <RetranscribeSheet meeting={meeting} open={retranscribing} onClose={() => setRetranscribing(false)} />
 
       <Sheet open={confirmDelete} title={t("meeting.deleteTitle")} onClose={() => setConfirmDelete(false)}>
         <div className="flex flex-col gap-3 p-5">
@@ -256,5 +277,63 @@ export function MeetingHeader({ meeting, editing, canRevert, onToggleEdit, onRev
         </div>
       </Sheet>
     </header>
+  );
+}
+
+/** Transcribe again with another speech model: says what is replaced and what stays before it starts. */
+function RetranscribeSheet({ meeting, open, onClose }: { meeting: Meeting; open: boolean; onClose: () => void }) {
+  const t = useT();
+  const store = useStore();
+  const toast = useToast();
+  const { settings } = useSettings();
+  const ready = (settings?.speechModels ?? []).filter((m) => m.state === "downloaded" || m.state === "on_this_mac");
+  const used = meeting.transcription?.model;
+  const [choice, setChoice] = useState<string>();
+  const model = choice ?? ready.find((m) => m.id !== used)?.id ?? ready[0]?.id;
+  const edited = meeting.transcript.some((l) => l.edited);
+  const waits = meeting.transcriptOnly || settings?.summarizeAutomatically === false;
+
+  const start = async () => {
+    if (!model) return;
+    onClose();
+    try {
+      await store.retranscribe(meeting.id, model);
+    } catch (e) {
+      toast(describeError(e));
+    }
+  };
+
+  return (
+    <Sheet open={open} title={t("meeting.retranscribeTitle")} onClose={onClose}>
+      <div className="flex flex-col gap-3 p-5">
+        <h2 className="m-0 font-display text-xl font-bold tracking-[-0.02em]">{t("meeting.retranscribeTitle")}</h2>
+        <p className="m-0 text-[13px] text-subtle">{t("meeting.retranscribeBody")}</p>
+        {ready.length > 0 ? (
+          <Select label={t("meeting.retranscribeModel")} value={model} onChange={(e) => setChoice(e.target.value)}>
+            {ready.map((m) => (
+              <option key={m.id} value={m.id}>
+                {m.name}
+                {m.id === used ? t("meeting.retranscribeUsed") : ""}
+              </option>
+            ))}
+          </Select>
+        ) : (
+          <p className="m-0 text-[13px]">{t("meeting.retranscribeNoModel")}</p>
+        )}
+        <ul className="m-0 flex list-disc flex-col gap-1 pl-5 text-[13px]">
+          <li className={edited ? "font-semibold text-warn-fg" : undefined}>
+            {edited ? t("meeting.retranscribeEdits") : t("meeting.retranscribeReplaced")}
+          </li>
+          <li>{t("meeting.retranscribeNames")}</li>
+          <li>{waits ? t("meeting.retranscribeSummaryWaits") : t("meeting.retranscribeSummaryAgain")}</li>
+        </ul>
+        <div className="flex justify-end gap-2">
+          <Button onClick={onClose}>{t("common.cancel")}</Button>
+          <Button variant="primary" disabled={!model} onClick={start}>
+            {t("meeting.retranscribeTitle")}
+          </Button>
+        </div>
+      </div>
+    </Sheet>
   );
 }

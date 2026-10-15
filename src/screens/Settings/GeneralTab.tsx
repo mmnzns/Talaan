@@ -3,8 +3,9 @@ import { Logo } from "../../brand/Logo";
 import { describeError } from "../../data/errors";
 import { useSettingsStore } from "../../data/StoreProvider";
 import { openLink } from "../../lib/windows";
-import { Button, Label, Select, Switch } from "../../ui";
+import { Button, Field, Label, Select, Switch } from "../../ui";
 import { Group, Row, SectionIntro } from "./parts";
+import { SetupCheck } from "./SetupCheck";
 import type { TabProps } from "./tabProps";
 import { usePlatform } from "../../lib/platform";
 import { useT } from "../../lib/i18n/I18nProvider";
@@ -16,6 +17,16 @@ export function GeneralTab({ settings: s, update }: TabProps) {
   return (
     <div className="flex flex-col gap-6">
     <Group>
+      <Row title={t("settings.your_name")} desc={t("settings.your_name_desc")}>
+        <Field
+          label={t("settings.your_name")}
+          placeholder={t("meeting.speakerMe")}
+          defaultValue={s.yourName}
+          onBlur={(e) => e.target.value.trim() !== s.yourName && update({ yourName: e.target.value.trim() })}
+          onKeyDown={(e) => e.key === "Enter" && e.currentTarget.blur()}
+          wrapperClassName="w-40"
+        />
+      </Row>
       <Row title={t("settings.detect_title")} desc={t("settings.detect_desc")}>
         <Switch aria-label={t("settings.detect_title")} checked={s.detectCalls} onChange={(v) => update({ detectCalls: v })} />
       </Row>
@@ -57,6 +68,7 @@ export function GeneralTab({ settings: s, update }: TabProps) {
       </Row>
       <UpdatesRow settings={s} update={update} />
     </Group>
+    <SetupCheck />
     <About />
     </div>
   );

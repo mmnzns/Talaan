@@ -17,16 +17,21 @@ pub const SCHEMA: &str = r#"{
   "additionalProperties": false
 }"#;
 
-const RULES: &str = "You write meeting summaries. You get the transcript of a call, recorded on the user's own computer: \"Me\" is the user, everyone else is on the other end. Reply with JSON only, matching the schema.
+const RULES: &str = "You write meeting summaries. You get the transcript of a call, recorded on the user's own computer: \"{me}\" is the user, everyone else is on the other end. Reply with JSON only, matching the schema.
 
 - title: 2 to 6 words naming what the call was about. No date, no app name.
 - recap: 3 to 5 plain sentences: what the call was about and where it landed.
 - decisions: what was agreed or settled. One sentence each, with the time of the line where it was decided.
-- action_items: concrete tasks someone committed to or was asked to do. owner: the person's name as written in the transcript (\"Me\" for the user), empty if nobody. due: the deadline as said (\"Friday\", \"Oct 17\"), empty if none. time: the line where it came up.
+- action_items: concrete tasks someone committed to or was asked to do. owner: the person's name as written in the transcript (\"{me}\" for the user), empty if nobody. due: the deadline as said (\"Friday\", \"Oct 17\"), empty if none. time: the line where it came up.
 - open_questions: questions raised and not answered, or topics left unresolved.
 - Times are the [mm:ss] or [h:mm:ss] stamps of transcript lines. Copy them exactly; empty if unsure.
 - Use only what is in the transcript. Never invent names, dates, numbers or facts. Empty lists are fine.
 - Moments the user marked during the call matter most: make sure they are covered.";
+
+/// The instructions, naming the user the way the transcript does ("Me", or their name once they set one).
+fn system(meeting: &Meeting, language: &str) -> String {
+    format!("{}\n- Write everything in {}.", RULES.replace("{me}", &speaker_name(meeting, "me")), language_name(language))
+}
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Prompt {
@@ -105,7 +110,7 @@ pub fn summary_prompt(meeting: &Meeting, lines: &[TranscriptLine], language: &st
     }
     user.push_str("\nTranscript:\n");
     user.push_str(&render_lines(meeting, lines));
-    Prompt { system: format!("{RULES}\n- Write everything in {}.", language_name(language)), user }
+    Prompt { system: system(meeting, language), user }
 }
 
 /// Combines the summaries of a long call's parts into one.
@@ -118,7 +123,7 @@ pub fn merge_prompt(meeting: &Meeting, parts_json: &[String], language: &str) ->
     for (i, p) in parts_json.iter().enumerate() {
         user.push_str(&format!("\nPart {}:\n{}\n", i + 1, p));
     }
-    Prompt { system: format!("{RULES}\n- Write everything in {}.", language_name(language)), user }
+    Prompt { system: system(meeting, language), user }
 }
 
 #[cfg(test)]
@@ -158,6 +163,8 @@ pub(crate) mod tests {
             pauses: vec![],
             error: None,
             summary_error: None,
+            transcription: None,
+            transcript_only: false,
         }
     }
 
@@ -188,6 +195,20 @@ pub(crate) mod tests {
         assert!(p.user.contains("Moments the user marked during the call:\n[01:05] pricing decision"));
         assert!(p.system.contains("Write everything in Spanish."));
         assert!(!p.user.contains("part"));
+    }
+
+    #[test]
+    fn the_user_is_named_the_way_the_transcript_names_them() {
+        let lines = vec![line("l0", 0, "me", "I'll send the deck.")];
+        let mut m = meeting(lines.clone());
+        let p = summary_prompt(&m, &lines, "en", None);
+        assert!(p.system.contains("\"Me\" is the user") && p.system.contains("(\"Me\" for the user)"));
+        m.speakers.insert("me".into(), "Miguel".into());
+        let p = summary_prompt(&m, &lines, "en", None);
+        assert!(p.user.contains("[00:00] Miguel: I'll send the deck."));
+        assert!(p.system.contains("\"Miguel\" is the user") && p.system.contains("(\"Miguel\" for the user)"));
+        assert!(!p.system.contains("{me}"));
+        assert!(merge_prompt(&m, &["{}".into()], "en").system.contains("\"Miguel\" is the user"));
     }
 
     #[test]

@@ -53,6 +53,11 @@ impl Storage {
         self.update_meeting_file(id, |f| f.folder_id = folder_id.map(str::to_string))
     }
 
+    /// Transcript only: this meeting waits for Generate summary instead of being summarized by itself.
+    pub fn set_transcript_only(&self, id: &str, on: bool) -> Result<()> {
+        self.update_meeting_file(id, |f| f.transcript_only = on)
+    }
+
     pub fn rename_speaker(&self, id: &str, speaker: &str, name: &str) -> Result<()> {
         if !valid_speaker(speaker) {
             return Err(StorageError::InvalidId(speaker.to_string()));
@@ -61,9 +66,11 @@ impl Storage {
         if name.is_empty() {
             return Ok(());
         }
-        let mut old = String::new();
+        // The names this speaker went by: as stored, and as shown (Me shows the user's name).
+        let mut old: Vec<String> = vec![];
         self.update_meeting_file(id, |f| {
-            old = f.speakers.get(speaker).cloned().unwrap_or_else(|| default_name(speaker));
+            old.push(f.speakers.get(speaker).cloned().unwrap_or_else(|| default_name(speaker)));
+            old.extend(self.named_speakers(&f.speakers).get(speaker).cloned());
             f.speakers.insert(speaker.to_string(), name.to_string());
         })?;
         // Action items the summary gave to "Speaker 2" now belong to the name.
@@ -72,7 +79,7 @@ impl Storage {
             if let Some(mut summary) = read_json_opt::<Summary>(&dir.join(file))? {
                 let mut hit = false;
                 for a in &mut summary.action_items {
-                    if a.owner.as_deref().is_some_and(|o| o.trim().eq_ignore_ascii_case(&old)) {
+                    if a.owner.as_deref().is_some_and(|o| old.iter().any(|n| o.trim().eq_ignore_ascii_case(n))) {
                         a.owner = Some(name.to_string());
                         hit = true;
                     }
@@ -191,6 +198,19 @@ mod tests {
         assert_eq!(s.get_meeting(&id).unwrap().speakers["them:1"], "Dana Reyes");
         assert!(s.rename_speaker(&id, "../etc", "x").is_err());
         assert!(s.rename_speaker(&id, "them:", "x").is_err());
+    }
+
+    #[test]
+    fn me_and_them_can_be_renamed_and_their_action_items_follow() {
+        let (_d, mut s) = storage();
+        let id = make(&s);
+        s.save_summary(&id, &super::super::store::tests::summary("recap")).unwrap(); // owner "Me"
+        s.settings_set(serde_json::json!({ "yourName": "Miguel" })).unwrap();
+        s.rename_speaker(&id, "me", "Miguel M.").unwrap();
+        s.rename_speaker(&id, "them:0", "Dana").unwrap();
+        let m = s.get_meeting(&id).unwrap();
+        assert_eq!((m.speakers["me"].as_str(), m.speakers["them:0"].as_str()), ("Miguel M.", "Dana"));
+        assert_eq!(m.summary.unwrap().action_items[0].owner.as_deref(), Some("Miguel M."));
     }
 
     #[test]

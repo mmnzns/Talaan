@@ -20,8 +20,15 @@ impl Storage {
         if !value.is_object() {
             return Err(StorageError::InvalidId("settings must be an object".into()));
         }
+        let name_changed = self.settings_get()?.map(|old| old["yourName"].clone()).unwrap_or(Value::Null) != value["yourName"];
         write_json_atomic(&self.root.join(SETTINGS), &value)?;
         self.policy = policy_of(&value);
+        if name_changed {
+            // transcript.md and summary.md show Me by the user's name.
+            for item in self.list_meetings(&Default::default())? {
+                let _ = self.regenerate_markdown(&item.id);
+            }
+        }
         Ok(())
     }
 
@@ -81,6 +88,17 @@ mod tests {
         let mut reopened = Storage::new(d.path().to_path_buf()).unwrap();
         reopened.load_policy().unwrap();
         assert_eq!(reopened.policy().audio, AudioPolicy::Days(30));
+    }
+
+    #[test]
+    fn a_new_name_rewrites_the_markdown_copies() {
+        let (d, mut s) = storage();
+        let m = s.create_meeting("zoom", "Zoom", at("2026-10-14T09:00:00-07:00")).unwrap();
+        s.save_transcript(&m.id, &[crate::storage::store::tests::line("l0", 0, "Hello")]).unwrap();
+        let md = || fs::read_to_string(d.path().join("meetings").join(&m.id).join("transcript.md")).unwrap();
+        assert!(md().contains("Me:** Hello"));
+        s.settings_set(json!({"yourName": "Miguel"})).unwrap();
+        assert!(md().contains("Miguel:** Hello"));
     }
 
     #[test]

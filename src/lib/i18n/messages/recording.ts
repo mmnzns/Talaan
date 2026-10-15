@@ -70,6 +70,10 @@ export const recording = area({
     stopSave: "Stop and save",
     reallyDiscard: "Really discard?",
     discard: "Discard",
+    // V-gaps
+    transcriptOnly: "Transcript only",
+    transcriptOnlyDesc: "No summary until you ask for one. For calls that shouldn’t reach a summary AI.",
+    nudgeTranscriptOnly: "Transcript only, no summary",
   },
   fr: {
     nudgeAria: "Enregistrer cet appel ?",
@@ -137,6 +141,10 @@ export const recording = area({
     stopSave: "Arrêter et sauvegarder",
     reallyDiscard: "Vraiment abandonner ?",
     discard: "Abandonner",
+    // V-gaps
+    transcriptOnly: "Transcription seule",
+    transcriptOnlyDesc: "Pas de résumé tant que vous n’en demandez pas. Pour les appels qui ne doivent pas passer par une IA de résumé.",
+    nudgeTranscriptOnly: "Transcription seule, sans résumé",
   },
   es: {
     nudgeAria: "¿Grabar esta llamada?",
@@ -204,5 +212,9 @@ export const recording = area({
     stopSave: "Detener y guardar",
     reallyDiscard: "¿Descartar de verdad?",
     discard: "Descartar",
+    // V-gaps
+    transcriptOnly: "Solo transcripción",
+    transcriptOnlyDesc: "Sin resumen hasta que lo pidas. Para llamadas que no deben llegar a una IA de resumen.",
+    nudgeTranscriptOnly: "Solo transcripción, sin resumen",
   },
 });

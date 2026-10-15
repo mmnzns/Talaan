@@ -15,6 +15,9 @@ use std::sync::{Arc, Condvar, Mutex};
 use std::time::{Duration, Instant};
 
 pub const NO_MODEL: &str = "no_model";
+/// `summary_error` code for a meeting that waits for Generate summary (transcript only, or automatic
+/// summaries turned off), so a sensitive call never goes to a summary engine by itself.
+pub const WAITING: &str = "waiting";
 const IDLE_UNLOAD: Duration = Duration::from_secs(300);
 
 /// What the worker reads from `settings.json` for each meeting.
@@ -27,6 +30,8 @@ pub struct Config {
     pub reuse: bool,
     /// Split the Them track into Speaker 1, 2, 3 (when the model is downloaded).
     pub separate_speakers: bool,
+    /// Hand each new transcript to the summarizer (Settings › Summary AI › Summarize automatically).
+    pub summarize: bool,
 }
 
 impl Config {
@@ -40,6 +45,7 @@ impl Config {
             use_gpu: v["useGpu"].as_bool().unwrap_or(true),
             reuse: v["reuseModels"].as_bool().unwrap_or(true),
             separate_speakers: v["separateSpeakers"].as_bool().unwrap_or(true),
+            summarize: v["summarizeAutomatically"].as_bool().unwrap_or(true),
         }
     }
 }
@@ -58,7 +64,7 @@ pub struct Deps {
     pub load_splitter: Box<SplitterLoader>,
     /// Extra folders to look for models in (tests); the real app uses the defaults.
     pub reuse_roots: Option<Vec<PathBuf>>,
-    /// Called with a meeting id once its transcript is saved (it is then `summarizing`).
+    /// Called with a meeting id once its transcript is saved and it is `summarizing` (not when it waits).
     pub transcribed: Arc<dyn Fn(&str) + Send + Sync>,
 }
 
@@ -164,15 +170,21 @@ fn fail(deps: &Deps, id: &str, code: &str, message: String) {
 }
 
 fn process(deps: &Deps, id: &str, loaded: &mut Option<Loaded>, cancel: &AtomicBool) {
-    let (dir, config) = {
+    let (dir, config, transcript_only) = {
         let s = lock(&deps.storage);
         let Ok(file) = s.read_meeting_file(id) else { return };
         if file.status != MeetingStatus::Transcribing {
             return;
         }
         let Ok(dir) = s.dir(id) else { return };
-        (dir, Config::from_settings(s.settings_get().ok().flatten().as_ref()))
+        let mut config = Config::from_settings(s.settings_get().ok().flatten().as_ref());
+        // Transcribe again with another model: this meeting only.
+        if let Some(m) = file.retranscribe_model.as_deref().and_then(find).filter(|m| m.id != VAD.id) {
+            config.model = m;
+        }
+        (dir, config, file.transcript_only)
     };
+    let summarize = config.summarize && !transcript_only;
 
     let mut store = ModelStore::new(&deps.data_dir, config.reuse);
     if let Some(roots) = &deps.reuse_roots {
@@ -227,9 +239,19 @@ fn process(deps: &Deps, id: &str, loaded: &mut Option<Loaded>, cancel: &AtomicBo
                 return fail(deps, id, "failed", "Couldn't save the transcript.".into());
             }
             let _ = s.update_meeting_file(id, |f| {
-                f.status = MeetingStatus::Summarizing;
-                f.progress = Some(0.0);
+                if summarize {
+                    f.status = MeetingStatus::Summarizing;
+                    f.progress = Some(0.0);
+                } else {
+                    f.status = MeetingStatus::Ready;
+                    f.progress = None;
+                    f.summary_error = Some(ProcessingError {
+                        code: WAITING.into(),
+                        message: "This call is transcript only. Generate a summary when you want one.".into(),
+                    });
+                }
                 f.error = None;
+                f.retranscribe_model = None;
                 if let Some(lang) = &out.language {
                     f.language = lang.clone();
                 }
@@ -246,7 +268,9 @@ fn process(deps: &Deps, id: &str, loaded: &mut Option<Loaded>, cancel: &AtomicBo
                 });
             });
             drop(s);
-            (deps.transcribed)(id);
+            if summarize {
+                (deps.transcribed)(id);
+            }
         }
         // Cancelled means the meeting is being deleted; leave it alone.
         Err(PipelineError::Cancelled) => {}
@@ -348,6 +372,35 @@ mod tests {
         assert_eq!(f.engine.as_deref(), Some("Echoes"));
         assert_eq!(f.transcription.unwrap().model, "whisper-small");
         assert_eq!(f.language, "en");
+    }
+
+    #[test]
+    fn a_transcript_only_meeting_waits_for_generate_summary() {
+        for (settings, flag) in [(json!({ "activeSpeechModel": "whisper-small", "summarizeAutomatically": false }), false), (json!({ "activeSpeechModel": "whisper-small" }), true)] {
+            let (_d, storage, id, worker) = setup(true, "Salary numbers for next year.");
+            storage.lock().unwrap().settings_set(settings).unwrap();
+            storage.lock().unwrap().update_meeting_file(&id, |f| f.transcript_only = flag).unwrap();
+            worker.enqueue(&id);
+            wait(&worker);
+            let m = storage.lock().unwrap().get_meeting(&id).unwrap();
+            assert_eq!(m.item.status, MeetingStatus::Ready);
+            assert_eq!(m.transcript.len(), 1);
+            assert_eq!(m.summary_error.unwrap().code, WAITING);
+        }
+    }
+
+    #[test]
+    fn transcribe_again_uses_the_chosen_model_once() {
+        let (_d, storage, id, worker) = setup(true, "Hello again.");
+        // The default is a model that isn't downloaded; this meeting asks for one that is.
+        storage.lock().unwrap().settings_set(json!({ "activeSpeechModel": "parakeet-v3" })).unwrap();
+        storage.lock().unwrap().update_meeting_file(&id, |f| f.retranscribe_model = Some("whisper-small".into())).unwrap();
+        worker.enqueue(&id);
+        wait(&worker);
+        let f = storage.lock().unwrap().read_meeting_file(&id).unwrap();
+        assert_eq!(f.status, MeetingStatus::Summarizing);
+        assert_eq!(f.transcription.unwrap().model, "whisper-small");
+        assert_eq!(f.retranscribe_model, None);
     }
 
     #[test]
