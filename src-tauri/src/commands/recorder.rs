@@ -271,7 +271,8 @@ fn restart_later(app: AppHandle, flag: Arc<AtomicBool>, mic: bool) {
     if flag.swap(true, Ordering::AcqRel) {
         return;
     }
-    std::thread::spawn(move || {
+    let reset = flag.clone();
+    let spawned = std::thread::Builder::new().name("talaan-device-restart".into()).spawn(move || {
         std::thread::sleep(Duration::from_millis(400));
         flag.store(false, Ordering::Release);
         let rec = app.state::<RecorderState>();
@@ -289,6 +290,11 @@ fn restart_later(app: AppHandle, flag: Arc<AtomicBool>, mic: bool) {
         }
         emit_state(&app);
     });
+    if let Err(e) = spawned {
+        // No thread, no restart: log it and let the next device change try again.
+        eprintln!("talaan: couldn't start the device restart thread: {e}");
+        reset.store(false, Ordering::Release);
+    }
 }
 
 /// Starts the watchers and the 10 Hz loop. Called once at startup.

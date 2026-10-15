@@ -475,7 +475,8 @@ fn zone(tzid: &str, vtimezones: &HashMap<String, Tz>) -> Tz {
 fn in_zone(tz: Tz, n: NaiveDateTime) -> Option<DateTime<Tz>> {
     match tz.from_local_datetime(&n) {
         LocalResult::Single(d) | LocalResult::Ambiguous(d, _) => Some(d),
-        LocalResult::None => tz.from_local_datetime(&(n + chrono::Duration::hours(1))).earliest(),
+        // Checked: a gap at the very end of the calendar must not panic.
+        LocalResult::None => n.checked_add_signed(chrono::Duration::hours(1)).and_then(|later| tz.from_local_datetime(&later).earliest()),
     }
 }
 
@@ -655,6 +656,17 @@ const WINDOWS_ZONES: &[(&str, &str)] = &[
 mod tests {
     use super::*;
     use chrono::{Local, NaiveDate, TimeZone, Utc};
+
+    #[test]
+    fn a_time_in_the_spring_gap_moves_an_hour_later_and_the_calendar_edge_never_panics() {
+        let ny = zone("America/New_York", &HashMap::new());
+        let gap = NaiveDate::from_ymd_opt(2026, 3, 8).unwrap().and_hms_opt(2, 30, 0).unwrap();
+        assert_eq!(in_zone(ny, gap).unwrap().to_rfc3339(), "2026-03-08T03:30:00-04:00");
+        for tz in [ny, Tz::UTC, zone("Pacific/Kiritimati", &HashMap::new())] {
+            let _ = in_zone(tz, NaiveDateTime::MAX);
+            let _ = in_zone(tz, NaiveDateTime::MIN);
+        }
+    }
 
     fn utc(y: i32, mo: u32, d: u32, h: u32, mi: u32) -> i64 {
         Utc.with_ymd_and_hms(y, mo, d, h, mi, 0).unwrap().timestamp_millis()
