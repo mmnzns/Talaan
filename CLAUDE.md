@@ -119,6 +119,13 @@ src-tauri/src/
     notify.rs thread.rs  Summary ready notifications (click opens the meeting), background thread priority
     mic_users.rs        which processes are using the mic (Core Audio process objects)
     calendar.rs browser_tabs.rs  EventKit access and events; a browser's tab URLs via Apple Events
+  platform/windows/     Windows-only code (mirrors macos/)
+    system_tap.rs       WASAPI process loopback (excludes Talaan's process tree), reconnects after errors
+    clock.rs com.rs     QPC host clock in ns (same grid as WASAPI/cpal), COM init per thread
+    permissions.rs devices.rs power.rs  microphone Privacy switches + Settings links, speakers warning / device watcher, sleep auto-pause
+    notify.rs thread.rs  Summary ready toasts (W3), background thread priority
+    mic_users.rs        apps using the mic (consent store; W2)
+    calendar.rs browser_tabs.rs  calendar events and browser tab URLs (W4, stubs for now)
 docs/plans/             per-milestone task plans
 docs/WINDOWS-PORT.md    what the Windows port has to write, build and package (v1.0 ships Mac + Windows together)
 docs/TESTING.md         what Miguel tests before release
@@ -190,6 +197,9 @@ TALAAN_SMOKE_MEETING=<meeting dir> cargo test --release --manifest-path src-taur
 npm run build                                      # type-check + build frontend
 scripts/build-signed-debug.sh                      # signed debug .app (needed for real mic/system-audio permissions)
 scripts/build-llm-helper.sh                        # builds the talaan-llm helper (tauri dev/build run it first)
+powershell -File scripts/build-llm-helper.ps1       # Windows: builds the talaan-llm helper
 ```
+
+On Windows `npm run tauri dev` needs no signing for mic or system audio.
 
 `npm run tauri dev` attributes permissions to the terminal; check recording on the signed .app (`src-tauri/target/debug/bundle/macos/Talaan.app`).

@@ -4,6 +4,30 @@ Written on the Mac when v1 was feature-complete (2026-10-14), for the session th
 **Decision:** v1.0 ships Mac and Windows together; nothing is released until the Windows build passes the same
 release gate. Read `CLAUDE.md` and the Notion pages ("Talaan Journey", "Talaan v1 Build Plan") first.
 
+## Progress
+
+**W0 done.** The app compiles on Windows and the tests are green; CI has a Windows job; the summarizer helper builds with
+`scripts/build-llm-helper.ps1`. Parakeet (ONNX Runtime) transcribes at about 26x real time on the CPU. Whisper on the CPU
+is currently very slow (391 s for a 62 s clip), under investigation.
+
+**W1 done.** System audio is WASAPI process loopback that excludes Talaan. It reconnects after audio errors and shows a
+"Call audio stopped" notice if it can't. The speakers warning sees through virtual outputs (FxSound). A device watcher follows
+default-device changes, recording auto-pauses on sleep, and microphone access reads the Privacy & security switches.
+
+**Known:** relay apps (FxSound, Voicemeeter, Sonar) re-render audio under their own process, so Talaan's own sounds can reach
+"Them" and other audio may be captured twice.
+
+**Smoke tests** (all `#[ignore]`; run from `src-tauri/`, most need a working mic):
+
+| Test | Command |
+|---|---|
+| `system_smoke` (5 s of system audio plus mic; play something while it runs) | `cargo test system_smoke -- --ignored --nocapture` |
+| `system_excludes_own_audio` (our tone must not reach "Them"; set `TALAAN_TONE_DEVICE` to a real output's name if the default is a relay app) | `TALAAN_TONE_DEVICE=<output name> cargo test system_excludes_own_audio -- --ignored --nocapture` |
+| `system_silence_keeps_packets_flowing` (30 s of silence still delivers 30 s of samples) | `cargo test system_silence_keeps_packets_flowing -- --ignored --nocapture` |
+| `mic_clock_smoke` (mic stamps are on the host clock) | `cargo test mic_clock_smoke -- --ignored --nocapture` |
+| `tracks_line_up_smoke` (mic and loopback stamp-vs-now lag under 200 ms; a PowerShell process plays a Windows sound) | `cargo test tracks_line_up_smoke -- --ignored --nocapture` |
+| `pipeline_smoke` (real models on a recorded meeting) | `TALAAN_SMOKE_MEETING=<meeting dir> cargo test --release pipeline_smoke -- --ignored --nocapture` |
+
 ## What's already shared
 
 Everything outside `src-tauri/src/platform/macos/` is cross-platform by design: storage, the transcriber
