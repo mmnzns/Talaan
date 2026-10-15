@@ -12,7 +12,7 @@ pub const CALL_APPS: &[(&str, &str, &[&str])] = &[
     ("slack", "Slack", &["com.tinyspeck.slackmacgap", "slack.exe", "91750D7E.Slack_"]),
     ("facetime", "FaceTime", &["com.apple.avconferenced", "com.apple.FaceTime"]),
     ("webex", "Webex", &["com.cisco.webex", "com.webex.", "ciscocollabhost.exe", "webexmta.exe", "atmgr.exe", "webex.exe"]),
-    ("discord", "Discord", &["com.hnc.Discord", "discord.exe"]),
+    ("discord", "Discord", &["com.hnc.Discord", "discord.exe", "discordptb.exe", "discordcanary.exe"]),
     ("whatsapp", "WhatsApp", &["net.whatsapp.WhatsApp", "desktop.WhatsApp", "whatsapp.exe", "5319275A.WhatsAppDesktop_"]),
     (
         "browser",

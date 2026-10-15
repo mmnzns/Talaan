@@ -49,6 +49,9 @@ export const defaultSettings: Settings = {
     { name: "MacWhisper", why: "transcription" },
     { name: "Apple Dictation", why: "built in" },
     { name: "Voice Memos", why: "built in" },
+    // Windows extras. Removing a row in Settings doesn't un-ignore the app: the Rust IGNORED table still applies
+    // (same as on the Mac for the rows above).
+    ...windowsIgnoredApps,
   ],
   speechModels: [
     // Mirrors the Rust catalog (src-tauri/src/transcriber/models.rs). In the app the list and states come from Rust.

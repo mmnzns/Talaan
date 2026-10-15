@@ -1,7 +1,7 @@
 //! Which apps are using the microphone right now: the per-app consent store Windows keeps in the registry
 //! (`LastUsedTimeStop` is 0 while an app holds the mic). No extra permission. Talaan itself is left out.
 
-use winreg::enums::HKEY_CURRENT_USER;
+use winreg::enums::{HKEY_CURRENT_USER, REG_BINARY, REG_QWORD};
 use winreg::RegKey;
 
 const STORE: &str = r"Software\Microsoft\Windows\CurrentVersion\CapabilityAccessManager\ConsentStore\microphone";
@@ -20,14 +20,30 @@ pub struct MicUser {
 pub struct Entry {
     pub key: String,
     pub start: u64,
-    pub stop: u64,
+    /// `None` when the value is missing or unreadable: then we can't tell the app let go, so it isn't "in use".
+    pub stop: Option<u64>,
 }
 
 fn in_use(e: &Entry) -> bool {
-    e.start > 0 && e.stop == 0
+    e.start > 0 && e.stop == Some(0)
+}
+
+/// A FILETIME value: a REG_QWORD, or the same 8 bytes stored as REG_BINARY (little-endian). Anything else is `None`.
+pub fn decode_time(raw: Option<&[u8]>) -> Option<u64> {
+    let bytes: [u8; 8] = raw?.try_into().ok()?;
+    Some(u64::from_le_bytes(bytes))
+}
+
+fn read_time(key: &RegKey, name: &str) -> Option<u64> {
+    let v = key.get_raw_value(name).ok()?;
+    match v.vtype {
+        REG_QWORD | REG_BINARY => decode_time(Some(&v.bytes)),
+        _ => None,
+    }
 }
 
 /// `C:#Program Files#Zoom#Zoom.exe` → (`C:\Program Files\Zoom\Zoom.exe`, `zoom.exe`).
+/// A real `#` in a folder name is lossy (it also becomes `\`), which is harmless: the path is only used for matching.
 pub fn desktop_user(key: &str) -> (String, String) {
     let path = key.replace('#', "\\");
     let exe = path.rsplit('\\').next().unwrap_or("").to_lowercase();
@@ -50,8 +66,8 @@ fn entries(key: &RegKey) -> Vec<Entry> {
         .filter(|name| name != "NonPackaged")
         .filter_map(|name| {
             let sub = key.open_subkey(&name).ok()?;
-            let start = sub.get_value::<u64, _>("LastUsedTimeStart").unwrap_or(0);
-            let stop = sub.get_value::<u64, _>("LastUsedTimeStop").unwrap_or(0);
+            let start = read_time(&sub, "LastUsedTimeStart").unwrap_or(0);
+            let stop = read_time(&sub, "LastUsedTimeStop");
             Some(Entry { key: name, start, stop })
         })
         .collect()
@@ -71,7 +87,23 @@ mod tests {
     use super::*;
 
     fn e(key: &str, start: u64, stop: u64) -> Entry {
-        Entry { key: key.into(), start, stop }
+        Entry { key: key.into(), start, stop: Some(stop) }
+    }
+
+    #[test]
+    fn filetime_values_decode_from_qword_or_8_byte_binary() {
+        let t: u64 = 0x01DB_1234_5678_9ABC;
+        assert_eq!(decode_time(Some(&t.to_le_bytes())), Some(t)); // REG_QWORD and 8-byte REG_BINARY look the same
+        assert_eq!(decode_time(Some(&0u64.to_le_bytes())), Some(0));
+        assert_eq!(decode_time(Some(&[1, 2, 3, 4])), None);
+        assert_eq!(decode_time(Some(&[0; 9])), None);
+        assert_eq!(decode_time(None), None);
+    }
+
+    #[test]
+    fn a_start_with_no_readable_stop_is_not_in_use() {
+        let desktop = [Entry { key: r"C:#x#a.exe".into(), start: 5, stop: None }];
+        assert!(users_from(&[], &desktop, "").is_empty());
     }
 
     #[test]
