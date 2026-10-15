@@ -35,7 +35,7 @@ Timestamp → transcript jump (M1), edit transcript and summary with Revert, edi
 
 ## Outcome (2026-10-14)
 
-All tasks done. 238 Rust tests, 77 TS tests.
+All tasks done. 226 Rust tests, 77 TS tests.
 
 Checked in the signed app:
 
