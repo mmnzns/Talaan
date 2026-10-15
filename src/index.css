@@ -1,7 +1,7 @@
-@import "@fontsource-variable/bricolage-grotesque";
-@import "@fontsource/ibm-plex-mono/400.css";
-@import "@fontsource/ibm-plex-mono/500.css";
-@import "@fontsource/ibm-plex-mono/600.css";
+@import "@fontsource-variable/syne";
+@import "@fontsource-variable/instrument-sans";
+@import "@fontsource/dm-mono/400.css";
+@import "@fontsource/dm-mono/500.css";
 @import "tailwindcss";
 @import "./styles/tokens.css";
 
@@ -27,19 +27,24 @@
   --color-rail: var(--t-rail);
   --color-line: var(--t-line);
   --color-subtle: var(--t-subtle);
-  --color-lime: var(--t-lime);
-  --color-on-lime: var(--t-on-lime);
-  --color-lime-soft: var(--t-lime-soft);
+  --color-gold: var(--t-gold);
+  --color-on-gold: var(--t-on-gold);
+  --color-gold-soft: var(--t-gold-soft);
+  --color-gold-ink: var(--t-gold-ink);
+  --color-faint: var(--t-faint);
+  --color-red: var(--t-red);
+  --color-burst: var(--t-burst);
   --color-danger: var(--t-danger);
   --color-warn-bg: var(--t-warn-bg);
   --color-warn-fg: var(--t-warn-fg);
   --color-ok: var(--t-ok);
   --font-sans: var(--t-font-sans);
   --font-mono: var(--t-font-mono);
+  --font-display: var(--t-font-display);
   --radius-card: var(--t-radius);
   --radius-control: var(--t-radius-sm);
-  --shadow-hard: var(--t-shadow);
-  --shadow-hard-lg: var(--t-shadow-lg);
+  --shadow-card: var(--t-shadow);
+  --shadow-pop: var(--t-shadow-lg);
 }
 
 html, body, #root {

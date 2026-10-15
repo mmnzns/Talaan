@@ -6,7 +6,7 @@ export function Radio({ checked, className }: { checked: boolean; className?: st
     <span
       aria-hidden="true"
       className={cn(
-        "inline-grid size-[18px] flex-none place-content-center rounded-full border-[1.5px] bg-surface",
+        "inline-grid size-[18px] flex-none place-content-center rounded-full border bg-surface",
         checked ? "border-edge" : "border-input",
         className,
       )}

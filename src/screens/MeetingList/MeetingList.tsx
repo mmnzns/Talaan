@@ -1,7 +1,8 @@
 import { Search } from "lucide-react";
-import { Fragment, useState } from "react";
+import { useState } from "react";
 import { useFolders, useMeetings, useTags } from "../../data/hooks";
-import { dayGroup } from "../../lib/format";
+import type { MeetingListItem } from "../../data/types";
+import { dayGroup, dayMark } from "../../lib/format";
 import { Button, Field, Label } from "../../ui";
 import { FolderNav } from "./FolderNav";
 import { MeetingItem } from "./MeetingItem";
@@ -23,11 +24,18 @@ export function MeetingList({ selectedId }: { selectedId?: string }) {
     setQuery("");
   };
 
-  let lastKey = "";
+  // Meetings by day, newest first (the list already comes sorted).
+  const days: { key: string; label: string; first: MeetingListItem; items: MeetingListItem[] }[] = [];
+  for (const m of meetings) {
+    const g = dayGroup(m.startedAt);
+    const last = days[days.length - 1];
+    if (last?.key === g.key) last.items.push(m);
+    else days.push({ ...g, first: m, items: [m] });
+  }
 
   return (
-    <nav aria-label="Meetings" className="flex w-[320px] flex-none flex-col border-r-[1.5px] border-edge bg-rail">
-      <div className="p-3 pb-2">
+    <nav aria-label="Meetings" className="flex w-[310px] flex-none flex-col border-r border-line bg-rail">
+      <div className="px-4 pb-2.5 pt-5">
         <Field
           label="Search meetings"
           type="search"
@@ -47,19 +55,24 @@ export function MeetingList({ selectedId }: { selectedId?: string }) {
         onFolder={setFolderId}
         onTag={setTag}
       />
-      <div className="flex min-h-0 flex-1 flex-col gap-0.5 overflow-auto px-2 pb-3 pt-2">
+      <div className="flex min-h-0 flex-1 flex-col gap-2.5 overflow-auto px-3 pb-5 pt-3.5">
         {!loading && meetings.length === 0 ? (
           <EmptyState firstRun={all.meetings.length === 0 && !all.loading} filtering={filtering} onClear={clear} />
         ) : (
-          meetings.map((m) => {
-            const group = dayGroup(m.startedAt);
-            const header = group.key !== lastKey;
-            lastKey = group.key;
+          days.map((d) => {
+            const mark = dayMark(d.first.startedAt);
             return (
-              <Fragment key={m.id}>
-                {header && <Label className="px-2 pb-1.5 pt-2.5">{group.label}</Label>}
-                <MeetingItem meeting={m} selected={m.id === selectedId} />
-              </Fragment>
+              <section key={d.key} aria-label={d.label} className="grid grid-cols-[40px_minmax(0,1fr)] items-start gap-2.5">
+                <div className="flex flex-col items-center gap-0.5 pt-0.5" aria-hidden="true">
+                  <span className="font-display text-xl leading-[22px] font-bold tracking-[-0.02em]">{mark.day}</span>
+                  <Label className="text-[10px]">{mark.weekday}</Label>
+                </div>
+                <div className="flex min-w-0 flex-col gap-1">
+                  {d.items.map((m) => (
+                    <MeetingItem key={m.id} meeting={m} selected={m.id === selectedId} />
+                  ))}
+                </div>
+              </section>
             );
           })
         )}
@@ -72,7 +85,7 @@ function EmptyState({ firstRun, filtering, onClear }: { firstRun: boolean; filte
   if (firstRun) {
     return (
       <div className="flex flex-col items-start gap-2 px-2 py-6">
-        <span className="text-[15px] font-extrabold tracking-tight">No meetings yet</span>
+        <span className="font-display text-base font-bold">No meetings yet</span>
         <p className="m-0 text-[13px] text-subtle">
           Start a call and press Record, or import a Voice Memo. Transcripts and summaries show up here.
         </p>
@@ -81,7 +94,7 @@ function EmptyState({ firstRun, filtering, onClear }: { firstRun: boolean; filte
   }
   return (
     <div className="flex flex-col items-start gap-2 px-2 py-6">
-      <span className="text-[15px] font-extrabold tracking-tight">No matches</span>
+      <span className="font-display text-base font-bold">No matches</span>
       <p className="m-0 text-[13px] text-subtle">Nothing in your meetings fits that search or filter.</p>
       {filtering && <Button onClick={onClear}>Clear filters</Button>}
     </div>

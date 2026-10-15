@@ -28,7 +28,7 @@ export function PrintView({ id, withTranscript }: { id: string; withTranscript: 
 
   return (
     <article className="mx-auto max-w-[680px] bg-paper px-10 py-10 text-ink print:p-0">
-      <header className="mb-6 border-b-[1.5px] border-edge pb-4">
+      <header className="mb-6 border-b border-edge pb-4">
         <h1 className="m-0 text-[26px] font-extrabold tracking-[-0.02em]">{meeting.title}</h1>
         <div className="mt-1 font-mono text-xs text-subtle">
           {meeting.appLabel} · {formatDate(meeting.startedAt)} · {formatDuration(meeting.durationMs)}

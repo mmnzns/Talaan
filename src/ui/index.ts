@@ -2,7 +2,7 @@ export { Button } from "./Button";
 export { Checkbox } from "./Checkbox";
 export { Chip } from "./Chip";
 export { Field } from "./Field";
-export { Label } from "./Label";
+export { Label, SectionLabel } from "./Label";
 export { Radio } from "./Radio";
 export { SectionHeader } from "./SectionHeader";
 export { Select } from "./Select";

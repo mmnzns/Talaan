@@ -38,13 +38,13 @@ export function SummaryAITab({ settings: s, update }: TabProps) {
                 aria-checked={on}
                 onClick={() => update({ summaryEngine: e.id })}
                 className={cn(
-                  "flex cursor-pointer flex-col gap-1.5 rounded-card border-[1.5px] p-3 text-left font-[inherit] text-ink",
-                  on ? "border-edge bg-lime-soft shadow-hard" : "border-line bg-surface",
+                  "flex cursor-pointer flex-col gap-1.5 rounded-card border p-3 text-left font-[inherit] text-ink",
+                  on ? "border-edge bg-gold-soft shadow-card" : "border-line bg-surface",
                 )}
               >
                 <span className="flex items-center gap-2">
                   <span className="font-bold">{e.name}</span>
-                  <Chip tone={e.id === "byok" ? "default" : "lime"}>{e.tag}</Chip>
+                  <Chip tone={e.id === "byok" ? "default" : "gold"}>{e.tag}</Chip>
                 </span>
                 <span className="text-xs leading-[17px] text-subtle">{e.note}</span>
               </button>
@@ -112,7 +112,7 @@ function LocalPanel({ settings: s, update }: TabProps) {
         <Row title="Status" desc={model.note}>
           {model.state === "downloaded" && (
             <span className="flex items-center gap-2">
-              <Chip tone="lime">Installed</Chip>
+              <Chip tone="gold">Installed</Chip>
               <button type="button" className="cursor-pointer border-0 bg-transparent p-0 text-xs text-subtle underline" onClick={() => run(store.deleteModel(model.id))}>
                 Delete
               </button>

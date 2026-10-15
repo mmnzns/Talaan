@@ -18,7 +18,7 @@ interface Props {
   onJump: (at: Ms) => void;
 }
 
-const grid = "grid grid-cols-[44px_56px_minmax(0,1fr)] items-start gap-2.5 px-4 py-2";
+const grid = "grid grid-cols-[44px_56px_minmax(0,1fr)] items-start gap-3.5 px-6 py-3";
 
 export function TranscriptCard({ meeting, activeAt, jumpSeq, editing, playing, onTogglePlay, onJump }: Props) {
   const store = useStore();
@@ -37,9 +37,9 @@ export function TranscriptCard({ meeting, activeAt, jumpSeq, editing, playing, o
   const nameOf = (s: string) => speakerName(meeting, s);
 
   return (
-    <section aria-label="Transcript" className="flex min-h-0 flex-col rounded-card border-[1.5px] border-edge bg-surface">
-      <div className="flex items-center gap-2.5 border-b-[1.5px] border-line px-4 py-2.5">
-        <h2 className="m-0 text-base font-bold">Transcript</h2>
+    <section aria-label="Transcript" className="flex min-h-0 flex-col overflow-hidden rounded-card border border-line bg-surface shadow-card">
+      <div className="flex items-center gap-3 border-b border-line px-6 py-4">
+        <h2 className="m-0 font-display text-base font-bold tracking-[-0.02em]">Transcript</h2>
         <span className="flex-1" />
         <Button
           variant="strong"
@@ -50,10 +50,10 @@ export function TranscriptCard({ meeting, activeAt, jumpSeq, editing, playing, o
           title={audio ? undefined : "Audio was deleted. The transcript is kept."}
           onClick={onTogglePlay}
         >
-          {playing ? <Pause size={12} fill="currentColor" aria-hidden="true" /> : <Play size={12} fill="currentColor" aria-hidden="true" />}
+          {playing ? <Pause size={11} fill="currentColor" aria-hidden="true" className="text-gold" /> : <Play size={11} fill="currentColor" aria-hidden="true" className="text-gold" />}
         </Button>
-        <div aria-hidden="true" className="h-1 w-[110px] rounded-full bg-line">
-          <div className="h-full rounded-full bg-ink" style={{ width: `${Math.min(100, ((activeAt ?? 0) / Math.max(1, meeting.durationMs)) * 100)}%` }} />
+        <div aria-hidden="true" className="h-[3px] w-[110px] rounded-full bg-line">
+          <div className="h-full rounded-full bg-gold" style={{ width: `${Math.min(100, ((activeAt ?? 0) / Math.max(1, meeting.durationMs)) * 100)}%` }} />
         </div>
         <Label>
           {formatTime(activeAt ?? 0)} / {formatTime(meeting.durationMs)}
@@ -62,7 +62,7 @@ export function TranscriptCard({ meeting, activeAt, jumpSeq, editing, playing, o
 
       {meeting.transcript.length > 0 && <SpeakersBar meeting={meeting} />}
 
-      <div ref={scroller} className="flex min-h-0 flex-1 flex-col overflow-auto py-1.5">
+      <div ref={scroller} className="flex min-h-0 flex-1 flex-col overflow-auto pb-3.5 pt-2.5">
         {busy ? (
           <div className="px-4">
             <Progress label="Transcribing the audio" value={meeting.progress} />
@@ -89,13 +89,13 @@ export function TranscriptCard({ meeting, activeAt, jumpSeq, editing, playing, o
               <div
                 key={line.id}
                 data-line-id={line.id}
-                className={cn(grid, marks.length > 0 && "bg-mark", isActive && "bg-lime-soft shadow-[inset_4px_0_0_var(--t-ink)]")}
+                className={cn(grid, marks.length > 0 && "bg-mark", isActive && "bg-gold-soft shadow-[inset_3px_0_0_var(--t-gold)]")}
               >
                 <button
                   type="button"
                   onClick={() => onJump(line.at)}
                   aria-label={`Jump to ${formatTime(line.at)}`}
-                  className="cursor-pointer border-0 bg-transparent p-0 text-left font-mono text-[11px] leading-5 text-subtle hover:text-ink"
+                  className="cursor-pointer border-0 bg-transparent p-0 text-left font-mono text-[11px] leading-5 text-faint hover:text-ink"
                 >
                   {formatTime(line.at)}
                 </button>
@@ -103,7 +103,7 @@ export function TranscriptCard({ meeting, activeAt, jumpSeq, editing, playing, o
                 <span className="[text-wrap:pretty]">
                   {marks.length > 0 && <span aria-label="Marked moment">★ </span>}
                   <Editable text={line.text} editing={editing} onCommit={(v) => store.updateTranscriptLine(meeting.id, line.id, v)} />
-                  {line.edited && !editing && <Chip tone="lime" className="ml-2 align-middle">edited</Chip>}
+                  {line.edited && !editing && <Chip tone="gold" className="ml-2 align-middle">edited</Chip>}
                   {marks.filter((m) => m.note).map((m) => (
                     <span key={m.id} className="ml-3 text-[13px] text-subtle">
                       ✎ Your note: {m.note}

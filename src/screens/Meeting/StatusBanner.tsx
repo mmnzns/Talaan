@@ -47,7 +47,7 @@ export function StatusBanner({ meeting }: { meeting: Meeting }) {
 
 function Banner({ title, text, children }: { title: string; text: string; children: React.ReactNode }) {
   return (
-    <div role="alert" className="mx-6 mb-4 flex flex-wrap items-center gap-3 rounded-control border-[1.5px] border-warn-fg bg-warn-bg px-3.5 py-2.5 text-warn-fg">
+    <div role="alert" className="mx-6 mb-4 flex flex-wrap items-center gap-3 rounded-control border border-warn-fg bg-warn-bg px-3.5 py-2.5 text-warn-fg">
       <AlertTriangle size={18} aria-hidden="true" className="flex-none" />
       <div className="min-w-0 flex-1 basis-60">
         <div className="text-sm font-bold">{title}</div>

@@ -21,7 +21,7 @@ export function CallAppsTab({ settings: s, update }: TabProps) {
             const lockAlways = a.isBrowser && !s.tabDetection;
             return (
               <div key={a.id} className="flex flex-wrap items-center gap-x-3 gap-y-2 px-4 py-3">
-                <span aria-hidden="true" className="grid size-8 flex-none place-items-center rounded-control border-[1.5px] border-edge bg-sunken text-sm font-extrabold">
+                <span aria-hidden="true" className="grid size-8 flex-none place-items-center rounded-control border border-edge bg-sunken text-sm font-extrabold">
                   {a.name.charAt(0)}
                 </span>
                 <div className="min-w-0 flex-1 basis-48">

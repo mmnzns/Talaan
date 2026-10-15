@@ -11,6 +11,7 @@ import { MeetingHeader } from "./MeetingHeader";
 import { StatusBanner } from "./StatusBanner";
 import { SummaryCard } from "./SummaryCard";
 import { TranscriptCard } from "./TranscriptCard";
+import { SunCorner } from "../../brand/SunCorner";
 
 export function MeetingPane({ id, jumpTo }: { id?: string; jumpTo?: Ms }) {
   const { meeting, loading } = useMeeting(id);
@@ -21,7 +22,7 @@ export function MeetingPane({ id, jumpTo }: { id?: string; jumpTo?: Ms }) {
     return (
       <div className="grid flex-1 place-items-center p-8 text-center">
         <div className="flex max-w-sm flex-col gap-2">
-          <span className="text-lg font-extrabold tracking-tight">Meeting not found</span>
+          <span className="font-display text-lg font-bold">Meeting not found</span>
           <p className="m-0 text-[13px] text-subtle">It may have been deleted. Pick another one from the list.</p>
         </div>
       </div>
@@ -36,9 +37,10 @@ function EmptyPane() {
   if (loading) return null;
   const first = meetings.length === 0;
   return (
-    <div className="grid flex-1 place-items-center p-8 text-center">
-      <div className="flex max-w-sm flex-col items-center gap-2">
-        <span className="text-lg font-extrabold tracking-tight">{first ? "Your meetings will show up here" : "Select a meeting"}</span>
+    <div className="relative grid flex-1 place-items-center overflow-hidden p-8 text-center">
+      <SunCorner className="absolute right-0 top-0" />
+      <div className="relative flex max-w-sm flex-col items-center gap-2">
+        <span className="font-display text-xl font-bold tracking-[-0.02em]">{first ? "Your meetings will show up here" : "Select a meeting"}</span>
         <p className="m-0 text-[13px] text-subtle">
           {first
             ? "Start a call and Talaan asks before it records. Or press Record, or import a Voice Memo. Each one gets a transcript, a summary and action items."
@@ -88,7 +90,8 @@ function MeetingView({ meeting, jumpTo }: { meeting: Meeting; jumpTo?: Ms }) {
   const canRevert = Boolean(meeting.summary?.edited) || meeting.transcript.some((l) => l.edited);
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col overflow-auto">
+    <div className="relative flex min-h-0 flex-1 flex-col overflow-auto">
+      <SunCorner className="absolute right-0 top-0" />
       <MeetingHeader
         meeting={meeting}
         editing={editing}
@@ -100,7 +103,7 @@ function MeetingView({ meeting, jumpTo }: { meeting: Meeting; jumpTo?: Ms }) {
         copied={copied}
       />
       <StatusBanner meeting={meeting} />
-      <div className="grid flex-1 grid-cols-1 items-start gap-4 px-6 pb-6 min-[1000px]:min-h-0 min-[1000px]:grid-cols-2 min-[1000px]:items-stretch">
+      <div className="relative grid flex-1 grid-cols-1 items-start gap-7 px-11 pb-11 min-[1000px]:min-h-0 min-[1000px]:grid-cols-2 min-[1000px]:items-stretch">
         <SummaryCard meeting={meeting} activeAt={activeAt} editing={editing} onJump={jump} />
         <TranscriptCard
           meeting={meeting}

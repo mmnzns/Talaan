@@ -15,7 +15,7 @@ export function SpeakersBar({ meeting }: { meeting: Meeting }) {
   const suggestions = (meeting.calendarEvent?.attendees ?? []).filter((n) => n !== "You" && !taken.has(n));
 
   return (
-    <div className="flex flex-wrap items-center gap-1.5 border-b border-line px-4 py-2">
+    <div className="flex flex-wrap items-center gap-1.5 border-b border-line px-6 py-2.5">
       <Label>speakers</Label>
       {speakers.map((s) => {
         const name = speakerName(meeting, s);

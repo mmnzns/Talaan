@@ -31,7 +31,7 @@ export function Popover({ trigger, children, align = "right", className }: Props
       {open && (
         <div
           className={cn(
-            "absolute top-full z-40 mt-1.5 min-w-[200px] rounded-card border-[1.5px] border-edge bg-raised p-1.5 shadow-hard",
+            "absolute top-full z-40 mt-1.5 min-w-[200px] rounded-card border border-edge bg-raised p-1.5 shadow-card",
             align === "right" ? "right-0" : "left-0",
             className,
           )}

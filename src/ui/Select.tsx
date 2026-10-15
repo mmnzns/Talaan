@@ -13,7 +13,7 @@ export function Select({ label, className, wrapperClassName, children, ...rest }
       <span className="sr-only">{label}</span>
       <select
         className={cn(
-          "h-8 w-full cursor-pointer appearance-none rounded-control border-[1.5px] border-input bg-paper pl-2.5 pr-8 font-[inherit] text-[13px] text-ink outline-none focus:border-edge",
+          "h-8 w-full cursor-pointer appearance-none rounded-control border border-input bg-paper pl-2.5 pr-8 font-[inherit] text-[13px] text-ink outline-none focus:border-edge",
           className,
         )}
         {...rest}

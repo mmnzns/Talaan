@@ -3,7 +3,7 @@ import { useStore } from "../../data/StoreProvider";
 import type { Meeting, Ms, Summary } from "../../data/types";
 import { describeError } from "../../data/errors";
 import { openSettings } from "../../lib/windows";
-import { Button, Checkbox, Chip, Editable, Label, Timestamp, cn, useToast } from "../../ui";
+import { Button, Checkbox, Chip, Editable, Label, SectionLabel, Timestamp, cn, useToast } from "../../ui";
 
 interface Props {
   meeting: Meeting;
@@ -12,8 +12,8 @@ interface Props {
   onJump: (at: Ms) => void;
 }
 
-const row = "-m-1 flex items-start gap-2.5 rounded-md p-1";
-const hit = "bg-lime-soft outline-[1.5px] outline-edge";
+const row = "-m-1.5 flex items-start gap-3 rounded-lg p-1.5";
+const hit = "bg-gold-soft";
 
 export function SummaryCard({ meeting, activeAt, editing, onJump }: Props) {
   const store = useStore();
@@ -25,26 +25,26 @@ export function SummaryCard({ meeting, activeAt, editing, onJump }: Props) {
   const set = <K extends keyof Summary>(key: K, value: Summary[K]) => save({ ...summary!, [key]: value });
 
   return (
-    <section aria-label="Summary" className="flex min-h-0 flex-col rounded-card border-[1.5px] border-edge bg-surface">
-      <div className="flex items-center justify-between border-b-[1.5px] border-line px-4 py-3">
-        <h2 className="m-0 text-base font-bold">Summary</h2>
+    <section aria-label="Summary" className="flex min-h-0 flex-col overflow-hidden rounded-card border border-line bg-surface shadow-card">
+      <div className="flex items-center justify-between border-b border-line px-6 py-[18px]">
+        <h2 className="m-0 font-display text-base font-bold tracking-[-0.02em]">Summary</h2>
         <span className="flex items-center gap-2">
-          {summary?.edited && <Chip tone="lime">Edited</Chip>}
+          {summary?.edited && <Chip tone="gold">Edited</Chip>}
           <Label>{editing ? "editing · revert anytime" : summary ? "click a time to jump" : ""}</Label>
         </span>
       </div>
 
-      <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-auto px-4 py-3.5">
+      <div className="flex min-h-0 flex-1 flex-col gap-7 overflow-auto px-6 pb-[26px] pt-[22px]">
         {summary ? (
           <>
-            <p className="m-0 text-[15px] leading-[22px] [text-wrap:pretty]">
+            <p className="m-0 text-[15px] leading-[23px] [text-wrap:pretty]">
               <Editable text={summary.recap} editing={editing} onCommit={(v) => set("recap", v)} />
             </p>
 
             <Group title="decisions" empty="No decisions recorded." show={summary.decisions.length > 0}>
               {summary.decisions.map((d) => (
                 <div key={d.id} className={cn(row, d.at !== undefined && d.at === activeAt && hit)}>
-                  {d.at !== undefined && <Timestamp at={d.at} onJump={onJump} />}
+                  {d.at !== undefined && <Timestamp at={d.at} onJump={onJump} active={d.at === activeAt} />}
                   <Editable
                     text={d.text}
                     editing={editing}
@@ -73,10 +73,10 @@ export function SummaryCard({ meeting, activeAt, editing, onJump }: Props) {
                       editing={editing}
                       onCommit={(v) => set("actionItems", summary.actionItems.map((x) => (x.id === a.id ? { ...x, text: v } : x)))}
                     />{" "}
-                    {a.owner && <Chip className="border-lime bg-lime-soft text-ok">{a.owner}</Chip>}{" "}
-                    <Chip>{a.due ?? "No date"}</Chip>
+                    {a.owner && <span className="rounded-full bg-sp1 px-[7px] py-0.5 text-[11px] font-semibold text-sp1-fg">{a.owner}</span>}{" "}
+                    {a.due && <Chip>{a.due}</Chip>}
                   </span>
-                  {a.at !== undefined && <Timestamp at={a.at} onJump={onJump} />}
+                  {a.at !== undefined && <Timestamp at={a.at} onJump={onJump} active={a.at === activeAt} />}
                 </div>
               ))}
             </Group>
@@ -98,7 +98,7 @@ export function SummaryCard({ meeting, activeAt, editing, onJump }: Props) {
           <Progress label={status === "summarizing" ? "Writing the summary" : "Transcribing the audio"} value={meeting.progress} />
         ) : meeting.transcript.length > 0 ? (
           <div className="flex flex-col items-start gap-2 py-2">
-            <span className="text-[15px] font-extrabold tracking-tight">No summary yet</span>
+            <span className="font-display text-base font-bold">No summary yet</span>
             <p className="m-0 text-[13px] text-subtle">{meeting.summaryError?.message ?? "The transcript is saved. Write the summary whenever you’re ready."}</p>
             <span className="flex flex-wrap gap-2">
               <Button variant="primary" onClick={() => store.generateSummary(meeting.id).catch((e) => toast(describeError(e)))}>
@@ -117,8 +117,8 @@ export function SummaryCard({ meeting, activeAt, editing, onJump }: Props) {
 
 function Group({ title, show, empty, children }: { title: string; show: boolean; empty: string; children: React.ReactNode }) {
   return (
-    <div className="flex flex-col gap-2">
-      <Label>{title}</Label>
+    <div className="flex flex-col gap-3">
+      <SectionLabel>{title}</SectionLabel>
       {show ? children : <span className="text-[13px] text-subtle">{empty}</span>}
     </div>
   );
@@ -130,8 +130,8 @@ export function Progress({ label, value }: { label: string; value?: number }) {
     <div className="flex flex-col gap-2 py-2" role="status">
       <span className="text-[13px] font-semibold">{label}…</span>
       <span className="flex items-center gap-2">
-        <span className="h-[5px] flex-1 overflow-hidden rounded-full bg-line">
-          <span className="block h-full bg-ink" style={{ width: `${pct}%` }} />
+        <span className="h-[3px] flex-1 overflow-hidden rounded-full bg-line">
+          <span className="block h-full bg-gold" style={{ width: `${pct}%` }} />
         </span>
         <Label>{pct}%</Label>
       </span>

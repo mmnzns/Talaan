@@ -18,7 +18,7 @@ export function GeneralTab({ settings: s, update }: TabProps) {
           defaultValue={s.recordingNotice}
           onBlur={(e) => e.target.value !== s.recordingNotice && update({ recordingNotice: e.target.value })}
           rows={2}
-          className="w-full resize-y rounded-control border-[1.5px] border-input bg-paper p-2.5 font-[inherit] text-[13px] leading-[18px] text-ink outline-none focus:border-edge"
+          className="w-full resize-y rounded-control border border-input bg-paper p-2.5 font-[inherit] text-[13px] leading-[18px] text-ink outline-none focus:border-edge"
         />
       </Row>
       <Row title="Microphone" desc="Follows the system default. Switches automatically if AirPods connect mid-call.">

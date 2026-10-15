@@ -61,7 +61,7 @@ export function ExportSheet({ open, meeting, onClose }: Props) {
 
   return (
     <Sheet open={open} title="Export meeting" onClose={close} className="max-w-[540px]">
-      <div className="border-b-[1.5px] border-line px-[18px] pb-3 pt-4">
+      <div className="border-b border-line px-[18px] pb-3 pt-4">
         <div className="text-lg font-extrabold tracking-[-0.02em]">Export meeting</div>
         <div className="text-xs text-subtle">
           {meeting.title} · {formatDate(meeting.startedAt)}
@@ -71,7 +71,7 @@ export function ExportSheet({ open, meeting, onClose }: Props) {
 
       {done ? (
         <div className="flex flex-col items-start gap-3 px-[18px] py-6" role="status">
-          <span className="grid size-9 place-items-center rounded-full border-[1.5px] border-edge bg-lime text-on-lime">
+          <span className="grid size-9 place-items-center rounded-full border border-edge bg-gold text-on-gold">
             <Check size={18} aria-hidden="true" />
           </span>
           <div className="text-[15px] font-bold">Done</div>
@@ -93,8 +93,8 @@ export function ExportSheet({ open, meeting, onClose }: Props) {
                   aria-checked={on}
                   onClick={() => setFormat(f.id)}
                   className={cn(
-                    "flex cursor-pointer items-center gap-3 rounded-[10px] border-[1.5px] px-3 py-2.5 text-left font-[inherit] text-ink",
-                    on ? "border-edge bg-lime-soft" : "border-line bg-surface",
+                    "flex cursor-pointer items-center gap-3 rounded-[10px] border px-3 py-2.5 text-left font-[inherit] text-ink",
+                    on ? "border-edge bg-gold-soft" : "border-line bg-surface",
                   )}
                 >
                   <Radio checked={on} />
@@ -135,14 +135,14 @@ export function ExportSheet({ open, meeting, onClose }: Props) {
                   </div>
                 </>
               ) : (
-                <div className="mb-3 flex flex-wrap items-center gap-3 rounded-control border-[1.5px] border-dashed border-line px-3 py-2.5 text-[13px]">
+                <div className="mb-3 flex flex-wrap items-center gap-3 rounded-control border border-dashed border-line px-3 py-2.5 text-[13px]">
                   <span className="flex-1 basis-48 text-subtle">Notion isn’t connected yet.</span>
                   <Button onClick={() => openSettings("connections")}>Connect Notion</Button>
                 </div>
               ))}
           </div>
 
-          <div className="flex justify-end gap-2 border-t-[1.5px] border-line px-[18px] py-3.5">
+          <div className="flex justify-end gap-2 border-t border-line px-[18px] py-3.5">
             <Button variant="ghost" onClick={close}>
               Cancel
             </Button>

@@ -37,8 +37,8 @@ export function ModelsTab({ settings: s, update }: TabProps) {
               <div
                 key={m.id}
                 className={cn(
-                  "flex flex-wrap items-center gap-x-4 gap-y-3 rounded-card border-[1.5px] px-3.5 py-3",
-                  on ? "border-edge bg-lime-soft shadow-hard" : "border-line bg-surface",
+                  "flex flex-wrap items-center gap-x-4 gap-y-3 rounded-card border px-3.5 py-3",
+                  on ? "border-edge bg-gold-soft shadow-card" : "border-line bg-surface",
                 )}
               >
                 <button
@@ -55,7 +55,7 @@ export function ModelsTab({ settings: s, update }: TabProps) {
                   <div className="flex flex-wrap items-center gap-2">
                     <span className="font-bold">{m.name}</span>
                     <span className="text-xs text-subtle">{m.maker}</span>
-                    <Chip tone={installed(m) ? "lime" : "default"}>{SOURCE[m.state]}</Chip>
+                    <Chip tone={installed(m) ? "gold" : "default"}>{SOURCE[m.state]}</Chip>
                   </div>
                   <span className="text-xs text-subtle">{m.note}</span>
                 </div>
@@ -158,7 +158,7 @@ function ExtraModelRow({ model: m, title, desc, on, onToggle }: { model: SpeechM
               Delete
             </button>
           )}
-          {onToggle ? <Switch aria-label={title} checked={!!on} onChange={onToggle} /> : <Chip tone="lime">On</Chip>}
+          {onToggle ? <Switch aria-label={title} checked={!!on} onChange={onToggle} /> : <Chip tone="gold">On</Chip>}
         </span>
       )}
     </Row>

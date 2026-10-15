@@ -8,7 +8,7 @@ export function SpeakerTag({ speaker, name, className }: { speaker: Speaker; nam
     <span
       title={name}
       className={cn(
-        "block overflow-hidden text-ellipsis whitespace-nowrap rounded-full border px-1 py-0.5 text-center font-mono text-[11px] font-semibold leading-[14px]",
+        "block overflow-hidden text-ellipsis whitespace-nowrap rounded-md border px-1 py-[3px] text-center text-[11px] font-bold leading-[14px]",
         tone,
         className,
       )}
@@ -21,13 +21,13 @@ export function SpeakerTag({ speaker, name, className }: { speaker: Speaker; nam
 export function toneFor(speaker: Speaker): string {
   if (speaker === "me") return "border-strong bg-strong text-strong-fg";
   const n = Number(speaker.split(":")[1]);
-  if (n === 0) return "border-line bg-sunken text-subtle";
+  if (n === 0) return "border-transparent bg-sp1 text-sp1-fg";
   const slot = ((n - 1) % 4) + 1;
   return [
-    "border-sp1-line bg-sp1 text-sp1-fg",
-    "border-sp2-line bg-sp2 text-sp2-fg",
-    "border-sp3-line bg-sp3 text-sp3-fg",
-    "border-sp4-line bg-sp4 text-sp4-fg",
+    "border-transparent bg-sp1 text-sp1-fg",
+    "border-transparent bg-sp2 text-sp2-fg",
+    "border-transparent bg-sp3 text-sp3-fg",
+    "border-transparent bg-sp4 text-sp4-fg",
   ][slot - 1];
 }
 

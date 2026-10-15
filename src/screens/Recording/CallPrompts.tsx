@@ -6,13 +6,13 @@ import { Button, Label, cn } from "../../ui";
 import { useCountdown, useElapsed } from "./useClock";
 import { useSettings } from "../../data/hooks";
 
-const card = "w-[420px] max-w-full rounded-card border-[1.5px] border-edge bg-surface shadow-hard-lg";
+const card = "w-[420px] max-w-full rounded-card border border-edge bg-surface shadow-pop";
 
 /** "Record this call?" prompt for apps set to Ask. */
 export function Nudge({ app = "Zoom", onRecord, onDismiss }: { app?: string; onRecord: () => void; onDismiss: () => void }) {
   return (
     <div role="alertdialog" aria-label="Record this call?" className={cn(card, "flex gap-3.5 p-4")}>
-      <span aria-hidden="true" className="grid size-10 flex-none place-items-center rounded-control border-[1.5px] border-edge bg-lime text-on-lime">
+      <span aria-hidden="true" className="grid size-10 flex-none place-items-center rounded-control border border-edge bg-gold text-on-gold">
         <Mic size={20} />
       </span>
       <div className="flex min-w-0 flex-1 flex-col gap-1">
@@ -42,18 +42,18 @@ export function AlwaysBanner({ app = "Zoom", elapsedMs, onStop, onChangeRule }: 
     <div
       role="status"
       aria-label={`Recording ${app} automatically`}
-      className="flex w-[420px] max-w-full flex-col gap-2.5 rounded-card border-[1.5px] border-edge bg-aside px-4 py-3.5 text-aside-fg shadow-[5px_5px_0_var(--t-lime)]"
+      className="flex w-[420px] max-w-full flex-col gap-2.5 rounded-card border border-edge bg-aside px-4 py-3.5 text-aside-fg shadow-[5px_5px_0_var(--t-gold)]"
     >
       <div className="flex items-center gap-2.5">
-        <span className="size-2.5 rounded-full bg-lime shadow-[0_0_0_4px_color-mix(in_srgb,var(--t-lime)_30%,transparent)]" />
+        <span className="size-2.5 rounded-full bg-gold shadow-[0_0_0_4px_color-mix(in_srgb,var(--t-gold)_30%,transparent)]" />
         <span className="text-[15px] font-extrabold">Recording {app} automatically</span>
-        <span className="ml-auto font-mono text-[13px] text-lime">{formatTime(elapsed)}</span>
+        <span className="ml-auto font-mono text-[13px] text-gold">{formatTime(elapsed)}</span>
       </div>
       <span className="text-xs leading-4 text-aside-muted">{app} is set to Always. Let people know with the notice.</span>
       <div className="flex gap-2">
         <Button
           size="lg"
-          className={cn("border-lime", copied ? "bg-lime-soft text-ink" : "bg-lime text-on-lime hover:bg-lime")}
+          className={cn("border-gold", copied ? "bg-gold-soft text-ink" : "bg-gold text-on-gold hover:bg-gold")}
           onClick={async () => {
             await copyText(settings?.recordingNotice ?? "");
             setCopied(true);

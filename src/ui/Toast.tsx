@@ -20,7 +20,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
       {children}
       <div aria-live="polite" className="pointer-events-none fixed inset-x-0 bottom-5 z-[60] flex justify-center px-4">
         {message && (
-          <div className="rounded-control border-[1.5px] border-edge bg-strong px-3.5 py-2 text-[13px] font-semibold text-strong-fg shadow-hard">
+          <div className="rounded-control border border-edge bg-strong px-3.5 py-2 text-[13px] font-semibold text-strong-fg shadow-card">
             {message}
           </div>
         )}

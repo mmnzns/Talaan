@@ -64,13 +64,13 @@ export function AskScreen({ meetingId }: { meetingId?: string }) {
   const local = !settings || settings.summaryEngine !== "byok";
   const pill = (active: boolean) =>
     cn(
-      "h-7 cursor-pointer rounded-full border-[1.5px] px-2.5 font-[inherit] text-xs font-semibold",
+      "h-7 cursor-pointer rounded-full border px-2.5 font-[inherit] text-xs font-semibold",
       active ? "border-strong bg-strong text-strong-fg" : "border-line bg-surface text-ink hover:border-edge",
     );
 
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-auto">
-      <div className="flex flex-wrap items-center gap-2.5 border-b-[1.5px] border-line px-6 py-3">
+      <div className="flex flex-wrap items-center gap-2.5 border-b border-line px-6 py-3">
         <Button size="md" className="h-7" onClick={() => navigate(meetingId ? routes.meeting(meetingId) : routes.meetings())}>
           <ArrowLeft size={14} aria-hidden="true" /> {meetingId ? "Back to meeting" : "Meetings"}
         </Button>
@@ -143,7 +143,7 @@ export function AskScreen({ meetingId }: { meetingId?: string }) {
         <div ref={end} />
 
         <form
-          className="mt-auto flex items-center gap-2 rounded-card border-[1.5px] border-edge bg-surface p-2"
+          className="mt-auto flex items-center gap-2 rounded-card border border-edge bg-surface p-2"
           onSubmit={(e) => {
             e.preventDefault();
             ask(draft);
@@ -168,7 +168,7 @@ export function AskScreen({ meetingId }: { meetingId?: string }) {
 }
 
 function AnswerCard({ turn, onRetry }: { turn: Turn; onRetry: () => void }) {
-  const card = "flex flex-col gap-2.5 rounded-card border-[1.5px] border-edge bg-surface px-4 py-3.5 shadow-hard-lg";
+  const card = "flex flex-col gap-2.5 rounded-card border border-edge bg-surface px-4 py-3.5 shadow-pop";
   if (turn.state === "loading") {
     return (
       <div className={card} role="status">
@@ -224,7 +224,7 @@ function Cite({ c }: { c: AskCitation }) {
     <button
       type="button"
       onClick={() => navigate(routes.meeting(c.meetingId, c.at))}
-      className="inline-flex cursor-pointer items-center gap-1.5 whitespace-nowrap rounded-md border border-edge bg-lime-soft px-2 py-[3px] font-mono text-[11px] leading-[14px] text-ink hover:bg-lime"
+      className="inline-flex cursor-pointer items-center gap-1.5 whitespace-nowrap rounded-md border border-edge bg-gold-soft px-2 py-[3px] font-mono text-[11px] leading-[14px] text-ink hover:bg-gold"
     >
       {c.meetingTitle} · {c.date} · {formatTime(c.at)}
     </button>

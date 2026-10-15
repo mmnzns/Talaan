@@ -1,85 +1,98 @@
-/* Talaan design tokens. Shares Parlato's visual language (colors, type, edges,
-   hard offset shadows); the token set and names are Talaan's own. */
+/* Talaan design tokens: "Sinag" (Tagalog for ray of light). Warm off-white and near-black ink, sun gold for
+   highlights and progress, pastel blue and red for people and tags, flag red only for the recording dot.
+   Hairline borders, soft shadows, rounded corners. Values from Design/UI v3. */
 
 :root {
-  --t-paper: #F3F2EE;        /* main window background, plain cream */
-  --t-ink: #141416;          /* text, edges */
-  --t-surface: #FBFAF7;      /* cards, panes */
+  --t-paper: #FAFAF7;        /* window background */
+  --t-ink: #111318;          /* text, primary buttons */
+  --t-surface: #FFFFFF;      /* cards, panes, toolbar */
   --t-raised: #FFFFFF;       /* popovers, sheets */
-  --t-sunken: #EAE8E1;       /* wells, inputs */
-  --t-rail: #ECEAE3;         /* meeting list column */
-  --t-line: #D5D2C8;         /* hairline dividers */
-  --t-subtle: #5C5B55;       /* secondary text */
-  --t-lime: #B5E61D;         /* primary action, recording */
-  --t-on-lime: #141416;
-  --t-lime-soft: #E5F4B3;    /* marks, highlights */
-  --t-danger: #C9380A;
+  --t-sunken: #F4F3EE;       /* wells, inputs */
+  --t-rail: #F4F3EE;         /* meeting list column */
+  --t-line: #E8E6DF;         /* hairline dividers, card borders */
+  --t-subtle: #5F6270;       /* secondary text */
+  --t-faint: #8C8F99;        /* labels, timestamps */
+  --t-gold: #F5B700;         /* sun gold: highlights, progress, the active moment */
+  --t-on-gold: #111318;
+  --t-gold-soft: #FFF3C4;    /* highlighted rows, marks */
+  --t-gold-ink: #7A5A00;     /* text on gold-soft */
+  --t-red: #E0262F;          /* the recording dot only */
+  --t-danger: #B3232B;
   --t-on-danger: #FFFFFF;
-  --t-warn-bg: #FBE4D9;
-  --t-warn-fg: #B8330A;
-  --t-ok: #3E5A00;
-  --t-me: #141416;           /* "Me" speaker accent */
-  --t-them: #5C5B55;         /* "Them" speaker accent */
+  --t-warn-bg: #FCE8E8;
+  --t-warn-fg: #A3202A;
+  --t-ok: #2E6B3A;
+  --t-me: #111318;
+  --t-them: #5F6270;
+  --t-burst: #F1EEE4;        /* the faint sun in the corner */
+  --t-logo-bg: #FFFFFF;
+  --t-logo-gold: #D99A00;
 
-  --t-edge-color: #141416;   /* outlines of cards and buttons */
-  --t-edge: 1.5px solid var(--t-edge-color);
-  --t-input: #7F7D75;        /* field and checkbox outlines */
-  --t-hover: #E0DED5;        /* row and nav hover */
-  --t-strong-bg: #141416;    /* selected nav row, toggled button */
-  --t-strong-fg: #B5E61D;
-  --t-aside: #141416;        /* dark side panels (onboarding) */
-  --t-aside-fg: #F3F2EE;
-  --t-aside-muted: #7F7D75;
-  --t-mark: #FFF6C9;         /* marked moments in the transcript */
-  --t-sp1-bg: #DDEBFF; --t-sp1-fg: #1D4E9E; --t-sp1-line: #8DB4F0;  /* Them 1 */
-  --t-sp2-bg: #FCE3CF; --t-sp2-fg: #8A4310; --t-sp2-line: #EDA772;  /* Them 2 */
-  --t-sp3-bg: #EBDDFB; --t-sp3-fg: #5B2B91; --t-sp3-line: #B994E6;  /* Them 3 */
-  --t-sp4-bg: #D8F2EA; --t-sp4-fg: #15604B; --t-sp4-line: #7CCBB3;  /* Them 4 */
-  --t-shadow: 3px 3px 0 var(--t-ink);
-  --t-shadow-lg: 5px 5px 0 var(--t-ink);
-  --t-radius: 12px;
-  --t-radius-sm: 8px;
+  --t-edge-color: #D9D6CC;   /* outlines of buttons and fields */
+  --t-input: #D9D6CC;        /* field and checkbox outlines */
+  --t-hover: #F1EFE8;        /* row and nav hover */
+  --t-strong-bg: #111318;    /* primary button, selected chip */
+  --t-strong-fg: #FFFFFF;
+  --t-aside: #111318;        /* dark side panels (onboarding) */
+  --t-aside-fg: #F2F1EC;
+  --t-aside-muted: #A7AAB5;
+  --t-mark: #FFF3C4;         /* marked moments in the transcript */
+  --t-sp1-bg: #E8EEFB; --t-sp1-fg: #0038A8; --t-sp1-line: #9DB3E6;  /* Speaker 1: pastel blue */
+  --t-sp2-bg: #FCE8E8; --t-sp2-fg: #A3202A; --t-sp2-line: #EBA3A8;  /* Speaker 2: pastel red */
+  --t-sp3-bg: #FFF3C4; --t-sp3-fg: #7A5A00; --t-sp3-line: #E8C766;  /* Speaker 3: pastel gold */
+  --t-sp4-bg: #EEEDE7; --t-sp4-fg: #43464F; --t-sp4-line: #C9C6BC;  /* Speaker 4: stone */
+  --t-shadow: 0 1px 2px rgba(17, 19, 24, 0.06);
+  --t-shadow-lg: 0 10px 30px rgba(17, 19, 24, 0.10), 0 1px 2px rgba(17, 19, 24, 0.06);
+  --t-radius: 14px;
+  --t-radius-sm: 9px;
   --t-radius-pill: 999px;
 
-  --t-font-sans: "Bricolage Grotesque Variable", ui-sans-serif, system-ui, sans-serif;
-  --t-font-mono: "IBM Plex Mono", ui-monospace, monospace;
+  --t-font-sans: "Instrument Sans Variable", ui-sans-serif, system-ui, sans-serif;
+  --t-font-display: "Syne Variable", "Instrument Sans Variable", ui-sans-serif, sans-serif;
+  --t-font-mono: "DM Mono", ui-monospace, monospace;
 
   color-scheme: light;
 }
 
 :root[data-theme="dark"] {
-  --t-paper: #131315;
-  --t-ink: #F3F2EE;
-  --t-surface: #1B1B1E;
-  --t-raised: #222226;
-  --t-sunken: #202023;
-  --t-rail: #0E0E10;
-  --t-line: #323237;
-  --t-subtle: #A5A49D;
-  --t-lime: #B5E61D;
-  --t-on-lime: #141416;
-  --t-lime-soft: #2A3413;
-  --t-danger: #FF6A3D;
-  --t-on-danger: #141416;
-  --t-warn-bg: #3A2016;
-  --t-warn-fg: #FF8A5C;
-  --t-ok: #C4EE48;
-  --t-me: #F3F2EE;
-  --t-them: #A5A49D;
-  --t-edge-color: #4A4A50;
-  --t-input: #7A7973;
-  --t-hover: #1E1E22;
-  --t-strong-bg: #B5E61D;
-  --t-strong-fg: #141416;
-  --t-aside: #0E0E10;
-  --t-aside-fg: #F3F2EE;
-  --t-aside-muted: #A5A49D;
-  --t-mark: #3A3414;
-  --t-sp1-bg: #1B2A44; --t-sp1-fg: #9CC2FF; --t-sp1-line: #3C5F96;
-  --t-sp2-bg: #43271A; --t-sp2-fg: #FFB98A; --t-sp2-line: #8A5636;
-  --t-sp3-bg: #2E2144; --t-sp3-fg: #CBA8FF; --t-sp3-line: #6A4A9E;
-  --t-sp4-bg: #15332B; --t-sp4-fg: #8FE0C5; --t-sp4-line: #2F7A64;
-  --t-shadow: 3px 3px 0 #000000;
-  --t-shadow-lg: 5px 5px 0 #000000;
+  --t-paper: #0E1016;
+  --t-ink: #F2F1EC;
+  --t-surface: #161922;
+  --t-raised: #1B1F2A;
+  --t-sunken: #12141B;
+  --t-rail: #12141B;
+  --t-line: #262A35;
+  --t-subtle: #A7AAB5;
+  --t-faint: #7C808C;
+  --t-gold: #F5B700;
+  --t-on-gold: #111318;
+  --t-gold-soft: #3A3010;
+  --t-gold-ink: #F7D46B;
+  --t-red: #FF4D57;
+  --t-danger: #FF6B73;
+  --t-on-danger: #0E1016;
+  --t-warn-bg: #3A1A1E;
+  --t-warn-fg: #FF9AA0;
+  --t-ok: #8FD49C;
+  --t-me: #F2F1EC;
+  --t-them: #A7AAB5;
+  --t-burst: #1D2130;
+  --t-logo-bg: #0E1016;
+  --t-logo-gold: #F5B700;
+  --t-edge-color: #333846;
+  --t-input: #3D4352;
+  --t-hover: #1C2029;
+  --t-strong-bg: #F2F1EC;
+  --t-strong-fg: #0E1016;
+  --t-aside: #0A0C11;
+  --t-aside-fg: #F2F1EC;
+  --t-aside-muted: #A7AAB5;
+  --t-mark: #3A3010;
+  --t-sp1-bg: #1B2440; --t-sp1-fg: #9DB7FF; --t-sp1-line: #3A4F86;
+  --t-sp2-bg: #3A1A1E; --t-sp2-fg: #FF9AA0; --t-sp2-line: #7A3840;
+  --t-sp3-bg: #3A3010; --t-sp3-fg: #F7D46B; --t-sp3-line: #7A6420;
+  --t-sp4-bg: #22262F; --t-sp4-fg: #C9CCD4; --t-sp4-line: #454A57;
+  --t-shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
+  --t-shadow-lg: 0 12px 32px rgba(0, 0, 0, 0.45), 0 1px 2px rgba(0, 0, 0, 0.35);
   color-scheme: dark;
 }

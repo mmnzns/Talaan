@@ -14,7 +14,7 @@ export function SectionIntro({ title, desc }: { title: string; desc?: string }) 
 /** A card of settings rows separated by hairlines. */
 export function Group({ children, className }: { children: ReactNode; className?: string }) {
   return (
-    <div className={cn("flex flex-col divide-y divide-line rounded-card border-[1.5px] border-edge bg-surface", className)}>{children}</div>
+    <div className={cn("flex flex-col divide-y divide-line rounded-card border border-edge bg-surface", className)}>{children}</div>
   );
 }
 
@@ -43,7 +43,7 @@ export function Segmented<T extends string>({
   onChange: (v: T) => void;
 }) {
   return (
-    <div role="radiogroup" aria-label={label} className="inline-flex overflow-hidden rounded-control border-[1.5px] border-edge">
+    <div role="radiogroup" aria-label={label} className="inline-flex overflow-hidden rounded-control border border-edge">
       {options.map((o, i) => {
         const on = o.value === value;
         return (
@@ -57,8 +57,8 @@ export function Segmented<T extends string>({
             onClick={() => onChange(o.value)}
             className={cn(
               "h-7 cursor-pointer border-0 px-2.5 font-[inherit] text-xs font-semibold",
-              i > 0 && "border-l-[1.5px] border-l-edge",
-              on ? "bg-strong text-strong-fg" : "bg-surface text-ink hover:bg-lime-soft",
+              i > 0 && "border-l border-l-edge",
+              on ? "bg-strong text-strong-fg" : "bg-surface text-ink hover:bg-gold-soft",
               o.disabled && "cursor-not-allowed bg-sunken text-subtle opacity-60 hover:bg-sunken",
             )}
           >

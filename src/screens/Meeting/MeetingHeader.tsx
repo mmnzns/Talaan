@@ -52,9 +52,21 @@ export function MeetingHeader({ meeting, editing, canRevert, onToggleEdit, onRev
   };
 
   return (
-    <header className="flex flex-col gap-2.5 px-6 pb-4 pt-5">
-      <div className="flex flex-wrap items-end justify-between gap-3">
-        <div className="flex min-w-0 flex-1 basis-80 flex-col gap-2">
+    <header className="relative flex flex-col gap-2.5 px-11 pb-[30px] pt-11">
+      <div className="flex flex-wrap items-end justify-between gap-[18px]">
+        <div className="flex min-w-0 flex-1 basis-80 flex-col gap-3.5">
+          <Label>
+            {[
+              folders.find((f) => f.id === meeting.folderId)?.name,
+              meeting.app !== "import" ? `${formatDate(meeting.startedAt)}, ${formatClock(meeting.startedAt)}` : undefined,
+              meeting.appLabel,
+              formatDuration(meeting.durationMs),
+              languageName(meeting.language),
+              meeting.hasAudio ? (meeting.pinned ? "audio kept" : meeting.audioKeptUntil ? `audio until ${formatDate(meeting.audioKeptUntil)}` : "audio kept") : "no audio kept",
+            ]
+              .filter(Boolean)
+              .join(" · ")}
+          </Label>
           <input
             aria-label="Meeting title"
             value={title}
@@ -67,28 +79,9 @@ export function MeetingHeader({ meeting, editing, canRevert, onToggleEdit, onRev
                 e.currentTarget.blur();
               }
             }}
-            className="m-0 w-full rounded-control border-[1.5px] border-transparent bg-transparent px-1 py-0 font-[inherit] text-[26px] font-extrabold leading-[34px] tracking-[-0.035em] text-ink outline-none hover:border-line focus:border-edge"
+            className="-ml-1 m-0 w-full rounded-control border border-transparent bg-transparent px-1 py-0 font-display text-[36px] font-bold leading-[42px] tracking-[-0.02em] text-ink outline-none hover:border-line focus:border-edge"
           />
           <div className="flex flex-wrap items-center gap-1.5">
-            <Chip>{meeting.appLabel}</Chip>
-            {meeting.app !== "import" && (
-              <Chip>
-                {formatDate(meeting.startedAt)}, {formatClock(meeting.startedAt)}
-              </Chip>
-            )}
-            <Chip>{formatDuration(meeting.durationMs)}</Chip>
-            <Chip>{languageName(meeting.language)}</Chip>
-            {meeting.hasAudio && meeting.pinned ? (
-              <Chip>
-                <Pin size={11} aria-hidden="true" /> Audio kept
-              </Chip>
-            ) : meeting.hasAudio && meeting.audioKeptUntil ? (
-              <Chip>Audio until {formatDate(meeting.audioKeptUntil)}</Chip>
-            ) : meeting.hasAudio ? (
-              <Chip>Audio kept</Chip>
-            ) : (
-              <Chip>No audio kept</Chip>
-            )}
             <Select
               label="Folder"
               value={meeting.folderId ?? ""}
@@ -142,14 +135,12 @@ export function MeetingHeader({ meeting, editing, canRevert, onToggleEdit, onRev
         {ready && (
           <div className="flex flex-wrap items-center gap-2">
             {editing && canRevert && <Button onClick={onRevert}>Revert to original</Button>}
-            <Button variant={editing ? "strong" : "default"} raised={!editing} onClick={onToggleEdit}>
+            <Button variant={editing ? "strong" : "default"} onClick={onToggleEdit}>
               {editing ? "Done editing" : "Edit"}
             </Button>
+            <Button onClick={onExport}>Export</Button>
             <Button variant="primary" onClick={() => onCopy("text")}>
               {copied === "text" ? "Copied" : "Copy as text"}
-            </Button>
-            <Button raised onClick={onExport}>
-              Export ▾
             </Button>
             <Popover
               trigger={({ toggle }) => (
@@ -231,7 +222,7 @@ export function MeetingHeader({ meeting, editing, canRevert, onToggleEdit, onRev
       </div>
 
       {meeting.calendarEvent && (
-        <div className="flex flex-wrap items-center gap-2 rounded-control border-[1.5px] border-dashed border-line px-3 py-2">
+        <div className="flex flex-wrap items-center gap-2 rounded-control border border-dashed border-line px-3 py-2">
           <Calendar size={15} aria-hidden="true" className="text-subtle" />
           <Label>from calendar</Label>
           <span className="text-[13px] font-semibold">{meeting.calendarEvent.title}</span>

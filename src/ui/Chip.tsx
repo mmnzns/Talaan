@@ -2,7 +2,7 @@ import type { HTMLAttributes } from "react";
 import { cn } from "./cn";
 
 interface Props extends HTMLAttributes<HTMLElement> {
-  tone?: "default" | "strong" | "lime";
+  tone?: "default" | "strong" | "gold";
   /** Renders a button instead of a span. */
   onClick?: () => void;
 }
@@ -10,14 +10,15 @@ interface Props extends HTMLAttributes<HTMLElement> {
 const tones = {
   default: "border-line bg-surface text-subtle",
   strong: "border-strong bg-strong text-strong-fg",
-  lime: "border-edge bg-lime-soft text-ink",
+  gold: "border-transparent bg-gold-soft text-gold-ink",
 };
 
 export function Chip({ tone = "default", className, onClick, children, ...rest }: Props) {
   const cls = cn(
-    "inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border px-2 py-[3px] font-mono text-[11px] leading-[14px]",
+    "inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border px-2 py-[3px] font-mono text-[11px] leading-[14px] lowercase",
     tones[tone],
     onClick && "cursor-pointer hover:border-edge hover:text-ink",
+    tone === "strong" && onClick && "hover:text-strong-fg",
     className,
   );
   return onClick ? (

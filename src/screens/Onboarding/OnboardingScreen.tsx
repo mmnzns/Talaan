@@ -22,7 +22,7 @@ export function OnboardingScreen() {
 
   return (
     <div className="grid h-full place-items-center bg-paper p-6">
-      <div className="flex h-[600px] max-h-full w-[780px] max-w-full overflow-hidden rounded-card border-[1.5px] border-edge bg-surface shadow-hard-lg">
+      <div className="flex h-[600px] max-h-full w-[780px] max-w-full overflow-hidden rounded-card border border-edge bg-surface shadow-pop">
         <aside className="flex w-[220px] flex-none flex-col gap-[18px] bg-aside px-[18px] py-[22px] text-aside-fg max-[640px]:hidden">
           <div className="flex items-center gap-2.5">
             <Logo size={28} />
@@ -35,7 +35,7 @@ export function OnboardingScreen() {
                 aria-current={k === step ? "step" : undefined}
                 className={cn(
                   "flex items-center gap-2 rounded-control px-2 py-1.5 text-[13px]",
-                  k === step ? "bg-lime font-bold text-on-lime" : k < step ? "text-aside-fg" : "text-aside-muted",
+                  k === step ? "bg-gold font-bold text-on-gold" : k < step ? "text-aside-fg" : "text-aside-muted",
                 )}
               >
                 <span className="w-[18px] font-mono text-[11px]">{k < step ? "✓" : String(k + 1).padStart(2, "0")}</span>
@@ -83,14 +83,14 @@ function Option({ on, onClick, title, tag, children, role = "radio" }: { on: boo
       aria-checked={role === "radio" ? on : undefined}
       onClick={onClick}
       className={cn(
-        "flex w-full cursor-pointer items-center gap-3 rounded-[10px] border-[1.5px] px-3 py-2.5 text-left font-[inherit] text-ink",
-        on ? "border-edge bg-lime-soft" : "border-line bg-surface",
+        "flex w-full cursor-pointer items-center gap-3 rounded-[10px] border px-3 py-2.5 text-left font-[inherit] text-ink",
+        on ? "border-edge bg-gold-soft" : "border-line bg-surface",
       )}
     >
       <span className="flex-1">
         <span className="flex items-center gap-2 font-bold">
           {title}
-          {tag && <Chip tone="lime">{tag}</Chip>}
+          {tag && <Chip tone="gold">{tag}</Chip>}
         </span>
         <span className="text-xs leading-[17px] text-subtle">{children}</span>
       </span>
@@ -112,7 +112,7 @@ function Welcome() {
           ["Offline", "Speech and AI on this computer"],
           ["You decide", "Asks before it records"],
         ].map(([t, d]) => (
-          <div key={t} className="flex flex-col gap-1 rounded-[10px] border-[1.5px] border-line bg-surface px-3 py-2.5">
+          <div key={t} className="flex flex-col gap-1 rounded-[10px] border border-line bg-surface px-3 py-2.5">
             <span className="font-bold">{t}</span>
             <span className="text-xs text-subtle">{d}</span>
           </div>
@@ -124,13 +124,13 @@ function Welcome() {
 
 function PermRow({ title, desc: d, state, onAllow, onDeny }: { title: string; desc: string; state: Perm; onAllow?: () => void; onDeny?: () => void }) {
   return (
-    <div className="flex items-center gap-3 rounded-[10px] border-[1.5px] border-line bg-surface px-3 py-2.5">
+    <div className="flex items-center gap-3 rounded-[10px] border border-line bg-surface px-3 py-2.5">
       <span className="flex-1">
         <span className="block font-bold">{title}</span>
         <span className="text-xs leading-[17px] text-subtle">{d}</span>
       </span>
       {state === "allowed" ? (
-        <Chip tone="lime">
+        <Chip tone="gold">
           <Check size={11} aria-hidden="true" /> Allowed
         </Chip>
       ) : (
@@ -159,7 +159,7 @@ function AudioAccess({ systemAudio, setSystemAudio }: { systemAudio: Perm; setSy
         onDeny={() => setSystemAudio("denied")}
       />
       {systemAudio === "denied" ? (
-        <div role="alert" className="flex flex-wrap items-center gap-3 rounded-control border-[1.5px] border-warn-fg bg-warn-bg px-3 py-2.5 text-[13px] text-warn-fg">
+        <div role="alert" className="flex flex-wrap items-center gap-3 rounded-control border border-warn-fg bg-warn-bg px-3 py-2.5 text-[13px] text-warn-fg">
           <span className="flex-1 basis-56">
             <strong>System audio is off.</strong> Talaan will record your side only, so the transcript won’t include other people. Turn it on any time in System Settings › Privacy &amp; Security.
           </span>
@@ -253,7 +253,7 @@ function AppsStep({ settings: s, update }: StepProps) {
         const app = s.callApps.find((a) => a.id === id);
         if (!app) return null;
         return (
-          <div key={id} className="flex items-center gap-3 rounded-[10px] border-[1.5px] border-line bg-surface px-3 py-2.5">
+          <div key={id} className="flex items-center gap-3 rounded-[10px] border border-line bg-surface px-3 py-2.5">
             <span className="flex-1 font-bold">{app.name}</span>
             <span className="text-[13px]">Always record</span>
             <Switch aria-label={`Always record ${app.name}`} checked={app.rule === "always"} onChange={(v) => setAlways(id, v)} />
@@ -274,7 +274,7 @@ function ExtrasStep({ settings: s, update }: StepProps) {
       "Notion",
       "Send meetings to Notion when you choose to.",
       s.notion.connected ? (
-        <Chip key="n" tone="lime">
+        <Chip key="n" tone="gold">
           <Check size={11} aria-hidden="true" /> Connected
         </Chip>
       ) : (
@@ -295,7 +295,7 @@ function ExtrasStep({ settings: s, update }: StepProps) {
       <h1 className={h1}>Optional extras</h1>
       <p className={desc}>All off by default. Turn on what helps, now or later in Settings.</p>
       {rows.map(([t, d, control]) => (
-        <div key={t} className="flex items-center gap-3 rounded-[10px] border-[1.5px] border-line bg-surface px-3 py-2.5">
+        <div key={t} className="flex items-center gap-3 rounded-[10px] border border-line bg-surface px-3 py-2.5">
           <span className="flex-1">
             <span className="block font-bold">{t}</span>
             <span className="text-xs text-subtle">{d}</span>

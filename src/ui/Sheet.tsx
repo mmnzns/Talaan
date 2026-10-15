@@ -9,7 +9,7 @@ interface Props {
   className?: string;
 }
 
-/** Modal sheet with a hard shadow. Closes on Escape and on a click outside. */
+/** Modal sheet with a soft shadow. Closes on Escape and on a click outside. */
 export function Sheet({ open, title, onClose, children, className }: Props) {
   const ref = useRef<HTMLDivElement>(null);
 
@@ -24,7 +24,7 @@ export function Sheet({ open, title, onClose, children, className }: Props) {
   if (!open) return null;
   return (
     <div
-      className="fixed inset-0 z-50 grid place-items-center bg-black/40 p-6"
+      className="fixed inset-0 z-50 grid place-items-center bg-black/30 p-6"
       onMouseDown={(e) => e.target === e.currentTarget && onClose()}
     >
       <div
@@ -34,7 +34,7 @@ export function Sheet({ open, title, onClose, children, className }: Props) {
         aria-label={title}
         tabIndex={-1}
         className={cn(
-          "max-h-full w-full max-w-[460px] overflow-auto rounded-card border-[1.5px] border-edge bg-raised shadow-hard-lg outline-none",
+          "max-h-full w-full max-w-[460px] overflow-auto rounded-card border border-edge bg-raised shadow-pop outline-none",
           className,
         )}
       >

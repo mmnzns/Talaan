@@ -49,7 +49,7 @@ export function ConnectionsTab({ settings: s, update }: TabProps) {
           {s.tabDetection && (
             <div className="flex basis-full flex-wrap gap-2">
               {s.browsers.map((b) => (
-                <Chip key={b.name} tone={b.state === "allowed" ? "lime" : "default"}>
+                <Chip key={b.name} tone={b.state === "allowed" ? "gold" : "default"}>
                   {b.name} · {STATE_LABEL[b.state]}
                 </Chip>
               ))}

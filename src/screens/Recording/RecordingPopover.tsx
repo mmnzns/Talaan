@@ -68,12 +68,12 @@ export function RecordingPopover({ state, levels, notice, app = "Call", onPause,
     .join(" · ");
 
   return (
-    <div role="dialog" aria-label="Recording" className="flex w-[356px] flex-col overflow-hidden rounded-card border-[1.5px] border-edge bg-surface shadow-hard-lg">
+    <div role="dialog" aria-label="Recording" className="flex w-[356px] flex-col overflow-hidden rounded-card border border-edge bg-surface shadow-pop">
       <div className="flex items-center gap-2.5 bg-aside p-3.5 text-aside-fg">
-        <span className={cn("size-2.5 rounded-full", paused ? "bg-aside-muted" : "bg-lime shadow-[0_0_0_4px_color-mix(in_srgb,var(--t-lime)_30%,transparent)]")} />
+        <span className={cn("size-2.5 rounded-full", paused ? "bg-aside-muted" : "bg-gold shadow-[0_0_0_4px_color-mix(in_srgb,var(--t-gold)_30%,transparent)]")} />
         <span className="font-bold">{paused ? "Paused" : "Recording"}</span>
         <span className="font-mono text-[11px] text-aside-muted">{app}</span>
-        <span className="ml-auto font-mono text-xl font-semibold text-lime" aria-label="Elapsed time">
+        <span className="ml-auto font-mono text-xl font-semibold text-gold" aria-label="Elapsed time">
           {formatTime(state.elapsedMs)}
         </span>
       </div>
@@ -81,10 +81,10 @@ export function RecordingPopover({ state, levels, notice, app = "Call", onPause,
       <div className="flex flex-col gap-3.5 p-3.5">
         <div className="flex flex-col gap-2">
           <span className="font-bold">Let people know you’re recording</span>
-          <div className="rounded-control border-[1.5px] border-line bg-paper px-3 py-2.5 text-[13px] leading-[18px]">{text}</div>
+          <div className="rounded-control border border-line bg-paper px-3 py-2.5 text-[13px] leading-[18px]">{text}</div>
           <Button
             raised={!copied}
-            className={cn("h-[34px]", copied && "bg-lime-soft")}
+            className={cn("h-[34px]", copied && "bg-gold-soft")}
             onClick={async () => {
               await copyText(text);
               setCopied(true);
@@ -95,7 +95,7 @@ export function RecordingPopover({ state, levels, notice, app = "Call", onPause,
         </div>
 
         {state.onBuiltInSpeakers && settings?.warnOnSpeakers !== false && (
-          <div role="note" className="flex items-start gap-2.5 rounded-control border-[1.5px] border-warn-fg bg-warn-bg px-3 py-2.5 text-warn-fg">
+          <div role="note" className="flex items-start gap-2.5 rounded-control border border-warn-fg bg-warn-bg px-3 py-2.5 text-warn-fg">
             <AlertTriangle size={16} aria-hidden="true" className="mt-px flex-none" />
             <span className="text-xs leading-[17px]">You’re on the MacBook speakers. Use headphones so other people’s voices aren’t recorded twice.</span>
           </div>
@@ -139,7 +139,7 @@ export function RecordingPopover({ state, levels, notice, app = "Call", onPause,
           </Label>
         </div>
 
-        <div className="flex flex-col gap-2 border-t-[1.5px] border-line pt-3">
+        <div className="flex flex-col gap-2 border-t border-line pt-3">
           <div className="flex gap-2">
             <Button size="lg" variant={paused ? "strong" : "default"} raised={!paused} onClick={paused ? onResume : onPause}>
               {paused ? <Play size={13} fill="currentColor" aria-hidden="true" /> : <Pause size={13} fill="currentColor" aria-hidden="true" />}
@@ -158,7 +158,7 @@ export function RecordingPopover({ state, levels, notice, app = "Call", onPause,
               }
             }}
           >
-            <label className="flex h-[34px] items-center gap-2 rounded-control border-[1.5px] border-input bg-paper px-2.5 focus-within:border-edge">
+            <label className="flex h-[34px] items-center gap-2 rounded-control border border-input bg-paper px-2.5 focus-within:border-edge">
               <span className="sr-only">Quick note</span>
               <input
                 value={note}

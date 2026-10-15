@@ -31,12 +31,12 @@ export function MenuBarPopover({ onStart, onOpenMeeting, onOpenApp, onQuit }: Pr
     setTimeout(() => setCopied(undefined), 1800);
   };
 
-  const item = "flex items-center gap-2.5 rounded-control px-2.5 py-2 hover:bg-lime-soft";
+  const item = "flex items-center gap-2.5 rounded-control px-2.5 py-2 hover:bg-gold-soft";
 
   return (
-    <div role="dialog" aria-label="Talaan menu" className="flex w-[356px] flex-col overflow-hidden rounded-card border-[1.5px] border-edge bg-surface shadow-hard-lg">
+    <div role="dialog" aria-label="Talaan menu" className="flex w-[356px] flex-col overflow-hidden rounded-card border border-edge bg-surface shadow-pop">
       <div className="flex items-center gap-2.5 px-3.5 pb-3 pt-3.5">
-        <span className="size-2 rounded-full bg-lime shadow-[0_0_0_3px_color-mix(in_srgb,var(--t-lime)_30%,transparent)]" />
+        <span className="size-2 rounded-full bg-gold shadow-[0_0_0_3px_color-mix(in_srgb,var(--t-gold)_30%,transparent)]" />
         <span className="font-bold">Ready</span>
         <Label>offline · local AI</Label>
       </div>
@@ -50,7 +50,7 @@ export function MenuBarPopover({ onStart, onOpenMeeting, onOpenApp, onQuit }: Pr
         </Button>
         <Label className="mt-2 block leading-[15px]">Talaan also asks when Zoom, Meet, Teams or Slack starts using your mic.</Label>
       </div>
-      <div className="flex flex-col gap-0.5 border-t-[1.5px] border-line px-1.5 py-2.5">
+      <div className="flex flex-col gap-0.5 border-t border-line px-1.5 py-2.5">
         <Label className="px-2.5 pb-1.5 pt-0.5">recent</Label>
         {recent.length === 0 && <span className="px-2.5 py-2 text-[13px] text-subtle">Meetings you record show up here.</span>}
         {recent.map((m) => {
@@ -81,7 +81,7 @@ export function MenuBarPopover({ onStart, onOpenMeeting, onOpenApp, onQuit }: Pr
           );
         })}
       </div>
-      <div className="flex border-t-[1.5px] border-line p-1.5">
+      <div className="flex border-t border-line p-1.5">
         <button type="button" onClick={() => (onOpenApp ? onOpenApp() : navigate(routes.meetings()))} className={`${item} flex-1 cursor-pointer border-0 bg-transparent font-[inherit] text-[13px] font-semibold text-ink`}>
           Open Talaan
         </button>

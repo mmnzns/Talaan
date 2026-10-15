@@ -33,6 +33,12 @@ export function dayGroup(iso: string, now: Date = new Date()): DayGroup {
   return { key: label, label };
 }
 
+/** The big day number and short weekday shown beside a day's meetings: { day: "14", weekday: "tue" }. */
+export function dayMark(iso: string): { day: string; weekday: string } {
+  const d = new Date(iso);
+  return { day: String(d.getDate()), weekday: d.toLocaleDateString("en-US", { weekday: "short" }).toLowerCase() };
+}
+
 export function formatClock(iso: string): string {
   return new Date(iso).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
 }

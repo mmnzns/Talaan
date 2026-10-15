@@ -67,7 +67,7 @@ export function ImportSheet({ open, dropped, onClose }: Props) {
             Drop a Voice Memo or a meeting recording. It becomes a meeting with a transcript and summary.
           </p>
         </div>
-        <div className="grid place-items-center gap-2 rounded-card border-[1.5px] border-dashed border-input bg-surface px-4 py-10 text-center">
+        <div className="grid place-items-center gap-2 rounded-card border border-dashed border-input bg-surface px-4 py-10 text-center">
           <FileAudio size={28} aria-hidden="true" className="text-subtle" />
           {phase.kind === "working" ? (
             <div className="flex w-64 flex-col gap-2" role="status">

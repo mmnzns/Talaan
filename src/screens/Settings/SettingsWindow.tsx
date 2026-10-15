@@ -34,7 +34,7 @@ export function SettingsWindow({ tab }: { tab: string }) {
 
   return (
     <div className="flex h-full flex-col bg-paper">
-      <div className="border-b-[1.5px] border-edge bg-rail px-4 py-2.5">
+      <div className="border-b border-edge bg-rail px-4 py-2.5">
         <div role="tablist" aria-label="Settings" onKeyDown={onKey} className="flex flex-wrap justify-center gap-1">
           {SETTINGS_TABS.map((t) => {
             const on = t.id === current.id;
@@ -49,7 +49,7 @@ export function SettingsWindow({ tab }: { tab: string }) {
                 tabIndex={on ? 0 : -1}
                 onClick={() => navigate(routes.settings(t.id))}
                 className={cn(
-                  "h-[30px] cursor-pointer rounded-control border-[1.5px] px-3 font-[inherit] text-[13px] font-semibold",
+                  "h-[30px] cursor-pointer rounded-control border px-3 font-[inherit] text-[13px] font-semibold",
                   on ? "border-strong bg-strong text-strong-fg" : "border-transparent bg-transparent text-ink hover:bg-hover",
                 )}
               >

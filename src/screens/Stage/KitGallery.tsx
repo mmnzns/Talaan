@@ -19,7 +19,7 @@ export function KitGallery() {
       <div className="flex flex-wrap items-center gap-2">
         <Chip>Zoom</Chip>
         <Chip tone="strong">Work</Chip>
-        <Chip tone="lime">Edited</Chip>
+        <Chip tone="gold">Edited</Chip>
         <Chip onClick={() => {}}>+ tag</Chip>
         <Timestamp at={754_000} onJump={() => {}} />
         <Label>00:42 / 42:10</Label>
