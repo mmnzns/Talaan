@@ -68,6 +68,10 @@ export class TauriMeetingStore implements MeetingStore {
     return call<void>("meetings_rename_speaker", { id, speaker, name });
   }
 
+  setTranscriptOnly(id: MeetingId, on: boolean) {
+    return call<void>("meetings_set_transcript_only", { id, on });
+  }
+
   setTags(id: MeetingId, tags: string[]) {
     return call<void>("meetings_set_tags", { id, tags });
   }

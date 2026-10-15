@@ -53,6 +53,11 @@ impl Storage {
         self.update_meeting_file(id, |f| f.folder_id = folder_id.map(str::to_string))
     }
 
+    /// Transcript only: this meeting waits for Generate summary instead of being summarized by itself.
+    pub fn set_transcript_only(&self, id: &str, on: bool) -> Result<()> {
+        self.update_meeting_file(id, |f| f.transcript_only = on)
+    }
+
     pub fn rename_speaker(&self, id: &str, speaker: &str, name: &str) -> Result<()> {
         if !valid_speaker(speaker) {
             return Err(StorageError::InvalidId(speaker.to_string()));

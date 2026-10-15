@@ -51,6 +51,7 @@ export const defaultSettings: Settings = {
   meetingLanguage: "auto",
   useGpu: true,
   summaryEngine: "local",
+  summarizeAutomatically: true,
   summaryLanguage: "meeting",
   localModel: "recommended",
   // Mirrors the Rust catalog (src-tauri/src/summarizer/models.rs). In the app the states come from disk.

@@ -89,8 +89,15 @@ export interface Meeting extends MeetingListItem {
   pauses: PauseGap[];
   /** Why processing failed (status "failed"). `no_model`: no speech model downloaded yet. */
   error?: { code: string; message: string };
-  /** Why there is no summary (status "ready", transcript only). `no_engine`: no summary AI set up; `failed`: it failed. */
+  /**
+   * Why there is no summary (status "ready", transcript only). `no_engine`: no summary AI set up; `failed`: it failed;
+   * `too_short`: too little speech to summarize; `waiting`: transcript only until the user asks (Generate summary).
+   */
   summaryError?: { code: string; message: string };
+  /** This meeting waits for Generate summary instead of being summarized by itself. */
+  transcriptOnly?: boolean;
+  /** How the transcript was made. `model` is a speech model id (see Settings › Speech models). */
+  transcription?: { model: string; echoLinesRemoved: number; speechMs: Ms; tookMs: Ms; finishedAt: string };
 }
 
 export interface Folder {

@@ -39,6 +39,8 @@ export interface MeetingStore {
   /** Shows the meeting's folder in Finder. */
   revealMeeting(id: MeetingId): Promise<void>;
   renameSpeaker(id: MeetingId, speaker: Speaker, name: string): Promise<void>;
+  /** Transcript only: the meeting waits for Generate summary (works while recording too). */
+  setTranscriptOnly(id: MeetingId, on: boolean): Promise<void>;
   setTags(id: MeetingId, tags: string[]): Promise<void>;
   moveToFolder(id: MeetingId, folderId?: string): Promise<void>;
   listFolders(): Promise<Folder[]>;

@@ -86,6 +86,8 @@ export interface Settings {
   useGpu: boolean;
   // Summary AI
   summaryEngine: SummaryEngineKind;
+  /** Summarize each new transcript by itself. Off: meetings wait for Generate summary. */
+  summarizeAutomatically: boolean;
   /** "meeting" = the meeting's own language, or an ISO code. */
   summaryLanguage: string;
   localModel: "recommended" | "larger";

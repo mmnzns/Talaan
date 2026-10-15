@@ -7,6 +7,7 @@ import { useFitWindow, useTransparentPage } from "../../lib/floatingWindow";
 import { openSettings } from "../../lib/windows";
 import { AlwaysBanner, CallEndedPrompt, Nudge } from "../Recording/CallPrompts";
 import { useSettings } from "../../data/hooks";
+import { useStore } from "../../data/StoreProvider";
 
 interface Prompt {
   kind: "nudge" | "banner" | "ended";
@@ -23,6 +24,14 @@ export function PromptWindow() {
   useFitWindow(ref, prompt && `${prompt.kind}:${prompt.app}`);
   const rec = useRecorder(recorderClient);
   const { settings, update } = useSettings();
+  const store = useStore();
+
+  // Record (optionally "Transcript only": the new recording's meeting waits for Generate summary).
+  const record = async (appId: string, transcriptOnly: boolean) => {
+    await invoke("calls_accept", { appId });
+    const id = transcriptOnly ? (await recorderClient.status()).meetingId : undefined;
+    if (id) await store.setTranscriptOnly(id, true);
+  };
 
   // "Always for Zoom": set the rule, then record this call.
   const alwaysFor = async (appId: string) => {
@@ -44,7 +53,7 @@ export function PromptWindow() {
       {prompt.kind === "nudge" && (
         <Nudge
           app={prompt.label}
-          onRecord={() => void invoke("calls_accept", { appId: prompt.app })}
+          onRecord={(only) => void record(prompt.app, only).catch(() => {})}
           onDismiss={() => void invoke("calls_dismiss", { appId: prompt.app })}
           onAlways={settings?.callApps.some((a) => a.id === prompt.app && !a.isBrowser) ? () => void alwaysFor(prompt.app) : undefined}
         />

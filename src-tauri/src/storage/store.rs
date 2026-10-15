@@ -87,6 +87,8 @@ impl Storage {
                         error: None,
                         transcription: None,
                         summary_error: None,
+                        transcript_only: false,
+                        retranscribe_model: None,
                         extra: Default::default(),
                     };
                     write_json_atomic(&meetings.join(&id).join(META), &file)?;
@@ -193,6 +195,8 @@ impl Storage {
             pauses: file.pauses.clone(),
             error: file.error.clone(),
             summary_error: file.summary_error.clone(),
+            transcription: file.transcription.clone(),
+            transcript_only: file.transcript_only,
             item: list_item(&file),
         })
     }

@@ -79,6 +79,7 @@ pub fn run() {
             meetings::meetings_revert_edits,
             meetings::meetings_rename_speaker,
             meetings::meetings_set_tags,
+            meetings::meetings_set_transcript_only,
             meetings::meetings_move_to_folder,
             meetings::folders_list,
             meetings::folders_rename,

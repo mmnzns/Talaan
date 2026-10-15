@@ -101,9 +101,11 @@ export function SummaryCard({ meeting, activeAt, editing, onJump }: Props) {
             <span className="font-display text-base font-bold">No summary yet</span>
             <p className="m-0 text-[13px] text-subtle">{meeting.summaryError?.message ?? "The transcript is saved. Write the summary whenever you’re ready."}</p>
             <span className="flex flex-wrap gap-2">
-              <Button variant="primary" onClick={() => store.generateSummary(meeting.id).catch((e) => toast(describeError(e)))}>
-                <Sparkles size={14} aria-hidden="true" /> Generate summary
-              </Button>
+              {meeting.summaryError?.code !== "too_short" && (
+                <Button variant="primary" onClick={() => store.generateSummary(meeting.id).catch((e) => toast(describeError(e)))}>
+                  <Sparkles size={14} aria-hidden="true" /> Generate summary
+                </Button>
+              )}
               {meeting.summaryError?.code === "no_engine" && <Button onClick={() => void openSettings("ai")}>Open Summary AI</Button>}
             </span>
           </div>

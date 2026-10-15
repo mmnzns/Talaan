@@ -195,6 +195,10 @@ export class MockMeetingStore implements MeetingStore {
     this.mutate(id, (m) => (m.speakers[speaker] = name));
   }
 
+  async setTranscriptOnly(id: MeetingId, on: boolean) {
+    this.mutate(id, (m) => (m.transcriptOnly = on || undefined));
+  }
+
   async setTags(id: MeetingId, tags: string[]) {
     this.mutate(id, (m) => (m.tags = [...tags]));
   }

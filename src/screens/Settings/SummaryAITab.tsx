@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { describeError } from "../../data/errors";
 import { useSettingsStore } from "../../data/StoreProvider";
 import type { ByokProvider, SummaryEngineKind } from "../../data/settings";
-import { Button, Chip, Field, Label, Select, cn, useToast } from "../../ui";
+import { Button, Chip, Field, Label, Select, Switch, cn, useToast } from "../../ui";
 import { Group, Row, SectionIntro } from "./parts";
 import type { TabProps } from "./tabProps";
 
@@ -72,6 +72,12 @@ export function SummaryAITab({ settings: s, update }: TabProps) {
               </div>
             ))}
           </div>
+          <Row
+            title="Summarize automatically"
+            desc="Off: each call is saved transcript only and waits for Generate summary, so nothing goes to a summary engine until you ask. One call at a time: Transcript only, while recording."
+          >
+            <Switch aria-label="Summarize automatically" checked={s.summarizeAutomatically} onChange={(v) => update({ summarizeAutomatically: v })} />
+          </Row>
           <Row title="Summary language">
             <Select label="Summary language" wrapperClassName="w-44" value={s.summaryLanguage} onChange={(e) => update({ summaryLanguage: e.target.value })}>
               <option value="meeting">Same as meeting</option>
