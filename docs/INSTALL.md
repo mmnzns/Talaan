@@ -60,8 +60,8 @@ Talaan walks you through seven short steps the first time it opens.
 2. **Audio access** ("Allow two kinds of audio"):
    - **Microphone** records what you say, labeled "Me". Click **Allow**.
    - **System audio** records the other people on the call. On Windows it needs no permission.
-3. **Speech model** ("Choose a speech model"). Pick one and it starts downloading. See [Which speech model](#which-speech-model) below. On Windows, **Parakeet** is much faster.
-4. **Summaries** ("How summaries are written"). **On this computer** is the default: built in and offline, a one-time download. **Your own key** (Claude, OpenAI, Gemini, Groq, Cerebras, Mistral, OpenRouter or any OpenAI-compatible service) sends transcript text only, and you set it up later in Settings.
+3. **Speech model** ("Choose a speech model"). Pick one, then click **Download** when you're ready (nothing downloads until you do; you can also skip it and download later in Settings). See [Which speech model](#which-speech-model) below. On Windows, **Parakeet** is much faster.
+4. **Summaries** ("How summaries are written"). **On this computer** is the default: built in and offline, a one-time download that starts only when you click **Download**. **Your own key** (Claude, OpenAI, Gemini, Groq, Cerebras, Mistral, OpenRouter or any OpenAI-compatible service) sends transcript text only, and you set it up later in Settings.
 5. **Call apps** ("When should Talaan record?"). By default Talaan asks every time a call app uses your mic. Turn on **Always record** for apps you always want recorded.
 6. **Extras** ("Optional extras"). Calendar, browser call detection and Notion. All are off by default and can be turned on later in Settings. On Windows the calendar is set up in Settings (see [Calendar on Windows](#calendar-on-windows)).
 7. **Done.** Click **Open Talaan**.
@@ -196,7 +196,7 @@ Meetings are plain files (transcript, summary, audio) in Talaan's data folder:
 
 ### Models download once
 
-Speech, summary, speaker and search models download the first time you need them, then stay on your computer. They live in the same data folder. You can switch or delete them in **Settings › Speech models** and **Settings › Summary AI**. If another speech app already downloaded the same model, Talaan can reuse it read-only (**Reuse models already on this computer**).
+Speech, summary, speaker and search models download only when you click Download (in setup or Settings), then stay on your computer. They live in the same data folder. You can switch or delete them in **Settings › Speech models** and **Settings › Summary AI**. If another speech app already downloaded the same model, Talaan can reuse it read-only (**Reuse models already on this computer**).
 
 #### Which speech model
 

@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- **Setup downloads nothing on its own.** Choosing a speech model or the local AI only selects it; each has its own Download button, and you can skip both and download later in Settings.
 - **Fixed:** your own key is remembered per provider. Switching provider no longer looks like the key was lost, and the menu marks providers that have a saved key.
 - **Fixed:** Privacy › Saved API keys › Remove keys now deletes every summary provider's key from secure key storage. Before, it only hid them in Settings.
 

@@ -69,7 +69,7 @@ export function OnboardingScreen() {
               {step === 3 && <SummaryStep settings={settings} update={update} />}
               {step === 4 && <AppsStep settings={settings} update={update} />}
               {step === 5 && <ExtrasStep settings={settings} update={update} />}
-              {step === 6 && <Done systemAudio={systemAudio} />}
+              {step === 6 && <Done systemAudio={systemAudio} settings={settings} />}
             </div>
             <div className="relative flex items-center gap-2 border-t border-line px-7 py-[18px]">
               <Label>
@@ -213,6 +213,7 @@ function ModelStep({ settings: s, update }: StepProps) {
     if (m.state === "downloading") return t("onboarding.modelDownloading", { pct: Math.round((m.progress ?? 0) * 100) });
     return t("onboarding.modelSize", { size: (m.sizeMb / 1000).toFixed(1) });
   };
+  const chosen = s.speechModels.find((m) => m.id === s.activeSpeechModel);
   return (
     <>
       <h1 className={h1}>{t("onboarding.modelTitle")}</h1>
@@ -224,16 +225,48 @@ function ModelStep({ settings: s, update }: StepProps) {
             on={s.activeSpeechModel === m.id}
             title={m.name}
             tag={m.id === "whisper-turbo" ? t("onboarding.recommended") : undefined}
-            onClick={() => {
-              update({ activeSpeechModel: m.id });
-              if (m.state === "not_downloaded") store.downloadModel(m.id);
-            }}
+            onClick={() => update({ activeSpeechModel: m.id })}
           >
             {m.note} {status(m)}
           </Option>
         ))}
       </div>
+      {chosen && <DownloadRow item={chosen} onDownload={() => void store.downloadModel(chosen.id)} onCancel={() => void store.cancelModelDownload(chosen.id)} />}
     </>
+  );
+}
+
+/** The chosen model's download: nothing downloads until the person clicks, and Continue never waits for it. */
+function DownloadRow({ item, onDownload, onCancel }: { item: { name: string; state: string; progress?: number; sizeMb: number }; onDownload: () => void; onCancel: () => void }) {
+  const t = useT();
+  const pct = Math.round((item.progress ?? 0) * 100);
+  if (item.state === "downloaded" || item.state === "on_this_mac") {
+    return (
+      <div role="status">
+        <Label>{t("onboarding.readyName", { name: item.name })}</Label>
+      </div>
+    );
+  }
+  if (item.state === "downloading") {
+    return (
+      <div className="flex items-center gap-2.5" role="status">
+        <span aria-hidden="true" className="h-1.5 flex-1 overflow-hidden rounded-full bg-line">
+          <span className="block h-full bg-gold" style={{ width: `${pct}%` }} />
+        </span>
+        <Label>{t("onboarding.localDownloading", { pct })}</Label>
+        <Button variant="ghost" onClick={onCancel}>
+          {t("onboarding.cancelDownload")}
+        </Button>
+      </div>
+    );
+  }
+  return (
+    <div className="flex flex-wrap items-center gap-3">
+      <Button variant="primary" onClick={onDownload}>
+        {t("onboarding.downloadName", { name: item.name, size: (item.sizeMb / 1000).toFixed(1) })}
+      </Button>
+      <span className="flex-1 basis-56 text-[13px] text-subtle">{t("onboarding.notYet")}</span>
+    </div>
   );
 }
 
@@ -243,12 +276,6 @@ function SummaryStep({ settings: s, update }: StepProps) {
   const local = s.summaryEngine === "local";
   const model = s.localModels.find((m) => m.choice === (s.localModel ?? "recommended")) ?? s.localModels[0];
 
-  // Choosing Local AI starts its one-time download; it keeps going in the background.
-  useEffect(() => {
-    if (local && model?.state === "not_downloaded") void store.downloadModel(model.id);
-  }, [local, model?.id, model?.state, store]);
-
-  const pct = Math.round((model?.progress ?? 0) * 100);
   return (
     <>
       <h1 className={h1}>{t("onboarding.summaryTitle")}</h1>
@@ -261,14 +288,7 @@ function SummaryStep({ settings: s, update }: StepProps) {
           {t("onboarding.byokDesc")}
         </Option>
       </div>
-      {local && model && (
-        <div className="flex items-center gap-2.5" role="status">
-          <span aria-hidden="true" className="h-1.5 flex-1 overflow-hidden rounded-full bg-line">
-            <span className="block h-full bg-gold" style={{ width: `${model.state === "downloaded" ? 100 : pct}%` }} />
-          </span>
-          <Label>{model.state === "downloaded" ? t("onboarding.localReady") : t("onboarding.localDownloading", { pct })}</Label>
-        </div>
-      )}
+      {local && model && <DownloadRow item={model} onDownload={() => void store.downloadModel(model.id)} onCancel={() => void store.cancelModelDownload(model.id)} />}
     </>
   );
 }
@@ -346,7 +366,7 @@ function ExtrasStep({ settings: s, update }: StepProps) {
   );
 }
 
-function Done({ systemAudio }: { systemAudio: Perm }) {
+function Done({ systemAudio, settings: s }: { systemAudio: Perm; settings: Settings }) {
   const t = useT();
   const platform = usePlatform();
   return (
@@ -363,6 +383,7 @@ function Done({ systemAudio }: { systemAudio: Perm }) {
       {systemAudio === "denied" && (
         <p className={desc}>{t("onboarding.doneReminder", { app: platform.settingsApp })}</p>
       )}
+      {!s.speechModels.some((m) => m.state !== "not_downloaded") && <p className={desc}>{t("onboarding.doneNoModel")}</p>}
     </>
   );
 }

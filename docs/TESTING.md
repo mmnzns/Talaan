@@ -59,7 +59,7 @@ app (`scripts/build-signed-debug.sh` → `src-tauri/target/debug/bundle/macos/Ta
 - [ ] Settings › General: Microphone lists your real devices; pick one, record, unplug it: the default is used.
 - [ ] Open at login (in the installed app): log out and in, the "ta" is in the menu bar.
 - [ ] About: Buy me a coffee and Source on GitHub open in the browser.
-- [ ] Onboarding on a fresh start (Settings › Privacy › Delete everything): the microphone and system audio prompts appear at that step; choosing Local AI starts its download.
+- [ ] Onboarding on a fresh start (Settings › Privacy › Delete everything): the microphone and system audio prompts appear at that step; choosing a speech model or Local AI downloads nothing until you click its Download button; skipping both shows the "No speech model yet" note at the end.
 - [ ] The release build: `scripts/release-local.sh` made a signed .dmg (src-tauri/target/aarch64-apple-darwin/release/bundle/dmg). Install it from the .dmg, Open Anyway once.
 - [ ] Update path: install a build, then publish a newer version; "update ready" appears, Update now installs and relaunches with permissions and meetings intact.
 
