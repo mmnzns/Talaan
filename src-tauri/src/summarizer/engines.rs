@@ -404,7 +404,7 @@ mod tests {
             }
         });
         let mut e = HttpEngine { provider: Provider::Compatible, base, key: Some("sk-local".into()), model: "qwen".into(), context: LOCAL_CONTEXT, label: "Test server".into() };
-        let m = meeting(vec![line("l0", 60_000, "them:1", "Pricing moves to Q1.")]);
+        let m = meeting(vec![line("l0", 55_000, "me", "Where did we land on pricing?"), line("l1", 60_000, "them:1", "Pricing moves to Q1."), line("l2", 66_000, "me", "Good, onboarding ships first then.")]);
         let out = summarize(&m, &mut e, "en", &AtomicBool::new(false), &mut |_| {}).unwrap();
         assert_eq!(out.summary.recap, "We chose onboarding first.");
         assert_eq!(out.summary.decisions[0].at, Some(60_000));
