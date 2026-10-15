@@ -1,15 +1,15 @@
 import type { RecorderClient } from "../data/recorder";
-import type { Settings, SettingsStore } from "../data/settings";
+import type { CalendarAccess, Settings, SettingsStore } from "../data/settings";
 import { formatBytes, tildePath } from "./format";
 import { currentLang, t } from "./i18n";
-import { os, platformCopy } from "./platform";
+import { onWindows, os, platformCopy } from "./platform";
 
 /** `unknown`: can't be told without a test (call audio has no permission to read). */
 export type CheckStatus = "ok" | "warn" | "fail" | "unknown";
-export type FixAction = "allowMic" | "micSettings" | "testSystemAudio" | "systemAudioSettings" | "speechModels" | "summaryAI" | "openData";
+export type FixAction = "allowMic" | "micSettings" | "testSystemAudio" | "systemAudioSettings" | "speechModels" | "summaryAI" | "connections" | "openData";
 
 export interface CheckResult {
-  id: "mic" | "device" | "systemAudio" | "speech" | "speakers" | "summary" | "data";
+  id: "mic" | "device" | "systemAudio" | "speech" | "speakers" | "summary" | "calendar" | "data";
   title: string;
   status: CheckStatus;
   detail: string;
@@ -29,6 +29,8 @@ export interface Probe {
   data: { path: string; bytes: number } | { error: string };
   /** macOS asks for call audio; Windows loopback needs no permission, so there is nothing to open. Default true. */
   systemAudioNeedsPermission?: boolean;
+  /** Windows, calendar on: whether its iCal address is in secure key storage ("allowed"). Undefined = no row. */
+  calendar?: CalendarAccess;
 }
 
 const READY = new Set(["downloaded", "on_this_mac"]);
@@ -38,7 +40,15 @@ const pct = (p?: number) => Math.round((p ?? 0) * 100);
 /** One line per thing a call needs, in the order a call uses them, each with what to do about it. */
 export function checkSetup(p: Probe): CheckResult[] {
   const s = p.settings;
-  return [mic(p), device(p), systemAudio(p), speech(s), speakers(s), summary(p), data(p)];
+  return [mic(p), device(p), systemAudio(p), speech(s), speakers(s), summary(p), ...calendar(p), data(p)];
+}
+
+/** Windows only (the Mac's calendar is a system permission, asked in Connections): the saved iCal address. */
+function calendar(p: Probe): CheckResult[] {
+  if (p.calendar === undefined) return [];
+  const title = t("settings.calendar_title");
+  if (p.calendar === "allowed") return [{ id: "calendar", title, status: "ok", detail: t("settings.setup_calendar_ok") }];
+  return [{ id: "calendar", title, status: "warn", detail: t("settings.setup_calendar_missing"), fix: { label: t("settings.tab_connections"), action: "connections" } }];
 }
 
 function mic(p: Probe): CheckResult {
@@ -140,5 +150,6 @@ export async function probeSetup(store: SettingsStore, recorder: RecorderClient,
       : Promise.resolve(undefined),
   ]);
   const systemAudio = testSystemAudio ? await recorder.requestSystemAudio().catch(() => false) : undefined;
-  return { settings, mic, inputs, data, localServer, systemAudio, systemAudioNeedsPermission: os === "mac" };
+  const calendar = onWindows && settings.calendarConnected ? await store.calendarAccess().catch(() => undefined) : undefined;
+  return { settings, mic, inputs, data, localServer, systemAudio, systemAudioNeedsPermission: os === "mac", calendar };
 }

@@ -53,6 +53,15 @@ describe("checkSetup", () => {
     expect(find(probe({ settings: settings({ summarizeAutomatically: false }) }), "summary").detail).toContain("Generate summary");
   });
 
+  it("on Windows, offers no Mac-only fix for call audio and checks the calendar's saved address", () => {
+    expect(find(probe({ systemAudio: false, systemAudioNeedsPermission: false }), "systemAudio")).toMatchObject({ status: "fail", fix: undefined });
+    expect(find(probe({ mic: "denied" }), "mic").fix?.action).toBe("micSettings");
+    expect(checkSetup(probe()).some((r) => r.id === "calendar")).toBe(false);
+    expect(find(probe({ calendar: "allowed" }), "calendar").status).toBe("ok");
+    expect(find(probe({ calendar: "not_asked" }), "calendar")).toMatchObject({ status: "warn", fix: { action: "connections" } });
+    expect(checkSetup(probe({ calendar: "allowed" })).map((r) => r.id).slice(-2)).toEqual(["calendar", "data"]);
+  });
+
   it("reports a data folder it can't read", () => {
     expect(find(probe({ data: { error: "permission denied" } }), "data")).toMatchObject({ status: "fail" });
   });

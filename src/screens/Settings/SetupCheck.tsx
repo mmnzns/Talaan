@@ -51,6 +51,7 @@ export function SetupCheck() {
       if (action === "systemAudioSettings") await recorderClient.openSettings("system-audio");
       if (action === "speechModels") return navigate(routes.settings("models"));
       if (action === "summaryAI") return navigate(routes.settings("ai"));
+      if (action === "connections") return navigate(routes.settings("connections"));
       if (action === "openData") return await store.revealData();
       await run(action === "testSystemAudio");
     } catch (e) {
