@@ -126,6 +126,7 @@ pub fn setup(app: &AppHandle) {
                     std::thread::sleep(Duration::from_secs(1));
                     let settings = app.state::<AppState>().lock().settings_get().ok().flatten().unwrap_or(Value::Null);
                     let (enabled, rules, ignored) = rules_from(&settings);
+                    #[cfg_attr(not(debug_assertions), allow(unused_mut))] // only the debug hook below adds to it
                     let mut users = crate::platform::macos::mic_users::mic_users();
                     // Debug builds: `dev-mic-users.txt` in the data folder adds pretend mic users (one bundle id
                     // per line), so the rules can be exercised end to end without a real call.

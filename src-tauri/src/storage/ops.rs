@@ -1,12 +1,23 @@
 //! Simple edits to a meeting's metadata, and deletion.
 
 use super::model::MeetingStatus;
-use super::paths::{is_valid_id, ME_WAV, PLAYBACK_WAV, THEM_WAV};
+use super::io::{read_json_opt, write_json_atomic};
+use super::model::Summary;
+use super::paths::{is_valid_id, ME_WAV, PLAYBACK_WAV, SUMMARY, SUMMARY_EDITED, THEM_WAV};
 use super::{Result, Storage, StorageError};
 use std::fs;
 
 fn valid_speaker(key: &str) -> bool {
     key == "me" || key.strip_prefix("them:").is_some_and(|n| !n.is_empty() && n.chars().all(|c| c.is_ascii_digit()))
+}
+
+/// What a speaker is called before anyone names them (as the transcript shows it).
+fn default_name(speaker: &str) -> String {
+    match speaker {
+        "me" => "Me".into(),
+        "them:0" => "Them".into(),
+        s => s.strip_prefix("them:").map(|n| format!("Speaker {n}")).unwrap_or_else(|| s.to_string()),
+    }
 }
 
 impl Storage {
@@ -50,9 +61,27 @@ impl Storage {
         if name.is_empty() {
             return Ok(());
         }
+        let mut old = String::new();
         self.update_meeting_file(id, |f| {
+            old = f.speakers.get(speaker).cloned().unwrap_or_else(|| default_name(speaker));
             f.speakers.insert(speaker.to_string(), name.to_string());
         })?;
+        // Action items the summary gave to "Speaker 2" now belong to the name.
+        let dir = self.dir(id)?;
+        for file in [SUMMARY, SUMMARY_EDITED] {
+            if let Some(mut summary) = read_json_opt::<Summary>(&dir.join(file))? {
+                let mut hit = false;
+                for a in &mut summary.action_items {
+                    if a.owner.as_deref().is_some_and(|o| o.trim().eq_ignore_ascii_case(&old)) {
+                        a.owner = Some(name.to_string());
+                        hit = true;
+                    }
+                }
+                if hit {
+                    write_json_atomic(&dir.join(file), &summary)?;
+                }
+            }
+        }
         self.regenerate_markdown(id)
     }
 
@@ -137,6 +166,21 @@ mod tests {
         assert_eq!(s.get_meeting(&id).unwrap().item.folder_id.as_deref(), Some("work"));
         s.move_to_folder(&id, None).unwrap();
         assert!(s.get_meeting(&id).unwrap().item.folder_id.is_none());
+    }
+
+    #[test]
+    fn renaming_a_speaker_moves_their_action_items() {
+        let (_d, s) = storage();
+        let id = make(&s);
+        let mut sum = crate::storage::store::tests::summary("Recap.");
+        sum.action_items[0].owner = Some("Speaker 2".into());
+        s.save_summary(&id, &sum).unwrap();
+        s.rename_speaker(&id, "them:2", "Priya").unwrap();
+        let got = s.get_meeting(&id).unwrap().summary.unwrap();
+        assert_eq!(got.action_items[0].owner.as_deref(), Some("Priya"));
+        // Renaming again follows the new name.
+        s.rename_speaker(&id, "them:2", "Priya Shah").unwrap();
+        assert_eq!(s.get_meeting(&id).unwrap().summary.unwrap().action_items[0].owner.as_deref(), Some("Priya Shah"));
     }
 
     #[test]

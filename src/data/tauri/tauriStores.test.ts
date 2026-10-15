@@ -12,7 +12,10 @@ vi.mock("@tauri-apps/api/event", () => ({
 }));
 const fire = (event: string, payload?: unknown) => listeners.get(event)!({ payload });
 
-const MODELS = [{ id: "whisper-turbo", name: "Whisper Large Turbo", maker: "OpenAI", note: "", engine: "whisper", sizeMb: 575, speed: 2, accuracy: 3, languages: "99 languages", state: "not_downloaded" }];
+const MODELS = [
+  { id: "whisper-turbo", name: "Whisper Large Turbo", maker: "OpenAI", note: "", engine: "whisper", sizeMb: 575, speed: 2, accuracy: 3, languages: "99 languages", state: "not_downloaded" },
+  { id: "diarization", name: "Speaker separation", maker: "NVIDIA", note: "", engine: "diarization", sizeMb: 401, speed: 3, accuracy: 2, languages: "Any language", state: "downloaded" },
+];
 
 /** Answers `settings_get` with each of `settings` in turn, `models_list` with MODELS, everything else with undefined. */
 function backend(...settings: unknown[]) {
@@ -107,6 +110,7 @@ describe("TauriSettingsStore", () => {
     expect(saved.value.theme).toBe("system");
     // Model state lives on disk, never in settings.json.
     expect(saved.value.speechModels).toBeUndefined();
+    expect((saved.value as Record<string, unknown>).speakerModel).toBeUndefined();
     expect(fn).toHaveBeenCalled();
   });
 
@@ -146,7 +150,11 @@ describe("TauriSettingsStore", () => {
   it("speech models come from disk, with live download progress", async () => {
     backend({});
     const store = new TauriSettingsStore();
-    expect((await store.get()).speechModels[0].state).toBe("not_downloaded");
+    const first = await store.get();
+    expect(first.speechModels[0].state).toBe("not_downloaded");
+    // The speaker model comes in the same list but is kept apart from the speech models.
+    expect(first.speechModels.map((m) => m.id)).toEqual(["whisper-turbo"]);
+    expect(first.speakerModel.state).toBe("downloaded");
     const fn = vi.fn();
     store.subscribe(fn);
     fire("model-download", { id: "whisper-turbo", progress: 0.4 });

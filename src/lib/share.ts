@@ -1,7 +1,8 @@
 import type { Meeting, Ms } from "../data/types";
 import { formatDate, formatDuration, formatTime } from "./format";
+import { speakerName } from "./transcript";
 
-const nameOf = (m: Meeting, speaker: keyof Meeting["speakers"]) => m.speakers[speaker] ?? (speaker === "me" ? "Me" : "Them");
+const nameOf = (m: Meeting, speaker: string) => speakerName(m, speaker);
 const when = (at?: Ms) => (at === undefined ? "" : ` (${formatTime(at)})`);
 const owner = (o?: string) => (o ? ` — ${o}` : "");
 const due = (d?: string) => (d ? `, due ${d}` : "");

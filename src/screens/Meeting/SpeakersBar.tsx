@@ -2,11 +2,15 @@ import { Pencil } from "lucide-react";
 import { useState } from "react";
 import { useStore } from "../../data/StoreProvider";
 import type { Meeting, Speaker } from "../../data/types";
+import { speakerName } from "../../lib/transcript";
 import { Button, Field, Label, Popover, cn, toneFor } from "../../ui";
 
-/** Speaker chips. Diarized speakers (Them 1, 2, 3) can be renamed once; every line updates. */
+/** Speaker chips. Diarized speakers (Speaker 1, 2, 3) can be renamed once; every line updates. */
 export function SpeakersBar({ meeting }: { meeting: Meeting }) {
-  const speakers = (Object.keys(meeting.speakers) as Speaker[]).sort((a, b) => (a === "me" ? -1 : b === "me" ? 1 : a.localeCompare(b)));
+  // Everyone in the transcript (or the stored names before there is one), Me first, then Speaker 1, 2, 3.
+  const ids = new Set<Speaker>(meeting.transcript.length ? meeting.transcript.map((l) => l.speaker) : (Object.keys(meeting.speakers) as Speaker[]));
+  const rank = (s: Speaker) => (s === "me" ? -1 : Number(s.slice(5)) || 0);
+  const speakers = [...ids].sort((a, b) => rank(a) - rank(b));
   const taken = new Set(Object.values(meeting.speakers));
   const suggestions = (meeting.calendarEvent?.attendees ?? []).filter((n) => n !== "You" && !taken.has(n));
 
@@ -14,7 +18,7 @@ export function SpeakersBar({ meeting }: { meeting: Meeting }) {
     <div className="flex flex-wrap items-center gap-1.5 border-b border-line px-4 py-2">
       <Label>speakers</Label>
       {speakers.map((s) => {
-        const name = meeting.speakers[s] ?? "Them";
+        const name = speakerName(meeting, s);
         const chip = cn("inline-flex items-center gap-1 rounded-full border px-2 py-[3px] font-mono text-[11px] leading-[14px]", toneFor(s));
         const renameable = s !== "me" && s !== "them:0";
         if (!renameable) return <span key={s} className={chip}>{name}</span>;

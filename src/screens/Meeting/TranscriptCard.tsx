@@ -3,7 +3,7 @@ import { useEffect, useMemo, useRef } from "react";
 import { useStore } from "../../data/StoreProvider";
 import type { Meeting, Ms } from "../../data/types";
 import { formatDuration, formatTime } from "../../lib/format";
-import { buildRows, lineAt } from "../../lib/transcript";
+import { buildRows, lineAt, speakerName } from "../../lib/transcript";
 import { Button, Chip, Editable, Label, SpeakerTag, cn } from "../../ui";
 import { Progress } from "./SummaryCard";
 import { SpeakersBar } from "./SpeakersBar";
@@ -34,7 +34,7 @@ export function TranscriptCard({ meeting, activeAt, jumpSeq, editing, playing, o
   }, [active?.id, jumpSeq]);
 
   const busy = meeting.status === "transcribing";
-  const nameOf = (s: string) => meeting.speakers[s as keyof Meeting["speakers"]] ?? (s === "me" ? "Me" : "Them");
+  const nameOf = (s: string) => speakerName(meeting, s);
 
   return (
     <section aria-label="Transcript" className="flex min-h-0 flex-col rounded-card border-[1.5px] border-edge bg-surface">

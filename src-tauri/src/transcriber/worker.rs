@@ -2,7 +2,8 @@
 //! A meeting enters as `transcribing` and leaves as `ready` (M5: `summarizing`) or `failed` with a reason.
 
 use super::engine::Engine;
-use super::models::{find, ModelInfo, ModelStore, DEFAULT_MODEL, VAD};
+use super::diarize::SpeakerSplitter;
+use super::models::{find, ModelInfo, ModelStore, DEFAULT_MODEL, DIARIZATION, VAD};
 use super::pipeline::{run, Detector, PipelineError};
 use crate::storage::model::{MeetingStatus, ProcessingError, TranscriptionInfo};
 use crate::storage::Storage;
@@ -24,6 +25,8 @@ pub struct Config {
     pub language: Option<String>,
     pub use_gpu: bool,
     pub reuse: bool,
+    /// Split the Them track into Speaker 1, 2, 3 (when the model is downloaded).
+    pub separate_speakers: bool,
 }
 
 impl Config {
@@ -31,12 +34,19 @@ impl Config {
         let v = v.cloned().unwrap_or(Value::Null);
         let model = v["activeSpeechModel"].as_str().and_then(find).filter(|m| m.id != VAD.id).unwrap_or_else(|| find(DEFAULT_MODEL).unwrap());
         let language = v["meetingLanguage"].as_str().filter(|l| !l.is_empty() && *l != "auto").map(str::to_string);
-        Config { model, language, use_gpu: v["useGpu"].as_bool().unwrap_or(true), reuse: v["reuseModels"].as_bool().unwrap_or(true) }
+        Config {
+            model,
+            language,
+            use_gpu: v["useGpu"].as_bool().unwrap_or(true),
+            reuse: v["reuseModels"].as_bool().unwrap_or(true),
+            separate_speakers: v["separateSpeakers"].as_bool().unwrap_or(true),
+        }
     }
 }
 
 pub type EngineLoader = dyn Fn(&ModelInfo, &Path, bool) -> Result<Box<dyn Engine>, String> + Send + Sync;
 pub type DetectorLoader = dyn Fn(&Path) -> Result<Box<dyn Detector + Send>, String> + Send + Sync;
+pub type SplitterLoader = dyn Fn(&Path) -> Result<Box<dyn SpeakerSplitter>, String> + Send + Sync;
 
 pub struct Deps {
     pub storage: Arc<Mutex<Storage>>,
@@ -45,6 +55,7 @@ pub struct Deps {
     pub changed: Arc<dyn Fn() + Send + Sync>,
     pub load_engine: Box<EngineLoader>,
     pub load_detector: Box<DetectorLoader>,
+    pub load_splitter: Box<SplitterLoader>,
     /// Extra folders to look for models in (tests); the real app uses the defaults.
     pub reuse_roots: Option<Vec<PathBuf>>,
     /// Called with a meeting id once its transcript is saved (it is then `summarizing`).
@@ -110,6 +121,8 @@ struct Loaded {
     use_gpu: bool,
     engine: Box<dyn Engine>,
     detector: Box<dyn Detector + Send>,
+    /// Loaded on first use; None when the model isn't downloaded or speaker separation is off.
+    splitter: Option<Box<dyn SpeakerSplitter>>,
 }
 
 fn worker_loop(deps: Deps, queue: Arc<(Mutex<Queue>, Condvar)>, cancel: Arc<AtomicBool>) {
@@ -181,9 +194,19 @@ fn process(deps: &Deps, id: &str, loaded: &mut Option<Loaded>, cancel: &AtomicBo
             Ok(d) => d,
             Err(e) => return fail(deps, id, "failed", e),
         };
-        *loaded = Some(Loaded { model_id: config.model.id, use_gpu: config.use_gpu, engine, detector });
+        *loaded = Some(Loaded { model_id: config.model.id, use_gpu: config.use_gpu, engine, detector, splitter: None });
     }
     let l = loaded.as_mut().expect("loaded above");
+    if config.separate_speakers && l.splitter.is_none() {
+        if let Some(dir) = store.locate(&DIARIZATION).dir() {
+            // A broken speaker model shouldn't cost the transcript: carry on without it.
+            l.splitter = (deps.load_splitter)(&dir.join(DIARIZATION.files[0].name)).ok();
+        }
+    }
+    let splitter: Option<&mut dyn SpeakerSplitter> = match (&mut l.splitter, config.separate_speakers) {
+        (Some(s), true) => Some(s.as_mut()),
+        _ => None,
+    };
 
     let started = Instant::now();
     let mut last_report = Instant::now() - Duration::from_secs(10);
@@ -194,7 +217,7 @@ fn process(deps: &Deps, id: &str, loaded: &mut Option<Loaded>, cancel: &AtomicBo
             (deps.changed)();
         }
     };
-    let result = run(&dir, l.engine.as_mut(), l.detector.as_mut(), config.language.as_deref(), cancel, &mut report);
+    let result = run(&dir, l.engine.as_mut(), l.detector.as_mut(), config.language.as_deref(), splitter, cancel, &mut report);
 
     match result {
         Ok(out) => {
@@ -211,6 +234,9 @@ fn process(deps: &Deps, id: &str, loaded: &mut Option<Loaded>, cancel: &AtomicBo
                     f.language = lang.clone();
                 }
                 f.engine = Some(out.engine.clone());
+                if out.speakers >= 2 {
+                    f.people_count = out.speakers as u32 + 1;
+                }
                 f.transcription = Some(TranscriptionInfo {
                     model: config.model.id.into(),
                     echo_lines_removed: out.echo_removed,
@@ -291,6 +317,7 @@ mod tests {
             changed: Arc::new(|| {}),
             load_engine: Box::new(move |_, _, _| Ok(Box::new(Echoes(text)))),
             load_detector: Box::new(|_| Ok(Box::new(WholeTrack))),
+            load_splitter: Box::new(|_| Err("no model".into())),
             reuse_roots: Some(vec![]),
             transcribed: Arc::new(|_| {}),
         });

@@ -41,6 +41,8 @@ export const defaultSettings: Settings = {
     { id: "whisper-small", name: "Whisper Small", maker: "OpenAI", note: "Light and quick on older Macs. Lower accuracy.", engine: "whisper", sizeMb: 488, speed: 3, accuracy: 1, languages: "99 languages", state: "not_downloaded" },
   ],
   activeSpeechModel: "whisper-turbo",
+  speakerModel: { id: "diarization", name: "Speaker separation", maker: "NVIDIA", note: "Tells the other people on a call apart: Speaker 1, 2, 3. Up to 8 people.", engine: "diarization", sizeMb: 401, speed: 3, accuracy: 2, languages: "Any language", state: "not_downloaded" },
+  separateSpeakers: true,
   reuseModels: true,
   meetingLanguage: "auto",
   useGpu: true,

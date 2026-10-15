@@ -3,6 +3,7 @@
 
 use super::echo::remove_echo;
 use super::engine::Engine;
+use super::diarize::{assign_speakers, SpeakerSplitter};
 use super::merge::{merge, Timed, Track};
 use super::vad::{read_track, shape, Span, Vad};
 use crate::storage::model::TranscriptLine;
@@ -28,6 +29,8 @@ pub struct Output {
     pub engine: String,
     pub echo_removed: usize,
     pub speech_ms: u64,
+    /// People told apart on the Them track (0 or 1 = not split).
+    pub speakers: usize,
 }
 
 #[derive(Debug, PartialEq)]
@@ -48,6 +51,7 @@ pub fn run(
     engine: &mut dyn Engine,
     detector: &mut dyn Detector,
     language: Option<&str>,
+    splitter: Option<&mut dyn SpeakerSplitter>,
     cancel: &AtomicBool,
     progress: &mut dyn FnMut(f32),
 ) -> Result<Output, PipelineError> {
@@ -104,19 +108,29 @@ pub fn run(
         }
     }
 
-    let (pieces, echo_removed) = remove_echo(pieces);
+    let (mut pieces, echo_removed) = remove_echo(pieces);
+    // Named speakers: split the Them track by voice before lines are joined, so two people talking back to
+    // back never end up in one line.
+    let mut speakers = 0;
+    if let (Some(split), Some((_, them, _, _))) = (splitter, tracks.iter().find(|(t, _, _, _)| *t == Track::Them)) {
+        if cancel.load(Ordering::Relaxed) {
+            return Err(PipelineError::Cancelled);
+        }
+        let activity = split.activity(them)?;
+        speakers = assign_speakers(&mut pieces, &activity);
+    }
     let lines = merge(pieces);
     if language.is_none() {
         language = detect_language(&lines);
     }
-    Ok(Output { lines, language, engine: engine.label().to_string(), echo_removed, speech_ms: (total as u64) * 1000 / 16_000 })
+    Ok(Output { lines, language, engine: engine.label().to_string(), echo_removed, speech_ms: (total as u64) * 1000 / 16_000, speakers })
 }
 
 /// Engine pieces (relative to the chunk) on the recording clock.
 fn place(track: Track, span: &Span, pieces: Vec<super::engine::Piece>) -> Vec<Timed> {
     let offset = span.start_ms();
     let end = offset + span.len() as u64 * 1000 / 16_000;
-    pieces.into_iter().map(|p| Timed { track, start_ms: offset + p.start_ms, end_ms: (offset + p.end_ms).min(end), text: p.text }).collect()
+    pieces.into_iter().map(|p| Timed { track, speaker: 0, start_ms: offset + p.start_ms, end_ms: (offset + p.end_ms).min(end), text: p.text }).collect()
 }
 
 /// Detected speech (raw spans, at least 1 s) inside `chunk` that no transcribed piece overlaps. Returned with
@@ -268,7 +282,7 @@ mod tests {
         let dir = meeting();
         let mut engine = FakeEngine { calls: vec![], detected: None };
         let mut seen = vec![];
-        let out = run(dir.path(), &mut engine, &mut EnergyDetector, Some("en"), &AtomicBool::new(false), &mut |p| seen.push(p)).unwrap();
+        let out = run(dir.path(), &mut engine, &mut EnergyDetector, Some("en"), None, &AtomicBool::new(false), &mut |p| seen.push(p)).unwrap();
         let got: Vec<_> = out.lines.iter().map(|l| (l.speaker.as_str(), l.at, l.text.as_str())).collect();
         assert_eq!(got, vec![("them:0", 2000, "We should ship onboarding first."), ("me", 6000, "Agreed, pricing can wait.")]);
         assert_eq!(out.echo_removed, 1);
@@ -283,7 +297,7 @@ mod tests {
     fn language_is_settled_once_then_used_for_every_chunk() {
         let dir = meeting();
         let mut engine = FakeEngine { calls: vec![], detected: Some("es") };
-        let out = run(dir.path(), &mut engine, &mut EnergyDetector, None, &AtomicBool::new(false), &mut |_| {}).unwrap();
+        let out = run(dir.path(), &mut engine, &mut EnergyDetector, None, None, &AtomicBool::new(false), &mut |_| {}).unwrap();
         assert_eq!(out.language.as_deref(), Some("es"));
         // First call detects (None), the other two use the result; the detecting chunk isn't transcribed twice.
         assert_eq!(engine.calls, vec![None, Some("es".into()), Some("es".into())]);
@@ -293,7 +307,7 @@ mod tests {
     fn speech_the_engine_skipped_is_transcribed_again() {
         let chunk = Span { start: 0, end: 30 * RATE };
         let raw = [Span { start: RATE, end: 4 * RATE }, Span { start: 10 * RATE, end: 14 * RATE }, Span { start: 20 * RATE, end: 20 * RATE + RATE / 2 }];
-        let got = vec![Timed { track: Track::Me, start_ms: 1200, end_ms: 3800, text: "Covered.".into() }];
+        let got = vec![Timed { track: Track::Me, speaker: 0, start_ms: 1200, end_ms: 3800, text: "Covered.".into() }];
         // The 10-14 s speech has no words: retried with context. The short 0.5 s blip is ignored.
         assert_eq!(uncovered(&raw, &chunk, &got), vec![Span { start: 10 * RATE - RATE / 2, end: 14 * RATE + RATE / 2 }]);
     }
@@ -302,14 +316,14 @@ mod tests {
     fn a_missing_track_is_fine() {
         let dir = tempfile::tempdir().unwrap();
         wav(&dir.path().join("them.wav"), &[(1.0, 2.0, 0.5)], 3.0);
-        let out = run(dir.path(), &mut FakeEngine { calls: vec![], detected: None }, &mut EnergyDetector, Some("en"), &AtomicBool::new(false), &mut |_| {}).unwrap();
+        let out = run(dir.path(), &mut FakeEngine { calls: vec![], detected: None }, &mut EnergyDetector, Some("en"), None, &AtomicBool::new(false), &mut |_| {}).unwrap();
         assert_eq!(out.lines.len(), 1);
     }
 
     #[test]
     fn cancel_stops_between_chunks() {
         let dir = meeting();
-        let r = run(dir.path(), &mut FakeEngine { calls: vec![], detected: None }, &mut EnergyDetector, Some("en"), &AtomicBool::new(true), &mut |_| {});
+        let r = run(dir.path(), &mut FakeEngine { calls: vec![], detected: None }, &mut EnergyDetector, Some("en"), None, &AtomicBool::new(true), &mut |_| {});
         assert_eq!(r, Err(PipelineError::Cancelled));
     }
 
@@ -335,8 +349,13 @@ mod tests {
             let Some(d) = store.locate(m).dir().map(|d| d.to_path_buf()) else { continue };
             let mut engine = crate::transcriber::engine::load(m, &d, true).unwrap();
             let t = std::time::Instant::now();
-            let out = run(&dir, engine.as_mut(), &mut vad, None, &AtomicBool::new(false), &mut |_| {}).unwrap();
-            eprintln!("== {}: {:.1}s, {} lines, {} echo removed, language {:?}, {:.0}s speech", m.id, t.elapsed().as_secs_f32(), out.lines.len(), out.echo_removed, out.language, out.speech_ms as f32 / 1000.0);
+            // TALAAN_SMOKE_SPEAKERS=1 also splits the Them track with the speaker model.
+            let mut split = std::env::var("TALAAN_SMOKE_SPEAKERS")
+                .is_ok()
+                .then(|| crate::transcriber::diarize::Diarizer::load(&data.join("models/diarization/nemotron3_diar_v3.onnx")).unwrap());
+            let splitter = split.as_mut().map(|d| d as &mut dyn crate::transcriber::diarize::SpeakerSplitter);
+            let out = run(&dir, engine.as_mut(), &mut vad, None, splitter, &AtomicBool::new(false), &mut |_| {}).unwrap();
+            eprintln!("== {}: {:.1}s, {} lines, {} echo removed, language {:?}, {:.0}s speech, {} speakers", m.id, t.elapsed().as_secs_f32(), out.lines.len(), out.echo_removed, out.language, out.speech_ms as f32 / 1000.0, out.speakers);
             for l in out.lines.iter().take(std::env::var("TALAAN_SMOKE_LINES").ok().and_then(|n| n.parse().ok()).unwrap_or(usize::MAX)) {
                 eprintln!("   {:>6.1} {:<6} {}", l.at as f32 / 1000.0, l.speaker, l.text);
             }

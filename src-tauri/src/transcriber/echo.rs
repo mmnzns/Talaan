@@ -67,7 +67,7 @@ mod tests {
     use super::*;
 
     fn t(track: Track, s: f32, e: f32, text: &str) -> Timed {
-        Timed { track, start_ms: (s * 1000.0) as u64, end_ms: (e * 1000.0) as u64, text: text.into() }
+        Timed { track, speaker: 0, start_ms: (s * 1000.0) as u64, end_ms: (e * 1000.0) as u64, text: text.into() }
     }
 
     fn kept_me(pieces: Vec<Timed>) -> Vec<String> {

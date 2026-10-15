@@ -57,6 +57,7 @@ pub fn setup(app: &AppHandle, data_dir: PathBuf) {
         changed: Arc::new(move || notify(&changed_app, MEETINGS_CHANGED)),
         load_engine: Box::new(|m, dir, gpu| engine::load(m, dir, gpu)),
         load_detector: Box::new(|path| Vad::load(path).map(|v| Box::new(v) as Box<dyn Detector + Send>)),
+        load_splitter: Box::new(|path| crate::transcriber::diarize::Diarizer::load(path).map(|d| Box::new(d) as Box<dyn crate::transcriber::diarize::SpeakerSplitter>)),
         reuse_roots: None,
         transcribed: {
             let app = app.clone();
@@ -137,6 +138,7 @@ pub fn models_list(state: State<AppState>, t: State<TranscriberState>) -> CmdRes
     let downloads = t.downloads.lock().unwrap_or_else(|e| e.into_inner());
     Ok(CATALOG
         .iter()
+        .chain([&crate::transcriber::models::DIARIZATION])
         .map(|m| {
             let (state, progress) = match (downloads.get(m.id), store.locate(m)) {
                 (Some((_, p)), _) => ("downloading", Some(*p)),
@@ -153,6 +155,7 @@ pub fn models_list(state: State<AppState>, t: State<TranscriberState>) -> CmdRes
                     crate::transcriber::models::EngineKind::Parakeet => "parakeet",
                     crate::transcriber::models::EngineKind::Whisper => "whisper",
                     crate::transcriber::models::EngineKind::Llm => "llm",
+                    crate::transcriber::models::EngineKind::Diarization => "diarization",
                 },
                 size_mb: m.size().div_ceil(1_000_000),
                 speed: m.speed,

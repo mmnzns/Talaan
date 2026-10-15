@@ -9,6 +9,8 @@ pub enum EngineKind {
     Whisper,
     /// A GGUF model for the local summary AI (run by the `talaan-llm` helper).
     Llm,
+    /// Speaker separation for the Them track.
+    Diarization,
 }
 
 #[derive(Debug)]
@@ -108,11 +110,33 @@ pub static VAD: ModelInfo = ModelInfo {
 
 /// Whisper Turbo: on real calls it was more complete and accurate than Parakeet (which skipped stretches and
 /// misheard more), covers Filipino, and at ~13x real time an hour-long call takes a few minutes.
+/// Speaker separation (named speakers): NVIDIA Nemotron 3 Diarization, ONNX export for parakeet-rs.
+pub static DIARIZATION: ModelInfo = ModelInfo {
+    id: "diarization",
+    name: "Speaker separation",
+    maker: "NVIDIA",
+    note: "Tells the other people on a call apart: Speaker 1, 2, 3. Up to 8 people.",
+    engine: EngineKind::Diarization,
+    languages: "Any language",
+    speed: 3,
+    accuracy: 2,
+    files: &[ModelFile {
+        name: "nemotron3_diar_v3.onnx",
+        url: "https://huggingface.co/altunenes/parakeet-rs/resolve/4d2a8bc71f5c896ec40faa59732e6716295edaf2/nemotron-3-diarization/nemotron3_diar_v3.onnx",
+        size: 400_506_656,
+        sha256: "915e4fa23b0192ed9fadeb1cdd26847df986d50c92012d177be28d0343bbe03a",
+    }],
+    reuse_dirs: &[],
+};
+
 pub const DEFAULT_MODEL: &str = "whisper-turbo";
 
 pub fn find(id: &str) -> Option<&'static ModelInfo> {
     if id == VAD.id {
         return Some(&VAD);
+    }
+    if id == DIARIZATION.id {
+        return Some(&DIARIZATION);
     }
     CATALOG.iter().find(|m| m.id == id)
 }

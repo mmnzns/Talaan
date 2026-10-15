@@ -44,13 +44,14 @@ Talaan uses the following libraries, fonts and models. Each is used under its ow
 
 ## Models
 
-Models are downloaded on demand, not bundled.
+Models are downloaded on demand from their sources, not bundled or redistributed by Talaan. Their license terms travel with them on the source pages listed.
 
 | Model | License | Source |
 |---|---|---|
 | NVIDIA Parakeet TDT 0.6B v3 (ONNX export by istupakov) | CC-BY-4.0, © NVIDIA | https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3, https://huggingface.co/istupakov/parakeet-tdt-0.6b-v3-onnx |
 | OpenAI Whisper large-v3-turbo, small (ggml conversions) | MIT | https://github.com/openai/whisper, https://huggingface.co/ggerganov/whisper.cpp |
 | Silero VAD (ggml conversion) | MIT | https://github.com/snakers4/silero-vad, https://huggingface.co/ggml-org/whisper-vad |
+| NVIDIA Nemotron 3 Diarization (streaming Sortformer; ONNX export by altunenes for parakeet-rs) | OpenMDW-1.1, © NVIDIA | https://huggingface.co/nvidia, https://huggingface.co/altunenes/parakeet-rs (`nemotron-3-diarization/`), license text: https://openmdw.ai/license |
 | Qwen3.5 4B and 9B (GGUF quantizations by Unsloth) | Apache-2.0 | https://huggingface.co/Qwen/Qwen3.5-4B, https://huggingface.co/Qwen/Qwen3.5-9B, https://huggingface.co/unsloth |
 
 Other dependencies are added here as they are introduced.

@@ -1,5 +1,6 @@
 //! Speech to text: models, voice activity detection, engines, merging the two tracks, echo removal.
 
+pub mod diarize;
 pub mod download;
 pub mod echo;
 pub mod engine;

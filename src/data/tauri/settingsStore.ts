@@ -11,6 +11,7 @@ import { call, onEvent } from "./invoke";
 export class TauriSettingsStore implements SettingsStore {
   private state?: Settings;
   private models?: SpeechModel[];
+  private speaker?: SpeechModel;
   private localModels?: LocalModel[];
   private listeners = new Set<() => void>();
 
@@ -21,18 +22,25 @@ export class TauriSettingsStore implements SettingsStore {
     });
     onEvent("models-changed", () => {
       this.models = undefined;
+      this.speaker = undefined;
       this.localModels = undefined;
       this.emit();
     });
     onEvent<{ id: string; progress: number }>("model-download", ({ id, progress }) => {
       this.models = this.models?.map((m) => (m.id === id ? { ...m, state: "downloading", progress } : m));
+      if (this.speaker?.id === id) this.speaker = { ...this.speaker, state: "downloading", progress };
       this.localModels = this.localModels?.map((m) => (m.id === id ? { ...m, state: "downloading", progress } : m));
       this.emit();
     });
   }
 
   private async loadModels(): Promise<SpeechModel[]> {
-    if (!this.models) this.models = await call<SpeechModel[]>("models_list");
+    if (!this.models) {
+      // One list from Rust: the speech models plus the speaker separation model.
+      const all = await call<SpeechModel[]>("models_list");
+      this.models = all.filter((m) => m.engine !== "diarization");
+      this.speaker = all.find((m) => m.engine === "diarization");
+    }
     return this.models;
   }
 
@@ -58,16 +66,18 @@ export class TauriSettingsStore implements SettingsStore {
     const [s, speechModels, localModels] = await Promise.all([this.load(), this.loadModels(), this.loadLocalModels()]);
     // A model id that no longer exists (older builds used other ids) means the default, as Rust does.
     const activeSpeechModel = speechModels.some((m) => m.id === s.activeSpeechModel) ? s.activeSpeechModel : defaultSettings.activeSpeechModel;
-    return structuredClone({ ...s, speechModels, localModels, activeSpeechModel });
+    const speakerModel = this.speaker ?? defaultSettings.speakerModel;
+    return structuredClone({ ...s, speechModels, speakerModel, localModels, activeSpeechModel });
   }
 
   async update(patch: Partial<Settings>): Promise<Settings> {
     const next = { ...(await this.load()), ...patch };
     this.state = next;
-    const { speechModels: _speech, localModels: _local, ...stored } = next;
+    const { speechModels: _speech, speakerModel: _speaker, localModels: _local, ...stored } = next;
     await call<void>("settings_set", { value: stored });
     this.emit();
-    return structuredClone({ ...next, speechModels: await this.loadModels(), localModels: await this.loadLocalModels() });
+    const speechModels = await this.loadModels();
+    return structuredClone({ ...next, speechModels, speakerModel: this.speaker ?? defaultSettings.speakerModel, localModels: await this.loadLocalModels() });
   }
 
   downloadModel(id: string): Promise<void> {

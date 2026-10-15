@@ -91,6 +91,8 @@ export function ModelsTab({ settings: s, update }: TabProps) {
         </div>
       </div>
 
+      <SpeakersRow settings={s} update={update} />
+
       <Group>
         <Row title="Reuse models already on this Mac" desc={reuseDesc}>
           <Switch aria-label="Reuse models already on this Mac" checked={s.reuseModels} onChange={(v) => update({ reuseModels: v })} />
@@ -111,5 +113,48 @@ export function ModelsTab({ settings: s, update }: TabProps) {
         </Row>
       </Group>
     </div>
+  );
+}
+
+/** Speaker separation: a separate model, so it gets its own row with download, on/off and delete. */
+function SpeakersRow({ settings: s, update }: TabProps) {
+  const store = useSettingsStore();
+  const toast = useToast();
+  const run = (p: Promise<void>) => p.catch((e) => toast(describeError(e)));
+  const m = s.speakerModel;
+  const pct = Math.round((m.progress ?? 0) * 100);
+  const ready = installed(m);
+  return (
+    <Group>
+      <Row
+        title="Tell speakers apart"
+        desc={`Splits the other side of the call into Speaker 1, 2, 3 so the summary knows who said what. Runs on this Mac with ${m.maker}'s speaker model (${m.sizeMb} MB), up to 8 people.`}
+      >
+        {m.state === "not_downloaded" && <Button onClick={() => run(store.downloadModel(m.id))}>Download</Button>}
+        {m.state === "downloading" && (
+          <span className="flex w-28 flex-col items-end gap-1">
+            <span className="h-[5px] w-full overflow-hidden rounded-full bg-line">
+              <span className="block h-full bg-ink" style={{ width: `${pct}%` }} />
+            </span>
+            <span className="flex gap-2 font-mono text-[11px] text-subtle">
+              {pct}%
+              <button type="button" className="cursor-pointer border-0 bg-transparent p-0 text-xs text-subtle underline" onClick={() => run(store.cancelModelDownload(m.id))}>
+                Cancel
+              </button>
+            </span>
+          </span>
+        )}
+        {ready && (
+          <span className="flex items-center gap-3">
+            {m.state === "downloaded" && (
+              <button type="button" className="cursor-pointer border-0 bg-transparent p-0 text-xs text-subtle underline" onClick={() => run(store.deleteModel(m.id))}>
+                Delete
+              </button>
+            )}
+            <Switch aria-label="Tell speakers apart" checked={s.separateSpeakers} onChange={(v) => update({ separateSpeakers: v })} />
+          </span>
+        )}
+      </Row>
+    </Group>
   );
 }

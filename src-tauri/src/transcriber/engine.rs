@@ -31,7 +31,7 @@ pub fn load(model: &ModelInfo, dir: &Path, use_gpu: bool) -> Result<Box<dyn Engi
     match model.engine {
         EngineKind::Parakeet => Ok(Box::new(ParakeetEngine::load(dir, model.name)?)),
         EngineKind::Whisper => Ok(Box::new(WhisperEngine::load(&dir.join(model.files[0].name), model.name, use_gpu)?)),
-        EngineKind::Llm => Err("not a speech model".into()),
+        EngineKind::Llm | EngineKind::Diarization => Err("not a speech model".into()),
     }
 }
 
