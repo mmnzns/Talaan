@@ -98,7 +98,8 @@ export interface Settings {
   ollamaAddress: string;
   ollamaModel?: string;
   byokProvider: ByokProvider;
-  byokKeySet: boolean;
+  /** Providers with a key in secure key storage (the keys themselves never come here). */
+  byokKeys: ByokProvider[];
   byokModel: string;
   /** Base URL for "Other (OpenAI-compatible)". */
   byokBaseUrl?: string;
@@ -128,6 +129,8 @@ export interface SettingsStore {
   testApiKey(provider: ByokProvider, key: string): Promise<{ ok: boolean; message: string; model?: string }>;
   /** Removes a saved key from the Keychain. */
   clearApiKey(provider: ByokProvider): Promise<void>;
+  /** Removes every provider's saved key (Privacy › Saved API keys). */
+  clearAllApiKeys(): Promise<void>;
   /** Models a local server (Ollama, LM Studio) offers at an address. Throws when it can't be reached. */
   localServerModels(address: string): Promise<string[]>;
   /** Checks an integration secret with Notion and saves it; returns the workspace name. */
@@ -162,4 +165,9 @@ export interface SettingsStore {
   deleteAllData(): Promise<void>;
   /** Fires on any change. Returns an unsubscribe function. */
   subscribe(listener: () => void): () => void;
+}
+
+/** Whether the chosen provider has a saved key. */
+export function hasByokKey(s: Pick<Settings, "byokProvider" | "byokKeys">): boolean {
+  return s.byokKeys.includes(s.byokProvider);
 }

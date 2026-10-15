@@ -231,6 +231,15 @@ pub fn keys_clear(provider: String) -> CmdResult<()> {
     keys::clear(p.key_id()).map_err(refused)
 }
 
+/// Privacy › Saved API keys: removes every summary provider's key (the Notion secret has its own Disconnect).
+#[tauri::command]
+pub fn keys_clear_all() -> CmdResult<()> {
+    for p in Provider::ALL {
+        keys::clear(p.key_id()).map_err(refused)?;
+    }
+    Ok(())
+}
+
 /// Models offered by a local server (Ollama, LM Studio) at an address.
 #[tauri::command]
 pub fn local_server_models(address: String) -> CmdResult<Vec<String>> {

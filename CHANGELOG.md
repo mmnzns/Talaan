@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- **Fixed:** your own key is remembered per provider. Switching provider no longer looks like the key was lost, and the menu marks providers that have a saved key.
+- **Fixed:** Privacy › Saved API keys › Remove keys now deletes every summary provider's key from secure key storage. Before, it only hid them in Settings.
+
 ## 1.0.1 (2026-10-15)
 
 - **Your own key:** Groq, Cerebras, Mistral and OpenRouter join Claude, OpenAI and Gemini. The model is now a menu of the supported models per provider (Recommended picks the first one your key can use), with "Other model ID…" for anything newer. Requests are tuned per model: short or hidden reasoning, and no temperature for the models that refuse one.

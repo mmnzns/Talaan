@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { describeError } from "../../data/errors";
 import { useSettingsStore } from "../../data/StoreProvider";
 import { byokModels } from "../../data/byokModels";
-import type { ByokProvider, SummaryEngineKind } from "../../data/settings";
+import { hasByokKey, type ByokProvider, type SummaryEngineKind } from "../../data/settings";
 import { useLang, useT } from "../../lib/i18n/I18nProvider";
 import { messageOr, type MessageKey } from "../../lib/i18n";
 import { Button, Chip, Field, Label, Select, Switch, cn, useToast } from "../../ui";
@@ -190,6 +190,18 @@ function OllamaPanel({ settings: s, update }: TabProps) {
   );
 }
 
+/** Provider ids with their menu names: a message key, or a brand name that needs no translation. */
+const PROVIDERS: [ByokProvider, string][] = [
+  ["claude", "settings.provider_claude"],
+  ["openai", "settings.provider_openai"],
+  ["gemini", "settings.provider_gemini"],
+  ["groq", "Groq"],
+  ["cerebras", "Cerebras"],
+  ["mistral", "Mistral"],
+  ["openrouter", "OpenRouter"],
+  ["compatible", "settings.provider_compatible"],
+];
+
 function ByokPanel({ settings: s, update }: TabProps) {
   const store = useSettingsStore();
   const t = useT();
@@ -201,6 +213,7 @@ function ByokPanel({ settings: s, update }: TabProps) {
   // A model id typed by hand: for a model newer than this list, or any model on your own server.
   const [typing, setTyping] = useState(!listed);
   const custom = typing || !listed || models.length === 0;
+  const keySaved = hasByokKey(s);
 
   const test = async () => {
     setTesting(true);
@@ -220,14 +233,14 @@ function ByokPanel({ settings: s, update }: TabProps) {
     <Group>
       <Row title={t("settings.byok_provider")} desc={t("settings.byok_provider_desc")}>
         <Select label={t("settings.byok_provider")} wrapperClassName="w-52" value={s.byokProvider} onChange={(e) => (setResult(undefined), setTyping(false), update({ byokProvider: e.target.value as ByokProvider, byokModel: "recommended" }))}>
-          <option value="claude">{t("settings.provider_claude")}</option>
-          <option value="openai">{t("settings.provider_openai")}</option>
-          <option value="gemini">{t("settings.provider_gemini")}</option>
-          <option value="groq">Groq</option>
-          <option value="cerebras">Cerebras</option>
-          <option value="mistral">Mistral</option>
-          <option value="openrouter">OpenRouter</option>
-          <option value="compatible">{t("settings.provider_compatible")}</option>
+          {PROVIDERS.map(([id, name]) => {
+            const label = name.startsWith("settings.") ? t(name as MessageKey) : name;
+            return (
+              <option key={id} value={id}>
+                {s.byokKeys.includes(id) ? t("settings.provider_with_key", { name: label }) : label}
+              </option>
+            );
+          })}
         </Select>
       </Row>
       {s.byokProvider === "compatible" && (
@@ -235,13 +248,13 @@ function ByokPanel({ settings: s, update }: TabProps) {
           <Field label={t("settings.byok_server")} value={s.byokBaseUrl ?? ""} onChange={(e) => update({ byokBaseUrl: e.target.value })} wrapperClassName="w-60" />
         </Row>
       )}
-      <Row title={t("settings.byok_key")} desc={s.byokKeySet ? t("settings.byok_key_saved") : t("settings.byok_key_new")}>
+      <Row title={t("settings.byok_key")} desc={keySaved ? t("settings.byok_key_saved") : t("settings.byok_key_new")}>
         <div className="flex items-center gap-2">
-          <Field label={t("settings.byok_key")} type="password" placeholder={s.byokKeySet ? "••••••••••••" : t("settings.byok_key_placeholder")} value={key} onChange={(e) => setKey(e.target.value)} wrapperClassName="w-52" />
+          <Field label={t("settings.byok_key")} type="password" placeholder={keySaved ? "••••••••••••" : t("settings.byok_key_placeholder")} value={key} onChange={(e) => setKey(e.target.value)} wrapperClassName="w-52" />
           <Button onClick={test} disabled={testing || !key.trim()}>
             {testing ? t("settings.byok_testing") : t("settings.byok_test")}
           </Button>
-          {s.byokKeySet && (
+          {keySaved && (
             <button type="button" className="cursor-pointer border-0 bg-transparent p-0 text-xs text-subtle underline" onClick={() => void store.clearApiKey(s.byokProvider).then(() => setResult(undefined))}>
               {t("settings.remove")}
             </button>

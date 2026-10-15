@@ -97,11 +97,13 @@ export function PrivacyTab({ settings: s, update }: TabProps) {
         </Row>
         <Row title={t("settings.keys_title")} desc={t("settings.keys_desc")}>
           <Button
-            disabled={!s.byokKeySet}
-            onClick={() => {
-              update({ byokKeySet: false });
-              toast(t("settings.keys_removed"));
-            }}
+            disabled={s.byokKeys.length === 0}
+            onClick={() =>
+              void store
+                .clearAllApiKeys()
+                .then(() => toast(t("settings.keys_removed")))
+                .catch((e) => toast(describeError(e)))
+            }
           >
             {t("settings.keys_remove")}
           </Button>

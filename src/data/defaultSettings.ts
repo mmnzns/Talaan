@@ -79,7 +79,7 @@ export const defaultSettings: Settings = {
   ],
   ollamaAddress: "http://localhost:11434",
   byokProvider: "claude",
-  byokKeySet: false,
+  byokKeys: [],
   byokModel: "recommended",
   calendarConnected: false,
   tabDetection: false,
@@ -110,8 +110,10 @@ export function shownIgnoredApps(apps: IgnoredApp[], windows = onWindows): Ignor
 export function withDefaults(stored: Partial<Settings>): Settings {
   // Windows test builds kept the secret calendar address here in plain text (now in secure key storage, see
   // storage/settings.rs). Dropped so update() never writes it back.
-  const { calendarIcsUrl: _legacy, ...rest } = stored as Partial<Settings> & { calendarIcsUrl?: unknown };
+  // 1.0.0 kept one "a key is saved" flag for whichever provider was chosen; now each provider has its own.
+  const { calendarIcsUrl: _legacy, byokKeySet, ...rest } = stored as Partial<Settings> & { calendarIcsUrl?: unknown; byokKeySet?: boolean };
   const merged = { ...structuredClone(defaultSettings), ...rest };
+  if (byokKeySet && !stored.byokKeys) merged.byokKeys = [stored.byokProvider ?? defaultSettings.byokProvider];
   if (stored.callApps) {
     const known = new Set(stored.callApps.map((a) => a.id));
     merged.callApps = [...stored.callApps, ...defaultSettings.callApps.filter((a) => !known.has(a.id))];

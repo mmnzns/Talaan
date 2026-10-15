@@ -143,6 +143,7 @@ pub fn run() {
             commands::summarizer::llm_models_list,
             commands::summarizer::keys_save,
             commands::summarizer::keys_clear,
+            commands::summarizer::keys_clear_all,
             commands::summarizer::local_server_models,
             settings::settings_get,
             settings::settings_set,

@@ -1,5 +1,5 @@
 import type { RecorderClient } from "../data/recorder";
-import type { CalendarAccess, Settings, SettingsStore } from "../data/settings";
+import { hasByokKey, type CalendarAccess, type Settings, type SettingsStore } from "../data/settings";
 import { formatBytes, tildePath } from "./format";
 import { currentLang, t } from "./i18n";
 import { onWindows, os, platformCopy } from "./platform";
@@ -112,7 +112,8 @@ function summary(p: Probe): CheckResult {
   const waits = s.summarizeAutomatically ? "" : ` ${t("settings.setup_summary_waits")}`;
   const r = (status: CheckStatus, detail: string): CheckResult => ({ id: "summary", title, status, detail: detail + waits, fix: status !== "ok" ? fix : undefined });
 
-  if (s.summaryEngine === "byok") return s.byokKeySet ? r("ok", t("settings.setup_summary_key")) : r("fail", t("settings.setup_summary_nokey"));
+  // A local OpenAI-compatible server may need no key.
+  if (s.summaryEngine === "byok") return hasByokKey(s) || s.byokProvider === "compatible" ? r("ok", t("settings.setup_summary_key")) : r("fail", t("settings.setup_summary_nokey"));
   if (s.summaryEngine === "ollama") {
     const server = p.localServer;
     if (!server) return r("unknown", t("settings.setup_summary_unchecked", { address: s.ollamaAddress }));

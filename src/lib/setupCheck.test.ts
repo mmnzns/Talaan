@@ -44,8 +44,8 @@ describe("checkSetup", () => {
   it("checks the summary engine that is chosen", () => {
     const noLocal = defaultSettings.localModels.map((m) => ({ ...m, state: "not_downloaded" as const }));
     expect(find(probe({ settings: settings({ localModels: noLocal }) }), "summary")).toMatchObject({ status: "fail", fix: { action: "summaryAI" } });
-    expect(find(probe({ settings: settings({ summaryEngine: "byok", byokKeySet: false }) }), "summary").status).toBe("fail");
-    expect(find(probe({ settings: settings({ summaryEngine: "byok", byokKeySet: true }) }), "summary").status).toBe("ok");
+    expect(find(probe({ settings: settings({ summaryEngine: "byok", byokProvider: "openai", byokKeys: ["claude"] }) }), "summary").status).toBe("fail");
+    expect(find(probe({ settings: settings({ summaryEngine: "byok", byokProvider: "openai", byokKeys: ["claude", "openai"] }) }), "summary").status).toBe("ok");
     const ollama = settings({ summaryEngine: "ollama", ollamaModel: "qwen3:8b" });
     expect(find(probe({ settings: ollama, localServer: { ok: false, message: "Couldn't connect" } }), "summary").status).toBe("fail");
     expect(find(probe({ settings: ollama, localServer: { ok: true, models: ["llama3"] } }), "summary").status).toBe("warn");

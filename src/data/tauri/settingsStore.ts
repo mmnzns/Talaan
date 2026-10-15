@@ -102,13 +102,19 @@ export class TauriSettingsStore implements SettingsStore {
   async testApiKey(provider: ByokProvider, key: string) {
     const s = await this.load();
     const r = await call<{ ok: boolean; message: string; model?: string }>("keys_save", { provider, key, baseUrl: s.byokBaseUrl ?? null });
-    if (r.ok) await this.update({ byokKeySet: true });
+    if (r.ok && !s.byokKeys.includes(provider)) await this.update({ byokKeys: [...s.byokKeys, provider] });
     return r;
   }
 
   async clearApiKey(provider: ByokProvider): Promise<void> {
     await call<void>("keys_clear", { provider });
-    await this.update({ byokKeySet: false });
+    const s = await this.load();
+    await this.update({ byokKeys: s.byokKeys.filter((p) => p !== provider) });
+  }
+
+  async clearAllApiKeys(): Promise<void> {
+    await call<void>("keys_clear_all");
+    await this.update({ byokKeys: [] });
   }
 
   localServerModels(address: string): Promise<string[]> {

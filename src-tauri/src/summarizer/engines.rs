@@ -60,6 +60,8 @@ pub fn catalog(provider: Provider) -> &'static [&'static str] {
 }
 
 impl Provider {
+    pub const ALL: [Provider; 8] = [Provider::Claude, Provider::OpenAi, Provider::Gemini, Provider::Groq, Provider::Cerebras, Provider::Mistral, Provider::OpenRouter, Provider::Compatible];
+
     pub fn parse(s: &str) -> Option<Provider> {
         Some(match s {
             "claude" => Provider::Claude,

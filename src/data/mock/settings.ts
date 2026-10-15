@@ -157,15 +157,21 @@ export class MockSettingsStore implements SettingsStore {
     this.setModel(id, { state: "not_downloaded", progress: undefined });
   }
 
-  async testApiKey(_provider: ByokProvider, key: string) {
+  async testApiKey(provider: ByokProvider, key: string) {
     await sleep(700);
-    return key.trim().length >= 12
-      ? { ok: true, message: "Connected. Summaries will use the recommended model." }
-      : { ok: false, message: "That key didn’t work. Check it and try again." };
+    if (key.trim().length < 12) return { ok: false, message: "That key didn’t work. Check it and try again." };
+    if (!this.state.byokKeys.includes(provider)) this.state = { ...this.state, byokKeys: [...this.state.byokKeys, provider] };
+    this.save();
+    return { ok: true, message: "Connected. Summaries will use the recommended model." };
   }
 
-  async clearApiKey(_provider: ByokProvider): Promise<void> {
-    this.state = { ...this.state, byokKeySet: false };
+  async clearApiKey(provider: ByokProvider): Promise<void> {
+    this.state = { ...this.state, byokKeys: this.state.byokKeys.filter((p) => p !== provider) };
+    this.save();
+  }
+
+  async clearAllApiKeys(): Promise<void> {
+    this.state = { ...this.state, byokKeys: [] };
     this.save();
   }
 
@@ -188,7 +194,7 @@ export class MockSettingsStore implements SettingsStore {
     } catch {
       /* ignore */
     }
-    this.state = { ...structuredClone(defaultSettings), onboardingDone: false, byokKeySet: false };
+    this.state = { ...structuredClone(defaultSettings), onboardingDone: false, byokKeys: [] };
     this.save();
   }
 

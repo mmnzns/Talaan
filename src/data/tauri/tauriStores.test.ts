@@ -132,8 +132,27 @@ describe("TauriSettingsStore", () => {
     expect(invoke).toHaveBeenCalledWith("keys_save", { provider: "openai", key: "sk-live", baseUrl: null });
     const saved = invoke.mock.calls.filter((c) => c[0] === "settings_set").map((c) => JSON.stringify(c[1]));
     expect(saved.some((v) => v.includes("sk-live"))).toBe(false);
-    expect((await store.get()).byokKeySet).toBe(true);
+    expect((await store.get()).byokKeys).toEqual(["openai"]);
     expect((await store.get()).localModels[0].id).toBe("qwen3.5-4b");
+  });
+
+  it("each provider keeps its own saved key, and Remove keys clears them all", async () => {
+    backend({ byokProvider: "claude" });
+    const store = new TauriSettingsStore();
+    await store.testApiKey("claude", "sk-ant");
+    await store.update({ byokProvider: "openai" });
+    await store.testApiKey("openai", "sk-oai");
+    expect((await store.get()).byokKeys).toEqual(["claude", "openai"]);
+    await store.clearApiKey("openai");
+    expect((await store.get()).byokKeys).toEqual(["claude"]);
+    await store.clearAllApiKeys();
+    expect(invoke).toHaveBeenCalledWith("keys_clear_all", undefined);
+    expect((await store.get()).byokKeys).toEqual([]);
+  });
+
+  it("a 1.0.0 key flag becomes a key for the provider it was saved with", async () => {
+    backend({ byokProvider: "gemini", byokKeySet: true } as never);
+    expect((await new TauriSettingsStore().get()).byokKeys).toEqual(["gemini"]);
   });
 
   it("call apps added in a later version join the user's list without touching their rules", async () => {

@@ -44,8 +44,8 @@ mod tests {
     #[test]
     fn deleting_all_data_covers_every_key() {
         use crate::summarizer::engines::Provider;
-        for p in ["claude", "openai", "gemini", "groq", "cerebras", "mistral", "openrouter", "compatible"] {
-            let id = Provider::parse(p).unwrap().key_id();
+        for p in Provider::ALL {
+            let id = p.key_id();
             assert!(ACCOUNTS.contains(&id), "{id}");
         }
         for k in ["notion", CALENDAR_ICS] {
