@@ -38,6 +38,8 @@ export interface RecorderClient {
   discard(): Promise<void>;
   microphonePermission(): Promise<"granted" | "denied" | "restricted" | "undetermined" | "unknown">;
   requestMicrophone(): Promise<boolean>;
+  /** Shows the system-audio prompt (opens the capture for a moment). True when capture could start. */
+  requestSystemAudio(): Promise<boolean>;
   openSettings(pane: "microphone" | "system-audio" | "calendar" | "automation"): Promise<void>;
   onState(cb: (s: RecorderState) => void): () => void;
   onLevels(cb: (l: RecorderLevels) => void): () => void;
@@ -78,6 +80,9 @@ export class TauriRecorderClient implements RecorderClient {
   }
   requestMicrophone() {
     return call<boolean>("permissions_request_mic");
+  }
+  requestSystemAudio() {
+    return call<boolean>("permissions_request_system_audio");
   }
   openSettings(pane: "microphone" | "system-audio" | "calendar" | "automation") {
     return call<void>("permissions_open_settings", { pane });
@@ -170,6 +175,10 @@ export class MockRecorderClient implements RecorderClient {
   }
 
   async requestMicrophone() {
+    return true;
+  }
+
+  async requestSystemAudio() {
     return true;
   }
 

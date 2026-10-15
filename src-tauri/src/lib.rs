@@ -101,6 +101,7 @@ pub fn run() {
             commands::calls::browsers_status,
             commands::updates::updates_check,
             rec_cmd::audio_inputs,
+            rec_cmd::permissions_request_system_audio,
             commands::updates::updates_install,
             rec_cmd::recorder_start,
             rec_cmd::recorder_pause,

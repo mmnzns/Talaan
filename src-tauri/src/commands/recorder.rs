@@ -225,6 +225,31 @@ pub async fn permissions_request_mic() -> bool {
     return true;
 }
 
+/// Onboarding: shows the system-audio prompt now rather than at the first call, by opening the tap for a
+/// moment (the audio is thrown away). There's no public way to read the answer, so this only reports whether
+/// the tap could start.
+#[tauri::command]
+pub async fn permissions_request_system_audio(app: AppHandle) -> bool {
+    if is_recording(&app) {
+        return true; // already capturing; asking again would only disturb the recording
+    }
+    #[cfg(target_os = "macos")]
+    return tauri::async_runtime::spawn_blocking(|| {
+        use crate::recorder::source::AudioSource;
+        let (producer, _consumer) = crate::recorder::feed::feed();
+        let mut tap = platform::macos::system_tap::SystemTap::default();
+        let ok = tap.start(std::sync::Arc::new(std::sync::Mutex::new(producer))).is_ok();
+        // Long enough for the system to show its prompt; the prompt stays up on its own after this.
+        std::thread::sleep(std::time::Duration::from_millis(1500));
+        tap.stop();
+        ok
+    })
+    .await
+    .unwrap_or(false);
+    #[cfg(not(target_os = "macos"))]
+    return true;
+}
+
 #[tauri::command]
 pub fn permissions_open_settings(pane: String) -> CmdResult<()> {
     #[cfg(target_os = "macos")]

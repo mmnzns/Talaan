@@ -1,6 +1,7 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { Check, Headphones } from "lucide-react";
 import { Logo } from "../../brand/Logo";
+import { recorderClient } from "../../data";
 import { useSettings } from "../../data/hooks";
 import { useSettingsStore } from "../../data/StoreProvider";
 import type { Settings } from "../../data/settings";
@@ -9,7 +10,8 @@ import { SunCorner } from "../../brand/SunCorner";
 
 const STEPS = ["Welcome", "Audio access", "Speech model", "Summaries", "Call apps", "Extras", "Done"] as const;
 
-type Perm = "idle" | "allowed" | "denied";
+/** "asked": the system prompt was shown; its answer can't be read, only seen in the first recording. */
+type Perm = "idle" | "allowed" | "asked" | "denied";
 
 export function OnboardingScreen() {
   const { settings, update } = useSettings();
@@ -130,17 +132,19 @@ function Welcome() {
   );
 }
 
-function PermRow({ title, desc: d, state, onAllow, onDeny }: { title: string; desc: string; state: Perm; onAllow?: () => void; onDeny?: () => void }) {
+function PermRow({ title, desc: d, state, onAllow, onDeny, onOpen }: { title: string; desc: string; state: Perm; onAllow?: () => void; onDeny?: () => void; onOpen?: () => void }) {
   return (
     <div className="flex items-center gap-3.5 rounded-card border border-line bg-surface px-[18px] py-4 shadow-card">
       <span className="flex-1">
         <span className="block font-semibold">{title}</span>
         <span className="text-xs leading-[17px] text-subtle">{d}</span>
       </span>
-      {state === "allowed" ? (
+      {state === "allowed" || state === "asked" ? (
         <Chip tone="gold">
-          <Check size={11} aria-hidden="true" /> Allowed
+          <Check size={11} aria-hidden="true" /> {state === "allowed" ? "allowed" : "asked"}
         </Chip>
+      ) : state === "denied" && onOpen ? (
+        <Button onClick={onOpen}>Open system settings</Button>
       ) : (
         <span className="flex gap-2">
           {onDeny && <Button variant="ghost" onClick={onDeny}>Not now</Button>}
@@ -152,27 +156,34 @@ function PermRow({ title, desc: d, state, onAllow, onDeny }: { title: string; de
 }
 
 function AudioAccess({ systemAudio, setSystemAudio }: { systemAudio: Perm; setSystemAudio: (p: Perm) => void }) {
-  const toast = useToast();
-  const [mic, setMic] = useState<Perm>("allowed");
+  const [mic, setMic] = useState<Perm>("idle");
+  useEffect(() => {
+    recorderClient.microphonePermission().then((p) => setMic(p === "granted" ? "allowed" : p === "denied" || p === "restricted" ? "denied" : "idle"));
+  }, []);
+  const askMic = async () => setMic((await recorderClient.requestMicrophone()) ? "allowed" : "denied");
+  const askSystem = async () => setSystemAudio((await recorderClient.requestSystemAudio()) ? "asked" : "denied");
   return (
     <>
       <h1 className={h1}>Allow two kinds of audio</h1>
       <p className={desc}>Talaan needs your microphone (your side) and system audio (everyone else). Your system will ask for each one next.</p>
-      <PermRow title="Microphone" desc={`Records what you say. Labeled “Me”.`} state={mic} onAllow={() => setMic("allowed")} />
+      <PermRow title="Microphone" desc={`Records what you say. Labeled “Me”.`} state={mic} onAllow={() => void askMic()} onOpen={() => void recorderClient.openSettings("microphone")} />
       <PermRow
         title="System audio"
         desc="Records the other people on the call. Your system may list this as screen and system audio recording; Talaan only uses the audio."
         state={systemAudio}
-        onAllow={() => setSystemAudio("allowed")}
+        onAllow={() => void askSystem()}
         onDeny={() => setSystemAudio("denied")}
+        onOpen={() => void recorderClient.openSettings("system-audio")}
       />
       {systemAudio === "denied" ? (
         <div role="alert" className="flex flex-wrap items-center gap-3 rounded-card bg-warn-bg px-3 py-2.5 text-[13px] text-warn-fg">
           <span className="flex-1 basis-56">
             <strong>System audio is off.</strong> Talaan will record your side only, so the transcript won’t include other people. Turn it on any time in system settings › Privacy &amp; Security.
           </span>
-          <Button onClick={() => toast("Opens System Settings")}>Open System Settings</Button>
+          <Button onClick={() => void recorderClient.openSettings("system-audio")}>Open system settings</Button>
         </div>
+      ) : systemAudio === "asked" ? (
+        <p className={desc}>If you chose Don’t Allow, Talaan records your side only until you turn it on in system settings. The first recording tells you if the other side can’t be heard.</p>
       ) : (
         <p className={desc}>If you say no, Talaan still works for your side only, and you can turn it on later in system settings.</p>
       )}
@@ -215,35 +226,34 @@ function ModelStep({ settings: s, update }: StepProps) {
 }
 
 function SummaryStep({ settings: s, update }: StepProps) {
-  const [pct, setPct] = useState(0);
+  const store = useSettingsStore();
   const local = s.summaryEngine === "local";
+  const model = s.localModels.find((m) => m.choice === (s.localModel ?? "recommended")) ?? s.localModels[0];
 
+  // Choosing Local AI starts its one-time download; it keeps going in the background.
   useEffect(() => {
-    if (!local) return;
-    const timer = setInterval(() => setPct((p) => Math.min(100, p + 6)), 700);
-    return () => clearInterval(timer);
-  }, [local]);
+    if (local && model?.state === "not_downloaded") void store.downloadModel(model.id);
+  }, [local, model?.id, model?.state, store]);
 
+  const pct = Math.round((model?.progress ?? 0) * 100);
   return (
     <>
       <h1 className={h1}>How summaries are written</h1>
       <p className={desc}>Every summary has the same format: recap, decisions, action items and open questions.</p>
       <div role="radiogroup" aria-label="Summary engine" className="flex flex-col gap-2">
-        <Option on={local} title="Local AI" tag="default" onClick={() => update({ summaryEngine: "local" })}>
-          Built in and offline. One-time 2.7 GB download.
+        <Option on={local} title="On this computer" tag="default" onClick={() => update({ summaryEngine: "local" })}>
+          Built in and offline. One-time {model ? `${(model.sizeMb / 1000).toFixed(1)} GB` : ""} download.
         </Option>
         <Option on={s.summaryEngine === "byok"} title="Your own key" onClick={() => update({ summaryEngine: "byok" })}>
-          Claude, OpenAI or Gemini. Sends transcript text only. Set up later in Settings.
+          Claude, OpenAI, Gemini or any OpenAI-compatible service. Sends transcript text only. Set up later in Settings.
         </Option>
       </div>
-      {local && (
+      {local && model && (
         <div className="flex items-center gap-2.5" role="status">
           <span aria-hidden="true" className="h-1.5 flex-1 overflow-hidden rounded-full bg-line">
-            <span className="block h-full bg-gold" style={{ width: `${pct}%` }} />
+            <span className="block h-full bg-gold" style={{ width: `${model.state === "downloaded" ? 100 : pct}%` }} />
           </span>
-          <span className="font-mono text-[11px] text-subtle">
-            {pct < 100 ? `downloading ${pct}% · keeps going in the background` : "Local AI is ready"}
-          </span>
+          <Label>{model.state === "downloaded" ? "local ai is ready" : `downloading ${pct}% · keeps going in the background`}</Label>
         </div>
       )}
     </>
@@ -275,7 +285,7 @@ function AppsStep({ settings: s, update }: StepProps) {
 
 function ExtrasStep({ settings: s, update }: StepProps) {
   const rows: [string, string, ReactNode][] = [
-    ["Calendar", "Meeting titles and attendee names from your calendar.", <Switch key="c" aria-label="Calendar" checked={s.calendarConnected} onChange={(v) => update({ calendarConnected: v })} />],
+    ["Calendar", "Meeting titles and attendee names from your calendar.", <CalendarSwitch key="c" settings={s} update={update} />],
     ["Browser call detection", "Recognize Google Meet, Zoom web and Teams web tabs.", <Switch key="b" aria-label="Browser call detection" checked={s.tabDetection} onChange={(v) => update({ tabDetection: v })} />],
     [
       "Notion",
@@ -322,5 +332,21 @@ function Done({ systemAudio }: { systemAudio: Perm }) {
         <p className={desc}>Reminder: system audio is off, so only your side will be recorded until you allow it in system settings.</p>
       )}
     </>
+  );
+}
+
+function CalendarSwitch({ settings: s, update }: StepProps) {
+  const store = useSettingsStore();
+  const toast = useToast();
+  return (
+    <Switch
+      aria-label="Calendar"
+      checked={s.calendarConnected}
+      onChange={async (on) => {
+        if (!on) return void update({ calendarConnected: false });
+        if ((await store.requestCalendar()) === "allowed") void update({ calendarConnected: true });
+        else toast("Calendar access is off for Talaan. You can turn it on later in system settings.");
+      }}
+    />
   );
 }
