@@ -12,10 +12,6 @@ import { Button, Label, Select, Sheet, useToast } from "../../ui";
 import { Group, Row } from "./parts";
 import type { TabProps } from "./tabProps";
 
-// Plain strings for now; they move to t() keys with i18n.
-const CALENDAR_DOWNLOAD = "Calendar: downloads your calendar from the address you gave when a recording starts (at most every 15 minutes)";
-const CALENDAR_WHEN = "At recording start";
-
 export function PrivacyTab({ settings: s, update }: TabProps) {
   const store = useSettingsStore();
   const toast = useToast();
@@ -31,18 +27,15 @@ export function PrivacyTab({ settings: s, update }: TabProps) {
     store.dataInfo().then(setInfo, () => setInfo(undefined));
   }, [store, meetings.length]);
 
-  const flows: [MessageKey | string, MessageKey | string][] = [
+  const flows: [MessageKey, MessageKey][] = [
     ["settings.flow_audio", "settings.when_never"],
     ["settings.flow_transcripts", "settings.when_never"],
     ["settings.flow_byok", s.summaryEngine === "byok" ? "settings.when_on" : "settings.when_off"],
     ["settings.flow_notion", s.notion.connected ? "settings.when_export" : "settings.when_not_connected"],
     ["settings.flow_update", s.checkUpdates ? "settings.when_launch" : "settings.when_off"],
-    ...(onWindows && s.calendarConnected ? [[CALENDAR_DOWNLOAD, CALENDAR_WHEN] as [string, string]] : []),
+    ...(onWindows && s.calendarConnected ? [["settings.flow_calendar_windows", "settings.when_recording_start"] as [MessageKey, MessageKey]] : []),
     ["settings.flow_analytics", "settings.when_never_collected"],
   ];
-
-  // The Windows calendar row is plain English until it gets keys; everything else is a message key.
-  const tr = (k: string) => (k.startsWith("settings.") ? t(k as MessageKey) : k);
 
   return (
     <div className="flex flex-col gap-3">
@@ -52,8 +45,8 @@ export function PrivacyTab({ settings: s, update }: TabProps) {
           <div className="grid grid-cols-[1fr_auto] gap-x-4 gap-y-1.5 text-[13px]">
             {flows.map(([what, when]) => (
               <div key={what} className="contents">
-                <span>{tr(what)}</span>
-                <span className={when === "settings.when_on" ? "font-bold text-danger" : "font-mono text-xs text-subtle"}>{tr(when)}</span>
+                <span>{t(what)}</span>
+                <span className={when === "settings.when_on" ? "font-bold text-danger" : "font-mono text-xs text-subtle"}>{t(when)}</span>
               </div>
             ))}
           </div>

@@ -297,10 +297,6 @@ function AppsStep({ settings: s, update }: StepProps) {
   );
 }
 
-// Plain string for now; it moves to a t() key with i18n.
-const CALENDAR_LATER = "later in settings › connections";
-const CALENDAR_CONNECTED = "connected in settings › connections";
-
 function ExtrasStep({ settings: s, update }: StepProps) {
   const t = useT();
   const rows: [string, string, ReactNode][] = [
@@ -311,10 +307,10 @@ function ExtrasStep({ settings: s, update }: StepProps) {
       onWindows ? (
         s.calendarConnected ? (
           <Chip key="c" tone="gold">
-            <Check size={11} aria-hidden="true" /> {CALENDAR_CONNECTED}
+            <Check size={11} aria-hidden="true" /> {t("onboarding.calendarConnected")}
           </Chip>
         ) : (
-          <Label key="c">{CALENDAR_LATER}</Label>
+          <Label key="c">{t("onboarding.calendarLater")}</Label>
         )
       ) : (
         <CalendarSwitch key="c" settings={s} update={update} />

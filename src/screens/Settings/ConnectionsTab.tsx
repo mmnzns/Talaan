@@ -18,26 +18,7 @@ const STATE_LABEL = {
   not_installed: "settings.state_not_installed",
 } as const satisfies Record<BrowserState, MessageKey>;
 
-// Windows has no permission for this: Talaan reads the address bar of the tab in front of each browser window.
-// Plain strings for now; they move to t() keys with i18n.
-const TABS_DESC_WINDOWS = "Recognizes Google Meet, Zoom web and Teams web tabs, so Browser calls can use Always. Reads the address of the tab in front of each browser window, on this computer only.";
-const STATE_READY_WINDOWS = "ready";
-
-// Windows calendar row (the calendar's iCal address). Plain strings for now; they move to t() keys with i18n.
-const ICS_TEXT = {
-  title: "Calendar",
-  desc: "Uses the event at recording time for the meeting title, attendees and speaker names. Paste your calendar's private address in iCal format: Talaan checks your calendar through it when a recording starts (at most every 15 minutes), never changes it, and sends nothing.",
-  connectedDesc: "Connected through your calendar's iCal address. Talaan checks it when a recording starts (at most every 15 minutes), never changes your calendar, and sends nothing.",
-  where: "Where do I find this?",
-  fieldLabel: "Calendar address in iCal format",
-  placeholder: "https://…/basic.ics",
-  connect: "Test and connect",
-  checking: "Checking…",
-  disconnect: "Disconnect",
-  found: (n: number) => `Found ${n} ${n === 1 ? "event" : "events"} in the next 7 days.`,
-  connectedToast: "Calendar connected",
-} as const;
-
+// Windows calendar row: where each calendar shows its iCal address (brand names, not translated).
 const ICS_HELP: [string, string][] = [
   ["Google Calendar", "https://support.google.com/calendar/answer/37648"],
   ["Outlook", "https://support.microsoft.com/office/share-your-calendar-in-outlook-on-the-web-7ecef8ae-139c-40d9-bae2-a23977ee58d5"],
@@ -82,13 +63,13 @@ export function ConnectionsTab({ settings: s, update }: TabProps) {
             </span>
           </Row>
         )}
-        <Row title={t("settings.browser_title")} desc={onWindows ? TABS_DESC_WINDOWS : t("settings.browser_desc")}>
+        <Row title={t("settings.browser_title")} desc={onWindows ? t("settings.browser_desc_windows") : t("settings.browser_desc")}>
           <Switch aria-label={t("settings.browser_title")} checked={s.tabDetection} onChange={(v) => update({ tabDetection: v })} />
           {s.tabDetection && (
             <div className="flex basis-full flex-wrap gap-2">
               {browsers.map((b) => (
                 <Chip key={b.name} tone={b.state === "allowed" ? "gold" : "default"}>
-                  {b.name} · {onWindows && b.state === "allowed" ? STATE_READY_WINDOWS : t(STATE_LABEL[b.state])}
+                  {b.name} · {t(onWindows && b.state === "allowed" ? "settings.state_ready" : STATE_LABEL[b.state])}
                 </Chip>
               ))}
               {browsers.some((b) => b.state === "denied") && (
@@ -112,6 +93,7 @@ export function ConnectionsTab({ settings: s, update }: TabProps) {
 function CalendarAddressRow({ settings: s }: TabProps) {
   const store = useSettingsStore();
   const toast = useToast();
+  const t = useT();
   const [address, setAddress] = useState("");
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<{ ok: boolean; text: string }>();
@@ -127,8 +109,8 @@ function CalendarAddressRow({ settings: s }: TabProps) {
     try {
       const n = await store.connectCalendar(address);
       setAddress("");
-      setResult({ ok: true, text: ICS_TEXT.found(n) });
-      toast(ICS_TEXT.connectedToast);
+      setResult({ ok: true, text: t("settings.ics_found", { count: n }) });
+      toast(t("settings.ics_connected_toast"));
     } catch (e) {
       setResult({ ok: false, text: toStoreError(e).message });
     } finally {
@@ -138,14 +120,14 @@ function CalendarAddressRow({ settings: s }: TabProps) {
 
   if (s.calendarConnected && access !== "not_asked") {
     return (
-      <Row title={ICS_TEXT.title} desc={ICS_TEXT.connectedDesc}>
+      <Row title={t("settings.calendar_title")} desc={t("settings.ics_connected_desc")}>
         <Button
           onClick={() => {
             setResult(undefined);
             void store.disconnectCalendar();
           }}
         >
-          {ICS_TEXT.disconnect}
+          {t("settings.ics_disconnect")}
         </Button>
         {result && <span className="basis-full text-xs text-subtle">{result.text}</span>}
       </Row>
@@ -153,9 +135,9 @@ function CalendarAddressRow({ settings: s }: TabProps) {
   }
 
   return (
-    <Row stack title={ICS_TEXT.title} desc={ICS_TEXT.desc}>
+    <Row stack title={t("settings.calendar_title")} desc={t("settings.ics_desc")}>
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-subtle">
-        <span>{ICS_TEXT.where}</span>
+        <span>{t("settings.ics_where")}</span>
         {ICS_HELP.map(([name, url]) => (
           <button key={name} type="button" className="cursor-pointer border-0 bg-transparent p-0 text-xs text-ink underline" onClick={() => void openLink(url)}>
             {name}
@@ -170,16 +152,16 @@ function CalendarAddressRow({ settings: s }: TabProps) {
         }}
       >
         <Field
-          label={ICS_TEXT.fieldLabel}
+          label={t("settings.ics_field")}
           type="password"
           autoComplete="off"
-          placeholder={ICS_TEXT.placeholder}
+          placeholder="https://…/basic.ics"
           value={address}
           onChange={(e) => setAddress(e.target.value)}
           wrapperClassName="w-80"
         />
         <Button type="submit" variant="primary" disabled={!address.trim() || busy}>
-          {busy ? ICS_TEXT.checking : ICS_TEXT.connect}
+          {busy ? t("settings.ics_checking") : t("settings.ics_connect")}
         </Button>
       </form>
       {result && <span className={result.ok ? "text-xs text-subtle" : "text-xs text-warn-fg"}>{result.text}</span>}

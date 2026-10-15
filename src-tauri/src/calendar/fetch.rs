@@ -1,6 +1,7 @@
 //! Downloading a calendar from its private iCal address (Windows calendar). Talaan only downloads from the
 //! address; nothing about meetings is sent. The pure helpers decide when to refetch and what the address says.
 
+use crate::i18n::{tr, tr_with};
 use std::io::Read;
 use std::time::{Duration, Instant};
 
@@ -24,16 +25,16 @@ pub fn may_retry(last_failure_ms: Option<i64>, now_ms: i64) -> bool {
 
 /// The address as typed, cleaned up: `webcal://` becomes `https://`. Errors are written for the user.
 pub fn normalize_url(url: &str) -> Result<String, String> {
-    const BAD: &str = "That doesn't look like a calendar address. Copy the whole address, starting with https://.";
+    let bad = || tr("calendar.bad_address");
     let url = url.trim();
-    let (scheme, rest) = url.split_once("://").ok_or(BAD)?;
+    let (scheme, rest) = url.split_once("://").ok_or_else(bad)?;
     let scheme = match scheme.to_ascii_lowercase().as_str() {
         "https" | "webcal" | "webcals" => "https",
         "http" => "http",
-        _ => return Err(BAD.into()),
+        _ => return Err(bad()),
     };
     if rest.is_empty() || rest.starts_with('/') || rest.chars().any(char::is_whitespace) {
-        return Err(BAD.into());
+        return Err(bad());
     }
     Ok(format!("{scheme}://{rest}"))
 }
@@ -79,7 +80,9 @@ pub fn looks_like_calendar(body: &[u8]) -> bool {
     body[start..].get(..15).is_some_and(|head| head.eq_ignore_ascii_case(b"BEGIN:VCALENDAR"))
 }
 
-const TOO_SLOW: &str = "The calendar didn't finish downloading within 15 seconds. Check your connection and try again.";
+fn too_slow() -> String {
+    tr("calendar.too_slow")
+}
 
 /// Downloads the calendar: 15 s in all (connecting, waiting and reading together), at most 20 MB. Errors are
 /// written for the user. The work runs on its own thread so a stalled read can't hold the caller past the deadline.
@@ -91,8 +94,8 @@ pub fn download(url: &str) -> Result<Vec<u8>, String> {
         .spawn(move || {
             let _ = tx.send(download_until(&url, Instant::now() + TIMEOUT));
         })
-        .map_err(|_| TOO_SLOW.to_string())?;
-    rx.recv_timeout(TIMEOUT + Duration::from_millis(500)).unwrap_or_else(|_| Err(TOO_SLOW.to_string()))
+        .map_err(|_| too_slow())?;
+    rx.recv_timeout(TIMEOUT + Duration::from_millis(500)).unwrap_or_else(|_| Err(too_slow()))
 }
 
 fn download_until(url: &str, deadline: Instant) -> Result<Vec<u8>, String> {
@@ -100,18 +103,18 @@ fn download_until(url: &str, deadline: Instant) -> Result<Vec<u8>, String> {
     let client = reqwest::blocking::Client::builder().timeout(TIMEOUT).build().map_err(|e| e.to_string())?;
     let response = client.get(url).send().map_err(|e| {
         if e.is_timeout() {
-            TOO_SLOW.to_string()
+            too_slow()
         } else {
-            "Couldn't reach the calendar address. Check your connection and the address.".to_string()
+            tr("calendar.unreachable")
         }
     })?;
     let status = response.status();
     if !status.is_success() {
-        return Err(format!("The calendar address didn't work (HTTP {}). Copy it again from your calendar.", status.as_u16()));
+        return Err(tr_with("calendar.http_failed", &[("status", &status.as_u16().to_string())]));
     }
     let body = read_body(response, MAX_BYTES, || Instant::now() >= deadline)?;
     if !looks_like_calendar(&body) {
-        return Err("That address didn't return a calendar. Copy the address in iCal format (it ends in .ics).".to_string());
+        return Err(tr("calendar.not_ics"));
     }
     Ok(body)
 }
@@ -122,15 +125,15 @@ fn read_body(mut r: impl Read, max: u64, out_of_time: impl Fn() -> bool) -> Resu
     let mut chunk = vec![0u8; 64 * 1024];
     loop {
         if out_of_time() {
-            return Err(TOO_SLOW.to_string());
+            return Err(too_slow());
         }
-        let n = r.read(&mut chunk).map_err(|e| if e.kind() == std::io::ErrorKind::TimedOut { TOO_SLOW.to_string() } else { "The download was interrupted. Try again.".to_string() })?;
+        let n = r.read(&mut chunk).map_err(|e| if e.kind() == std::io::ErrorKind::TimedOut { too_slow() } else { tr("calendar.interrupted") })?;
         if n == 0 {
             return Ok(body);
         }
         body.extend_from_slice(&chunk[..n]);
         if body.len() as u64 > max {
-            return Err("This calendar is larger than 20 MB, which Talaan doesn't read.".to_string());
+            return Err(tr("calendar.too_large"));
         }
     }
 }
