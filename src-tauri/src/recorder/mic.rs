@@ -168,4 +168,22 @@ mod tests {
         let path = storage.dir(&id).unwrap().join("me.wav");
         println!("wrote {} ({:?} ms), peak level {peak:.2}", path.display(), crate::recorder::wav::wav_duration_ms(&path));
     }
+
+    /// The mic's buffer timestamps are on Talaan's host clock (within half a second of "now").
+    /// Run from src-tauri/ with a working mic: `cargo test mic_clock_smoke -- --ignored --nocapture`
+    #[test]
+    #[ignore]
+    fn mic_clock_smoke() {
+        let (producer, mut consumer) = crate::recorder::feed::feed();
+        let mut mic = MicSource::default();
+        mic.start(std::sync::Arc::new(std::sync::Mutex::new(producer))).unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(500));
+        let mut buf = vec![];
+        let h = consumer.pop(&mut buf).expect("a mic buffer");
+        let now = crate::platform::host_now_ns();
+        mic.stop();
+        let diff = now.abs_diff(h.host_ns);
+        eprintln!("mic stamp {} · now {} · diff {} ms", h.host_ns, now, diff / 1_000_000);
+        assert!(diff < 500_000_000, "{diff}");
+    }
 }

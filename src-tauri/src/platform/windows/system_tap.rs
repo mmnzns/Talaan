@@ -653,4 +653,77 @@ mod tests {
         assert!(ours < 0.01, "them.wav contains our own tone ({ours:.4})");
         assert!(skew.abs() < 1_000, "QPC stamps should be on host time");
     }
+
+    /// Median of `now - stamp` (ms, signed) over the first buffers a feed delivers, polled every 2 ms.
+    /// Also returns the (stamp, rms) of every buffer so a burst can be located.
+    fn lag_and_levels(c: &mut crate::recorder::feed::FeedConsumer, lags: &mut Vec<i64>, levels: &mut Vec<(u64, f64)>) {
+        let mut buf = vec![];
+        while let Some(h) = c.pop(&mut buf) {
+            let now = host_now_ns();
+            lags.push((now as i64 - h.host_ns as i64) / 1_000_000);
+            let x: Vec<f64> = buf.iter().map(|v| *v as f64).collect();
+            levels.push((h.host_ns, rms(&x)));
+        }
+    }
+
+    fn median(v: &[i64]) -> i64 {
+        let mut s = v.to_vec();
+        s.sort();
+        s[s.len() / 2]
+    }
+
+    /// Both tracks' stamps sit on the host clock: the median of `now - stamp` over the first ~50 buffers of each
+    /// source (the stamp-to-delivery lag) is under 200 ms. A separate process (PowerShell) plays a Windows sound so
+    /// the loopback has a burst to find; its arrival on the "Them" clock is printed against the moment we spawned it.
+    /// Without speakers the mic can't hear the burst, so true cross-track alignment is not measured here.
+    /// `cargo test tracks_line_up_smoke -- --ignored --nocapture` from `src-tauri/`, with a working mic.
+    #[test]
+    #[ignore]
+    fn tracks_line_up_smoke() {
+        use crate::recorder::source::AudioSource;
+        let (mp, mut mc) = crate::recorder::feed::feed();
+        let (sp, mut sc) = crate::recorder::feed::feed();
+        let mut mic = MicSource::default();
+        let mut tap = SystemTap::default();
+        mic.start(Arc::new(std::sync::Mutex::new(mp))).unwrap();
+        tap.start(Arc::new(std::sync::Mutex::new(sp))).unwrap();
+        std::thread::sleep(Duration::from_millis(500));
+        // Discard the backlog that piled up while we slept: the lag is judged on buffers drained as they arrive.
+        let mut scrap = (vec![], vec![]);
+        lag_and_levels(&mut mc, &mut scrap.0, &mut scrap.1);
+        lag_and_levels(&mut sc, &mut scrap.0, &mut scrap.1);
+
+        let spawned = host_now_ns();
+        let mut ps = std::process::Command::new("powershell")
+            .args(["-NoProfile", "-Command", r"(New-Object Media.SoundPlayer 'C:\Windows\Media\Windows Ding.wav').PlaySync()"])
+            .spawn()
+            .expect("powershell");
+
+        let (mut mlag, mut mlev, mut slag, mut slev) = (vec![], vec![], vec![], vec![]);
+        for _ in 0..3000 {
+            std::thread::sleep(Duration::from_millis(2));
+            lag_and_levels(&mut mc, &mut mlag, &mut mlev);
+            lag_and_levels(&mut sc, &mut slag, &mut slev);
+            if mlag.len() >= 50 && slag.len() >= 50 && ps.try_wait().unwrap().is_some() {
+                break;
+            }
+        }
+        let _ = ps.wait();
+        mic.stop();
+        tap.stop();
+
+        let (m50, s50) = (&mlag[..mlag.len().min(50)], &slag[..slag.len().min(50)]);
+        println!("mic: {} buffers, median stamp lag {} ms (max {})", mlag.len(), median(m50), m50.iter().max().unwrap());
+        println!("them: {} buffers, median stamp lag {} ms (max {})", slag.len(), median(s50), s50.iter().max().unwrap());
+        let base = slev.iter().take(10).map(|l| l.1).fold(0.0, f64::max);
+        let peak = slev.iter().copied().fold((0, 0.0), |a, l| if l.1 > a.1 { l } else { a });
+        let first = slev.iter().find(|l| l.1 > (base * 2.0).max(0.02));
+        println!("loopback baseline RMS {base:.4} · peak {:.4} at {:.0} ms after spawn", peak.1, (peak.0 as f64 - spawned as f64) / 1e6);
+        match first {
+            Some((t, level)) => println!("burst on Them clock {:.0} ms after spawn (RMS {level:.3}; includes PowerShell startup)", (*t as f64 - spawned as f64) / 1e6),
+            None => println!("no burst heard on the loopback (is the output muted?)"),
+        }
+        assert!(median(m50).abs() < 200, "mic lag {}", median(m50));
+        assert!(median(s50).abs() < 200, "system lag {}", median(s50));
+    }
 }
