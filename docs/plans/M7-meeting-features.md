@@ -32,3 +32,15 @@ Timestamp → transcript jump (M1), edit transcript and summary with Revert, edi
 4. **Import:** symphonia decode + resample + write, command with progress, drag-drop and Choose file, tests with generated WAV/FLAC fixtures.
 5. **Meeting menu:** Generate summary again (regenerate), Delete audio now (keeps transcript), Show in Finder.
 6. **Checks:** play a real meeting from a decision's time; export md / txt / pdf; import an m4a (Voice Memos format) end to end; search a transcript word; edit → restart → revert. Docs, notices (symphonia MPL-2.0, dialog plugin), Build Log.
+
+## Outcome (2026-10-14)
+
+All tasks done. 238 Rust tests, 77 TS tests.
+
+Checked in the signed app:
+
+- **Import:** Import audio → Choose file → an M4A (AAC, made by macOS like a Voice Memo) → meeting "Imported: Launch plan memo.m4a" (14 s) → transcribed and summarized locally in ~38 s, retitled "Launch date and pricing update", decisions and Priya's action item with "Friday". Importer tests also cover 44.1 kHz stereo WAV and a non-audio file.
+- **Playback:** Play made `playback.wav` (mix of both tracks), audio played, playhead and line highlight followed (00:02 / 00:13).
+- Found and fixed: on an imported (single-track) file the model wrote "the speaker" and made "Them" an owner; the prompt now says that imported recordings put everyone on one track and Them is not a name.
+
+Not clicked through (Miguel was using the Mac): the export save dialog (Markdown / text), the PDF print sheet, drag-and-drop import, Delete audio now, Show in Finder. They are on his test list.

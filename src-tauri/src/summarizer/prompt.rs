@@ -83,6 +83,10 @@ pub fn language_name(code: &str) -> String {
 pub fn summary_prompt(meeting: &Meeting, lines: &[TranscriptLine], language: &str, part: Option<(usize, usize)>) -> Prompt {
     let mut user = String::new();
     user.push_str(&format!("Call recorded {}. Length {}.\n", meeting.item.started_at.get(..10).unwrap_or(""), stamp(meeting.item.duration_ms)));
+    if meeting.item.app == "import" {
+        // One track, so everyone (the user included) is labeled Them.
+        user.push_str("This is an imported recording on a single track: every line says Them, including the person who made it. \"Them\" is not a name: use a person's name as owner only when it is said, otherwise leave owner empty, and don't call anyone \"the speaker\".\n");
+    }
     if let (Some((i, n)), Some(first), Some(last)) = (part, lines.first(), lines.last()) {
         user.push_str(&format!("This is part {i} of {n} of a long call, from {} to {}. Summarize only this part.\n", stamp(first.at), stamp(last.end)));
     }
@@ -175,6 +179,16 @@ pub(crate) mod tests {
         let p = summary_prompt(&meeting(lines.clone()), &lines, "en", Some((2, 3)));
         assert!(p.user.contains("This is part 2 of 3 of a long call, from 10:00 to 10:04."));
         assert!(!p.user.contains("pricing decision"));
+    }
+
+    #[test]
+    fn imported_recordings_explain_the_single_track() {
+        let lines = vec![line("l0", 0, "them:0", "I will send the update Monday.")];
+        let mut m = meeting(lines.clone());
+        m.item.app = "import".into();
+        assert!(summary_prompt(&m, &lines, "en", None).user.contains("\"Them\" is not a name"));
+        m.item.app = "zoom".into();
+        assert!(!summary_prompt(&m, &lines, "en", None).user.contains("single track"));
     }
 
     #[test]

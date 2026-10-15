@@ -82,6 +82,7 @@ src-tauri/src/
     resample.rs wav.rs levels.rs  rubato to 16 kHz mono, hound WAV with 2 s flush + repair_wav, RMS levels
     feed.rs source.rs   rtrb SPSC feed from audio callbacks, AudioSource trait
     mic.rs recovery.rs  cpal mic source, crash recovery (repair WAVs, duration)
+    playback.rs         both tracks mixed into playback.wav on first Play (deleted with the audio)
   commands/transcriber.rs  worker setup, meetings_retry, models_list / download / cancel / delete
   transcriber/          speech to text (no Tauri types)
     models.rs download.rs  catalog (pinned revisions, sizes, sha256), reuse "On this Mac", resumable verified downloads
@@ -98,6 +99,7 @@ src-tauri/src/
     local.rs models.rs  client for the talaan-llm helper; local model catalog (Qwen3.5 4B / 9B)
     worker.rs           summarizing -> ready (with summary_error when there's no engine or it failed)
   keys.rs               API keys in the Keychain
+  importer.rs           import audio: symphonia decode -> 16 kHz mono them.wav (commands/import.rs runs it)
   calls/                call detection (pure): apps.rs bundle-id tables (call apps, ignored apps), rules.rs state machine
   commands/calls.rs     1 Hz loop: mic users -> rules -> recordings and the prompt window (nudge, banner, call ended)
   commands/tray.rs      menu bar icon + timer, popover window, window_fit, main window hides on close

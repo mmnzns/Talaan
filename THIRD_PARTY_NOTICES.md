@@ -39,6 +39,8 @@ Talaan uses the following libraries, fonts and models. Each is used under its ow
 | llama-cpp-2 | MIT / Apache-2.0 | https://github.com/utilityai/llama-cpp-rs |
 | keyring (Keychain) | MIT / Apache-2.0 | https://github.com/hwchen/keyring-rs |
 | objc2-user-notifications | Zlib / Apache-2.0 / MIT | https://github.com/madsmtm/objc2 |
+| Symphonia (audio import) | MPL-2.0 | https://github.com/pdeljanov/Symphonia |
+| tauri-plugin-dialog | MIT / Apache-2.0 | https://github.com/tauri-apps/plugins-workspace |
 
 ## Models
 
