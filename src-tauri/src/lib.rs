@@ -128,7 +128,9 @@ pub fn run() {
             commands::calendar::calendar_access,
             commands::calendar::calendar_request,
             #[cfg(target_os = "windows")]
-            commands::calendar::calendar_test_ics,
+            commands::calendar::calendar_connect,
+            #[cfg(target_os = "windows")]
+            commands::calendar::calendar_disconnect,
             commands::notion::notion_connect,
             commands::notion::notion_disconnect,
             commands::notion::notion_destinations,

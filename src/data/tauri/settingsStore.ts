@@ -154,8 +154,15 @@ export class TauriSettingsStore implements SettingsStore {
     return call<CalendarAccess>("calendar_request");
   }
 
-  testCalendarIcs(url: string): Promise<number> {
-    return call<number>("calendar_test_ics", { url });
+  async connectCalendar(url: string): Promise<number> {
+    const n = await call<number>("calendar_connect", { url });
+    await this.update({ calendarConnected: true });
+    return n;
+  }
+
+  async disconnectCalendar(): Promise<void> {
+    await call<void>("calendar_disconnect");
+    await this.update({ calendarConnected: false });
   }
 
   dataInfo(): Promise<{ path: string; bytes: number }> {

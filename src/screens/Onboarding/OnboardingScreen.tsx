@@ -286,14 +286,25 @@ function AppsStep({ settings: s, update }: StepProps) {
 
 // Plain string for now; it moves to a t() key with i18n.
 const CALENDAR_LATER = "later in settings › connections";
+const CALENDAR_CONNECTED = "connected in settings › connections";
 
 function ExtrasStep({ settings: s, update }: StepProps) {
   const rows: [string, string, ReactNode][] = [
     [
       "Calendar",
       "Meeting titles and attendee names from your calendar.",
-      // Windows reads the calendar's iCal address, which is pasted in Settings.
-      onWindows && !s.calendarConnected ? <Label key="c">{CALENDAR_LATER}</Label> : <CalendarSwitch key="c" settings={s} update={update} />,
+      // Windows reads the calendar's iCal address, which is pasted (and disconnected) in Settings: no toggle here.
+      onWindows ? (
+        s.calendarConnected ? (
+          <Chip key="c" tone="gold">
+            <Check size={11} aria-hidden="true" /> {CALENDAR_CONNECTED}
+          </Chip>
+        ) : (
+          <Label key="c">{CALENDAR_LATER}</Label>
+        )
+      ) : (
+        <CalendarSwitch key="c" settings={s} update={update} />
+      ),
     ],
     ["Browser call detection", "Recognize Google Meet, Zoom web and Teams web tabs.", <Switch key="b" aria-label="Browser call detection" checked={s.tabDetection} onChange={(v) => update({ tabDetection: v })} />],
     [

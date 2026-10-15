@@ -25,19 +25,33 @@ pub async fn calendar_request() -> &'static str {
     tauri::async_runtime::spawn_blocking(|| name(system::request())).await.unwrap_or("denied")
 }
 
-/// Windows: hands the calendar address from settings to the platform (at startup and whenever settings change).
+/// Windows: hands the saved calendar address (secure key storage) to the platform, at startup and whenever
+/// settings change.
 #[cfg(target_os = "windows")]
-pub fn sync_source(app: &AppHandle) {
-    let s = app.state::<AppState>().lock().settings_get().ok().flatten();
-    let url = s.as_ref().and_then(|s| s["calendarIcsUrl"].as_str()).map(str::to_string);
-    system::set_source(url);
+pub fn sync_source(_app: &AppHandle) {
+    system::set_source(crate::keys::get(crate::keys::CALENDAR_ICS));
 }
 
-/// Windows: downloads a calendar address and counts its events in the next 7 days, for Settings › Test.
+/// Windows: downloads a calendar address and, if it works, saves it in secure key storage (never in settings) and
+/// starts using it. Returns the number of events in the next 7 days. The frontend then sets `calendarConnected`.
 #[cfg(target_os = "windows")]
 #[tauri::command]
-pub async fn calendar_test_ics(url: String) -> Result<usize, String> {
-    tauri::async_runtime::spawn_blocking(move || system::test_address(&url)).await.map_err(|e| e.to_string())?
+pub async fn calendar_connect(url: String) -> Result<usize, String> {
+    let url = crate::calendar::fetch::normalize_url(&url)?;
+    let checked = url.clone();
+    let n = tauri::async_runtime::spawn_blocking(move || system::test_address(&checked)).await.map_err(|e| e.to_string())??;
+    crate::keys::set(crate::keys::CALENDAR_ICS, &url)?;
+    system::set_source(Some(url));
+    Ok(n)
+}
+
+/// Windows: forgets the calendar address. The frontend then clears `calendarConnected`.
+#[cfg(target_os = "windows")]
+#[tauri::command]
+pub fn calendar_disconnect() -> Result<(), String> {
+    crate::keys::clear(crate::keys::CALENDAR_ICS)?;
+    system::set_source(None);
+    Ok(())
 }
 
 fn enabled(app: &AppHandle) -> bool {

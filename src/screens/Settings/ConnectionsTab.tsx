@@ -104,19 +104,23 @@ export function ConnectionsTab({ settings: s, update }: TabProps) {
 }
 
 /** Windows: the calendar comes from its private iCal address. Connected = a tested address is saved. */
-function CalendarAddressRow({ settings: s, update }: TabProps) {
+function CalendarAddressRow({ settings: s }: TabProps) {
   const store = useSettingsStore();
   const toast = useToast();
   const [address, setAddress] = useState("");
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<{ ok: boolean; text: string }>();
+  // "allowed" once an address is in secure key storage; the settings flag alone isn't enough.
+  const [access, setAccess] = useState<CalendarAccess>();
+  useEffect(() => {
+    store.calendarAccess().then(setAccess, () => setAccess(undefined));
+  }, [store, s.calendarConnected]);
 
   const connect = async () => {
     setBusy(true);
     setResult(undefined);
     try {
-      const n = await store.testCalendarIcs(address);
-      await update({ calendarIcsUrl: address.trim(), calendarConnected: true });
+      const n = await store.connectCalendar(address);
       setAddress("");
       setResult({ ok: true, text: ICS_TEXT.found(n) });
       toast(ICS_TEXT.connectedToast);
@@ -127,13 +131,13 @@ function CalendarAddressRow({ settings: s, update }: TabProps) {
     }
   };
 
-  if (s.calendarConnected && s.calendarIcsUrl) {
+  if (s.calendarConnected && access !== "not_asked") {
     return (
       <Row title={ICS_TEXT.title} desc={ICS_TEXT.connectedDesc}>
         <Button
           onClick={() => {
             setResult(undefined);
-            void update({ calendarIcsUrl: "", calendarConnected: false });
+            void store.disconnectCalendar();
           }}
         >
           {ICS_TEXT.disconnect}

@@ -22,9 +22,16 @@ pub fn clear(provider: &str) -> Result<(), String> {
     }
 }
 
+/// The calendar's private iCal address (Windows calendar). It's a secret link, so it lives here, not in settings.
+#[cfg_attr(not(target_os = "windows"), allow(dead_code))]
+pub const CALENDAR_ICS: &str = "calendar-ics";
+
+/// Every key Talaan saves.
+const ALL: &[&str] = &["claude", "openai", "gemini", "compatible", "notion", CALENDAR_ICS];
+
 /// "Delete all Talaan data" removes every key too.
 pub fn clear_all() {
-    for p in ["claude", "openai", "gemini", "compatible", "notion"] {
+    for p in ALL {
         let _ = clear(p);
     }
 }
@@ -32,6 +39,13 @@ pub fn clear_all() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn deleting_all_data_covers_every_key() {
+        for k in ["claude", "openai", "gemini", "compatible", "notion", CALENDAR_ICS] {
+            assert!(ALL.contains(&k), "{k}");
+        }
+    }
 
     #[test]
     fn keys_round_trip_and_clear() {

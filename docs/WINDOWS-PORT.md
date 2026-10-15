@@ -54,8 +54,10 @@ Talaan is running; quit it first.
 
 **W4 done.** *Calendar:* Windows' own calendar store doesn't see new Outlook or Google (spike below), so Talaan reads
 the calendar's private iCal address instead, which works with any provider. The user pastes it in Settings › Connections ›
-Calendar (Windows only; "Test and connect" downloads it and says how many events are in the next 7 days). It's saved as
-`calendarIcsUrl` in settings.json, and Privacy › What leaves this computer lists the download. `calendar/fetch.rs`
+Calendar (Windows only; "Test and connect" downloads it and says how many events are in the next 7 days). The address is a
+secret link, so it's kept in Windows Credential Manager (key `calendar-ics`, through `keys.rs`; removed by Disconnect and
+by Delete all Talaan data), never in settings.json; settings only hold `calendarConnected`. Privacy › What leaves this
+computer lists the download. `calendar/fetch.rs`
 downloads it (15 s timeout, 20 MB cap, `webcal://` accepted, refreshed every 15 minutes, a failed download keeps the old copy
 and retries after a minute). `calendar/ics.rs` reads it once per download and expands recurrences per window: RRULE, EXDATE,
 RECURRENCE-ID overrides, IANA and Windows time zone names (Outlook's "Eastern Standard Time"), floating and all-day times,
