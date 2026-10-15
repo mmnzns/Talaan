@@ -79,6 +79,7 @@ export const defaultSettings: Settings = {
   byokKeySet: false,
   byokModel: "recommended",
   calendarConnected: false,
+  calendarIcsUrl: "",
   tabDetection: false,
   suggestSpeakerNames: true,
   notion: { connected: false },

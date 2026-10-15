@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import { recorderClient } from "../../data";
 import type { BrowserState, CalendarAccess, NotionDestination } from "../../data/settings";
-import { describeError } from "../../data/errors";
+import { describeError, toStoreError } from "../../data/errors";
+import { onWindows } from "../../lib/os";
 import { openLink } from "../../lib/windows";
 import { useSettingsStore } from "../../data/StoreProvider";
 import { Button, Chip, Field, Select, Switch, useToast } from "../../ui";
@@ -9,6 +10,27 @@ import { Group, Row, SectionIntro } from "./parts";
 import type { TabProps } from "./tabProps";
 
 const STATE_LABEL = { allowed: "allowed", denied: "not allowed", not_asked: "asks at the first call", not_installed: "not installed" } as const;
+
+// Windows calendar row (the calendar's iCal address). Plain strings for now; they move to t() keys with i18n.
+const ICS_TEXT = {
+  title: "Calendar",
+  desc: "Uses the event at recording time for the meeting title, attendees and speaker names. Paste your calendar's private address in iCal format: Talaan downloads your calendar from it every 15 minutes, never changes it, and sends nothing.",
+  connectedDesc: "Connected through your calendar's iCal address. Talaan downloads it every 15 minutes, never changes your calendar, and sends nothing.",
+  where: "Where do I find this?",
+  fieldLabel: "Calendar address in iCal format",
+  placeholder: "https://…/basic.ics",
+  connect: "Test and connect",
+  checking: "Checking…",
+  disconnect: "Disconnect",
+  found: (n: number) => `Found ${n} ${n === 1 ? "event" : "events"} in the next 7 days.`,
+  connectedToast: "Calendar connected",
+} as const;
+
+const ICS_HELP: [string, string][] = [
+  ["Google Calendar", "https://support.google.com/calendar/answer/37648"],
+  ["Outlook", "https://support.microsoft.com/office/share-your-calendar-in-outlook-on-the-web-7ecef8ae-139c-40d9-bae2-a23977ee58d5"],
+  ["iCloud", "https://support.apple.com/guide/icloud/share-a-calendar-mm6b1a9479/icloud"],
+];
 
 export function ConnectionsTab({ settings: s, update }: TabProps) {
   const toast = useToast();
@@ -32,16 +54,20 @@ export function ConnectionsTab({ settings: s, update }: TabProps) {
     <div className="flex flex-col gap-3">
       <SectionIntro title="Connections" desc="All optional. Talaan works fully without them." />
       <Group>
-        <Row title="Calendar" desc="Uses the event at recording time for the meeting title, attendees and speaker names. Reads your system calendar, on this computer only; never changes it.">
-          <span className="flex items-center gap-3">
-            {calendar === "denied" && (
-              <button type="button" className="cursor-pointer border-0 bg-transparent p-0 text-xs text-subtle underline" onClick={() => recorderClient.openSettings("calendar")}>
-                Allow in system settings
-              </button>
-            )}
-            <Switch aria-label="Calendar" checked={s.calendarConnected && calendar !== "denied"} onChange={toggleCalendar} />
-          </span>
-        </Row>
+        {onWindows ? (
+          <CalendarAddressRow settings={s} update={update} />
+        ) : (
+          <Row title="Calendar" desc="Uses the event at recording time for the meeting title, attendees and speaker names. Reads your system calendar, on this computer only; never changes it.">
+            <span className="flex items-center gap-3">
+              {calendar === "denied" && (
+                <button type="button" className="cursor-pointer border-0 bg-transparent p-0 text-xs text-subtle underline" onClick={() => recorderClient.openSettings("calendar")}>
+                  Allow in system settings
+                </button>
+              )}
+              <Switch aria-label="Calendar" checked={s.calendarConnected && calendar !== "denied"} onChange={toggleCalendar} />
+            </span>
+          </Row>
+        )}
         <Row title="Browser call detection" desc="Recognizes Google Meet, Zoom web and Teams web tabs, so Browser calls can use Always. Your system asks once per browser.">
           <Switch aria-label="Browser call detection" checked={s.tabDetection} onChange={(v) => update({ tabDetection: v })} />
           {s.tabDetection && (
@@ -65,6 +91,81 @@ export function ConnectionsTab({ settings: s, update }: TabProps) {
         </Row>
       </Group>
     </div>
+  );
+}
+
+/** Windows: the calendar comes from its private iCal address. Connected = a tested address is saved. */
+function CalendarAddressRow({ settings: s, update }: TabProps) {
+  const store = useSettingsStore();
+  const toast = useToast();
+  const [address, setAddress] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [result, setResult] = useState<{ ok: boolean; text: string }>();
+
+  const connect = async () => {
+    setBusy(true);
+    setResult(undefined);
+    try {
+      const n = await store.testCalendarIcs(address);
+      await update({ calendarIcsUrl: address.trim(), calendarConnected: true });
+      setAddress("");
+      setResult({ ok: true, text: ICS_TEXT.found(n) });
+      toast(ICS_TEXT.connectedToast);
+    } catch (e) {
+      setResult({ ok: false, text: toStoreError(e).message });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  if (s.calendarConnected && s.calendarIcsUrl) {
+    return (
+      <Row title={ICS_TEXT.title} desc={ICS_TEXT.connectedDesc}>
+        <Button
+          onClick={() => {
+            setResult(undefined);
+            void update({ calendarIcsUrl: "", calendarConnected: false });
+          }}
+        >
+          {ICS_TEXT.disconnect}
+        </Button>
+        {result && <span className="basis-full text-xs text-subtle">{result.text}</span>}
+      </Row>
+    );
+  }
+
+  return (
+    <Row stack title={ICS_TEXT.title} desc={ICS_TEXT.desc}>
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-subtle">
+        <span>{ICS_TEXT.where}</span>
+        {ICS_HELP.map(([name, url]) => (
+          <button key={name} type="button" className="cursor-pointer border-0 bg-transparent p-0 text-xs text-ink underline" onClick={() => void openLink(url)}>
+            {name}
+          </button>
+        ))}
+      </div>
+      <form
+        className="flex flex-wrap items-center gap-2"
+        onSubmit={(e) => {
+          e.preventDefault();
+          void connect();
+        }}
+      >
+        <Field
+          label={ICS_TEXT.fieldLabel}
+          type="password"
+          autoComplete="off"
+          placeholder={ICS_TEXT.placeholder}
+          value={address}
+          onChange={(e) => setAddress(e.target.value)}
+          wrapperClassName="w-80"
+        />
+        <Button type="submit" variant="primary" disabled={!address.trim() || busy}>
+          {busy ? ICS_TEXT.checking : ICS_TEXT.connect}
+        </Button>
+      </form>
+      {result && <span className={result.ok ? "text-xs text-subtle" : "text-xs text-warn-fg"}>{result.text}</span>}
+    </Row>
   );
 }
 

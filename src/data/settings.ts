@@ -98,6 +98,8 @@ export interface Settings {
   byokBaseUrl?: string;
   // Connections
   calendarConnected: boolean;
+  /** Windows: the calendar's private iCal address (Google, Outlook, iCloud). Empty when not set. */
+  calendarIcsUrl: string;
   tabDetection: boolean;
   suggestSpeakerNames: boolean;
   /** The secret itself lives in secure key storage, never here. */
@@ -141,6 +143,8 @@ export interface SettingsStore {
   calendarAccess(): Promise<CalendarAccess>;
   /** Asks the system for calendar access (the prompt shows only the first time). */
   requestCalendar(): Promise<CalendarAccess>;
+  /** Windows: downloads a calendar address and counts its events in the next 7 days. Throws a plain message. */
+  testCalendarIcs(url: string): Promise<number>;
   /** Where the data lives and how much space it uses. */
   dataInfo(): Promise<{ path: string; bytes: number }>;
   /** "Delete all Talaan data": meetings, audio, models, settings and keys. */

@@ -154,6 +154,10 @@ export class TauriSettingsStore implements SettingsStore {
     return call<CalendarAccess>("calendar_request");
   }
 
+  testCalendarIcs(url: string): Promise<number> {
+    return call<number>("calendar_test_ics", { url });
+  }
+
   dataInfo(): Promise<{ path: string; bytes: number }> {
     return call("data_info");
   }

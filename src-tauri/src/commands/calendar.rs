@@ -25,6 +25,21 @@ pub async fn calendar_request() -> &'static str {
     tauri::async_runtime::spawn_blocking(|| name(system::request())).await.unwrap_or("denied")
 }
 
+/// Windows: hands the calendar address from settings to the platform (at startup and whenever settings change).
+#[cfg(target_os = "windows")]
+pub fn sync_source(app: &AppHandle) {
+    let s = app.state::<AppState>().lock().settings_get().ok().flatten();
+    let url = s.as_ref().and_then(|s| s["calendarIcsUrl"].as_str()).map(str::to_string);
+    system::set_source(url);
+}
+
+/// Windows: downloads a calendar address and counts its events in the next 7 days, for Settings › Test.
+#[cfg(target_os = "windows")]
+#[tauri::command]
+pub async fn calendar_test_ics(url: String) -> Result<usize, String> {
+    tauri::async_runtime::spawn_blocking(move || system::test_address(&url)).await.map_err(|e| e.to_string())?
+}
+
 fn enabled(app: &AppHandle) -> bool {
     let s = app.state::<AppState>().lock().settings_get().ok().flatten();
     s.as_ref().and_then(|s| s["calendarConnected"].as_bool()).unwrap_or(false) && system::access() == Access::Allowed

@@ -49,6 +49,8 @@ pub fn run() {
             platform::notify::setup(move |id| commands::summarizer::open_meeting(&handle, &id));
             commands::transcriber::setup(app.handle(), root);
             commands::calls::setup(app.handle());
+            #[cfg(target_os = "windows")]
+            commands::calendar::sync_source(app.handle());
             commands::updates::apply_login_item(app.handle());
             commands::updates::check_at_launch(app.handle());
             commands::tray::setup(app.handle())?;
@@ -125,6 +127,8 @@ pub fn run() {
             commands::ask::meetings_ask,
             commands::calendar::calendar_access,
             commands::calendar::calendar_request,
+            #[cfg(target_os = "windows")]
+            commands::calendar::calendar_test_ics,
             commands::notion::notion_connect,
             commands::notion::notion_disconnect,
             commands::notion::notion_destinations,

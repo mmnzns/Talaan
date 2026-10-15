@@ -171,6 +171,17 @@ describe("TauriSettingsStore", () => {
     expect(invoke.mock.calls.filter((c) => c[0] === "models_list")).toHaveLength(2);
   });
 
+  it("tests a calendar address through Rust and keeps its plain error message", async () => {
+    backend({});
+    const store = new TauriSettingsStore();
+    expect((await store.get()).calendarIcsUrl).toBe("");
+    invoke.mockResolvedValueOnce(4);
+    expect(await store.testCalendarIcs("https://example.com/basic.ics")).toBe(4);
+    expect(invoke).toHaveBeenLastCalledWith("calendar_test_ics", { url: "https://example.com/basic.ics" });
+    invoke.mockRejectedValueOnce("The calendar address didn't work (HTTP 404). Copy it again from your calendar.");
+    await expect(store.testCalendarIcs("https://example.com/x")).rejects.toMatchObject({ message: "The calendar address didn't work (HTTP 404). Copy it again from your calendar." });
+  });
+
   it("deleting all data calls the backend", async () => {
     invoke.mockResolvedValue(undefined);
     await new TauriSettingsStore().deleteAllData();

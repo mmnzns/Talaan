@@ -15,6 +15,8 @@ pub fn settings_set(app: AppHandle, state: State<AppState>, value: Value) -> Cmd
     let report = storage.apply_retention(chrono::Utc::now())?;
     drop(storage);
     super::updates::apply_login_item(&app);
+    #[cfg(target_os = "windows")]
+    super::calendar::sync_source(&app);
     notify(&app, SETTINGS_CHANGED);
     if !report.audio_deleted.is_empty() || !report.meetings_deleted.is_empty() {
         notify(&app, MEETINGS_CHANGED);

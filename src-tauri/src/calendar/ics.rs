@@ -23,6 +23,8 @@ const MAX_STEPS: usize = 100_000;
 
 /// The events overlapping [`from_ms`, `to_ms`), with recurring ones expanded into occurrences. `me` holds the
 /// user's own email addresses, which are left out of the attendees. A file that can't be read gives no events.
+/// The app reads once per download through `Calendar` instead; this is the one-shot form the tests use.
+#[cfg(test)]
 pub fn parse(ics: &str, from_ms: i64, to_ms: i64, me: &[String]) -> Vec<Event> {
     Calendar::read(ics.as_bytes(), me).events(from_ms, to_ms)
 }
@@ -131,6 +133,7 @@ impl Calendar {
     }
 
     /// How many events (series count once) were read.
+    #[cfg(test)]
     pub fn len(&self) -> usize {
         self.items.len()
     }

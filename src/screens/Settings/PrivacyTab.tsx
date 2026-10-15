@@ -3,9 +3,13 @@ import { useMeetings } from "../../data/hooks";
 import { useSettingsStore } from "../../data/StoreProvider";
 import type { RetentionChoice, TranscriptRetention } from "../../data/settings";
 import { formatBytes, tildePath } from "../../lib/format";
+import { onWindows } from "../../lib/os";
 import { Button, Label, Select, Sheet, useToast } from "../../ui";
 import { Group, Row } from "./parts";
 import type { TabProps } from "./tabProps";
+
+// Plain strings for now; they move to t() keys with i18n.
+const CALENDAR_DOWNLOAD = "Calendar: downloads your calendar from the address you gave";
 
 export function PrivacyTab({ settings: s, update }: TabProps) {
   const store = useSettingsStore();
@@ -25,6 +29,7 @@ export function PrivacyTab({ settings: s, update }: TabProps) {
     ["Transcript text, only if Summary AI uses your own key", s.summaryEngine === "byok" ? "On" : "Off"],
     ["Summary (and the transcript if you tick it) to Notion, only when you click Export", s.notion.connected ? "When you export" : "Not connected"],
     ["Update check: asks GitHub for the latest version number", s.checkUpdates ? "At launch" : "Off"],
+    ...(onWindows && s.calendarIcsUrl ? [[CALENDAR_DOWNLOAD, "Every 15 minutes"] as [string, string]] : []),
     ["Usage data or analytics", "Never collected"],
   ];
 

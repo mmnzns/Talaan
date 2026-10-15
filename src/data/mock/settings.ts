@@ -137,6 +137,12 @@ export class MockSettingsStore implements SettingsStore {
     return "allowed" as const;
   }
 
+  async testCalendarIcs(url: string) {
+    await sleep(600);
+    if (!/^(https?|webcals?):\/\//i.test(url.trim())) throw new Error("That doesn't look like a calendar address. Copy the whole address, starting with https://.");
+    return 7;
+  }
+
   async deleteModel(id: string): Promise<void> {
     this.setModel(id, { state: "not_downloaded", progress: undefined });
   }
