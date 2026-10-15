@@ -93,7 +93,10 @@ export const defaultSettings: Settings = {
 /** Stored settings over the defaults. Lists that later versions add to (call apps) keep the user's entries and
  *  gain the new defaults, so a new call app shows up without resetting anyone's rules. */
 export function withDefaults(stored: Partial<Settings>): Settings {
-  const merged = { ...structuredClone(defaultSettings), ...stored };
+  // Windows test builds kept the secret calendar address here in plain text (now in secure key storage, see
+  // storage/settings.rs). Dropped so update() never writes it back.
+  const { calendarIcsUrl: _legacy, ...rest } = stored as Partial<Settings> & { calendarIcsUrl?: unknown };
+  const merged = { ...structuredClone(defaultSettings), ...rest };
   if (stored.callApps) {
     const known = new Set(stored.callApps.map((a) => a.id));
     merged.callApps = [...stored.callApps, ...defaultSettings.callApps.filter((a) => !known.has(a.id))];

@@ -39,6 +39,7 @@ pub fn run() {
             let root = commands::resolve_data_dir(std::env::var("TALAAN_DATA_DIR").ok(), dirs::data_dir());
             let mut store = storage::Storage::new(root.clone())?;
             store.load_policy()?;
+            commands::calendar::remove_legacy_address(&mut store);
             // Anything still marked "recording" was interrupted; expired audio goes now.
             store.scan_for_interrupted()?;
             store.apply_retention(chrono::Utc::now())?;

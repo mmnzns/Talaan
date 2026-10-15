@@ -25,6 +25,22 @@ pub async fn calendar_request() -> &'static str {
     tauri::async_runtime::spawn_blocking(|| name(system::request())).await.unwrap_or("denied")
 }
 
+/// Startup, before `sync_source`: deletes the plain-text calendar address that Windows test builds kept in
+/// settings.json. Windows moves it into secure key storage when no address is saved there yet (the calendar stays
+/// connected), and turns the calendar off if that fails. Mac builds never wrote it: it's just dropped.
+pub fn remove_legacy_address(store: &mut crate::storage::Storage) {
+    #[cfg(target_os = "windows")]
+    let keep = |address: &str| {
+        crate::keys::get(crate::keys::CALENDAR_ICS).is_some()
+            || crate::calendar::fetch::normalize_url(address).is_ok_and(|url| crate::keys::set(crate::keys::CALENDAR_ICS, &url).is_ok())
+    };
+    #[cfg(not(target_os = "windows"))]
+    let keep = |_: &str| true;
+    if let Err(e) = store.remove_legacy_calendar_address(keep) {
+        eprintln!("talaan: couldn't remove the old calendar address from settings: {e}");
+    }
+}
+
 /// Windows: hands the saved calendar address (secure key storage) to the platform, at startup and whenever
 /// settings change.
 #[cfg(target_os = "windows")]
