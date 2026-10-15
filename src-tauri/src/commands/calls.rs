@@ -235,16 +235,55 @@ pub struct BrowserStatus {
     state: &'static str,
 }
 
-/// The browsers tab detection works with, and whether Talaan may read their tabs (as last seen; macOS asks
-/// the first time a call happens in each one).
-#[tauri::command]
-pub fn browsers_status() -> Vec<BrowserStatus> {
-    let seen = browser_access();
+/// True when any of the candidate paths exists.
+#[cfg_attr(not(target_os = "windows"), allow(dead_code))]
+fn installed_from(candidates: &[std::path::PathBuf], exists: impl Fn(&std::path::Path) -> bool) -> bool {
+    candidates.iter().any(|c| exists(c))
+}
+
+/// (name, installed) for each browser Settings lists.
+#[cfg(not(target_os = "windows"))]
+fn installed_browsers() -> Vec<(&'static str, bool)> {
     let home = dirs::home_dir().unwrap_or_default();
     [("Chrome", "Google Chrome.app"), ("Safari", "Safari.app"), ("Arc", "Arc.app"), ("Edge", "Microsoft Edge.app"), ("Brave", "Brave Browser.app")]
         .into_iter()
         .map(|(name, bundle)| {
             let installed = name == "Safari" || std::path::Path::new("/Applications").join(bundle).exists() || home.join("Applications").join(bundle).exists();
+            (name, installed)
+        })
+        .collect()
+}
+
+/// Windows: each exe under Program Files, Program Files (x86) or %LOCALAPPDATA%; Arc is a packaged app.
+#[cfg(target_os = "windows")]
+fn installed_browsers() -> Vec<(&'static str, bool)> {
+    use std::path::PathBuf;
+    let roots: Vec<PathBuf> = ["ProgramFiles", "ProgramFiles(x86)", "LOCALAPPDATA"].iter().filter_map(|v| std::env::var_os(v)).map(PathBuf::from).collect();
+    let under = |rel: &str| -> Vec<PathBuf> { roots.iter().map(|r| r.join(rel)).collect() };
+    let arc = std::env::var_os("LOCALAPPDATA")
+        .and_then(|l| std::fs::read_dir(PathBuf::from(l).join("Packages")).ok())
+        .map(|d| d.filter_map(Result::ok).any(|e| e.file_name().to_string_lossy().starts_with("TheBrowserCompany.Arc_")))
+        .unwrap_or(false);
+    let exists = |p: &std::path::Path| p.exists();
+    vec![
+        ("Chrome", installed_from(&under(r"Google\Chrome\Application\chrome.exe"), exists)),
+        ("Arc", arc),
+        ("Edge", installed_from(&under(r"Microsoft\Edge\Application\msedge.exe"), exists)),
+        ("Brave", installed_from(&under(r"BraveSoftware\Brave-Browser\Application\brave.exe"), exists)),
+        ("Opera", installed_from(&under(r"Programs\Opera\opera.exe"), exists)),
+        ("Vivaldi", installed_from(&under(r"Vivaldi\Application\vivaldi.exe"), exists)),
+        ("Comet", installed_from(&under(r"Perplexity\Comet\Application\comet.exe"), exists)),
+    ]
+}
+
+/// The browsers tab detection works with, and whether Talaan may read their tabs (as last seen; macOS asks
+/// the first time a call happens in each one).
+#[tauri::command]
+pub fn browsers_status() -> Vec<BrowserStatus> {
+    let seen = browser_access();
+    installed_browsers()
+        .into_iter()
+        .map(|(name, installed)| {
             let state = seen.iter().find(|(n, _)| *n == name).map(|(_, s)| *s).unwrap_or(if installed { "not_asked" } else { "not_installed" });
             BrowserStatus { name, state }
         })
@@ -298,6 +337,16 @@ pub fn calls_hide(app: AppHandle) {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn a_browser_is_installed_when_any_candidate_exists() {
+        use std::path::{Path, PathBuf};
+        let found = PathBuf::from(r"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe");
+        let cands = [PathBuf::from(r"C:\Program Files\Google\Chrome\Application\chrome.exe"), found.clone()];
+        assert!(installed_from(&cands, |p: &Path| p == found));
+        assert!(!installed_from(&cands, |_| false));
+        assert!(!installed_from(&[], |_| true));
+    }
 
     #[test]
     fn settings_become_rules() {

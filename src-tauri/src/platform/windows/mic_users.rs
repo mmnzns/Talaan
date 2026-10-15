@@ -75,11 +75,16 @@ fn entries(key: &RegKey) -> Vec<Entry> {
 
 /// Every app other than Talaan that has the microphone open right now.
 pub fn mic_users() -> Vec<MicUser> {
-    let Ok(store) = RegKey::predef(HKEY_CURRENT_USER).open_subkey(STORE) else { return vec![] };
-    let packaged = entries(&store);
-    let desktop = store.open_subkey("NonPackaged").map(|k| entries(&k)).unwrap_or_default();
+    let (packaged, desktop) = read_store();
     let own = std::env::current_exe().map(|p| p.to_string_lossy().into_owned()).unwrap_or_default();
     users_from(&packaged, &desktop, &own)
+}
+
+/// (packaged entries, desktop entries) as the registry holds them right now.
+fn read_store() -> (Vec<Entry>, Vec<Entry>) {
+    let Ok(store) = RegKey::predef(HKEY_CURRENT_USER).open_subkey(STORE) else { return (vec![], vec![]) };
+    let desktop = store.open_subkey("NonPackaged").map(|k| entries(&k)).unwrap_or_default();
+    (entries(&store), desktop)
 }
 
 #[cfg(test)]
@@ -134,5 +139,51 @@ mod tests {
     #[test]
     fn reading_the_real_registry_does_not_fail() {
         eprintln!("{:#?}", mic_users());
+    }
+
+    /// Records from the real mic and prints this test exe's consent-store entry while recording and after.
+    /// Run by hand: `cargo test mic_users_live_smoke -- --ignored --nocapture`
+    /// Finding on the dev PC (2026-10-15): Windows writes NO consent-store entry for this test exe (nor for a
+    /// console python.exe) even while cpal receives mic buffers, so the entry prints as None. Real GUI apps
+    /// (parla.exe, bf6.exe, ...) do appear, with stop > start after use.
+    #[test]
+    #[ignore]
+    fn mic_users_live_smoke() {
+        use crate::recorder::feed::feed;
+        use crate::recorder::mic::MicSource;
+        use crate::recorder::source::AudioSource;
+        let exe = std::env::current_exe().unwrap().to_string_lossy().into_owned();
+        let mine = || read_store().1.into_iter().find(|e| desktop_user(&e.key).0.eq_ignore_ascii_case(&exe));
+
+        let (producer, mut consumer) = feed();
+        let mut mic = MicSource::default();
+        mic.start(std::sync::Arc::new(std::sync::Mutex::new(producer))).unwrap();
+        let waited = std::time::Instant::now();
+        while mine().is_none() && waited.elapsed() < std::time::Duration::from_secs(10) {
+            std::thread::sleep(std::time::Duration::from_millis(250));
+        }
+        eprintln!("entry appeared after {:?}", waited.elapsed());
+        let (packaged, desktop) = read_store();
+        let mut buf = vec![];
+        let mut n = 0;
+        while consumer.pop(&mut buf).is_some() {
+            n += 1;
+        }
+        eprintln!("mic buffers received: {n}");
+        eprintln!("exe = {exe}");
+        let mut newest: Vec<_> = desktop.iter().chain(packaged.iter()).collect();
+        newest.sort_by_key(|e| std::cmp::Reverse(e.start));
+        eprintln!("newest entries: {:#?}", &newest[..newest.len().min(4)]);
+        eprintln!("WHILE RECORDING: {:?}", mine());
+        eprintln!("mic_users() while recording (we are excluded): {:?}", mic_users());
+        eprintln!("users_from with no own exe: {:?}", users_from(&packaged, &desktop, ""));
+        assert!(mic_users().is_empty(), "Talaan's own exe must be excluded");
+        let during = mine();
+        eprintln!("DURING: {during:?}");
+
+        mic.stop();
+        std::thread::sleep(std::time::Duration::from_secs(3));
+        let after = mine();
+        eprintln!("AFTER STOPPING:  {after:?}");
     }
 }
