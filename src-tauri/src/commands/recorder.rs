@@ -57,13 +57,16 @@ fn speakers() -> bool {
     platform::devices::on_builtin_speakers()
 }
 
-fn payload(engine: &Engine) -> StatePayload {
-    StatePayload { status: engine.status(platform::host_now_ns()), on_built_in_speakers: speakers() }
+/// `on_built_in_speakers` comes from `speakers()`, asked before taking the engine lock: on Windows it can read
+/// every output's meter.
+fn payload(engine: &Engine, on_built_in_speakers: bool) -> StatePayload {
+    StatePayload { status: engine.status(platform::host_now_ns()), on_built_in_speakers }
 }
 
 fn emit_state(app: &AppHandle) {
     let rec = app.state::<RecorderState>();
-    let p = payload(&rec.lock());
+    let on_speakers = speakers();
+    let p = payload(&rec.lock(), on_speakers);
     super::tray::update(app, &p.status);
     let _ = app.emit(STATE, p);
 }
@@ -89,6 +92,7 @@ pub fn recorder_start(app: AppHandle, app_id: Option<String>, app_label: Option<
 pub fn start_recording(app: &AppHandle, app_id: &str, app_label: &str) -> CmdResult<StatePayload> {
     let state = app.state::<AppState>();
     let rec = app.state::<RecorderState>();
+    let on_speakers = speakers();
     let mut engine = rec.lock();
     let storage = state.lock();
     let started_at = chrono::Local::now().fixed_offset();
@@ -110,7 +114,7 @@ pub fn start_recording(app: &AppHandle, app_id: &str, app_label: &str) -> CmdRes
         notice(app, "Talaan can't hear the call audio, so only your side is recorded. Allow system audio recording in System Settings.".into(), "warning", Some("system-audio"));
     }
     rec.auto_paused.store(false, Ordering::Relaxed);
-    let p = payload(&engine);
+    let p = payload(&engine, on_speakers);
     drop(engine);
     notify(app, MEETINGS_CHANGED);
     super::tray::update(app, &p.status);
@@ -193,7 +197,8 @@ pub fn recorder_discard(app: AppHandle, state: State<AppState>, rec: State<Recor
 
 #[tauri::command]
 pub fn recorder_status(rec: State<RecorderState>) -> StatePayload {
-    payload(&rec.lock())
+    let on_speakers = speakers();
+    payload(&rec.lock(), on_speakers)
 }
 
 #[derive(Serialize)]

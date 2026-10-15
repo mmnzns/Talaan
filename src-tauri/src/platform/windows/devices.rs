@@ -5,9 +5,11 @@ use ::windows::Win32::Foundation::PROPERTYKEY;
 use ::windows::core::{implement, PCWSTR};
 use ::windows::Win32::Media::Audio::{
     eCapture, eConsole, eRender, EDataFlow, ERole, IMMDevice, IMMDeviceEnumerator, IMMNotificationClient, IMMNotificationClient_Impl, MMDeviceEnumerator,
-    DEVICE_STATE, PKEY_AudioEndpoint_FormFactor,
+    DEVICE_STATE, DEVICE_STATE_ACTIVE, PKEY_AudioEndpoint_FormFactor,
 };
+use ::windows::Win32::Media::Audio::Endpoints::IAudioMeterInformation;
 use std::panic::{catch_unwind, AssertUnwindSafe};
+use std::sync::atomic::{AtomicU64, Ordering};
 use ::windows::Win32::System::Com::StructuredStorage::{PropVariantClear, PropVariantToStringAlloc, PropVariantToUInt32, PROPVARIANT};
 use ::windows::Win32::System::Com::{CoCreateInstance, CoTaskMemFree, CLSCTX_ALL, STGM_READ};
 
@@ -21,15 +23,72 @@ pub fn builtin_speakers(form_factor: u32, enumerator: &str) -> bool {
     form_factor == FORM_FACTOR_SPEAKERS && !external
 }
 
-/// True when call audio is coming out of speakers the mic can hear: the default output is speakers wired to this
-/// computer. A virtual router (FxSound reports Speakers on the "ROOT" enumerator) counts as built in, whatever
-/// real device it drives underneath.
+/// A software output (FxSound, Voicemeeter, Sonar) that relays to a real device underneath. Only "ROOT" for now:
+/// "SWD" is also used by some real hardware.
+fn is_virtual(enumerator: &str) -> bool {
+    enumerator.eq_ignore_ascii_case("ROOT")
+}
+
+/// `default` and each endpoint are (form factor, enumerator name); endpoints also say whether they're playing.
+/// A real default output is judged on its own. A virtual one hides the real output, so look underneath: some wired
+/// speaker endpoint (not itself virtual) has to be playing.
+pub fn speakers_rule(default: (u32, &str), endpoints: &[(u32, &str, bool)]) -> bool {
+    if !is_virtual(default.1) {
+        return builtin_speakers(default.0, default.1);
+    }
+    endpoints.iter().any(|&(form, enumerator, playing)| playing && !is_virtual(enumerator) && builtin_speakers(form, enumerator))
+}
+
+/// How long wired speakers count as playing after they were last heard, so a pause in the call doesn't flicker
+/// the warning.
+const PLAYING_LATCH_NS: u64 = 8_000_000_000;
+
+/// Quieter than this on the endpoint's meter is silence.
+const PEAK_SILENCE: f32 = 1e-4;
+
+pub fn heard_recently(last_heard_ns: u64, now_ns: u64) -> bool {
+    last_heard_ns != 0 && now_ns.saturating_sub(last_heard_ns) < PLAYING_LATCH_NS
+}
+
+/// When wired speakers were last heard under a virtual default output (host ns; 0 = never).
+static SPEAKERS_LAST_HEARD: AtomicU64 = AtomicU64::new(0);
+
+/// True when call audio is coming out of speakers the mic can hear: speakers wired to this computer, either as the
+/// default output or, when the default is a virtual router such as FxSound, playing underneath it. With FxSound in
+/// front of a USB headset this is false.
 pub fn on_builtin_speakers() -> bool {
     let Ok(device) = default_output() else { return false };
-    let (Ok(form), Ok(enumerator)) = (device_u32(&device, &PKEY_AudioEndpoint_FormFactor), device_string(&device, &PKEY_Device_EnumeratorName)) else {
-        return false;
-    };
-    builtin_speakers(form, &enumerator)
+    let Some((form, enumerator)) = form_and_enumerator(&device) else { return false };
+    if !is_virtual(&enumerator) {
+        return speakers_rule((form, &enumerator), &[]);
+    }
+    let now = super::clock::host_now_ns();
+    let mut endpoints = vec![];
+    for d in active_outputs() {
+        let Some((f, e)) = form_and_enumerator(&d) else { continue };
+        let wired = !is_virtual(&e) && builtin_speakers(f, &e);
+        if wired && peak(&d) > PEAK_SILENCE {
+            SPEAKERS_LAST_HEARD.store(now, Ordering::Relaxed);
+        }
+        endpoints.push((f, e, wired));
+    }
+    let playing = heard_recently(SPEAKERS_LAST_HEARD.load(Ordering::Relaxed), now);
+    let endpoints: Vec<_> = endpoints.iter().map(|(f, e, wired)| (*f, e.as_str(), *wired && playing)).collect();
+    speakers_rule((form, &enumerator), &endpoints)
+}
+
+fn form_and_enumerator(device: &IMMDevice) -> Option<(u32, String)> {
+    Some((device_u32(device, &PKEY_AudioEndpoint_FormFactor).ok()?, device_string(device, &PKEY_Device_EnumeratorName).ok()?))
+}
+
+fn active_outputs() -> Vec<IMMDevice> {
+    let Ok(all) = (unsafe { enumerator().and_then(|e| e.EnumAudioEndpoints(eRender, DEVICE_STATE_ACTIVE)) }) else { return vec![] };
+    (0..unsafe { all.GetCount() }.unwrap_or(0)).filter_map(|i| unsafe { all.Item(i) }.ok()).collect()
+}
+
+/// The endpoint's current output peak (0.0–1.0); 0 if the meter can't be read.
+fn peak(device: &IMMDevice) -> f32 {
+    unsafe { device.Activate::<IAudioMeterInformation>(CLSCTX_ALL, None).and_then(|m| m.GetPeakValue()) }.unwrap_or(0.0)
 }
 
 /// Windows loopback can't be blocked by a permission, so the Mac's "no call audio" watch doesn't run here.
@@ -150,7 +209,7 @@ impl Drop for DeviceWatcher {
 mod tests {
     use super::*;
     use ::windows::Win32::Devices::FunctionDiscovery::PKEY_Device_FriendlyName;
-    use ::windows::Win32::Media::Audio::{eCommunications, eMultimedia, DEVICE_STATE_ACTIVE};
+    use ::windows::Win32::Media::Audio::{eCommunications, eMultimedia};
 
     #[test]
     fn a_watcher_can_be_added_and_removed() {
@@ -186,6 +245,34 @@ mod tests {
         assert!(!builtin_speakers(9, "HDAUDIO")); // monitor over HDMI
     }
 
+    #[test]
+    fn a_physical_default_is_judged_on_its_own() {
+        assert!(speakers_rule((1, "HDAUDIO"), &[]));
+        assert!(!speakers_rule((1, "USB"), &[]));
+        assert!(!speakers_rule((3, "HDAUDIO"), &[(1, "HDAUDIO", true)])); // headphones: other endpoints don't matter
+        assert!(speakers_rule((1, "SWD"), &[])); // SWD isn't treated as virtual: some real hardware uses it
+    }
+
+    #[test]
+    fn a_virtual_default_looks_for_wired_speakers_playing() {
+        let fxsound = (1, "ROOT");
+        // FxSound itself playing, wired speakers silent: the sound goes to the headset behind FxSound.
+        assert!(!speakers_rule(fxsound, &[(1, "ROOT", true), (1, "HDAUDIO", false), (1, "USB", true)]));
+        assert!(speakers_rule(fxsound, &[(1, "ROOT", true), (1, "HDAUDIO", true)]));
+        assert!(!speakers_rule(fxsound, &[(1, "USB", true)])); // USB speakers playing: not this computer's
+        assert!(!speakers_rule(fxsound, &[(9, "HDAUDIO", true)])); // monitor over HDMI
+        assert!(!speakers_rule(fxsound, &[]));
+    }
+
+    #[test]
+    fn speakers_count_as_playing_for_8s_after_last_heard() {
+        let s = 1_000_000_000;
+        assert!(!heard_recently(0, 100 * s)); // never heard
+        assert!(heard_recently(100 * s, 100 * s));
+        assert!(heard_recently(100 * s, 107 * s));
+        assert!(!heard_recently(100 * s, 108 * s));
+    }
+
     fn describe(device: &IMMDevice) -> String {
         format!(
             "{:?} form factor {:?} enumerator {:?}",
@@ -202,11 +289,8 @@ mod tests {
         if let Ok(d) = default_output() {
             eprintln!("default output: {}", describe(&d));
         }
-        let Ok(all) = (unsafe { enumerator().and_then(|e| e.EnumAudioEndpoints(eRender, DEVICE_STATE_ACTIVE)) }) else { return };
-        for i in 0..unsafe { all.GetCount() }.unwrap_or(0) {
-            if let Ok(d) = unsafe { all.Item(i) } {
-                eprintln!("render endpoint: {}", describe(&d));
-            }
+        for d in active_outputs() {
+            eprintln!("render endpoint: {} peak {}", describe(&d), peak(&d));
         }
     }
 }
