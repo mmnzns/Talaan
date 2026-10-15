@@ -1,6 +1,7 @@
 //! "Summary ready" notifications as Windows toasts. Clicking one opens the meeting (Talaan keeps running in the
 //! tray, so the click reaches this process). Windows shows toasts only for an app id with a Start-menu shortcut:
-//! the installer's (Talaan's bundle id) when installed, PowerShell's for dev builds.
+//! the Start Menu shortcut the installer creates carries the bundle id as its AppUserModelID, so installed
+//! builds use that; dev builds borrow PowerShell's.
 
 use std::path::Path;
 use std::sync::OnceLock;
@@ -64,6 +65,14 @@ mod tests {
     fn dev_builds_borrow_an_app_id_windows_already_knows() {
         assert_eq!(app_id_for(Path::new(r"C:\Dev\Talaan\src-tauri\target\debug\talaan.exe"), false), Toast::POWERSHELL_APP_ID);
         assert_eq!(app_id_for(Path::new(r"C:\Anywhere\talaan.exe"), true), Toast::POWERSHELL_APP_ID);
+    }
+
+    /// The installer stamps the Start Menu shortcut with the bundle identifier as its AppUserModelID (Tauri's
+    /// NSIS template, SetLnkAppUserModelId). Windows shows our toasts only under that id.
+    #[test]
+    fn the_app_id_is_the_identifier_the_installer_puts_on_the_shortcut() {
+        let conf: serde_json::Value = serde_json::from_str(include_str!("../../../tauri.conf.json")).unwrap();
+        assert_eq!(conf["identifier"], APP_ID);
     }
 
     /// Manual: posts one toast under the dev app id and reports whether Windows accepted it.
