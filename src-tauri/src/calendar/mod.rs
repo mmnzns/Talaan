@@ -1,6 +1,12 @@
 //! Calendar link: which calendar event a recording belongs to (pure; the system calendar is read in
 //! `platform::<os>::calendar`).
 
+// The Windows calendar reads an iCal address; macOS uses EventKit, so this stays unused there. Until the Windows
+// calendar uses it (W4 Task 3) it is unused everywhere; then narrow this to
+// `#[cfg_attr(not(target_os = "windows"), allow(dead_code))]`.
+#[allow(dead_code)]
+pub mod ics;
+
 /// An event as read from the system calendar. Times are Unix milliseconds.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Event {

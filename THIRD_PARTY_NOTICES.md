@@ -49,6 +49,10 @@ Talaan uses the following libraries, fonts and models. Each is used under its ow
 | wasapi (Windows system audio) | MIT | https://github.com/HEnquist/wasapi-rs |
 | winreg (Windows registry) | MIT | https://github.com/gentoo90/winreg-rs |
 | windows (Windows bindings) | MIT / Apache-2.0 | https://github.com/microsoft/windows-rs |
+| icalendar (iCal parsing) | MIT / Apache-2.0 | https://github.com/hoodie/icalendar |
+| rrule (recurring events) | MIT / Apache-2.0 | https://github.com/fmeringdal/rust-rrule |
+| chrono-tz (time zones; includes the IANA tz database, public domain) | MIT / Apache-2.0 | https://github.com/chronotope/chrono-tz |
+| nom (parsing, via icalendar) | MIT | https://github.com/rust-bakery/nom |
 
 ## Models
 
