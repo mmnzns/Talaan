@@ -2,3 +2,4 @@
 
 pub mod apps;
 pub mod rules;
+pub mod tabs;

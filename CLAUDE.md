@@ -104,7 +104,10 @@ src-tauri/src/
   commands/ask.rs       meetings_ask (scope -> passages -> rank -> summary engine) and the background indexer
   keys.rs               API keys in the Keychain
   importer.rs           import audio: symphonia decode -> 16 kHz mono them.wav (commands/import.rs runs it)
-  calls/                call detection (pure): apps.rs bundle-id tables (call apps, ignored apps), rules.rs state machine
+  calls/                call detection (pure): apps.rs bundle-id tables (call apps, ignored apps), rules.rs state machine,
+                        tabs.rs (browser helpers → browser, call URLs, what a browser on the mic is)
+  calendar/             which calendar event a recording belongs to (pure); EventKit read in platform/macos/calendar.rs
+  notion.rs             Notion export: page blocks, client (search, pages, append); commands/notion.rs
   commands/calls.rs     1 Hz loop: mic users -> rules -> recordings and the prompt window (nudge, banner, call ended)
   commands/tray.rs      menu bar icon + timer, popover window, window_fit, main window hides on close
   llm/ llm-protocol/    the talaan-llm helper (own llama.cpp + Metal) and its stdin/stdout protocol
@@ -115,6 +118,7 @@ src-tauri/src/
     permissions.rs devices.rs power.rs  mic permission + deep links, built-in speakers / device watcher, sleep auto-pause
     notify.rs thread.rs  Summary ready notifications (click opens the meeting), background thread priority
     mic_users.rs        which processes are using the mic (Core Audio process objects)
+    calendar.rs browser_tabs.rs  EventKit access and events; a browser's tab URLs via Apple Events
 docs/plans/             per-milestone task plans
 docs/screens/M1/        light + dark screenshots from the M1 checkpoint
 ```

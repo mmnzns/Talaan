@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { recorderClient } from "../../data";
-import type { CalendarAccess, NotionDestination } from "../../data/settings";
+import type { BrowserState, CalendarAccess, NotionDestination } from "../../data/settings";
 import { describeError } from "../../data/errors";
 import { openLink } from "../../lib/windows";
 import { useSettingsStore } from "../../data/StoreProvider";
@@ -8,14 +8,16 @@ import { Button, Chip, Field, Select, Switch, useToast } from "../../ui";
 import { Group, Row, SectionIntro } from "./parts";
 import type { TabProps } from "./tabProps";
 
-const STATE_LABEL = { allowed: "allowed", not_asked: "not asked yet", not_installed: "not installed" } as const;
+const STATE_LABEL = { allowed: "allowed", denied: "not allowed", not_asked: "asks at the first call", not_installed: "not installed" } as const;
 
 export function ConnectionsTab({ settings: s, update }: TabProps) {
   const toast = useToast();
   const store = useSettingsStore();
   const [calendar, setCalendar] = useState<CalendarAccess>();
+  const [browsers, setBrowsers] = useState<{ name: string; state: BrowserState }[]>([]);
   useEffect(() => {
     store.calendarAccess().then(setCalendar, () => setCalendar(undefined));
+    store.browsersStatus().then(setBrowsers, () => setBrowsers([]));
   }, [store]);
 
   const toggleCalendar = async (on: boolean) => {
@@ -44,11 +46,16 @@ export function ConnectionsTab({ settings: s, update }: TabProps) {
           <Switch aria-label="Browser call detection" checked={s.tabDetection} onChange={(v) => update({ tabDetection: v })} />
           {s.tabDetection && (
             <div className="flex basis-full flex-wrap gap-2">
-              {s.browsers.map((b) => (
+              {browsers.map((b) => (
                 <Chip key={b.name} tone={b.state === "allowed" ? "gold" : "default"}>
                   {b.name} · {STATE_LABEL[b.state]}
                 </Chip>
               ))}
+              {browsers.some((b) => b.state === "denied") && (
+                <button type="button" className="cursor-pointer border-0 bg-transparent p-0 text-xs text-subtle underline" onClick={() => recorderClient.openSettings("automation")}>
+                  Allow in system settings
+                </button>
+              )}
             </div>
           )}
         </Row>

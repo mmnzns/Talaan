@@ -62,12 +62,6 @@ export const defaultSettings: Settings = {
   byokModel: "recommended",
   calendarConnected: false,
   tabDetection: false,
-  browsers: [
-    { name: "Chrome", state: "allowed" },
-    { name: "Arc", state: "allowed" },
-    { name: "Safari", state: "not_asked" },
-    { name: "Edge", state: "not_installed" },
-  ],
   suggestSpeakerNames: true,
   notion: { connected: false },
   retention: "7d",

@@ -13,7 +13,7 @@ export interface NotionDestination {
 }
 
 export type CalendarAccess = "allowed" | "not_asked" | "denied";
-export type BrowserState = "allowed" | "not_asked" | "not_installed";
+export type BrowserState = "allowed" | "denied" | "not_asked" | "not_installed";
 
 export interface CallAppRule {
   id: string;
@@ -97,7 +97,6 @@ export interface Settings {
   // Connections
   calendarConnected: boolean;
   tabDetection: boolean;
-  browsers: { name: string; state: BrowserState }[];
   suggestSpeakerNames: boolean;
   /** The secret itself lives in secure key storage, never here. */
   notion: { connected: boolean; workspace?: string; destination?: NotionDestination };
@@ -128,6 +127,8 @@ export interface SettingsStore {
   disconnectNotion(): Promise<void>;
   /** Pages and databases shared with the integration. */
   notionDestinations(): Promise<NotionDestination[]>;
+  /** Browsers tab detection works with, and whether Talaan may read their tabs. */
+  browsersStatus(): Promise<{ name: string; state: BrowserState }[]>;
   /** Calendar access as the system reports it. */
   calendarAccess(): Promise<CalendarAccess>;
   /** Asks the system for calendar access (the prompt shows only the first time). */

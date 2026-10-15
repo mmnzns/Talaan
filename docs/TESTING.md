@@ -46,4 +46,12 @@ app (`scripts/build-signed-debug.sh` → `src-tauri/target/debug/bundle/macos/Ta
 - [ ] Notion: Settings › Connections › Notion. Make an internal integration (the link opens Notion), share a database and a page with it, paste the secret, Connect. Pick a default destination.
 - [ ] Export › Notion into the database (with and without transcript), then into the page: "Open in Notion" shows the summary, to-dos with owners, and times. A long meeting's transcript arrives whole.
 - [ ] A wrong secret says Notion didn't accept it; a page not shared with Talaan says how to add the connection.
+- [ ] Settings › Connections › Browser call detection on. Set Call apps › Browser calls to Always. Join a Google Meet in Chrome: macOS asks once to let Talaan control Chrome (Allow); recording starts as "Google Meet" with the banner, tagged #google meet if tagging is on.
+- [ ] Same with Zoom in the browser (app.zoom.us/wc/…) and Teams web. Try Safari and Arc if you use them.
+- [ ] A YouTube tab or a voice-recorder site using the mic, with detection on: nothing happens.
+- [ ] Say "Don't Allow" for a browser: its chip says not allowed with a link to system settings, and calls there are asked about (Ask) instead.
+
+## Look (Sinag)
+- [ ] Every screen in light and dark: main window, meeting, Ask, Settings (all tabs), menu bar idle and recording, nudge, Always banner, call ended, Export, onboarding. Anything that looks off against Design/UI v3?
+- [ ] The app icon in the Dock and Finder, and the "ta" in the menu bar (light and dark menu bar).
 

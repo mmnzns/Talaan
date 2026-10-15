@@ -110,6 +110,14 @@ export class MockSettingsStore implements SettingsStore {
     ];
   }
 
+  async browsersStatus() {
+    return [
+      { name: "Chrome", state: "allowed" as const },
+      { name: "Safari", state: "not_asked" as const },
+      { name: "Arc", state: "not_installed" as const },
+    ];
+  }
+
   async calendarAccess() {
     return "allowed" as const;
   }

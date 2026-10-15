@@ -45,3 +45,15 @@
 
 ## Out of scope
 Notion OAuth (needs a server), Firefox tab detection (no AppleScript tab URLs), Google/Microsoft calendar APIs (EventKit already syncs them when added to macOS Calendar).
+
+## Outcome (2026-10-14)
+
+All tasks done; 262 Rust tests (14 ignored real-model smoke tests), 78 TS tests. Built alongside the V3 "Sinag" reskin Miguel asked for mid-milestone (see the Build Log).
+
+- **Folders and tags:** rename and delete (meetings stay), optional tag by call app.
+- **Calendar:** EventKit read-only; the event in progress (shortest overlap) or the next within 10 minutes names the meeting and lists attendees; checked again at stop; attendees go into the summary prompt for owners. Signed builds need `com.apple.security.personal-information.calendars` (added).
+- **Notion:** internal integration secret in secure key storage; summary, to-dos with owners and times, optional transcript; database row or child page; 100-block batches. Verified against a fake Notion server.
+- **Browser tabs:** Apple Events through `osascript` with a 3 s timeout and a 4 s cache; Meet codes, Zoom web client and Teams web recognized; a browser on the mic with no call tab doesn't trigger; a verified call is its own app (`browser-call`, labelled "Google Meet") so Always works; denied browsers fall back to Ask. Signed builds need `com.apple.security.automation.apple-events` (added).
+
+Not verified here (would show macOS permission prompts on Miguel's screen): a real calendar read, a real Notion workspace, a real browser call. All are on `docs/TESTING.md`.
+

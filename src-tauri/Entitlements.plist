@@ -5,5 +5,10 @@
 	<!-- Signed builds use the hardened runtime, which blocks the microphone unless the app declares it. -->
 	<key>com.apple.security.device.audio-input</key>
 	<true/>
+	<!-- Calendar link (read-only) and browser tab detection need these under the hardened runtime too. -->
+	<key>com.apple.security.personal-information.calendars</key>
+	<true/>
+	<key>com.apple.security.automation.apple-events</key>
+	<true/>
 </dict>
 </plist>

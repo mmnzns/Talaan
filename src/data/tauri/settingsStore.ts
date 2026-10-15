@@ -1,5 +1,5 @@
 import { defaultSettings, withDefaults } from "../defaultSettings";
-import type { ByokProvider, CalendarAccess, LocalModel, NotionDestination, Settings, SettingsStore, SpeechModel } from "../settings";
+import type { BrowserState, ByokProvider, CalendarAccess, LocalModel, NotionDestination, Settings, SettingsStore, SpeechModel } from "../settings";
 import { call, onEvent } from "./invoke";
 
 
@@ -128,6 +128,10 @@ export class TauriSettingsStore implements SettingsStore {
 
   notionDestinations(): Promise<NotionDestination[]> {
     return call<NotionDestination[]>("notion_destinations");
+  }
+
+  browsersStatus(): Promise<{ name: string; state: BrowserState }[]> {
+    return call("browsers_status");
   }
 
   calendarAccess(): Promise<CalendarAccess> {

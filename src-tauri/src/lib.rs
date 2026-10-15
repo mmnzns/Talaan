@@ -94,6 +94,7 @@ pub fn run() {
             commands::calls::calls_keep,
             commands::calls::calls_stop,
             commands::calls::calls_hide,
+            commands::calls::browsers_status,
             rec_cmd::recorder_start,
             rec_cmd::recorder_pause,
             rec_cmd::recorder_resume,
