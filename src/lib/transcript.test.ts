@@ -74,7 +74,7 @@ describe("speakerName in other languages", () => {
     const { setLang } = await import("./i18n");
     try {
       setLang("fr");
-      expect([speakerName(stored, "me"), speakerName(stored, "them:0"), speakerName(stored, "them:1")]).toEqual(["Moi", "Eux", "Dana Reyes"]);
+      expect([speakerName(stored, "me"), speakerName(stored, "them:0"), speakerName(stored, "them:1")]).toEqual(["Moi", "Autres", "Dana Reyes"]);
       setLang("es");
       expect([speakerName(stored, "me"), speakerName(stored, "them:0")]).toEqual(["Yo", "Ellos"]);
     } finally {

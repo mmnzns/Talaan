@@ -20,7 +20,7 @@ export const kit = area({
   es: {
     editText: "Editar texto",
     jumpTo: "Ir a {time}",
-    errorLater: "{message}. Llegará en una versión posterior.",
+    errorLater: "{message}. Disponible en una próxima versión.",
     errorGone: "Esa reunión ya no existe.",
     errorNewer: "Esta reunión se guardó con una versión más reciente de Talaan.",
     errorGeneric: "Algo salió mal. Tus datos están a salvo.",

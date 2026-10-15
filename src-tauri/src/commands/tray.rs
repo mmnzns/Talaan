@@ -2,6 +2,7 @@
 //! hiding instead of quitting so call detection keeps running.
 
 use super::CmdResult;
+use crate::i18n::tr;
 use crate::recorder::engine::Status;
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
@@ -11,11 +12,29 @@ pub const TRAY_ID: &str = "talaan";
 pub const POPOVER: &str = "tray";
 const POPOVER_SIZE: (f64, f64) = (356.0, 470.0);
 
+fn build_menu(app: &AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
+    let open = MenuItem::with_id(app, "open", tr("tray.open"), true, None::<&str>)?;
+    let settings = MenuItem::with_id(app, "settings", tr("tray.settings"), true, None::<&str>)?;
+    let quit = MenuItem::with_id(app, "quit", tr("tray.quit"), true, None::<&str>)?;
+    Menu::with_items(app, &[&open, &settings, &PredefinedMenuItem::separator(app)?, &quit])
+}
+
+/// The screens resolve "Auto" to a language and report it here (every window, whenever it changes). The menu bar menu
+/// is rebuilt in that language; notices and notifications read it when they are sent.
+#[tauri::command]
+pub fn i18n_set_language(app: AppHandle, lang: String) {
+    let lang = crate::i18n::Lang::parse(&lang);
+    if crate::i18n::current() == lang {
+        return;
+    }
+    crate::i18n::set(lang);
+    if let (Some(tray), Ok(menu)) = (app.tray_by_id(TRAY_ID), build_menu(&app)) {
+        let _ = tray.set_menu(Some(menu));
+    }
+}
+
 pub fn setup(app: &AppHandle) -> tauri::Result<()> {
-    let open = MenuItem::with_id(app, "open", "Open Talaan", true, None::<&str>)?;
-    let settings = MenuItem::with_id(app, "settings", "Settings…", true, None::<&str>)?;
-    let quit = MenuItem::with_id(app, "quit", "Quit Talaan", true, None::<&str>)?;
-    let menu = Menu::with_items(app, &[&open, &settings, &PredefinedMenuItem::separator(app)?, &quit])?;
+    let menu = build_menu(app)?;
     // macOS tints a black template glyph; Windows needs the coloured icon to read on light and dark taskbars.
     #[cfg(target_os = "macos")]
     let builder = TrayIconBuilder::with_id(TRAY_ID)

@@ -107,7 +107,7 @@ pub const OPEN_MEETING: &str = "open-meeting";
 pub fn notify_ready(app: &AppHandle, id: &str, title: &str) {
     let wanted = app.state::<AppState>().lock().settings_get().ok().flatten().and_then(|s| s["notifySummaryReady"].as_bool()).unwrap_or(true);
     if wanted {
-        crate::platform::notify::post(id, "Summary ready", title);
+        crate::platform::notify::post(id, &crate::i18n::tr("notify.summary_ready"), title);
     }
 }
 
