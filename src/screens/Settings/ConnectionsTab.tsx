@@ -20,8 +20,8 @@ const stateLabel = onWindows ? STATE_LABEL_WINDOWS : STATE_LABEL;
 // Windows calendar row (the calendar's iCal address). Plain strings for now; they move to t() keys with i18n.
 const ICS_TEXT = {
   title: "Calendar",
-  desc: "Uses the event at recording time for the meeting title, attendees and speaker names. Paste your calendar's private address in iCal format: Talaan downloads your calendar from it every 15 minutes, never changes it, and sends nothing.",
-  connectedDesc: "Connected through your calendar's iCal address. Talaan downloads it every 15 minutes, never changes your calendar, and sends nothing.",
+  desc: "Uses the event at recording time for the meeting title, attendees and speaker names. Paste your calendar's private address in iCal format: Talaan checks your calendar through it when a recording starts (at most every 15 minutes), never changes it, and sends nothing.",
+  connectedDesc: "Connected through your calendar's iCal address. Talaan checks it when a recording starts (at most every 15 minutes), never changes your calendar, and sends nothing.",
   where: "Where do I find this?",
   fieldLabel: "Calendar address in iCal format",
   placeholder: "https://…/basic.ics",

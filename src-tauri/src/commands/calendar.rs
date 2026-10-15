@@ -75,6 +75,15 @@ pub fn link_soon(app: &AppHandle, meeting_id: &str) {
         let Ok(start) = chrono::DateTime::parse_from_rfc3339(&file.started_at) else { return };
         let at = start.timestamp_millis();
         let events = system::events(at - EARLY_MS, at + EARLY_MS);
+        // Windows: when the calendar download just failed (a flaky network at the start of a call), try once more
+        // after the retry interval, on this same background thread.
+        #[cfg(target_os = "windows")]
+        let events = if pick(&events, at).is_none() && system::last_download_failed() {
+            std::thread::sleep(std::time::Duration::from_millis(crate::calendar::fetch::RETRY_MS as u64));
+            system::events(at - EARLY_MS, at + EARLY_MS)
+        } else {
+            events
+        };
         let Some(e) = pick(&events, at) else { return };
         let (title, attendees) = (e.title.trim().to_string(), e.attendees.clone());
         let saved = storage.lock().update_meeting_file(&id, |f| {

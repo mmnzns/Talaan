@@ -58,8 +58,8 @@ Calendar (Windows only; "Test and connect" downloads it and says how many events
 secret link, so it's kept in Windows Credential Manager (key `calendar-ics`, through `keys.rs`; removed by Disconnect and
 by Delete all Talaan data), never in settings.json; settings only hold `calendarConnected`. Privacy › What leaves this
 computer lists the download. `calendar/fetch.rs`
-downloads it (15 s timeout, 20 MB cap, `webcal://` accepted, refreshed every 15 minutes, a failed download keeps the old copy
-and retries after a minute). `calendar/ics.rs` reads it once per download and expands recurrences per window: RRULE, EXDATE,
+downloads it (15 s in all, 20 MB cap, `webcal://` accepted; checked when a recording starts, at most every 15 minutes; a failed download keeps the old
+copy, and the recording tries once more a minute later). `calendar/ics.rs` reads it once per download and expands recurrences per window: RRULE, EXDATE,
 RECURRENCE-ID overrides, IANA and Windows time zone names (Outlook's "Eastern Standard Time"), floating and all-day times,
 at most 1,000 occurrences per event. Reading is tolerant: a bad event is skipped and the rest are kept. The user's own
 address (from a Google address) and declined attendees are left out. The public Google holidays feed reads as 433 events.

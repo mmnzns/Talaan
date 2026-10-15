@@ -91,6 +91,11 @@ fn refresh_if_due() {
     }
 }
 
+/// Whether the last download attempt failed (the old copy, if any, is still in use).
+pub fn last_download_failed() -> bool {
+    source().failed_ms.is_some()
+}
+
 fn now_ms() -> i64 {
     chrono::Utc::now().timestamp_millis()
 }

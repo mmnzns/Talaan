@@ -9,7 +9,8 @@ import { Group, Row } from "./parts";
 import type { TabProps } from "./tabProps";
 
 // Plain strings for now; they move to t() keys with i18n.
-const CALENDAR_DOWNLOAD = "Calendar: downloads your calendar from the address you gave";
+const CALENDAR_DOWNLOAD = "Calendar: downloads your calendar from the address you gave when a recording starts (at most every 15 minutes)";
+const CALENDAR_WHEN = "At recording start";
 
 export function PrivacyTab({ settings: s, update }: TabProps) {
   const store = useSettingsStore();
@@ -29,7 +30,7 @@ export function PrivacyTab({ settings: s, update }: TabProps) {
     ["Transcript text, only if Summary AI uses your own key", s.summaryEngine === "byok" ? "On" : "Off"],
     ["Summary (and the transcript if you tick it) to Notion, only when you click Export", s.notion.connected ? "When you export" : "Not connected"],
     ["Update check: asks GitHub for the latest version number", s.checkUpdates ? "At launch" : "Off"],
-    ...(onWindows && s.calendarConnected ? [[CALENDAR_DOWNLOAD, "Every 15 minutes"] as [string, string]] : []),
+    ...(onWindows && s.calendarConnected ? [[CALENDAR_DOWNLOAD, CALENDAR_WHEN] as [string, string]] : []),
     ["Usage data or analytics", "Never collected"],
   ];
 
