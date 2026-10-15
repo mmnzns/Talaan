@@ -4,6 +4,7 @@ use ::windows::Win32::Foundation::{ERROR_SUCCESS, HANDLE};
 use ::windows::Win32::System::Power::{PowerRegisterSuspendResumeNotification, PowerUnregisterSuspendResumeNotification, DEVICE_NOTIFY_SUBSCRIBE_PARAMETERS, HPOWERNOTIFY};
 use ::windows::Win32::UI::WindowsAndMessaging::{DEVICE_NOTIFY_CALLBACK, PBT_APMRESUMEAUTOMATIC, PBT_APMSUSPEND};
 use std::ffi::c_void;
+use std::panic::{catch_unwind, AssertUnwindSafe};
 
 /// Suspend pauses; the automatic resume (sent on every wake) resumes. The later RESUMESUSPEND only follows a
 /// user-driven wake, so acting on it too would resume twice.
@@ -24,7 +25,8 @@ struct Context {
 unsafe extern "system" fn on_power(context: *const c_void, event: u32, _setting: *const c_void) -> u32 {
     let context = unsafe { &*(context as *const Context) };
     if let Some(sleeping) = sleeping_for(event) {
-        (context.on_change)(sleeping);
+        // A panic must not unwind into Windows: that aborts the process, and the recording with it.
+        let _ = catch_unwind(AssertUnwindSafe(|| (context.on_change)(sleeping)));
     }
     0
 }
@@ -34,7 +36,7 @@ pub struct SleepWatcher {
     context: *mut Context,
 }
 
-// The context is only touched by Windows' callback and freed in drop, after unregistering.
+// The context is only touched by Windows' callback, and freed in drop only if Windows never had it.
 unsafe impl Send for SleepWatcher {}
 
 impl SleepWatcher {
@@ -54,12 +56,17 @@ impl SleepWatcher {
 
 impl Drop for SleepWatcher {
     fn drop(&mut self) {
-        if let Some(h) = self.handle.take() {
-            unsafe {
-                let _ = PowerUnregisterSuspendResumeNotification(h);
+        match self.handle.take() {
+            Some(h) => {
+                unsafe {
+                    let _ = PowerUnregisterSuspendResumeNotification(h);
+                }
+                // Unregister isn't documented to wait for an `on_power` already running, so the context is never
+                // freed once Windows has seen it: one small allocation per watcher, and sound whatever
+                // Unregister does.
             }
+            None => drop(unsafe { Box::from_raw(self.context) }),
         }
-        drop(unsafe { Box::from_raw(self.context) });
     }
 }
 

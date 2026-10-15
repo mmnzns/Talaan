@@ -7,7 +7,7 @@ use ::windows::Win32::Media::Audio::{
     eCapture, eConsole, eRender, EDataFlow, ERole, IMMDevice, IMMDeviceEnumerator, IMMNotificationClient, IMMNotificationClient_Impl, MMDeviceEnumerator,
     DEVICE_STATE, PKEY_AudioEndpoint_FormFactor,
 };
-use std::sync::Arc;
+use std::panic::{catch_unwind, AssertUnwindSafe};
 use ::windows::Win32::System::Com::StructuredStorage::{PropVariantClear, PropVariantToStringAlloc, PropVariantToUInt32, PROPVARIANT};
 use ::windows::Win32::System::Com::{CoCreateInstance, CoTaskMemFree, CLSCTX_ALL, STGM_READ};
 
@@ -15,6 +15,7 @@ const FORM_FACTOR_SPEAKERS: u32 = 1;
 
 /// Speakers wired to this computer (built in, or on its audio jack), not USB or Bluetooth.
 /// HDMI/DisplayPort monitors report form factor 9, headphones 3, headsets 5, so they never match.
+/// A missing enumerator name ("") with form factor Speakers counts as built in: warning wrongly beats missing it.
 pub fn builtin_speakers(form_factor: u32, enumerator: &str) -> bool {
     let external = ["USB", "BTHENUM", "BTHHFENUM", "BTHLEDEVICE"].iter().any(|e| enumerator.eq_ignore_ascii_case(e));
     form_factor == FORM_FACTOR_SPEAKERS && !external
@@ -85,7 +86,7 @@ pub fn event_for(flow: EDataFlow, role: ERole) -> Option<DeviceEvent> {
     }
 }
 
-type OnChange = Arc<dyn Fn(DeviceEvent) + Send + Sync>;
+type OnChange = Box<dyn Fn(DeviceEvent) + Send + Sync>;
 
 #[implement(IMMNotificationClient)]
 struct Client(OnChange);
@@ -93,7 +94,8 @@ struct Client(OnChange);
 impl IMMNotificationClient_Impl for Client_Impl {
     fn OnDefaultDeviceChanged(&self, flow: EDataFlow, role: ERole, _id: &PCWSTR) -> ::windows::core::Result<()> {
         if let Some(e) = event_for(flow, role) {
-            (self.0)(e);
+            // A panic must not unwind into Windows: that aborts the process, and the recording with it.
+            let _ = catch_unwind(AssertUnwindSafe(|| (self.0)(e)));
         }
         Ok(())
     }
@@ -118,13 +120,15 @@ pub struct DeviceWatcher {
     client: IMMNotificationClient,
 }
 
-// COM pointers from the multithreaded apartment; only used to unregister on drop.
+// Usually created on tao's main thread, which is a single-threaded apartment (com::init's MTA call fails there with
+// RPC_E_CHANGED_MODE and the thread keeps its STA). Moving it is still sound: MMDeviceEnumerator is
+// ThreadingModel=Both, so its pointer isn't apartment-bound, and the watcher only uses it to unregister.
 unsafe impl Send for DeviceWatcher {}
 
 impl DeviceWatcher {
     pub fn new(on_change: impl Fn(DeviceEvent) + Send + Sync + 'static) -> Result<Self, String> {
         let enumerator = enumerator().map_err(|e| e.to_string())?;
-        let client: IMMNotificationClient = Client(Arc::new(on_change)).into();
+        let client: IMMNotificationClient = Client(Box::new(on_change)).into();
         unsafe { enumerator.RegisterEndpointNotificationCallback(&client) }.map_err(|e| e.to_string())?;
         Ok(DeviceWatcher { enumerator, client })
     }
@@ -135,6 +139,10 @@ impl Drop for DeviceWatcher {
         unsafe {
             let _ = self.enumerator.UnregisterEndpointNotificationCallback(&self.client);
         }
+        // Unregister isn't documented to wait for a callback already running on an audio thread. Leak one
+        // reference so the client (and the closure it holds) is never freed under that callback: one small
+        // allocation per watcher, and sound whatever Unregister does.
+        std::mem::forget(self.client.clone());
     }
 }
 
