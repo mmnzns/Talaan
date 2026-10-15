@@ -26,12 +26,13 @@ pub fn clear(provider: &str) -> Result<(), String> {
 #[cfg_attr(not(target_os = "windows"), allow(dead_code))]
 pub const CALENDAR_ICS: &str = "calendar-ics";
 
-/// Every key Talaan saves.
-const ALL: &[&str] = &["claude", "openai", "gemini", "compatible", "notion", CALENDAR_ICS];
+/// Every account Talaan stores (service "Talaan"). Windows names them "<account>.Talaan" in Credential Manager.
+/// The Windows uninstaller deletes the same list (src-tauri/windows/installer-hooks.nsh, checked by a test).
+pub const ACCOUNTS: [&str; 6] = ["claude", "openai", "gemini", "compatible", "notion", CALENDAR_ICS];
 
 /// "Delete all Talaan data" removes every key too.
 pub fn clear_all() {
-    for p in ALL {
+    for p in ACCOUNTS {
         let _ = clear(p);
     }
 }
@@ -43,7 +44,15 @@ mod tests {
     #[test]
     fn deleting_all_data_covers_every_key() {
         for k in ["claude", "openai", "gemini", "compatible", "notion", CALENDAR_ICS] {
-            assert!(ALL.contains(&k), "{k}");
+            assert!(ACCOUNTS.contains(&k), "{k}");
+        }
+    }
+
+    #[test]
+    fn the_windows_uninstaller_removes_every_key() {
+        let nsh = include_str!("../windows/installer-hooks.nsh");
+        for a in ACCOUNTS {
+            assert!(nsh.contains(&format!("TalaanDeleteKey \"{a}\"")), "{a} is missing from installer-hooks.nsh");
         }
     }
 
