@@ -73,6 +73,27 @@ const TABLE: &[(&str, &str, &str, &str)] = &[
         "Impossible de passer au nouveau périphérique de sortie : {error}",
         "No se pudo seguir el nuevo dispositivo de salida: {error}",
     ),
+    // Windows: system audio is process loopback, which no permission blocks, so these point at Sound settings.
+    (
+        "notice.no_system_audio_windows",
+        "Talaan can't hear the call audio, so only your side is recorded. Check your speakers or headset in Windows Settings › System › Sound.",
+        "Talaan n’entend pas l’audio de l’appel, donc seul votre côté est enregistré. Vérifiez vos haut-parleurs ou votre casque dans Paramètres Windows › Système › Son.",
+        "Talaan no oye el audio de la llamada, así que solo se graba tu lado. Revisa tus altavoces o audífonos en Configuración de Windows › Sistema › Sonido.",
+    ),
+    (
+        "notice.no_call_audio_windows",
+        "No call audio is coming through. If the other people are talking, check which speakers or headset the call app uses in Windows Settings › System › Sound.",
+        "Aucun audio d’appel n’est reçu. Si les autres personnes parlent, vérifiez quels haut-parleurs ou quel casque l’application d’appel utilise dans Paramètres Windows › Système › Son.",
+        "No llega audio de la llamada. Si las demás personas están hablando, revisa qué altavoces o audífonos usa la aplicación de llamadas en Configuración de Windows › Sistema › Sonido.",
+    ),
+    (
+        "notice.call_audio_lost",
+        "Call audio stopped coming through, so only your side is being recorded from here.",
+        "L’audio de l’appel ne passe plus, donc seul votre côté est enregistré à partir de maintenant.",
+        "El audio de la llamada dejó de llegar, así que desde ahora solo se graba tu lado.",
+    ),
+    ("tray.tooltip_recording", "Talaan · Recording {time}", "Talaan · Enregistrement {time}", "Talaan · Grabando {time}"),
+    ("tray.tooltip_paused", "Talaan · Paused {time}", "Talaan · En pause {time}", "Talaan · En pausa {time}"),
     ("notion.recorded_with", "recorded with Talaan", "enregistré avec Talaan", "grabado con Talaan"),
     ("notion.recap", "Recap", "Récapitulatif", "Resumen breve"),
     ("notion.decisions", "Decisions", "Décisions", "Decisiones"),

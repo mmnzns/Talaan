@@ -151,11 +151,17 @@ pub fn update(app: &AppHandle, status: &Status) {
 /// The tray tooltip ("Talaan · Recording 12:04"), the Windows stand-in for the menu bar timer.
 #[cfg_attr(target_os = "macos", allow(dead_code))]
 fn tooltip(state: &str, elapsed_ms: u64) -> String {
-    match state {
-        "recording" => format!("Talaan · Recording {}", clock(elapsed_ms)),
-        "paused" => format!("Talaan · Paused {}", clock(elapsed_ms)),
-        _ => "Talaan".to_string(),
-    }
+    tooltip_in(crate::i18n::current(), state, elapsed_ms)
+}
+
+#[cfg_attr(target_os = "macos", allow(dead_code))]
+fn tooltip_in(lang: crate::i18n::Lang, state: &str, elapsed_ms: u64) -> String {
+    let key = match state {
+        "recording" => "tray.tooltip_recording",
+        "paused" => "tray.tooltip_paused",
+        _ => return "Talaan".to_string(),
+    };
+    crate::i18n::tr_in(lang, key, &[("time", &clock(elapsed_ms))])
 }
 
 fn clock(ms: u64) -> String {
@@ -321,8 +327,11 @@ mod tests {
 
     #[test]
     fn the_tray_tooltip_carries_the_timer() {
-        assert_eq!(super::tooltip("recording", 65_000), "Talaan · Recording 01:05");
-        assert_eq!(super::tooltip("paused", 65_000), "Talaan · Paused 01:05");
-        assert_eq!(super::tooltip("idle", 0), "Talaan");
+        use crate::i18n::Lang;
+        assert_eq!(super::tooltip_in(Lang::En, "recording", 65_000), "Talaan · Recording 01:05");
+        assert_eq!(super::tooltip_in(Lang::En, "paused", 65_000), "Talaan · Paused 01:05");
+        assert_eq!(super::tooltip_in(Lang::Fr, "recording", 65_000), "Talaan · Enregistrement 01:05");
+        assert_eq!(super::tooltip_in(Lang::Es, "paused", 65_000), "Talaan · En pausa 01:05");
+        assert_eq!(super::tooltip_in(Lang::En, "idle", 0), "Talaan");
     }
 }

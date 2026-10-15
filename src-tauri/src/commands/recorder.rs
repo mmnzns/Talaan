@@ -15,6 +15,17 @@ pub const STATE: &str = "recorder-state";
 pub const LEVELS: &str = "recorder-levels";
 pub const NOTICE: &str = "recorder-notice";
 
+// The "can't hear the call" notices (i18n keys): macOS points at its privacy pane, Windows at Sound settings
+// (process loopback has no permission to grant).
+#[cfg(not(target_os = "windows"))]
+const NO_SYSTEM_AUDIO: &str = "notice.no_system_audio";
+#[cfg(target_os = "windows")]
+const NO_SYSTEM_AUDIO: &str = "notice.no_system_audio_windows";
+#[cfg(not(target_os = "windows"))]
+const NO_CALL_AUDIO: &str = "notice.no_call_audio";
+#[cfg(target_os = "windows")]
+const NO_CALL_AUDIO: &str = "notice.no_call_audio_windows";
+
 #[derive(Default)]
 pub struct RecorderState {
     engine: Mutex<Engine>,
@@ -111,7 +122,7 @@ pub fn start_recording(app: &AppHandle, app_id: &str, app_label: &str) -> CmdRes
         super::calendar::link_soon(app, id);
     }
     if !st.system_audio {
-        notice(app, crate::i18n::tr("notice.no_system_audio"), "warning", Some("system-audio"));
+        notice(app, crate::i18n::tr(NO_SYSTEM_AUDIO), "warning", Some("system-audio"));
     }
     rec.auto_paused.store(false, Ordering::Relaxed);
     let p = payload(&engine, on_speakers);
@@ -337,7 +348,7 @@ pub fn setup(app: &AppHandle) {
 
             if system_failed && !warned_lost {
                 warned_lost = true;
-                notice(&app, "Call audio stopped coming through, so only your side is being recorded from here.".into(), "warning", None);
+                notice(&app, crate::i18n::tr("notice.call_audio_lost"), "warning", None);
             } else if !system_failed {
                 // Back (an output switch restarted it): a later failure warns again.
                 warned_lost = false;
@@ -353,7 +364,7 @@ pub fn setup(app: &AppHandle) {
                     let since = *silent_since.get_or_insert_with(Instant::now);
                     if !warned && since.elapsed() > Duration::from_secs(10) {
                         warned = true;
-                        notice(&app, crate::i18n::tr("notice.no_call_audio"), "warning", Some("system-audio"));
+                        notice(&app, crate::i18n::tr(NO_CALL_AUDIO), "warning", Some("system-audio"));
                     }
                 } else if paused || !playing {
                     silent_since = None;
