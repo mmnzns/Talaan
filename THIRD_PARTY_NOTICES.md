@@ -8,8 +8,10 @@ Talaan uses the following libraries, fonts and models. Each is used under its ow
 | React | MIT | https://react.dev |
 | Vite | MIT | https://vite.dev |
 | Tailwind CSS | MIT | https://tailwindcss.com |
-| Bricolage Grotesque (font) | SIL OFL 1.1 | https://github.com/ateliertriay/bricolage |
-| IBM Plex Mono (font) | SIL OFL 1.1 | https://github.com/IBM/plex |
+| Syne (font) | SIL OFL 1.1 | https://github.com/bonjour-monde/syne-typeface |
+| Instrument Sans (font) | SIL OFL 1.1 | https://github.com/Instrument/instrument-sans |
+| DM Mono (font) | SIL OFL 1.1 | https://github.com/googlefonts/dm-mono |
+| Fontsource (font packaging) | MIT | https://fontsource.org |
 | lucide-react (icons) | ISC | https://lucide.dev |
 | clsx, tailwind-merge | MIT | https://github.com/lukeed/clsx, https://github.com/dcastil/tailwind-merge |
 | serde, serde_json | MIT / Apache-2.0 | https://serde.rs |
@@ -40,7 +42,8 @@ Talaan uses the following libraries, fonts and models. Each is used under its ow
 | keyring (Keychain) | MIT / Apache-2.0 | https://github.com/hwchen/keyring-rs |
 | objc2-user-notifications | Zlib / Apache-2.0 / MIT | https://github.com/madsmtm/objc2 |
 | Symphonia (audio import) | MPL-2.0 | https://github.com/pdeljanov/Symphonia |
-| tauri-plugin-dialog | MIT / Apache-2.0 | https://github.com/tauri-apps/plugins-workspace |
+| tauri-plugin-dialog, -opener, -updater, -autostart | MIT / Apache-2.0 | https://github.com/tauri-apps/plugins-workspace |
+| objc2-event-kit (macOS calendar) | Zlib / Apache-2.0 / MIT | https://github.com/madsmtm/objc2 |
 
 ## Models
 
