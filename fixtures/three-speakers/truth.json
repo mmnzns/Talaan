@@ -1,0 +1,74 @@
+[
+ {
+  "speaker": "Karen",
+  "start_ms": 0,
+  "end_ms": 5401,
+  "text": "Okay everyone, let's start with the launch timeline. Where are we on the landing page?"
+ },
+ {
+  "speaker": "Daniel",
+  "start_ms": 6001,
+  "end_ms": 11722,
+  "text": "The landing page is done. We still need the pricing table and the legal copy before we can publish."
+ },
+ {
+  "speaker": "Rishi",
+  "start_ms": 12322,
+  "end_ms": 18512,
+  "text": "I can take the pricing table. I'll have a draft by Thursday, assuming the numbers are final."
+ },
+ {
+  "speaker": "Karen",
+  "start_ms": 19112,
+  "end_ms": 23945,
+  "text": "The numbers are final as of this morning. Daniel, can you chase legal for the copy?"
+ },
+ {
+  "speaker": "Daniel",
+  "start_ms": 24545,
+  "end_ms": 28600,
+  "text": "Yes, I'll email them today and ask for a turnaround by Monday."
+ },
+ {
+  "speaker": "Rishi",
+  "start_ms": 29200,
+  "end_ms": 35315,
+  "text": "One concern. If legal takes longer, the launch slips. Should we have a fallback date?"
+ },
+ {
+  "speaker": "Karen",
+  "start_ms": 35915,
+  "end_ms": 40713,
+  "text": "Good point. Let's say the fallback is the twentieth. We decide on Tuesday."
+ },
+ {
+  "speaker": "Daniel",
+  "start_ms": 41313,
+  "end_ms": 43916,
+  "text": "Works for me. I'll put it in the tracker."
+ },
+ {
+  "speaker": "Rishi",
+  "start_ms": 44516,
+  "end_ms": 49347,
+  "text": "And who owns the announcement email? Last time it fell through the cracks."
+ },
+ {
+  "speaker": "Karen",
+  "start_ms": 49947,
+  "end_ms": 53682,
+  "text": "I'll own the announcement email. Draft by next Wednesday."
+ },
+ {
+  "speaker": "Daniel",
+  "start_ms": 54282,
+  "end_ms": 58522,
+  "text": "Great. Anything else? Otherwise we can wrap up early today."
+ },
+ {
+  "speaker": "Rishi",
+  "start_ms": 59122,
+  "end_ms": 61548,
+  "text": "Nothing from me. Thanks everyone."
+ }
+]

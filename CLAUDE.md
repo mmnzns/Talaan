@@ -120,6 +120,8 @@ src-tauri/src/
     mic_users.rs        which processes are using the mic (Core Audio process objects)
     calendar.rs browser_tabs.rs  EventKit access and events; a browser's tab URLs via Apple Events
 docs/plans/             per-milestone task plans
+docs/WINDOWS-PORT.md    what the Windows port has to write, build and package (v1.0 ships Mac + Windows together)
+docs/TESTING.md         what Miguel tests before release
 docs/screens/M1/        light + dark screenshots from the M1 checkpoint
 ```
 

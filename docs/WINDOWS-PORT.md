@@ -1,0 +1,69 @@
+# Windows port — handoff
+
+Written on the Mac when v1 was feature-complete (2026-10-14), for the session that ports Talaan on the PC.
+**Decision:** v1.0 ships Mac and Windows together; nothing is released until the Windows build passes the same
+release gate. Read `CLAUDE.md` and the Notion pages ("Talaan Journey", "Talaan v1 Build Plan") first.
+
+## What's already shared
+
+Everything outside `src-tauri/src/platform/macos/` is cross-platform by design: storage, the transcriber
+pipeline (VAD, Parakeet/Whisper, echo, merge, diarization), the summarizer and its helper protocol, Ask, call
+rules and tab classification, calendar event picking, Notion, the whole React UI. Models download at runtime
+(`~/AppData/Roaming/Talaan` via `dirs::data_dir()`), so nothing big lives in the repo. Fonts are bundled.
+`keyring`, the updater and autostart plugins all support Windows.
+
+## What has to be written (`src-tauri/src/platform/windows/`, plus one `cfg` line in `platform/mod.rs`)
+
+Mirror each macOS item with the same names, so callers don't change:
+
+| macOS (`platform/macos/`) | Job | Windows approach |
+|---|---|---|
+| `system_tap.rs` `SystemTap` | Capture everything the computer plays (Them), excluding Talaan | WASAPI loopback on the default render device (`AUDCLNT_STREAMFLAGS_LOOPBACK`); process-loopback exclusion (`ActivateAudioInterfaceAsync` with `PROCESS_LOOPBACK_MODE_EXCLUDE_TARGET_PROCESS_TREE`, Windows 10 2004+) to leave Talaan's own sounds out. Implements `recorder::source::AudioSource`. |
+| `clock.rs` `host_now_ns`, `host_ticks_to_ns` | One clock for both tracks | QueryPerformanceCounter, matching WASAPI's QPC timestamps. |
+| `mic_users.rs` `mic_users()` | Which processes are using the mic (call detection) | The `CapabilityAccessManager\ConsentStore\microphone` registry keys (`LastUsedTimeStop == 0` means in use, per app/exe), or IAudioSessionManager2 capture sessions with their process ids. Return `MicUser { pid, bundle_id, path }`; on Windows put the exe name/AUMID in `bundle_id` and add Windows ids to `calls/apps.rs` (`Zoom.exe`, `ms-teams.exe`, `slack.exe`, browsers…). |
+| `permissions.rs` | Mic permission + deep links | Mic privacy setting (same ConsentStore key); `ms-settings:privacy-microphone`. System audio needs no permission on Windows. |
+| `devices.rs` | Built-in speakers warning, device change watcher | IMMNotificationClient for default-device changes; form factor `Speakers` + `EnumeratorName` for built-in. |
+| `power.rs` `SleepWatcher` | Auto-pause on sleep | `WM_POWERBROADCAST` / `RegisterSuspendResumeNotification`. |
+| `notify.rs` | "Summary ready" notification, click opens the meeting | Windows toast (tauri-plugin-notification or WinRT `ToastNotificationManager` with an activation argument). |
+| `calendar.rs` | Calendar events (title, attendees) | WinRT `AppointmentStore` (needs the appointments capability) or leave Calendar hidden on Windows for v1; the pure picker in `calendar/` is ready either way. |
+| `browser_tabs.rs` | Tab URLs of a browser using the mic | No AppleScript: UI Automation on the browser's address bar (active tab only), or leave browser calls on Ask/Never on Windows. `calls/tabs.rs` classification is shared. |
+| `thread.rs` | Background thread priority | `SetThreadPriority(THREAD_PRIORITY_BELOW_NORMAL)` / `THREAD_MODE_BACKGROUND_BEGIN`. |
+
+Files outside `platform/` that call `platform::macos::…` directly and need a `cfg` or a platform-neutral
+re-export: `lib.rs`, `calendar/mod.rs`, `commands/{ask,recorder,calendar,calls,summarizer}.rs`.
+
+## Build and packaging
+
+- `src-tauri/Cargo.toml`: `keyring` (use `windows-native`) and `whisper-rs` are currently macOS-only target
+  deps; add Windows entries (whisper-rs with `vulkan` for GPU, or CPU). `llm/Cargo.toml`: llama-cpp-2 with
+  `vulkan` (or CPU) instead of `metal`. ONNX Runtime (Parakeet, Nemotron diarization) works as is; DirectML is
+  optional.
+- `scripts/build-llm-helper.sh` names the helper by target triple; Windows needs a `.ps1` (or Git Bash) version
+  producing `binaries/talaan-llm-x86_64-pc-windows-msvc.exe`.
+- `tauri.windows.conf.json`: NSIS installer, icon from `icons/icon.ico` (already generated).
+- `.github/workflows/ci.yml`: add a `windows-latest` job (`cargo check`, tests) early in the port.
+- `.github/workflows/release.yml`: add a Windows job (NSIS + updater artifacts) that merges into the same
+  `latest.json` (platform `windows-x86_64`). The updater secrets are already on the repo. No paid Windows
+  certificate (decision log): users click More info › Run anyway once; the README explains it.
+
+## UI copy
+
+One design, platform-neutral copy (decision log). The only per-OS words are system names users must recognize:
+"menu bar" (Mac) vs "system tray" (Windows). These are still hard-coded as "menu bar" in about a dozen places
+(`grep -rn "menu bar" src`); move them to one string table switched by platform. The window's title bar uses
+`titleBarStyle: Overlay` on macOS (traffic lights inset in the toolbar, `pl-[84px]` in `Toolbar.tsx`);
+Windows needs its own title bar treatment.
+
+## Not in the repo (and where it is)
+
+- **Updater signing key:** `~/.tauri/talaan.key` on the Mac, password in its login Keychain ("Talaan updater
+  key password"), and both as GitHub secrets. CI signs Windows updates with the secrets, so the PC doesn't need
+  the key. Back it up (password manager): if it's lost, installed copies can never be updated again.
+- **Mac code-signing certificate:** "Parlato Code Signing", in the Mac's login keychain (not needed on Windows).
+- **Design files:** Google Drive › Talaan - Meeting Minutes › `Design/UI v3/` (synced to the PC through Drive).
+- **Decisions and Build Log:** Notion "Talaan Journey".
+
+## Done when
+
+The release gate on Notion passes on Windows too: install, onboard, record a real Zoom/Teams/Meet call with
+both sides, transcribe and summarize offline, call rules, export, Ask, update from a previous build.

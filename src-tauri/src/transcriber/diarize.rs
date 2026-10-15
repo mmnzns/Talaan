@@ -154,7 +154,8 @@ mod tests {
     #[ignore]
     fn diarize_smoke() {
         let model = dirs::data_dir().unwrap().join("Talaan/models/diarization/nemotron3_diar_v3.onnx");
-        let dir = "/private/tmp/claude-502/three-speakers/v2/";
+        // Three synthetic voices (Karen, Daniel, Rishi), 12 turns; truth.json has who spoke when.
+        let dir = concat!(env!("CARGO_MANIFEST_DIR"), "/../fixtures/three-speakers/");
         let audio = crate::transcriber::vad::read_track(Path::new(&format!("{dir}them.wav"))).unwrap();
         let truth: Vec<serde_json::Value> = serde_json::from_str(&std::fs::read_to_string(format!("{dir}truth.json")).unwrap()).unwrap();
         let mut pieces: Vec<Timed> = truth.iter().map(|t| Timed { track: Track::Them, speaker: 0, start_ms: t["start_ms"].as_u64().unwrap(), end_ms: t["end_ms"].as_u64().unwrap(), text: t["speaker"].as_str().unwrap().into() }).collect();
