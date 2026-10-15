@@ -6,6 +6,7 @@ import { openLink } from "../../lib/windows";
 import { Button, Label, Select, Switch } from "../../ui";
 import { Group, Row, SectionIntro } from "./parts";
 import type { TabProps } from "./tabProps";
+import { platform } from "../../lib/platform";
 
 export function GeneralTab({ settings: s, update }: TabProps) {
   return (
@@ -14,7 +15,7 @@ export function GeneralTab({ settings: s, update }: TabProps) {
       <Row title="Detect calls" desc="Notice when a call app starts using the mic. Set what happens per app in Call apps.">
         <Switch aria-label="Detect calls" checked={s.detectCalls} onChange={(v) => update({ detectCalls: v })} />
       </Row>
-      <Row title="Open at login" desc="Keeps the menu bar icon ready.">
+      <Row title="Open at login" desc={`Keeps the ${platform.trayName} icon ready.`}>
         <Switch aria-label="Open at login" checked={s.launchAtLogin} onChange={(v) => update({ launchAtLogin: v })} />
       </Row>
       <Row title="Recording notice" desc="Copied with one click when a recording starts." stack>

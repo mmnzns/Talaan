@@ -7,6 +7,7 @@ import { inTauri } from "../../lib/windows";
 import { invoke } from "@tauri-apps/api/core";
 import { Button, Sheet, useToast } from "../../ui";
 import { RecordingPopover } from "../Recording/RecordingPopover";
+import { platform } from "../../lib/platform";
 
 /** Lets screens inside the main window start a recording (e.g. the empty state's "Record a call"). */
 export const RecordingContext = createContext<{ start: () => void } | null>(null);
@@ -92,10 +93,10 @@ export function useRecording() {
         <div className="flex flex-col gap-3 p-5">
           <h2 className="m-0 font-display text-xl font-bold tracking-[-0.02em]">Talaan can’t use the microphone</h2>
           <p className="m-0 text-[13px] text-subtle">
-            Your side of the call won’t be recorded. Turn Talaan on in System Settings › Privacy &amp; Security › Microphone, or record only the other people for now.
+            Your side of the call won’t be recorded. Turn Talaan on in {platform.micSettingsPath}, or record only the other people for now.
           </p>
           <div className="flex flex-wrap justify-end gap-2">
-            <Button onClick={() => recorderClient.openSettings("microphone")}>Open System Settings</Button>
+            <Button onClick={() => recorderClient.openSettings("microphone")}>{platform.openSettings}</Button>
             <Button
               variant="primary"
               onClick={async () => {

@@ -6,6 +6,7 @@ import { formatTime } from "../../lib/format";
 import { copyText } from "../../lib/share";
 import { Button, Label, cn } from "../../ui";
 import { SunCorner } from "../../brand/SunCorner";
+import { platform } from "../../lib/platform";
 
 interface Props {
   state: RecorderState;
@@ -117,7 +118,7 @@ export function RecordingPopover({ state, levels, notice, app = "Call", onPause,
             <span className="flex gap-2">
               {notice.settingsPane && onOpenSettings && (
                 <Button className="h-7" onClick={() => onOpenSettings(notice.settingsPane!)}>
-                  Open system settings
+                  {platform.openSettings}
                 </Button>
               )}
               {onDismissNotice && (

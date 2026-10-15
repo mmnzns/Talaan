@@ -7,6 +7,7 @@ import { useSettingsStore } from "../../data/StoreProvider";
 import { Button, Chip, Field, Select, Switch, useToast } from "../../ui";
 import { Group, Row, SectionIntro } from "./parts";
 import type { TabProps } from "./tabProps";
+import { platform } from "../../lib/platform";
 
 const STATE_LABEL = { allowed: "allowed", denied: "not allowed", not_asked: "asks at the first call", not_installed: "not installed" } as const;
 
@@ -25,7 +26,7 @@ export function ConnectionsTab({ settings: s, update }: TabProps) {
     const access = await store.requestCalendar();
     setCalendar(access);
     if (access === "allowed") update({ calendarConnected: true });
-    else toast("Calendar access is off for Talaan. Turn it on in your system settings, then try again.");
+    else toast(`Calendar access is off for Talaan. Turn it on in ${platform.settingsApp}, then try again.`);
   };
 
   return (
@@ -36,7 +37,7 @@ export function ConnectionsTab({ settings: s, update }: TabProps) {
           <span className="flex items-center gap-3">
             {calendar === "denied" && (
               <button type="button" className="cursor-pointer border-0 bg-transparent p-0 text-xs text-subtle underline" onClick={() => recorderClient.openSettings("calendar")}>
-                Allow in system settings
+                Allow in {platform.settingsApp}
               </button>
             )}
             <Switch aria-label="Calendar" checked={s.calendarConnected && calendar !== "denied"} onChange={toggleCalendar} />
@@ -53,7 +54,7 @@ export function ConnectionsTab({ settings: s, update }: TabProps) {
               ))}
               {browsers.some((b) => b.state === "denied") && (
                 <button type="button" className="cursor-pointer border-0 bg-transparent p-0 text-xs text-subtle underline" onClick={() => recorderClient.openSettings("automation")}>
-                  Allow in system settings
+                  Allow in {platform.settingsApp}
                 </button>
               )}
             </div>

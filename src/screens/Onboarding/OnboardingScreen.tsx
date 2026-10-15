@@ -7,16 +7,20 @@ import { useSettingsStore } from "../../data/StoreProvider";
 import type { Settings } from "../../data/settings";
 import { Button, Chip, Label, Radio, Switch, cn, useToast } from "../../ui";
 import { SunCorner } from "../../brand/SunCorner";
+import { platform } from "../../lib/platform";
 
 const STEPS = ["Welcome", "Audio access", "Speech model", "Summaries", "Call apps", "Extras", "Done"] as const;
 
-/** "asked": the system prompt was shown; its answer can't be read, only seen in the first recording. */
-type Perm = "idle" | "allowed" | "asked" | "denied";
+/**
+ * "asked": the system prompt was shown; its answer can't be read, only seen in the first recording.
+ * "not_needed": the system has no permission for it (system audio on Windows).
+ */
+type Perm = "idle" | "allowed" | "asked" | "denied" | "not_needed";
 
 export function OnboardingScreen() {
   const { settings, update } = useSettings();
   const [step, setStep] = useState(0);
-  const [systemAudio, setSystemAudio] = useState<Perm>("idle");
+  const [systemAudio, setSystemAudio] = useState<Perm>(platform.systemAudioNeedsPermission ? "idle" : "not_needed");
 
   if (!settings) return null;
   const last = step === STEPS.length - 1;
@@ -139,12 +143,12 @@ function PermRow({ title, desc: d, state, onAllow, onDeny, onOpen }: { title: st
         <span className="block font-semibold">{title}</span>
         <span className="text-xs leading-[17px] text-subtle">{d}</span>
       </span>
-      {state === "allowed" || state === "asked" ? (
+      {state === "allowed" || state === "asked" || state === "not_needed" ? (
         <Chip tone="gold">
-          <Check size={11} aria-hidden="true" /> {state === "allowed" ? "allowed" : "asked"}
+          <Check size={11} aria-hidden="true" /> {state === "asked" ? "asked" : "allowed"}
         </Chip>
       ) : state === "denied" && onOpen ? (
-        <Button onClick={onOpen}>Open system settings</Button>
+        <Button onClick={onOpen}>{platform.openSettings}</Button>
       ) : (
         <span className="flex gap-2">
           {onDeny && <Button variant="ghost" onClick={onDeny}>Not now</Button>}
@@ -165,11 +169,11 @@ function AudioAccess({ systemAudio, setSystemAudio }: { systemAudio: Perm; setSy
   return (
     <>
       <h1 className={h1}>Allow two kinds of audio</h1>
-      <p className={desc}>Talaan needs your microphone (your side) and system audio (everyone else). Your system will ask for each one next.</p>
+      <p className={desc}>{platform.audioIntro}</p>
       <PermRow title="Microphone" desc={`Records what you say. Labeled “Me”.`} state={mic} onAllow={() => void askMic()} onOpen={() => void recorderClient.openSettings("microphone")} />
       <PermRow
         title="System audio"
-        desc="Records the other people on the call. Your system may list this as screen and system audio recording; Talaan only uses the audio."
+        desc={platform.systemAudioDesc}
         state={systemAudio}
         onAllow={() => void askSystem()}
         onDeny={() => setSystemAudio("denied")}
@@ -178,15 +182,15 @@ function AudioAccess({ systemAudio, setSystemAudio }: { systemAudio: Perm; setSy
       {systemAudio === "denied" ? (
         <div role="alert" className="flex flex-wrap items-center gap-3 rounded-card bg-warn-bg px-3 py-2.5 text-[13px] text-warn-fg">
           <span className="flex-1 basis-56">
-            <strong>System audio is off.</strong> Talaan will record your side only, so the transcript won’t include other people. Turn it on any time in system settings › Privacy &amp; Security.
+            <strong>System audio is off.</strong> Talaan will record your side only, so the transcript won’t include other people. Turn it on any time in {platform.settingsApp} › Privacy &amp; Security.
           </span>
-          <Button onClick={() => void recorderClient.openSettings("system-audio")}>Open system settings</Button>
+          <Button onClick={() => void recorderClient.openSettings("system-audio")}>{platform.openSettings}</Button>
         </div>
       ) : systemAudio === "asked" ? (
-        <p className={desc}>If you chose Don’t Allow, Talaan records your side only until you turn it on in system settings. The first recording tells you if the other side can’t be heard.</p>
-      ) : (
-        <p className={desc}>If you say no, Talaan still works for your side only, and you can turn it on later in system settings.</p>
-      )}
+        <p className={desc}>If you chose Don’t Allow, Talaan records your side only until you turn it on in {platform.settingsApp}. The first recording tells you if the other side can’t be heard.</p>
+      ) : systemAudio === "idle" ? (
+        <p className={desc}>If you say no, Talaan still works for your side only, and you can turn it on later in {platform.settingsApp}.</p>
+      ) : null}
     </>
   );
 }
@@ -320,7 +324,7 @@ function Done({ systemAudio }: { systemAudio: Perm }) {
   return (
     <>
       <h1 className={h1}>You’re set.</h1>
-      <p className={desc}>Talaan lives in your menu bar. Join a call and it will ask to record, or click the Talaan icon to start.</p>
+      <p className={desc}>Talaan lives in your {platform.trayName}. Join a call and it will ask to record, or click the Talaan icon to start.</p>
       <div className="flex items-center gap-3.5 rounded-card bg-sp1 px-[18px] py-4">
         <Headphones size={22} aria-hidden="true" className="flex-none text-sp1-fg" />
         <div>
@@ -329,7 +333,7 @@ function Done({ systemAudio }: { systemAudio: Perm }) {
         </div>
       </div>
       {systemAudio === "denied" && (
-        <p className={desc}>Reminder: system audio is off, so only your side will be recorded until you allow it in system settings.</p>
+        <p className={desc}>Reminder: system audio is off, so only your side will be recorded until you allow it in {platform.settingsApp}.</p>
       )}
     </>
   );
@@ -345,7 +349,7 @@ function CalendarSwitch({ settings: s, update }: StepProps) {
       onChange={async (on) => {
         if (!on) return void update({ calendarConnected: false });
         if ((await store.requestCalendar()) === "allowed") void update({ calendarConnected: true });
-        else toast("Calendar access is off for Talaan. You can turn it on later in system settings.");
+        else toast(`Calendar access is off for Talaan. You can turn it on later in ${platform.settingsApp}.`);
       }}
     />
   );

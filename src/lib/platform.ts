@@ -20,6 +20,9 @@ export interface PlatformCopy {
   systemAudioNeedsPermission: boolean;
   /** Where Talaan's icon lives. */
   trayName: string;
+  /** Onboarding "Allow two kinds of audio": the intro and the System audio card. */
+  audioIntro: string;
+  systemAudioDesc: string;
 }
 
 const COPY: Record<OS, PlatformCopy> = {
@@ -29,6 +32,8 @@ const COPY: Record<OS, PlatformCopy> = {
     micSettingsPath: "System Settings › Privacy & Security › Microphone",
     systemAudioNeedsPermission: true,
     trayName: "menu bar",
+    audioIntro: "Talaan needs your microphone (your side) and system audio (everyone else). Your system will ask for each one next.",
+    systemAudioDesc: "Records the other people on the call. Your system may list this as screen and system audio recording; Talaan only uses the audio.",
   },
   windows: {
     openSettings: "Open Windows Settings",
@@ -36,6 +41,8 @@ const COPY: Record<OS, PlatformCopy> = {
     micSettingsPath: "Windows Settings › Privacy & security › Microphone",
     systemAudioNeedsPermission: false,
     trayName: "system tray",
+    audioIntro: "Talaan needs your microphone (your side) and system audio (everyone else). System audio needs no permission here.",
+    systemAudioDesc: "Records the other people on the call. No permission needed.",
   },
 };
 
