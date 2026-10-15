@@ -7,7 +7,6 @@ import { Button, Label, Switch, useToast } from "../../ui";
 import { MenuBarPopover } from "../Recording/MenuBarPopover";
 import { RecordingPopover } from "../Recording/RecordingPopover";
 import { AlwaysBanner, CallEndedPrompt, Nudge } from "../Recording/CallPrompts";
-import { platform } from "../../lib/platform";
 
 function Caption({ title, note }: { title: string; note: string }) {
   return (
@@ -73,7 +72,7 @@ export function RecordingStage() {
               client.discard();
               toast("Recording discarded");
             }}
-            onOpenSettings={() => toast(`Opens ${platform.settingsApp}`)}
+            onOpenSettings={() => toast("Opens the system settings")}
             onDismissNotice={rec.clearNotice}
           />
         ) : (

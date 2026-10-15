@@ -1,10 +1,17 @@
 import { LANGS, LOCALE_TAG, format, lookup, resolveLang, type Lang, type UiLanguage, type Vars } from "./core";
 import { common } from "./messages/common";
+import { kit } from "./messages/kit";
+import { meeting } from "./messages/meeting";
+import { onboarding } from "./messages/onboarding";
+import { platform } from "./messages/platform";
+import { recording } from "./messages/recording";
+import { settings } from "./messages/settings";
+import { shell } from "./messages/shell";
 
 export { LANGS, LANG_NAMES, LOCALE_TAG, resolveLang, type Lang, type UiLanguage } from "./core";
 
 /** Every area of the UI. Add a file in `messages/`, then list it here: its keys become `area.key`. */
-const areas = { common };
+const areas = { common, kit, meeting, onboarding, platform, recording, settings, shell };
 
 type Areas = typeof areas;
 type KeysOf<A> = A extends { en: infer E } ? keyof E & string : never;
@@ -44,4 +51,10 @@ export const t: T = (key, vars) => translate(current, key, vars);
 export function languageFor(pref: UiLanguage | undefined): Lang {
   const system = typeof navigator === "undefined" ? [] : navigator.languages?.length ? navigator.languages : [navigator.language ?? ""];
   return resolveLang(pref, system);
+}
+
+/** For keys built at run time (a model id): the message if there is one, else `fallback`. */
+export function messageOr(lang: Lang, key: string, fallback: string, vars?: Vars): string {
+  const found = lookup(catalog[lang], key, lang, vars) ?? lookup(catalog.en, key, "en", vars);
+  return found === undefined ? fallback : format(found, vars);
 }

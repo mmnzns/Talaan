@@ -36,7 +36,14 @@ describe("platformCopy", () => {
   });
 
   it("never mentions the other platform", () => {
-    expect(JSON.stringify(Object.values(platformCopy("windows")))).not.toMatch(/System Settings|menu bar|Mac/);
-    expect(JSON.stringify(Object.values(platformCopy("mac")))).not.toMatch(/Windows|tray/);
+    for (const lang of ["en", "fr", "es"] as const) {
+      expect(JSON.stringify(Object.values(platformCopy("windows", lang)))).not.toMatch(/System Settings|menu bar|Mac|Réglages Système|Ajustes del Sistema|barre des menus|barra de menús/);
+      expect(JSON.stringify(Object.values(platformCopy("mac", lang)))).not.toMatch(/Windows|tray|zone de notification|bandeja/);
+    }
+  });
+
+  it("speaks French and Spanish", () => {
+    expect(platformCopy("windows", "fr").settingsApp).toBe("Paramètres Windows");
+    expect(platformCopy("mac", "es").settingsApp).toBe("Ajustes del Sistema");
   });
 });

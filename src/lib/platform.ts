@@ -1,7 +1,10 @@
 /**
  * The few words and flows that differ between Mac and Windows. Copy is platform-neutral everywhere else;
- * screens read these instead of checking the OS themselves.
+ * screens read these instead of checking the OS themselves. The words live in lib/i18n/messages/platform.ts.
  */
+import { useLang } from "./i18n/I18nProvider";
+import { messageOr, type Lang } from "./i18n";
+
 export type OS = "mac" | "windows";
 
 /** WebView2 reports "Windows NT"; WKWebView (and the browser preview on a Mac) report "Macintosh". */
@@ -12,7 +15,7 @@ export function detectOS(userAgent: string): OS {
 export interface PlatformCopy {
   /** Button that opens the OS settings app. */
   openSettings: string;
-  /** "Allow in …" link text target, mid-sentence. */
+  /** The OS settings app's name, mid-sentence. */
   settingsApp: string;
   /** Where the user turns the microphone on for Talaan. */
   micSettingsPath: string;
@@ -25,30 +28,25 @@ export interface PlatformCopy {
   systemAudioDesc: string;
 }
 
-const COPY: Record<OS, PlatformCopy> = {
-  mac: {
-    openSettings: "Open System Settings",
-    settingsApp: "System Settings",
-    micSettingsPath: "System Settings › Privacy & Security › Microphone",
-    systemAudioNeedsPermission: true,
-    trayName: "menu bar",
-    audioIntro: "Talaan needs your microphone (your side) and system audio (everyone else). Your system will ask for each one next.",
-    systemAudioDesc: "Records the other people on the call. Your system may list this as screen and system audio recording; Talaan only uses the audio.",
-  },
-  windows: {
-    openSettings: "Open Windows Settings",
-    settingsApp: "Windows Settings",
-    micSettingsPath: "Windows Settings › Privacy & security › Microphone",
-    systemAudioNeedsPermission: false,
-    trayName: "system tray",
-    audioIntro: "Talaan needs your microphone (your side) and system audio (everyone else). System audio needs no permission here.",
-    systemAudioDesc: "Records the other people on the call. No permission needed.",
-  },
-};
-
-export function platformCopy(os: OS): PlatformCopy {
-  return COPY[os];
+export function platformCopy(os: OS, lang: Lang = "en"): PlatformCopy {
+  const w = (k: string) => messageOr(lang, `platform.${os}_${k}`, k);
+  return {
+    openSettings: w("openSettings"),
+    settingsApp: w("settingsApp"),
+    micSettingsPath: w("micSettingsPath"),
+    systemAudioNeedsPermission: os === "mac",
+    trayName: w("trayName"),
+    audioIntro: w("audioIntro"),
+    systemAudioDesc: w("systemAudioDesc"),
+  };
 }
 
 export const os: OS = detectOS(typeof navigator === "undefined" ? "" : navigator.userAgent);
-export const platform: PlatformCopy = platformCopy(os);
+
+/** The platform words in the current UI language. Re-renders when the language changes. */
+export function usePlatform(): PlatformCopy {
+  return platformCopy(os, useLang());
+}
+
+/** The flags that don't depend on language (onboarding's first state). */
+export const systemAudioNeedsPermission = os === "mac";
