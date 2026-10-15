@@ -61,6 +61,8 @@ export interface Settings {
   /** Tag a detected call's meeting with the app's name. */
   autoTagApps: boolean;
   launchAtLogin: boolean;
+  /** Look for a new version on GitHub at launch (only the version is fetched; nothing is sent). */
+  checkUpdates: boolean;
   recordingNotice: string;
   microphone: string; // "default" or a device name
   warnOnSpeakers: boolean;
@@ -129,6 +131,10 @@ export interface SettingsStore {
   notionDestinations(): Promise<NotionDestination[]>;
   /** Browsers tab detection works with, and whether Talaan may read their tabs. */
   browsersStatus(): Promise<{ name: string; state: BrowserState }[]>;
+  /** A newer version on GitHub, if any. */
+  checkForUpdate(): Promise<{ version: string; notes?: string } | null>;
+  /** Downloads, installs and relaunches. */
+  installUpdate(): Promise<void>;
   /** Calendar access as the system reports it. */
   calendarAccess(): Promise<CalendarAccess>;
   /** Asks the system for calendar access (the prompt shows only the first time). */

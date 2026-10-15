@@ -134,6 +134,14 @@ export class TauriSettingsStore implements SettingsStore {
     return call("browsers_status");
   }
 
+  checkForUpdate() {
+    return call<{ version: string; notes?: string } | null>("updates_check");
+  }
+
+  installUpdate() {
+    return call<void>("updates_install");
+  }
+
   calendarAccess(): Promise<CalendarAccess> {
     return call<CalendarAccess>("calendar_access");
   }

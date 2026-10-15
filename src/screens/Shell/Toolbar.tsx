@@ -1,5 +1,7 @@
 import { Download, MessageCircle, Settings as SettingsIcon } from "lucide-react";
+import { useEffect, useState } from "react";
 import { useSettings } from "../../data/hooks";
+import { onEvent } from "../../data/tauri/invoke";
 import type { RecorderState } from "../../data/recorder";
 import { formatTime } from "../../lib/format";
 import { Logo } from "../../brand/Logo";
@@ -15,6 +17,9 @@ interface Props {
 
 export function Toolbar({ onImport, onRecord, recording }: Props) {
   const { settings } = useSettings();
+  // A newer version found by the launch check (the app only; nothing is downloaded until Update now).
+  const [update, setUpdate] = useState<string>();
+  useEffect(() => (inTauri() ? onEvent<{ version: string }>("update-available", (u) => setUpdate(u.version)) : undefined), []);
   const local = !settings || settings.summaryEngine !== "byok";
 
   return (
@@ -31,6 +36,11 @@ export function Toolbar({ onImport, onRecord, recording }: Props) {
         <span className="size-[7px] rounded-full bg-gold shadow-[0_0_0_3px_color-mix(in_srgb,var(--t-gold)_30%,transparent)]" />
         {local ? "offline · local ai" : "cloud summaries on"}
       </Chip>
+      {update && (
+        <Chip tone="gold" onClick={() => void openSettings("general")} title={`Talaan ${update} is ready`}>
+          update ready
+        </Chip>
+      )}
       <span data-tauri-drag-region className="flex-1 self-stretch" />
       <Button onClick={() => navigate(routes.ask())}>
         <MessageCircle size={15} aria-hidden="true" />

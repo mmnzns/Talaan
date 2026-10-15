@@ -26,6 +26,8 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_autostart::init(tauri_plugin_autostart::MacosLauncher::LaunchAgent, None))
         .setup(|app| {
             let root = commands::resolve_data_dir(std::env::var("TALAAN_DATA_DIR").ok(), dirs::data_dir());
             let mut store = storage::Storage::new(root.clone())?;
@@ -44,6 +46,8 @@ pub fn run() {
             }
             commands::transcriber::setup(app.handle(), root);
             commands::calls::setup(app.handle());
+            commands::updates::apply_login_item(app.handle());
+            commands::updates::check_at_launch(app.handle());
             commands::tray::setup(app.handle())?;
 
             let handle = app.handle().clone();
@@ -95,6 +99,8 @@ pub fn run() {
             commands::calls::calls_stop,
             commands::calls::calls_hide,
             commands::calls::browsers_status,
+            commands::updates::updates_check,
+            commands::updates::updates_install,
             rec_cmd::recorder_start,
             rec_cmd::recorder_pause,
             rec_cmd::recorder_resume,

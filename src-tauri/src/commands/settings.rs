@@ -14,6 +14,7 @@ pub fn settings_set(app: AppHandle, state: State<AppState>, value: Value) -> Cmd
     // A changed retention setting takes effect right away.
     let report = storage.apply_retention(chrono::Utc::now())?;
     drop(storage);
+    super::updates::apply_login_item(&app);
     notify(&app, SETTINGS_CHANGED);
     if !report.audio_deleted.is_empty() || !report.meetings_deleted.is_empty() {
         notify(&app, MEETINGS_CHANGED);
@@ -26,6 +27,7 @@ pub fn settings_set(app: AppHandle, state: State<AppState>, value: Value) -> Cmd
 pub fn data_delete_all(app: AppHandle, state: State<AppState>) -> CmdResult<()> {
     state.lock().delete_all_data()?;
     crate::keys::clear_all();
+    super::updates::remove_login_item(&app);
     notify(&app, MEETINGS_CHANGED);
     notify(&app, SETTINGS_CHANGED);
     app.restart()

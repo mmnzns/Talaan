@@ -6,6 +6,7 @@ export const defaultSettings: Settings = {
   detectCalls: true,
   autoTagApps: false,
   launchAtLogin: true,
+  checkUpdates: true,
   recordingNotice: "Heads up: I'm recording this call for my own notes. It stays on my computer.",
   microphone: "default",
   warnOnSpeakers: true,

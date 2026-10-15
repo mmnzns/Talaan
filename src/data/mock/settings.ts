@@ -118,6 +118,13 @@ export class MockSettingsStore implements SettingsStore {
     ];
   }
 
+  async checkForUpdate() {
+    await sleep(600);
+    return null;
+  }
+
+  async installUpdate() {}
+
   async calendarAccess() {
     return "allowed" as const;
   }

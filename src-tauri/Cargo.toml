@@ -75,6 +75,10 @@ objc2-foundation = "0.3.2"
 objc2-user-notifications = "0.3.2"
 objc2-event-kit = "0.3.2"
 
+[target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
+tauri-plugin-autostart = "2"
+tauri-plugin-updater = "2"
+
 # Dependencies are always optimized, even in debug builds: whisper.cpp (built through CMake, which follows
 # opt-level) and the Rust audio math (mel features, resampling) are 10x+ slower unoptimized, and the signed
 # debug app is what real calls are tested on. Talaan's own code stays fast to compile.

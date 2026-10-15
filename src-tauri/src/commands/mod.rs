@@ -12,6 +12,7 @@ pub mod settings;
 pub mod summarizer;
 pub mod transcriber;
 pub mod tray;
+pub mod updates;
 
 use crate::storage::{Storage, StorageError};
 use std::sync::{Arc, Mutex, MutexGuard};
