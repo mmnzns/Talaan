@@ -20,6 +20,10 @@ WhatsApp, Discord, Webex, browsers; ignored: Talaan, Parlato, Wispr Flow, voice 
 processors (NVIDIA Broadcast, SteelSeries Sonar, Voicemod, Krisp). Settings > Connections lists installed Windows browsers.
 **Not done:** a real call with Zoom/Teams (your checkpoint). **Known:** a dev build or console exe (the test exe, python.exe)
 gets no consent-store entry even while it records, so `mic_users_live_smoke` can't show a live entry; GUI apps do appear.
+So the live source is now the active WASAPI capture sessions on every mic (pid → exe name, or package family), merged with
+the consent store; a registry entry only counts while its app is running (a killed app can leave stop stuck at 0). FxSound
+and audiodg are ignored too. Discord sitting in a voice channel holds the mic, so it counts as a call; Discord stays on Ask by
+default (`callApps` in `src/data/defaultSettings.ts`).
 
 **Known:** relay apps (FxSound, Voicemeeter, Sonar) re-render audio under their own process, so Talaan's own sounds can reach
 "Them" and other audio may be captured twice.
@@ -34,6 +38,7 @@ gets no consent-store entry even while it records, so `mic_users_live_smoke` can
 | `mic_clock_smoke` (mic stamps are on the host clock) | `cargo test mic_clock_smoke -- --ignored --nocapture` |
 | `tracks_line_up_smoke` (mic and loopback stamp-vs-now lag under 200 ms; a PowerShell process plays a Windows sound) | `cargo test tracks_line_up_smoke -- --ignored --nocapture` |
 | `mic_users_live_smoke` (prints this exe's consent-store entry while recording and after) | `cargo test mic_users_live_smoke -- --ignored --nocapture` |
+| `capture_sessions_live_smoke` (our pid is an active capture session while recording, is kept out of `mic_users()`, and is gone 1.5 s after stopping) | `cargo test capture_sessions_live_smoke -- --ignored --nocapture` |
 | `pipeline_smoke` (real models on a recorded meeting) | `TALAAN_SMOKE_MEETING=<meeting dir> cargo test --release pipeline_smoke -- --ignored --nocapture` |
 
 ## What's already shared

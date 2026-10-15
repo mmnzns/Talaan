@@ -333,11 +333,9 @@ mod tests {
         assert!(s.run(10, &["zoom"]).is_empty());
     }
 
-    /// What the calls loop does with mic users: identify each, keep the call apps.
+    /// What the calls loop does with mic users (the same shared step).
     fn apps_for(users: &[&str]) -> Vec<&'static str> {
-        let mut apps: Vec<&'static str> = users.iter().filter_map(|u| crate::calls::apps::identify(u, "", &[]).map(|a| a.0)).collect();
-        apps.dedup();
-        apps
+        crate::calls::apps::call_app_ids(users.iter().map(|u| (*u, "")), &[])
     }
 
     #[test]

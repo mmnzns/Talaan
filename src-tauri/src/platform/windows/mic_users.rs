@@ -8,10 +8,14 @@
 //!    microphone` (`LastUsedTimeStop` is 0 while an app holds the mic). Talaan is excluded by path / `talaan.exe`.
 //!
 //! Why both: a live check showed the consent store has NO entry for console or dev processes that capture (a
-//! cargo test exe, python, a Tk app), and its 0 → non-zero stop transition was never seen live, so it can't be
-//! trusted alone. Sessions are live and cover desktop and packaged apps alike; the registry stays as a fallback
-//! for anything a session doesn't show (e.g. a process we can't open). When both name an app the session entry
-//! wins, since it carries a real pid and path.
+//! cargo test exe, python, a Tk app), so its 0 → non-zero stop transition was never seen for them (GUI apps do
+//! appear, and show stop > start after use). It can't be trusted alone. Sessions are live and cover desktop and
+//! packaged apps alike; the registry stays as a fallback for anything a session doesn't show (e.g. a process we
+//! can't open). When both name an app the session entry wins, since it carries a real pid and path.
+//!
+//! A consent-store entry can stay at stop == 0 forever (an app killed while it held the mic). So when WASAPI
+//! answered, a registry user only counts while a process with that exe name (desktop) or package family
+//! (packaged) is running. When WASAPI couldn't be reached, the registry is used as it is.
 
 use winreg::enums::{HKEY_CURRENT_USER, REG_BINARY, REG_QWORD};
 use winreg::RegKey;
@@ -112,6 +116,13 @@ pub fn merge(sessions: Vec<MicUser>, registry: Vec<MicUser>) -> Vec<MicUser> {
     out
 }
 
+/// The registry users whose app is still running: a desktop user (it has a path) needs a process with its exe
+/// name, a packaged user (no path) a process in its package family. Both compared case-insensitively.
+pub fn running_only(registry: Vec<MicUser>, exes: &[String], families: &[String]) -> Vec<MicUser> {
+    let has = |list: &[String], name: &str| list.iter().any(|x| x.eq_ignore_ascii_case(name));
+    registry.into_iter().filter(|u| if u.path.is_empty() { has(families, &u.bundle_id) } else { has(exes, &u.bundle_id) }).collect()
+}
+
 fn entries(key: &RegKey) -> Vec<Entry> {
     key.enum_keys()
         .filter_map(Result::ok)
@@ -128,14 +139,68 @@ fn entries(key: &RegKey) -> Vec<Entry> {
 /// Every app other than Talaan that has the microphone open right now: live capture sessions, plus the
 /// consent store's "in use" apps no session already names.
 pub fn mic_users() -> Vec<MicUser> {
-    let sessions = live_pids(&capture_sessions(), Some(std::process::id()))
+    let scan = capture_sessions();
+    let sessions = live_pids(scan.as_deref().unwrap_or(&[]), Some(std::process::id()))
         .into_iter()
         .filter_map(|pid| {
             let (path, family) = identity_of(pid);
             session_user(pid, &path, family.as_deref())
         })
         .collect();
-    merge(sessions, registry_users())
+    let mut registry = registry_users();
+    // WASAPI answered, so the registry is only a fallback: drop entries whose app isn't running (stuck at stop == 0).
+    if scan.is_some() && !registry.is_empty() {
+        let running = running_processes();
+        let exes: Vec<String> = running.iter().map(|(_, exe)| exe.clone()).collect();
+        // Package families cost an OpenProcess per process, so only when a packaged entry needs them.
+        let families: Vec<String> = if registry.iter().any(|u| u.path.is_empty()) { running.iter().filter_map(|(pid, _)| family_of(*pid)).collect() } else { vec![] };
+        registry = running_only(registry, &exes, &families);
+    }
+    merge(sessions, registry)
+}
+
+/// (pid, exe file name) of every running process, from a Toolhelp snapshot. Empty if the snapshot fails.
+fn running_processes() -> Vec<(u32, String)> {
+    use ::windows::Win32::Foundation::CloseHandle;
+    use ::windows::Win32::System::Diagnostics::ToolHelp::{CreateToolhelp32Snapshot, Process32FirstW, Process32NextW, PROCESSENTRY32W, TH32CS_SNAPPROCESS};
+
+    let mut out = Vec::new();
+    unsafe {
+        let Ok(snap) = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0) else { return out };
+        let mut entry = PROCESSENTRY32W { dwSize: std::mem::size_of::<PROCESSENTRY32W>() as u32, ..Default::default() };
+        let mut ok = Process32FirstW(snap, &mut entry).is_ok();
+        while ok {
+            let name = &entry.szExeFile;
+            let len = name.iter().position(|&c| c == 0).unwrap_or(name.len());
+            out.push((entry.th32ProcessID, String::from_utf16_lossy(&name[..len])));
+            ok = Process32NextW(snap, &mut entry).is_ok();
+        }
+        let _ = CloseHandle(snap);
+    }
+    out
+}
+
+/// The package family name of a running process, `None` when it isn't packaged or can't be opened.
+fn family_of(pid: u32) -> Option<String> {
+    use ::windows::Win32::Foundation::CloseHandle;
+    use ::windows::Win32::System::Threading::{OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION};
+    unsafe {
+        let handle = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid).ok()?;
+        let family = family_of_handle(handle);
+        let _ = CloseHandle(handle);
+        family
+    }
+}
+
+unsafe fn family_of_handle(handle: ::windows::Win32::Foundation::HANDLE) -> Option<String> {
+    use ::windows::core::PWSTR;
+    use ::windows::Win32::Foundation::ERROR_SUCCESS;
+    use ::windows::Win32::Storage::Packaging::Appx::GetPackageFamilyName;
+    let mut fam = [0u16; 256];
+    let mut fam_len = fam.len() as u32;
+    // Unpackaged processes return APPMODEL_ERROR_NO_PACKAGE; the length includes the trailing NUL.
+    (unsafe { GetPackageFamilyName(handle, &mut fam_len, Some(PWSTR(fam.as_mut_ptr()))) } == ERROR_SUCCESS)
+        .then(|| String::from_utf16_lossy(&fam[..(fam_len as usize).saturating_sub(1).min(fam.len())]))
 }
 
 /// The consent store's apps that hold the mic now, Talaan's own exe left out.
@@ -145,8 +210,9 @@ fn registry_users() -> Vec<MicUser> {
     users_from(&packaged, &desktop, &own)
 }
 
-/// Every audio session on every active capture endpoint, unfiltered. Empty if WASAPI can't be reached.
-pub fn capture_sessions() -> Vec<Session> {
+/// Every audio session on every active capture endpoint, unfiltered. `None` if WASAPI can't be reached (no
+/// device enumerator or endpoint list); a single device that fails is skipped.
+pub fn capture_sessions() -> Option<Vec<Session>> {
     use ::windows::core::Interface;
     use ::windows::Win32::Media::Audio::{
         eCapture, AudioSessionStateActive, IAudioSessionControl2, IAudioSessionManager2, IMMDeviceEnumerator, MMDeviceEnumerator, DEVICE_STATE_ACTIVE,
@@ -156,8 +222,8 @@ pub fn capture_sessions() -> Vec<Session> {
     super::com::init();
     let mut out = Vec::new();
     unsafe {
-        let Ok(enumerator) = CoCreateInstance::<_, IMMDeviceEnumerator>(&MMDeviceEnumerator, None, CLSCTX_ALL) else { return out };
-        let Ok(devices) = enumerator.EnumAudioEndpoints(eCapture, DEVICE_STATE_ACTIVE) else { return out };
+        let enumerator = CoCreateInstance::<_, IMMDeviceEnumerator>(&MMDeviceEnumerator, None, CLSCTX_ALL).ok()?;
+        let devices = enumerator.EnumAudioEndpoints(eCapture, DEVICE_STATE_ACTIVE).ok()?;
         for d in 0..devices.GetCount().unwrap_or(0) {
             let Ok(device) = devices.Item(d) else { continue };
             let Ok(manager) = device.Activate::<IAudioSessionManager2>(CLSCTX_ALL, None) else { continue };
@@ -172,14 +238,13 @@ pub fn capture_sessions() -> Vec<Session> {
             }
         }
     }
-    out
+    Some(out)
 }
 
 /// (full exe path, package family name) of a running process; empty / `None` for whatever Windows won't say.
 fn identity_of(pid: u32) -> (String, Option<String>) {
     use ::windows::core::PWSTR;
-    use ::windows::Win32::Foundation::{CloseHandle, ERROR_SUCCESS};
-    use ::windows::Win32::Storage::Packaging::Appx::GetPackageFamilyName;
+    use ::windows::Win32::Foundation::CloseHandle;
     use ::windows::Win32::System::Threading::{OpenProcess, QueryFullProcessImageNameW, PROCESS_NAME_WIN32, PROCESS_QUERY_LIMITED_INFORMATION};
 
     unsafe {
@@ -190,11 +255,7 @@ fn identity_of(pid: u32) -> (String, Option<String>) {
             Ok(()) => String::from_utf16_lossy(&buf[..len as usize]),
             Err(_) => String::new(),
         };
-        let mut fam = [0u16; 256];
-        let mut fam_len = fam.len() as u32;
-        // Unpackaged processes return APPMODEL_ERROR_NO_PACKAGE; the length includes the trailing NUL.
-        let family = (GetPackageFamilyName(handle, &mut fam_len, Some(PWSTR(fam.as_mut_ptr()))) == ERROR_SUCCESS)
-            .then(|| String::from_utf16_lossy(&fam[..(fam_len as usize).saturating_sub(1)]));
+        let family = family_of_handle(handle);
         let _ = CloseHandle(handle);
         (path, family)
     }
@@ -301,14 +362,41 @@ mod tests {
     }
 
     #[test]
+    fn registry_users_count_only_while_their_app_runs() {
+        let registry = vec![
+            u(0, "zoom.exe", r"C:\z\Zoom.exe"),      // killed while holding the mic: stop stuck at 0
+            u(0, "discord.exe", r"C:\d\Discord.exe"), // running
+            u(0, "MSTeams_8wekyb3d8bbwe", ""),        // packaged, running
+            u(0, "91750D7E.Slack_8she8kybcnzg4", ""), // packaged, gone
+        ];
+        let exes = vec!["Discord.exe".to_string(), "ms-teams.exe".to_string(), "explorer.exe".to_string()];
+        let families = vec!["msteams_8wekyb3d8bbwe".to_string()];
+        assert_eq!(running_only(registry.clone(), &exes, &families), vec![u(0, "discord.exe", r"C:\d\Discord.exe"), u(0, "MSTeams_8wekyb3d8bbwe", "")]);
+        assert!(running_only(registry, &[], &[]).is_empty());
+        // A desktop exe name never stands in for a package family, nor the other way round.
+        assert!(running_only(vec![u(0, "slack.exe", r"C:\s\slack.exe")], &[], &["slack.exe".into()]).is_empty());
+        assert!(running_only(vec![u(0, "MSTeams_8wekyb3d8bbwe", "")], &["MSTeams_8wekyb3d8bbwe".into()], &[]).is_empty());
+    }
+
+    #[test]
     fn reading_the_real_registry_does_not_fail() {
         let t = std::time::Instant::now();
         let users = mic_users();
         eprintln!("mic_users() took {:?}: {users:#?}", t.elapsed());
         eprintln!("registry only: {:#?}", registry_users());
-        let raw = capture_sessions();
+        let t = std::time::Instant::now();
+        let raw = capture_sessions().expect("WASAPI reachable");
+        eprintln!("capture_sessions() took {:?}", t.elapsed());
         let all: Vec<_> = raw.iter().map(|s| (s, identity_of(s.pid))).collect();
         eprintln!("all capture sessions (active or not) with (path, family): {all:#?}");
+        // The extra per-tick cost when the registry has users: the snapshot always, families only for packaged ones.
+        let t = std::time::Instant::now();
+        let running = running_processes();
+        let snap = t.elapsed();
+        let t = std::time::Instant::now();
+        let families: Vec<String> = running.iter().filter_map(|(pid, _)| family_of(*pid)).collect();
+        eprintln!("snapshot of {} processes took {snap:?}; package families ({} packaged) took {:?}", running.len(), families.len(), t.elapsed());
+        assert!(!running.is_empty());
     }
 
     /// Records from the real mic and checks that our own pid shows up as an active capture session while it
@@ -321,7 +409,7 @@ mod tests {
         use crate::recorder::mic::MicSource;
         use crate::recorder::source::AudioSource;
         let own = std::process::id();
-        let active = || live_pids(&capture_sessions(), None);
+        let active = || live_pids(&capture_sessions().expect("WASAPI reachable"), None);
 
         eprintln!("own pid {own}; active before: {:?}", active());
         let (producer, _consumer) = feed();

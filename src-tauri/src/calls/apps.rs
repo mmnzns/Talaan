@@ -84,6 +84,15 @@ pub fn identify(bundle_id: &str, path: &str, extra_ignored: &[String]) -> Option
     CALL_APPS.iter().find(|(_, _, prefixes)| matches(bundle_id, prefixes)).map(|(id, label, _)| (*id, *label))
 }
 
+/// The call apps behind a set of mic users, given as (bundle id, path): identified, sorted, each id once. This is
+/// the calls loop's step from mic users to the ids the rules see.
+pub fn call_app_ids<'a>(users: impl IntoIterator<Item = (&'a str, &'a str)>, extra_ignored: &[String]) -> Vec<&'static str> {
+    let mut apps: Vec<&'static str> = users.into_iter().filter_map(|(bundle_id, path)| identify(bundle_id, path, extra_ignored).map(|(id, _)| id)).collect();
+    apps.sort();
+    apps.dedup();
+    apps
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -141,6 +150,14 @@ mod tests {
         }
         // Games and other apps that use the mic are in neither table.
         assert_eq!(identify("bf6.exe", r"D:\SteamLibrary\steamapps\common\Battlefield 6\bf6.exe", &[]), None);
+    }
+
+    #[test]
+    fn mic_users_become_sorted_unique_call_app_ids() {
+        let users = [("zoom.exe", ""), ("MSTeams_8wekyb3d8bbwe", ""), ("chrome.exe", ""), ("zoom.exe", r"C:\z\Zoom.exe"), ("parla.exe", ""), ("bf6.exe", ""), ("ms-teams.exe", "")];
+        assert_eq!(call_app_ids(users, &[]), vec!["browser", "teams", "zoom"]);
+        assert_eq!(call_app_ids(users, &["zoom".into()]), vec!["browser", "teams"]);
+        assert!(call_app_ids([], &[]).is_empty());
     }
 
     #[test]

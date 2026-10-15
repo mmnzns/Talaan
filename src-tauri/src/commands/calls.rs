@@ -3,7 +3,7 @@
 
 use super::recorder::{is_recording, start_recording, stop_recording};
 use super::{AppState, CmdResult};
-use crate::calls::apps::{identify, CALL_APPS};
+use crate::calls::apps::{call_app_ids, CALL_APPS};
 use crate::calls::rules::{Action, Detector, Rule, Settings, COUNTDOWN_MS};
 use crate::calls::tabs::{browser_for, classify, BrowserCall, Family, Tabs};
 use serde::Serialize;
@@ -201,9 +201,7 @@ pub fn setup(app: &AppHandle) {
                     if let Ok(fake) = std::fs::read_to_string(app.state::<AppState>().lock().root().join("dev-mic-users.txt")) {
                         users.extend(fake.lines().filter(|l| !l.trim().is_empty()).map(|b| crate::platform::mic_users::MicUser { pid: 0, bundle_id: b.trim().into(), path: String::new() }));
                     }
-                    let mut apps: Vec<&str> = users.iter().filter_map(|u| identify(&u.bundle_id, &u.path, &ignored).map(|(id, _)| id)).collect();
-                    apps.sort();
-                    apps.dedup();
+                    let mut apps = call_app_ids(users.iter().map(|u| (u.bundle_id.as_str(), u.path.as_str())), &ignored);
                     if settings["tabDetection"].as_bool().unwrap_or(false) {
                         resolve_browsers(&users, &mut apps, &mut tab_cache);
                     }
