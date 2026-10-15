@@ -311,6 +311,8 @@ pub fn setup(app: &AppHandle) {
         let mut warned = false;
         // A blocked tap delivers zeros from the first sample. Once any sound came through, it isn't blocked.
         let mut heard_them = false;
+        // System audio gave up mid-recording (it reconnects on its own first). Said once per recording.
+        let mut warned_lost = false;
         loop {
             std::thread::sleep(Duration::from_millis(100));
             let rec = app.state::<RecorderState>();
@@ -319,12 +321,19 @@ pub fn setup(app: &AppHandle) {
                 silent_since = None;
                 warned = false;
                 heard_them = false;
+                warned_lost = false;
                 continue;
             }
             let (me, them) = engine.levels();
             let paused = engine.status(platform::host_now_ns()).state == "paused";
+            let system_failed = engine.system_failed();
             drop(engine);
             let _ = app.emit(LEVELS, Levels { me, them });
+
+            if system_failed && !warned_lost {
+                warned_lost = true;
+                notice(&app, "Call audio stopped coming through, so only your side is being recorded from here.".into(), "warning", None);
+            }
 
             heard_them |= them > 0.0;
 

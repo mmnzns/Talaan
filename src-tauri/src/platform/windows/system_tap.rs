@@ -4,9 +4,11 @@
 //!
 //! One capture thread per start: it joins the MTA, asks MMCSS for "Pro Audio" scheduling, waits on the WASAPI
 //! event (200 ms timeout so a stop is noticed), drains every packet and pushes it with `try_lock`, so it never
-//! blocks, like the Mac IOProc.
+//! blocks, like the Mac IOProc. If the stream dies (device invalidated, audio service restarted, or no packets
+//! for 2 s), the thread reconnects; after `MAX_RECONNECTS` failed tries in a row it gives up and says so through
+//! `failed()`.
 
-use super::clock::{host_now_ns, hns_to_ns};
+use super::clock::{hns_to_ns, host_now_ns};
 use super::com;
 use crate::recorder::source::{AudioSource, SharedFeed};
 use ::windows::core::w;
@@ -14,15 +16,27 @@ use ::windows::Win32::System::Threading::{AvRevertMmThreadCharacteristics, AvSet
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{mpsc, Arc};
 use std::thread::JoinHandle;
+use std::time::Duration;
 
 /// Process loopback has no mix format of its own; Windows converts to what we ask for.
 const RATE: u32 = 48_000;
 const CHANNELS: u16 = 2;
 /// 20 ms of buffer, in 100 ns units.
 const BUFFER_HNS: i64 = 200_000;
+/// How long one wait for the WASAPI event lasts, so a stop is noticed.
+const WAIT_MS: u32 = 200;
+/// A healthy process-loopback stream delivers a packet (silent ones too) every period, so this long without one
+/// means the stream is dead.
+const DEAD_AFTER_MS: u32 = 2_000;
+/// Reconnect attempts in a row before giving up.
+const MAX_RECONNECTS: u32 = 10;
+const RECONNECT_DELAY: Duration = Duration::from_millis(500);
+/// 100 ms of 48 kHz stereo: buffers this size are allocated up front, so the hot path doesn't allocate.
+const PREALLOC: usize = RATE as usize / 10 * CHANNELS as usize;
 
 struct Live {
     stop: Arc<AtomicBool>,
+    failed: Arc<AtomicBool>,
     thread: JoinHandle<()>,
 }
 
@@ -41,19 +55,51 @@ enum Target {
     OnlyUs,
 }
 
-/// The samples to push for one packet: as captured, or zeros when Windows flagged it silent.
-pub fn packet_samples(data: &[f32], silent: bool, out: &mut Vec<f32>) {
-    out.clear();
-    if silent {
-        out.resize(data.len(), 0.0);
-    } else {
-        out.extend_from_slice(data);
+/// Samples in a packet of `read_frames` frames.
+fn packet_len(read_frames: u32) -> usize {
+    read_frames as usize * CHANNELS as usize
+}
+
+/// The samples to push for one packet: as captured, or zeros of the same length when Windows flagged it silent.
+/// `zeros` only grows when a packet is longer than any before it.
+fn packet_samples<'a>(data: &'a [f32], silent: bool, zeros: &'a mut Vec<f32>) -> &'a [f32] {
+    if !silent {
+        return data;
+    }
+    if zeros.len() < data.len() {
+        zeros.resize(data.len(), 0.0);
+    }
+    &zeros[..data.len()]
+}
+
+/// Packet stamps in host ns. The QPC position when Windows vouches for it; otherwise right after the previous
+/// packet; host time only when there is no previous packet.
+#[derive(Default)]
+struct Stamps {
+    next: Option<u64>,
+}
+
+impl Stamps {
+    fn stamp(&mut self, qpc_hns: u64, flagged_bad: bool, frames: u32, now_ns: u64) -> u64 {
+        let at = if !flagged_bad && qpc_hns != 0 { hns_to_ns(qpc_hns) } else { self.next.unwrap_or(now_ns) };
+        self.next = Some(at + frames as u64 * 1_000_000_000 / RATE as u64);
+        at
     }
 }
 
-/// The default output's name, for the UI ("Speakers (Realtek(R) Audio)").
+/// How long to wait before reconnect attempt number `attempt` (1-based), or `None` to give up.
+fn reconnect_delay(attempt: u32) -> Option<Duration> {
+    (attempt <= MAX_RECONNECTS).then_some(RECONNECT_DELAY)
+}
+
+/// Whether this many event waits in a row without a packet mean the stream is dead.
+fn stream_dead(consecutive_timeouts: u32) -> bool {
+    consecutive_timeouts * WAIT_MS >= DEAD_AFTER_MS
+}
+
+/// The default output's name, for the UI ("Speakers (Realtek(R) Audio)"). Called on the capture thread, which
+/// is already in the MTA.
 fn output_name() -> String {
-    com::init();
     wasapi::DeviceEnumerator::new()
         .and_then(|e| e.get_default_device(&wasapi::Direction::Render))
         .and_then(|d| d.get_friendlyname())
@@ -83,64 +129,156 @@ impl Drop for Mmcss {
     }
 }
 
-fn capture(target: Target, feed: SharedFeed, stop: Arc<AtomicBool>, ready: mpsc::Sender<Result<(), String>>) {
-    com::init();
-    let setup = || -> Result<_, wasapi::WasapiError> {
+/// A started loopback stream.
+struct Stream {
+    client: wasapi::AudioClient,
+    event: wasapi::Handle,
+    capture: wasapi::AudioCaptureClient,
+}
+
+impl Stream {
+    fn connect(target: Target) -> Result<Stream, String> {
         // `include_tree = false` is PROCESS_LOOPBACK_MODE_EXCLUDE_TARGET_PROCESS_TREE: everyone but Talaan.
         let include_tree = !matches!(target, Target::EveryoneButUs);
-        let mut client = wasapi::AudioClient::new_application_loopback_client(std::process::id(), include_tree)?;
+        let mut client = wasapi::AudioClient::new_application_loopback_client(std::process::id(), include_tree)
+            .map_err(|e| format!("Couldn't start system audio capture (needs Windows 10 2004 or later): {e}"))?;
+        fn step(what: &'static str) -> impl Fn(wasapi::WasapiError) -> String {
+            move |e| format!("Couldn't {what} for system audio: {e}")
+        }
         let format = wasapi::WaveFormat::new(32, 32, &wasapi::SampleType::Float, RATE as usize, CHANNELS as usize, None);
         let mode = wasapi::StreamMode::EventsShared { autoconvert: true, buffer_duration_hns: BUFFER_HNS };
-        client.initialize_client(&format, &wasapi::Direction::Capture, &mode)?;
-        let event = client.set_get_eventhandle()?;
-        let capture = client.get_audiocaptureclient()?;
-        client.start_stream()?;
-        Ok((client, event, capture))
-    };
-    let (client, event, capture) = match setup() {
-        Ok(v) => v,
-        Err(e) => {
-            let _ = ready.send(Err(format!("Couldn't start system audio capture (needs Windows 10 2004 or later): {e}")));
-            return;
-        }
-    };
-    let _ = ready.send(Ok(()));
-    let _mmcss = Mmcss::pro_audio();
-    // f32-aligned from the start; WASAPI copies bytes into it.
-    let mut buf: Vec<f32> = vec![];
-    let mut samples: Vec<f32> = Vec::with_capacity(RATE as usize);
-    while !stop.load(Ordering::Relaxed) {
-        if event.wait_for_event(200).is_err() {
-            continue;
-        }
+        client.initialize_client(&format, &wasapi::Direction::Capture, &mode).map_err(step("set up the 48 kHz stream"))?;
+        let event = client.set_get_eventhandle().map_err(step("get the capture event"))?;
+        let capture = client.get_audiocaptureclient().map_err(step("get the capture client"))?;
+        client.start_stream().map_err(step("start the stream"))?;
+        Ok(Stream { client, event, capture })
+    }
+
+    fn close(self) {
+        let _ = self.client.stop_stream();
+    }
+}
+
+/// The capture thread's working state: buffers allocated once, and the stamp history.
+struct Pump {
+    feed: SharedFeed,
+    buf: Vec<f32>,
+    zeros: Vec<f32>,
+    stamps: Stamps,
+}
+
+impl Pump {
+    /// Pushes every waiting packet. Returns whether any arrived; an `Err` means the stream is broken.
+    fn drain(&mut self, stream: &Stream) -> Result<bool, wasapi::WasapiError> {
+        let mut any = false;
         loop {
-            let frames = match capture.get_next_packet_size() {
-                Ok(Some(n)) if n > 0 => n as usize,
-                _ => break,
+            let frames = match stream.capture.get_next_packet_size()? {
+                Some(n) if n > 0 => n,
+                _ => return Ok(any),
             };
-            buf.resize(frames * CHANNELS as usize, 0.0);
-            let Ok((read, info)) = capture.read_from_device(as_bytes_mut(&mut buf)) else { break };
-            if read == 0 {
-                break;
+            let n = packet_len(frames);
+            if self.buf.len() < n {
+                self.buf.resize(n, 0.0); // only for a packet longer than 100 ms
             }
-            packet_samples(&buf[..read as usize * CHANNELS as usize], info.flags.silent, &mut samples);
-            // The QPC position is the capture time of the first frame, on the same clock as the mic.
-            let host_ns = if info.flags.timestamp_error || info.timestamp == 0 { host_now_ns() } else { hns_to_ns(info.timestamp) };
-            if let Ok(mut f) = feed.try_lock() {
-                f.push(host_ns, RATE, CHANNELS, &samples);
+            let (read, info) = match stream.capture.read_from_device(as_bytes_mut(&mut self.buf[..n])) {
+                Ok(v) => v,
+                // The packet grew between the size query and the read; it's released, the stream is fine.
+                Err(wasapi::WasapiError::DataLengthTooShort { .. }) => continue,
+                Err(e) => return Err(e),
+            };
+            if read == 0 {
+                return Ok(any);
+            }
+            any = true;
+            let host_ns = self.stamps.stamp(info.timestamp, info.flags.timestamp_error, read, host_now_ns());
+            let data = packet_samples(&self.buf[..packet_len(read)], info.flags.silent, &mut self.zeros);
+            if let Ok(mut f) = self.feed.try_lock() {
+                f.push(host_ns, RATE, CHANNELS, data);
             }
         }
     }
-    let _ = client.stop_stream();
+}
+
+/// Sleeps `d` in small steps; false if a stop was asked for meanwhile.
+fn pause(d: Duration, stop: &AtomicBool) -> bool {
+    let step = Duration::from_millis(50);
+    let mut left = d;
+    while !left.is_zero() {
+        if stop.load(Ordering::Relaxed) {
+            return false;
+        }
+        let s = left.min(step);
+        std::thread::sleep(s);
+        left -= s;
+    }
+    !stop.load(Ordering::Relaxed)
+}
+
+fn capture(target: Target, feed: SharedFeed, stop: Arc<AtomicBool>, failed: Arc<AtomicBool>, ready: mpsc::Sender<Result<String, String>>) {
+    com::init();
+    let mut stream = match Stream::connect(target) {
+        Ok(s) => s,
+        Err(e) => {
+            let _ = ready.send(Err(e));
+            return;
+        }
+    };
+    let _ = ready.send(Ok(output_name()));
+    let _mmcss = Mmcss::pro_audio();
+    let mut pump = Pump { feed, buf: vec![0.0; PREALLOC], zeros: vec![0.0; PREALLOC], stamps: Stamps::default() };
+    let mut timeouts = 0u32;
+    // Reconnects since packets last flowed.
+    let mut attempts = 0u32;
+    while !stop.load(Ordering::Relaxed) {
+        let lost = match stream.event.wait_for_event(WAIT_MS) {
+            Err(_) => {
+                timeouts += 1;
+                stream_dead(timeouts).then(|| format!("no packets for {} ms", timeouts * WAIT_MS))
+            }
+            Ok(()) => match pump.drain(&stream) {
+                Ok(any) => {
+                    timeouts = 0;
+                    if any {
+                        attempts = 0;
+                    }
+                    None
+                }
+                Err(e) => Some(e.to_string()),
+            },
+        };
+        let Some(why) = lost else { continue };
+        eprintln!("loopback: {why}");
+        stream.close();
+        // Reconnect: the new stream's stamps start fresh.
+        pump.stamps = Stamps::default();
+        timeouts = 0;
+        stream = loop {
+            attempts += 1;
+            let Some(delay) = reconnect_delay(attempts) else {
+                eprintln!("loopback: giving up after {MAX_RECONNECTS} reconnects");
+                failed.store(true, Ordering::Relaxed);
+                return;
+            };
+            if !pause(delay, &stop) {
+                return;
+            }
+            match Stream::connect(target) {
+                Ok(s) => break s,
+                Err(e) => eprintln!("loopback: reconnect {attempts}: {e}"),
+            }
+        };
+    }
+    stream.close();
 }
 
 fn open(target: Target, feed: &SharedFeed) -> Result<(Live, String), String> {
     let stop = Arc::new(AtomicBool::new(false));
+    let failed = Arc::new(AtomicBool::new(false));
     let (tx, rx) = mpsc::channel();
-    let (f, s) = (feed.clone(), stop.clone());
-    let thread = std::thread::Builder::new().name("talaan-loopback".into()).spawn(move || capture(target, f, s, tx)).map_err(|e| e.to_string())?;
-    match rx.recv_timeout(std::time::Duration::from_secs(5)) {
-        Ok(Ok(())) => Ok((Live { stop, thread }, output_name())),
+    let (f, s, x) = (feed.clone(), stop.clone(), failed.clone());
+    let thread = std::thread::Builder::new().name("talaan-loopback".into()).spawn(move || capture(target, f, s, x, tx)).map_err(|e| e.to_string())?;
+    match rx.recv_timeout(Duration::from_secs(5)) {
+        Ok(Ok(name)) => Ok((Live { stop, failed, thread }, name)),
         Ok(Err(e)) => {
             let _ = thread.join();
             Err(e)
@@ -180,6 +318,10 @@ impl AudioSource for SystemTap {
             close(live);
         }
     }
+
+    fn failed(&self) -> bool {
+        self.live.as_ref().is_some_and(|l| l.failed.load(Ordering::Relaxed))
+    }
 }
 
 impl Drop for SystemTap {
@@ -199,11 +341,39 @@ mod tests {
 
     #[test]
     fn silent_packets_become_zeros_of_the_same_length() {
-        let mut out = vec![];
-        packet_samples(&[0.5, -0.5, 0.25, 0.0], true, &mut out);
-        assert_eq!(out, vec![0.0; 4]);
-        packet_samples(&[0.5, -0.5], false, &mut out);
-        assert_eq!(out, vec![0.5, -0.5]);
+        let mut zeros = vec![];
+        assert_eq!(packet_samples(&[0.5, -0.5, 0.25, 0.0], true, &mut zeros), &[0.0; 4]);
+        assert_eq!(packet_samples(&[0.5, -0.5], false, &mut zeros), &[0.5, -0.5]);
+    }
+
+    #[test]
+    fn packets_hold_two_samples_per_frame() {
+        assert_eq!(packet_len(480), 960);
+        assert_eq!(packet_len(0), 0);
+    }
+
+    #[test]
+    fn good_stamps_are_used_and_bad_ones_continue_from_the_last() {
+        let mut s = Stamps::default();
+        assert_eq!(s.stamp(0, false, 480, 7_000), 7_000, "no previous stamp: host time");
+        assert_eq!(s.stamp(1_000, false, 480, 99), 100_000, "QPC position in 100 ns units");
+        assert_eq!(s.stamp(5, true, 480, 99), 10_100_000, "flagged bad: 480 frames (10 ms) after the last");
+        assert_eq!(s.stamp(0, false, 480, 99), 20_100_000, "zero: another 10 ms on");
+        assert_eq!(s.stamp(3_000, false, 480, 99), 300_000, "a good stamp wins again");
+    }
+
+    #[test]
+    fn reconnects_a_few_times_then_gives_up() {
+        assert_eq!(reconnect_delay(1), Some(Duration::from_millis(500)));
+        assert_eq!(reconnect_delay(MAX_RECONNECTS), Some(Duration::from_millis(500)));
+        assert_eq!(reconnect_delay(MAX_RECONNECTS + 1), None);
+    }
+
+    #[test]
+    fn two_seconds_without_packets_is_a_dead_stream() {
+        assert!(!stream_dead(0));
+        assert!(!stream_dead(9));
+        assert!(stream_dead(10));
     }
 
     /// Seconds, RMS, and the RMS amplitude of the `hz` component (Goertzel) of a 16-bit WAV.
@@ -231,6 +401,7 @@ mod tests {
 
     /// Records 5 s of system audio plus mic. Play something (a YouTube clip) while it runs.
     /// `cargo test system_smoke -- --ignored --nocapture`
+    /// Runs from `src-tauri/`, needs a working mic, and is judged by its printed output (it asserts nothing).
     #[test]
     #[ignore]
     fn system_smoke() {
@@ -302,6 +473,7 @@ mod tests {
     /// The exclusion check: this test process plays a tone while it records. The tone is ours, so the normal
     /// (everyone-but-us) loopback must not hear it, while a control loopback of only our process must.
     /// `cargo test system_excludes_own_audio -- --ignored --nocapture`. Other sound may play (the check is for 440 Hz).
+    /// Runs from `src-tauri/` and needs a working mic (it records through the real engine).
     /// If the default output is a relay app's virtual device (FxSound, Voicemeeter, Sonar...), that app re-plays our
     /// tone under its own process, and the loopback rightly hears it; set `TALAAN_TONE_DEVICE` to a real output.
     #[test]

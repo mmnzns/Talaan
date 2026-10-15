@@ -13,4 +13,8 @@ pub trait AudioSource: Send {
     /// Rebuilds on the current default device (after a device change). Returns the new device name.
     fn restart(&mut self) -> Result<String, String>;
     fn stop(&mut self);
+    /// True once the source stopped delivering for good on its own (it gave up reconnecting).
+    fn failed(&self) -> bool {
+        false
+    }
 }
