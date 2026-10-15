@@ -44,6 +44,9 @@ Talaan uses the following libraries, fonts and models. Each is used under its ow
 | Symphonia (audio import) | MPL-2.0 | https://github.com/pdeljanov/Symphonia |
 | tauri-plugin-dialog, -opener, -updater, -autostart | MIT / Apache-2.0 | https://github.com/tauri-apps/plugins-workspace |
 | objc2-event-kit (macOS calendar) | Zlib / Apache-2.0 / MIT | https://github.com/madsmtm/objc2 |
+| wasapi (Windows system audio) | MIT | https://github.com/HEnquist/wasapi-rs |
+| winreg (Windows registry) | MIT | https://github.com/gentoo90/winreg-rs |
+| windows (Windows bindings) | MIT / Apache-2.0 | https://github.com/microsoft/windows-rs |
 
 ## Models
 
