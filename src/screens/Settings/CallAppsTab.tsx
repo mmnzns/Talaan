@@ -1,4 +1,5 @@
 import { X } from "lucide-react";
+import { shownCallApps, shownIgnoredApps } from "../../data/defaultSettings";
 import type { CallRule } from "../../data/settings";
 import { useLang, useT } from "../../lib/i18n/I18nProvider";
 import { messageOr } from "../../lib/i18n";
@@ -30,7 +31,7 @@ export function CallAppsTab({ settings: s, update }: TabProps) {
           desc={t("settings.apps_desc")}
         />
         <Group>
-          {s.callApps.map((a, i) => {
+          {shownCallApps(s.callApps).map((a, i) => {
             const lockAlways = a.isBrowser && !s.tabDetection;
             return (
               <div key={a.id} className="flex flex-wrap items-center gap-x-3 gap-y-2 py-4">
@@ -83,7 +84,7 @@ export function CallAppsTab({ settings: s, update }: TabProps) {
           desc={t("settings.ignored_desc")}
         />
         <div className="flex flex-wrap gap-2">
-          {s.ignoredApps.map((g) => (
+          {shownIgnoredApps(s.ignoredApps).map((g) => (
             <span key={g.name} className="inline-flex h-8 items-center gap-2 rounded-full border border-line bg-surface pl-3 pr-1.5">
               <span className="text-[13px] font-semibold">{g.name}</span>
               <span className="font-mono text-[11px] lowercase text-faint">{whyOf(g.why)}</span>

@@ -292,7 +292,7 @@ function AppsStep({ settings: s, update }: StepProps) {
           </div>
         );
       })}
-      <p className={desc}>{t("onboarding.appsIgnored")}</p>
+      <p className={desc}>{t(onWindows ? "onboarding.appsIgnoredWindows" : "onboarding.appsIgnored")}</p>
     </>
   );
 }

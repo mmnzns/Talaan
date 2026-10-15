@@ -1,5 +1,5 @@
 import { onWindows } from "../lib/platform";
-import type { Settings } from "./settings";
+import type { CallAppRule, IgnoredApp, Settings } from "./settings";
 
 /** Windows only: the extra ignored apps the user sees and edits (the "why" shows through settings.why_*).
  *  The Rust side already ignores these ids on Windows (calls/apps.rs). */
@@ -89,6 +89,21 @@ export const defaultSettings: Settings = {
   transcriptRetention: "forever",
   onboardingDone: true,
 };
+
+/** Apps that only exist on the Mac. They stay in settings (Mac behaviour and rules are unchanged) but Settings ›
+ *  Call apps doesn't list them on Windows, where they can't run. */
+const MAC_ONLY_CALL_APPS = new Set(["facetime"]);
+const MAC_ONLY_IGNORED_APPS = new Set(["MacWhisper", "Apple Dictation", "Voice Memos"]);
+
+/** The call apps to list on this computer. */
+export function shownCallApps(apps: CallAppRule[], windows = onWindows): CallAppRule[] {
+  return windows ? apps.filter((a) => !MAC_ONLY_CALL_APPS.has(a.id)) : apps;
+}
+
+/** The ignored apps to list on this computer. */
+export function shownIgnoredApps(apps: IgnoredApp[], windows = onWindows): IgnoredApp[] {
+  return windows ? apps.filter((a) => !MAC_ONLY_IGNORED_APPS.has(a.name)) : apps;
+}
 
 /** Stored settings over the defaults. Lists that later versions add to (call apps) keep the user's entries and
  *  gain the new defaults, so a new call app shows up without resetting anyone's rules. */
