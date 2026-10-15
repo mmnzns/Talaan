@@ -26,6 +26,7 @@ unsafe extern "system" fn on_power(context: *const c_void, event: u32, _setting:
     let context = unsafe { &*(context as *const Context) };
     if let Some(sleeping) = sleeping_for(event) {
         // A panic must not unwind into Windows: that aborts the process, and the recording with it.
+        // (Release builds use panic = "abort", so this guard only helps in debug builds and tests.)
         let _ = catch_unwind(AssertUnwindSafe(|| (context.on_change)(sleeping)));
     }
     0

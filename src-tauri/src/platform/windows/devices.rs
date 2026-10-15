@@ -154,6 +154,7 @@ impl IMMNotificationClient_Impl for Client_Impl {
     fn OnDefaultDeviceChanged(&self, flow: EDataFlow, role: ERole, _id: &PCWSTR) -> ::windows::core::Result<()> {
         if let Some(e) = event_for(flow, role) {
             // A panic must not unwind into Windows: that aborts the process, and the recording with it.
+            // (Release builds use panic = "abort", so this guard only helps in debug builds and tests.)
             let _ = catch_unwind(AssertUnwindSafe(|| (self.0)(e)));
         }
         Ok(())

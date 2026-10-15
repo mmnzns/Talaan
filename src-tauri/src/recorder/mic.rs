@@ -179,11 +179,16 @@ mod tests {
         mic.start(std::sync::Arc::new(std::sync::Mutex::new(producer))).unwrap();
         std::thread::sleep(std::time::Duration::from_millis(500));
         let mut buf = vec![];
-        let h = consumer.pop(&mut buf).expect("a mic buffer");
+        // The newest buffer: the first ones are the startup backlog, about the sleep's length old.
+        let mut newest = None;
+        while let Some(h) = consumer.pop(&mut buf) {
+            newest = Some(h);
+        }
+        let h = newest.expect("a mic buffer");
         let now = crate::platform::host_now_ns();
         mic.stop();
         let diff = now.abs_diff(h.host_ns);
         eprintln!("mic stamp {} · now {} · diff {} ms", h.host_ns, now, diff / 1_000_000);
-        assert!(diff < 500_000_000, "{diff}");
+        assert!(diff < 200_000_000, "{diff}");
     }
 }
