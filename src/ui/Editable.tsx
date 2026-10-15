@@ -1,3 +1,4 @@
+import { useT } from "../lib/i18n/I18nProvider";
 import { cn } from "./cn";
 
 interface Props {
@@ -9,6 +10,7 @@ interface Props {
 
 /** Plain text that becomes click-to-type while `editing`. Commits on blur; Enter confirms, Escape cancels. */
 export function Editable({ text, editing, onCommit, className }: Props) {
+  const t = useT();
   if (!editing) return <span className={className}>{text}</span>;
   return (
     <span
@@ -17,7 +19,7 @@ export function Editable({ text, editing, onCommit, className }: Props) {
       suppressContentEditableWarning
       spellCheck
       role="textbox"
-      aria-label="Edit text"
+      aria-label={t("kit.editText")}
       onBlur={(e) => {
         const next = (e.currentTarget.textContent ?? "").trim();
         if (next && next !== text) onCommit(next);

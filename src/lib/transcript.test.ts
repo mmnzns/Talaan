@@ -65,3 +65,31 @@ describe("withYourName", () => {
     expect(withYourName(meeting("Me"), "  ").speakers.me).toBe("Me");
   });
 });
+
+describe("speakerName in other languages", () => {
+  // Every meeting on disk stores {"me": "Me", "them:0": "Them"}: those are defaults, not names.
+  const stored = { speakers: { me: "Me", "them:0": "Them", "them:1": "Dana Reyes" } } as unknown as Meeting;
+  it("translates the stored defaults and keeps real names", async () => {
+    const { speakerName } = await import("./transcript");
+    const { setLang } = await import("./i18n");
+    try {
+      setLang("fr");
+      expect([speakerName(stored, "me"), speakerName(stored, "them:0"), speakerName(stored, "them:1")]).toEqual(["Moi", "Eux", "Dana Reyes"]);
+      setLang("es");
+      expect([speakerName(stored, "me"), speakerName(stored, "them:0")]).toEqual(["Yo", "Ellos"]);
+    } finally {
+      setLang("en");
+    }
+  });
+  it("uses Your name before the translated default", async () => {
+    const { speakerName } = await import("./transcript");
+    const { setLang } = await import("./i18n");
+    try {
+      setLang("fr");
+      expect(speakerName(withYourName(stored, "Miguel"), "me")).toBe("Miguel");
+      expect(speakerName(withYourName(stored, ""), "me")).toBe("Moi");
+    } finally {
+      setLang("en");
+    }
+  });
+});

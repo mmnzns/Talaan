@@ -1,4 +1,5 @@
 import { useState, type ReactNode } from "react";
+import { useT } from "../../lib/i18n/I18nProvider";
 import { Button, Field, Label, cn } from "../../ui";
 
 /** Section heading with a short explanation, used above a group of settings. */
@@ -106,10 +107,11 @@ export function InlineAdd({ label, placeholder, onAdd }: { label: string; placeh
 }
 
 export function Dots({ n, label }: { n: number; label: string }) {
+  const t = useT();
   return (
     <span className="flex items-center gap-1.5">
       <Label>{label}</Label>
-      <span className="flex gap-[3px]" role="img" aria-label={`${label} ${n} of 3`}>
+      <span className="flex gap-[3px]" role="img" aria-label={t("settings.dots_aria", { label, n })}>
         {[1, 2, 3].map((i) => (
           <span key={i} className={cn("size-2 rounded-full", i <= n ? "bg-gold" : "bg-line")} />
         ))}

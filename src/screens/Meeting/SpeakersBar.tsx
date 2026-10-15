@@ -3,10 +3,12 @@ import { useState } from "react";
 import { useStore } from "../../data/StoreProvider";
 import type { Meeting, Speaker } from "../../data/types";
 import { speakerName } from "../../lib/transcript";
+import { useT } from "../../lib/i18n/I18nProvider";
 import { Button, Field, Label, Popover, cn, toneFor } from "../../ui";
 
 /** Speaker chips. Anyone can be renamed (Me, Them, Speaker 1, 2, 3); every line and action item updates. */
 export function SpeakersBar({ meeting }: { meeting: Meeting }) {
+  const t = useT();
   // Everyone in the transcript (or the stored names before there is one), Me first, then Speaker 1, 2, 3.
   const ids = new Set<Speaker>(meeting.transcript.length ? meeting.transcript.map((l) => l.speaker) : (Object.keys(meeting.speakers) as Speaker[]));
   const rank = (s: Speaker) => (s === "me" ? -1 : Number(s.slice(5)) || 0);
@@ -16,7 +18,7 @@ export function SpeakersBar({ meeting }: { meeting: Meeting }) {
 
   return (
     <div className="flex flex-wrap items-center gap-1.5 border-b border-line px-6 py-2.5">
-      <Label>speakers</Label>
+      <Label>{t("meeting.speakers")}</Label>
       {speakers.map((s) => {
         const name = speakerName(meeting, s);
         const chip = cn("inline-flex items-center gap-1 rounded-full border px-2 py-[3px] font-mono text-[11px] leading-[14px]", toneFor(s));
@@ -24,20 +26,21 @@ export function SpeakersBar({ meeting }: { meeting: Meeting }) {
           <RenameChip key={s} meetingId={meeting.id} speaker={s} name={name} className={chip} suggestions={s === "me" ? [] : suggestions} />
         );
       })}
-      {suggestions.length > 0 && <Label className="ml-auto">names from calendar</Label>}
+      {suggestions.length > 0 && <Label className="ml-auto">{t("meeting.namesFromCalendar")}</Label>}
     </div>
   );
 }
 
 function RenameChip({ meetingId, speaker, name, className, suggestions }: { meetingId: string; speaker: Speaker; name: string; className: string; suggestions: string[] }) {
   const store = useStore();
+  const t = useT();
   const [draft, setDraft] = useState(name);
   return (
     <Popover
       align="left"
       className="w-60"
       trigger={({ toggle }) => (
-        <button type="button" onClick={toggle} className={cn(className, "cursor-pointer")} aria-label={`Rename ${name}`}>
+        <button type="button" onClick={toggle} className={cn(className, "cursor-pointer")} aria-label={t("meeting.renameAria", { name })}>
           {name} <Pencil size={10} aria-hidden="true" />
         </button>
       )}
@@ -50,8 +53,8 @@ function RenameChip({ meetingId, speaker, name, className, suggestions }: { meet
         };
         return (
           <div className="flex flex-col gap-2 p-1.5">
-            <Label>{speaker === "me" ? "your name in this meeting" : "rename speaker"}</Label>
-            <Field label="Speaker name" autoFocus value={draft} onChange={(e) => setDraft(e.target.value)} onKeyDown={(e) => e.key === "Enter" && save(draft)} />
+            <Label>{speaker === "me" ? t("meeting.renameMe") : t("meeting.renameSpeaker")}</Label>
+            <Field label={t("meeting.speakerNameLabel")} autoFocus value={draft} onChange={(e) => setDraft(e.target.value)} onKeyDown={(e) => e.key === "Enter" && save(draft)} />
             {suggestions.length > 0 && (
               <div className="flex flex-wrap gap-1.5">
                 {suggestions.map((n) => (
@@ -62,7 +65,7 @@ function RenameChip({ meetingId, speaker, name, className, suggestions }: { meet
               </div>
             )}
             <Button variant="primary" onClick={() => save(draft)}>
-              Save name
+              {t("meeting.saveName")}
             </Button>
           </div>
         );

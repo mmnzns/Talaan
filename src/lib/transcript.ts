@@ -1,3 +1,4 @@
+import { t } from "./i18n";
 import type { Mark, Meeting, Ms, PauseGap, TranscriptLine } from "../data/types";
 
 export type TranscriptRow =
@@ -48,11 +49,19 @@ export function withYourName(meeting: Meeting, yourName: string | undefined): Me
   return { ...meeting, speakers: { ...meeting.speakers, me: name }, summary };
 }
 
-/** A speaker's display name: the one the user gave, else Me / Them / Speaker 2. */
+/** An action item's owner as shown: the summary AI writes "Me" for the user, which reads as Me in the UI language (or Your name). */
+export function ownerName(meeting: Pick<Meeting, "speakers">, owner: string): string {
+  return owner.trim() === "Me" ? speakerName(meeting, "me") : owner;
+}
+
+/** What meetings store for unnamed speakers (in English, whatever the UI language): defaults, not names. */
+const STORED_DEFAULTS: Record<string, string> = { me: "Me", "them:0": "Them" };
+
+/** A speaker's display name: the one the user gave (or Your name, applied before this), else Me / Them / Speaker 2 in the UI language. */
 export function speakerName(meeting: Pick<Meeting, "speakers">, speaker: string): string {
-  const named = meeting.speakers[speaker as keyof Meeting["speakers"]];
-  if (named) return named;
-  if (speaker === "me") return "Me";
-  if (speaker === "them:0" || speaker === "them") return "Them";
-  return speaker.startsWith("them:") ? `Speaker ${speaker.slice(5)}` : speaker;
+  const named = meeting.speakers[speaker as keyof Meeting["speakers"]]?.trim();
+  if (named && named !== STORED_DEFAULTS[speaker]) return named;
+  if (speaker === "me") return t("meeting.speakerMe");
+  if (speaker === "them:0" || speaker === "them") return t("meeting.speakerThem");
+  return speaker.startsWith("them:") ? t("meeting.speakerN", { n: speaker.slice(5) }) : speaker;
 }
