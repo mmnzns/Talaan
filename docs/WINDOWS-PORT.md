@@ -43,7 +43,14 @@ that AppUserModelID, or toasts won't show for installed builds.
 - a second launch focuses the first window;
 - the toast appears and opens the meeting (installed build);
 - the title bar follows dark mode;
-- Ctrl+, opens Settings.
+- Ctrl+, opens Settings;
+- clicking the tray icon again closes the popover;
+- a toast clicked from Action Center (after the banner is gone) opens the meeting (W5: if that click fails, the shortcut
+  needs a ToastActivatorCLSID);
+- Dark, then System, with Windows set to Light switches the app to light.
+
+**Dev note:** the single-instance guard is Windows only. On Windows, `npm run tauri dev` exits immediately if the installed
+Talaan is running; quit it first.
 
 **Smoke tests** (all `#[ignore]`; run from `src-tauri/`, most need a working mic):
 

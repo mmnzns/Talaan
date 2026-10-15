@@ -95,11 +95,19 @@ pub fn toggle_popover(app: &AppHandle, icon: Option<Rect>) {
         let _ = w.hide();
         return;
     }
-    // macOS: with no known icon position the popover stays where it was, as before.
     let rect = icon.or_else(|| app.tray_by_id(TRAY_ID).and_then(|t| t.rect().ok().flatten()));
-    if rect.is_some() || cfg!(not(target_os = "macos")) {
-        place_near_icon_window(&w, POPOVER_SIZE, rect);
+    // macOS: exactly as before W3 (the tray rect is physical px, and tao's monitor lookup uses points).
+    #[cfg(target_os = "macos")]
+    {
+        if let (Some(rect), Ok(scale)) = (rect, w.scale_factor()) {
+            let pos = rect.position.to_logical::<f64>(scale);
+            let size = rect.size.to_logical::<f64>(scale);
+            let x = pos.x + size.width / 2.0 - POPOVER_SIZE.0 / 2.0;
+            let _ = w.set_position(tauri::LogicalPosition::new(x.max(8.0), pos.y + size.height + 4.0));
+        }
     }
+    #[cfg(not(target_os = "macos"))]
+    place_near_icon_window(&w, POPOVER_SIZE, rect);
     let _ = w.show();
     let _ = w.set_focus();
 }
@@ -148,8 +156,10 @@ pub fn window_fit(window: tauri::WebviewWindow, width: f64, height: f64) {
 
 /// Where a floating window of size `win` goes, in logical pixels. `icon` is the tray icon (x, y, w, h) and
 /// `screen` the (x, y, w, h) of its monitor. Next to a tray in the bottom half of the screen (the Windows
-/// taskbar) the window opens above the icon; next to a top menu bar (macOS) below it. Centred on the icon and
-/// kept on screen. Without an icon: top right on macOS, bottom right above the taskbar on Windows.
+/// taskbar) the window opens above the icon; next to a top menu bar below it. Centred on the icon and kept on
+/// screen. Without an icon: top right on macOS, bottom right above the taskbar on Windows. Windows only in use;
+/// macOS has its own placement (`place_under_icon`).
+#[cfg_attr(target_os = "macos", allow(dead_code))]
 fn place_near_icon(icon: Option<(f64, f64, f64, f64)>, win: (f64, f64), screen: (f64, f64, f64, f64)) -> (f64, f64) {
     let (sx, sy, sw, sh) = screen;
     let (x, y) = match icon {
@@ -163,7 +173,31 @@ fn place_near_icon(icon: Option<(f64, f64, f64, f64)>, win: (f64, f64), screen: 
     (x.clamp(sx + 8.0, (sx + sw - win.0 - 8.0).max(sx + 8.0)), y)
 }
 
-/// Moves `window` next to the tray icon (`icon`, or the tray's own rect), on the icon's monitor.
+/// Physical position for a window of logical size `win` next to a tray icon, on one monitor. Works in
+/// monitor-local logical units, so a monitor at any origin and scale (mixed DPI) comes out right:
+/// `icon_phys` (x, y, w, h), `mon_pos` and `mon_size` are physical px, `scale` the monitor's scale factor.
+#[cfg_attr(target_os = "macos", allow(dead_code))]
+fn place_on_monitor(
+    icon_phys: Option<(f64, f64, f64, f64)>,
+    win: (f64, f64),
+    mon_pos: (f64, f64),
+    mon_size: (f64, f64),
+    scale: f64,
+) -> (f64, f64) {
+    let local_icon = icon_phys.map(|(x, y, w, h)| ((x - mon_pos.0) / scale, (y - mon_pos.1) / scale, w / scale, h / scale));
+    let screen = (0.0, 0.0, mon_size.0 / scale, mon_size.1 / scale);
+    let (x, y) = place_near_icon(local_icon, win, screen);
+    (mon_pos.0 + x * scale, mon_pos.1 + y * scale)
+}
+
+/// Moves `window` next to Talaan's tray icon. `icon` is the icon's rect if the caller has one.
+#[cfg(target_os = "macos")]
+pub fn place_near_icon_window(window: &tauri::WebviewWindow, win: (f64, f64), _icon: Option<Rect>) {
+    place_under_icon(window, win.0);
+}
+
+/// Windows: on the icon's monitor, above the taskbar.
+#[cfg(not(target_os = "macos"))]
 pub fn place_near_icon_window(window: &tauri::WebviewWindow, win: (f64, f64), icon: Option<Rect>) {
     let app = window.app_handle();
     let icon = icon.or_else(|| app.tray_by_id(TRAY_ID).and_then(|t| t.rect().ok().flatten()));
@@ -173,16 +207,30 @@ pub fn place_near_icon_window(window: &tauri::WebviewWindow, win: (f64, f64), ic
         .or_else(|| window.current_monitor().ok().flatten())
         .or_else(|| window.primary_monitor().ok().flatten());
     let Some(m) = monitor else { return };
+    let icon = physical.map(|(p, s)| (p.x, p.y, s.width, s.height));
+    let mon_pos = (m.position().x as f64, m.position().y as f64);
+    let mon_size = (m.size().width as f64, m.size().height as f64);
+    let (x, y) = place_on_monitor(icon, win, mon_pos, mon_size, m.scale_factor());
+    let _ = window.set_position(tauri::PhysicalPosition::new(x.round() as i32, y.round() as i32));
+}
+
+/// macOS (unchanged from before W3): centers a window under the menu bar icon, kept on screen. Falls back to
+/// the top right.
+#[cfg(target_os = "macos")]
+pub fn place_under_icon(window: &tauri::WebviewWindow, width: f64) {
+    let Ok(Some(m)) = window.current_monitor().or_else(|_| window.primary_monitor()) else { return };
     let scale = m.scale_factor();
-    let screen = (
-        m.position().x as f64 / scale,
-        m.position().y as f64 / scale,
-        m.size().width as f64 / scale,
-        m.size().height as f64 / scale,
-    );
-    let icon = physical.map(|(p, s)| (p.x / scale, p.y / scale, s.width / scale, s.height / scale));
-    let (x, y) = place_near_icon(icon, win, screen);
-    let _ = window.set_position(tauri::LogicalPosition::new(x, y));
+    let screen_w = m.size().width as f64 / scale;
+    let icon = window.app_handle().tray_by_id(TRAY_ID).and_then(|t| t.rect().ok().flatten());
+    let (x, y) = match icon {
+        Some(r) => {
+            let pos = r.position.to_logical::<f64>(scale);
+            let size = r.size.to_logical::<f64>(scale);
+            (pos.x + size.width / 2.0 - width / 2.0, pos.y + size.height + 4.0)
+        }
+        None => (screen_w - width - 12.0, 34.0),
+    };
+    let _ = window.set_position(tauri::LogicalPosition::new(x.clamp(8.0, (screen_w - width - 8.0).max(8.0)), y));
 }
 
 #[tauri::command]
@@ -241,6 +289,15 @@ mod tests {
     fn without_an_icon_windows_use_the_platform_corner() {
         let (_, y) = super::place_near_icon(None, (380.0, 148.0), (0.0, 0.0, 1920.0, 1080.0));
         if cfg!(target_os = "windows") { assert_eq!(y, 1080.0 - 148.0 - 56.0) } else { assert_eq!(y, 34.0) }
+    }
+
+    #[test]
+    fn a_second_monitor_with_a_different_scale_places_in_its_own_units() {
+        // Monitor at physical (1920, 0), 2880x1620 at 1.5 (1920x1080 logical); icon near its bottom right.
+        let (x, y) = super::place_on_monitor(Some((1920.0 + 2700.0, 1560.0, 36.0, 36.0)), (356.0, 470.0), (1920.0, 0.0), (2880.0, 1620.0), 1.5);
+        // Same as the 1920x1080 case: logical (1556, 562), back to physical on this monitor.
+        assert_eq!(x, 1920.0 + 1556.0 * 1.5);
+        assert_eq!(y, 562.0 * 1.5);
     }
 
     #[test]

@@ -14,10 +14,11 @@ export function applyTheme(pref: ThemePreference): () => void {
   const apply = () => {
     const resolved = resolveTheme(pref, media.matches);
     document.documentElement.dataset.theme = resolved;
-    // The Windows title bar is drawn by the OS: make it follow the app's theme. (macOS has an overlay title bar.)
+    // The Windows title bar is drawn by the OS: make it follow the app's theme. "system" passes null so the
+    // window (and WebView2's prefers-color-scheme) keeps following the OS. (macOS has an overlay title bar.)
     if (onWindows && inTauri()) {
       void import("@tauri-apps/api/window")
-        .then(({ getCurrentWindow }) => getCurrentWindow().setTheme(resolved))
+        .then(({ getCurrentWindow }) => getCurrentWindow().setTheme(pref === "system" ? null : resolved))
         .catch(() => {});
     }
   };

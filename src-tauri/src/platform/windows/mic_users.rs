@@ -385,7 +385,10 @@ mod tests {
         eprintln!("mic_users() took {:?}: {users:#?}", t.elapsed());
         eprintln!("registry only: {:#?}", registry_users());
         let t = std::time::Instant::now();
-        let raw = capture_sessions().expect("WASAPI reachable");
+        let Some(raw) = capture_sessions() else {
+            eprintln!("WASAPI unavailable"); // e.g. a CI runner without an audio service
+            return;
+        };
         eprintln!("capture_sessions() took {:?}", t.elapsed());
         let all: Vec<_> = raw.iter().map(|s| (s, identity_of(s.pid))).collect();
         eprintln!("all capture sessions (active or not) with (path, family): {all:#?}");

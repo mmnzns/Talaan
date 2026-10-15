@@ -23,9 +23,13 @@ fn platform_name() -> &'static str {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
-        // First, so a second launch exits before anything else starts; it focuses the running Talaan instead.
-        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| commands::tray::show_main(app)))
+    let builder = tauri::Builder::default();
+    // Windows only, and first, so a second launch exits before anything else starts and focuses the running
+    // Talaan instead. (On the Mac the OS already does this, and the plugin's socket would make `tauri dev` exit
+    // while the installed app runs.)
+    #[cfg(target_os = "windows")]
+    let builder = builder.plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| commands::tray::show_main(app)));
+    builder
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
