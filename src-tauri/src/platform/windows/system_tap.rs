@@ -5,8 +5,8 @@
 //! One capture thread per start: it joins the MTA, asks MMCSS for "Pro Audio" scheduling, waits on the WASAPI
 //! event (200 ms timeout so a stop is noticed), drains every packet and pushes it with `try_lock`, so it never
 //! blocks, like the Mac IOProc. If the stream dies (device invalidated, audio service restarted, or no packets
-//! for 2 s), the thread reconnects; after `MAX_RECONNECTS` failed tries in a row it gives up and says so through
-//! `failed()`.
+//! for 2 s), the thread reconnects. Only errors count toward `MAX_RECONNECTS`; past that it gives up and says so
+//! through `failed()`. Silence alone is retried forever.
 
 use super::clock::{hns_to_ns, host_now_ns};
 use super::com;
@@ -31,12 +31,16 @@ const DEAD_AFTER_MS: u32 = 2_000;
 /// Reconnect attempts in a row before giving up.
 const MAX_RECONNECTS: u32 = 10;
 const RECONNECT_DELAY: Duration = Duration::from_millis(500);
+/// How long a stop waits for the capture thread before detaching it.
+const CLOSE_WAIT: Duration = Duration::from_secs(2);
 /// 100 ms of 48 kHz stereo: buffers this size are allocated up front, so the hot path doesn't allocate.
 const PREALLOC: usize = RATE as usize / 10 * CHANNELS as usize;
 
 struct Live {
     stop: Arc<AtomicBool>,
     failed: Arc<AtomicBool>,
+    /// Signalled when the capture thread is about to return.
+    done: mpsc::Receiver<()>,
     thread: JoinHandle<()>,
 }
 
@@ -87,9 +91,41 @@ impl Stamps {
     }
 }
 
-/// How long to wait before reconnect attempt number `attempt` (1-based), or `None` to give up.
-fn reconnect_delay(attempt: u32) -> Option<Duration> {
-    (attempt <= MAX_RECONNECTS).then_some(RECONNECT_DELAY)
+/// Why a stream was dropped.
+#[derive(Clone, Copy, PartialEq, Debug)]
+enum Loss {
+    /// WASAPI returned an error (device invalidated, audio service restarted), or a reconnect failed.
+    Error,
+    /// No packets for `DEAD_AFTER_MS`.
+    Silence,
+}
+
+/// When to give up reconnecting. Only errors count, so a stream that merely went quiet is retried forever.
+#[derive(Default)]
+struct Reconnects {
+    errors: u32,
+}
+
+impl Reconnects {
+    /// A stream was lost, or a reconnect failed (`Loss::Error`). False means give up.
+    fn lost(&mut self, cause: Loss) -> bool {
+        if cause == Loss::Error {
+            self.errors += 1;
+        }
+        self.errors <= MAX_RECONNECTS
+    }
+
+    /// A reconnect after a loss of `cause` succeeded. One after silence proves the service is fine.
+    fn connected(&mut self, cause: Loss) {
+        if cause == Loss::Silence {
+            self.errors = 0;
+        }
+    }
+
+    /// Packets are arriving again.
+    fn flowing(&mut self) {
+        self.errors = 0;
+    }
 }
 
 /// Whether this many event waits in a row without a packet mean the stream is dead.
@@ -214,7 +250,24 @@ fn pause(d: Duration, stop: &AtomicBool) -> bool {
     !stop.load(Ordering::Relaxed)
 }
 
-fn capture(target: Target, feed: SharedFeed, stop: Arc<AtomicBool>, failed: Arc<AtomicBool>, ready: mpsc::Sender<Result<String, String>>) {
+/// Tells `close` the capture thread is finishing, on every return path.
+struct Done(mpsc::Sender<()>);
+
+impl Drop for Done {
+    fn drop(&mut self) {
+        let _ = self.0.send(());
+    }
+}
+
+fn capture(
+    target: Target,
+    feed: SharedFeed,
+    stop: Arc<AtomicBool>,
+    failed: Arc<AtomicBool>,
+    ready: mpsc::Sender<Result<String, String>>,
+    done: mpsc::Sender<()>,
+) {
+    let _done = Done(done);
     com::init();
     let mut stream = match Stream::connect(target) {
         Ok(s) => s,
@@ -227,44 +280,48 @@ fn capture(target: Target, feed: SharedFeed, stop: Arc<AtomicBool>, failed: Arc<
     let _mmcss = Mmcss::pro_audio();
     let mut pump = Pump { feed, buf: vec![0.0; PREALLOC], zeros: vec![0.0; PREALLOC], stamps: Stamps::default() };
     let mut timeouts = 0u32;
-    // Reconnects since packets last flowed.
-    let mut attempts = 0u32;
+    let mut reconnects = Reconnects::default();
     while !stop.load(Ordering::Relaxed) {
         let lost = match stream.event.wait_for_event(WAIT_MS) {
             Err(_) => {
                 timeouts += 1;
-                stream_dead(timeouts).then(|| format!("no packets for {} ms", timeouts * WAIT_MS))
+                stream_dead(timeouts).then(|| (Loss::Silence, format!("no packets for {} ms", timeouts * WAIT_MS)))
             }
             Ok(()) => match pump.drain(&stream) {
                 Ok(any) => {
                     timeouts = 0;
                     if any {
-                        attempts = 0;
+                        reconnects.flowing();
                     }
                     None
                 }
-                Err(e) => Some(e.to_string()),
+                Err(e) => Some((Loss::Error, e.to_string())),
             },
         };
-        let Some(why) = lost else { continue };
+        let Some((mut cause, why)) = lost else { continue };
         eprintln!("loopback: {why}");
         stream.close();
         // Reconnect: the new stream's stamps start fresh.
         pump.stamps = Stamps::default();
         timeouts = 0;
         stream = loop {
-            attempts += 1;
-            let Some(delay) = reconnect_delay(attempts) else {
-                eprintln!("loopback: giving up after {MAX_RECONNECTS} reconnects");
+            if !reconnects.lost(cause) {
+                eprintln!("loopback: giving up after {MAX_RECONNECTS} failed reconnects");
                 failed.store(true, Ordering::Relaxed);
                 return;
-            };
-            if !pause(delay, &stop) {
+            }
+            if !pause(RECONNECT_DELAY, &stop) {
                 return;
             }
             match Stream::connect(target) {
-                Ok(s) => break s,
-                Err(e) => eprintln!("loopback: reconnect {attempts}: {e}"),
+                Ok(s) => {
+                    reconnects.connected(cause);
+                    break s;
+                }
+                Err(e) => {
+                    eprintln!("loopback: reconnect failed: {e}");
+                    cause = Loss::Error;
+                }
             }
         };
     }
@@ -275,10 +332,14 @@ fn open(target: Target, feed: &SharedFeed) -> Result<(Live, String), String> {
     let stop = Arc::new(AtomicBool::new(false));
     let failed = Arc::new(AtomicBool::new(false));
     let (tx, rx) = mpsc::channel();
+    let (done_tx, done) = mpsc::channel();
     let (f, s, x) = (feed.clone(), stop.clone(), failed.clone());
-    let thread = std::thread::Builder::new().name("talaan-loopback".into()).spawn(move || capture(target, f, s, x, tx)).map_err(|e| e.to_string())?;
+    let thread = std::thread::Builder::new()
+        .name("talaan-loopback".into())
+        .spawn(move || capture(target, f, s, x, tx, done_tx))
+        .map_err(|e| e.to_string())?;
     match rx.recv_timeout(Duration::from_secs(5)) {
-        Ok(Ok(name)) => Ok((Live { stop, failed, thread }, name)),
+        Ok(Ok(name)) => Ok((Live { stop, failed, done, thread }, name)),
         Ok(Err(e)) => {
             let _ = thread.join();
             Err(e)
@@ -290,9 +351,18 @@ fn open(target: Target, feed: &SharedFeed) -> Result<(Live, String), String> {
     }
 }
 
+/// Stops the capture thread, waiting at most `CLOSE_WAIT`. This runs under the engine mutex, and a reconnect can
+/// be stuck in loopback activation (it waits with no timeout), so a thread that doesn't finish in time is detached.
 fn close(live: Live) {
     live.stop.store(true, Ordering::Relaxed);
-    let _ = live.thread.join();
+    match live.done.recv_timeout(CLOSE_WAIT) {
+        Ok(()) | Err(mpsc::RecvTimeoutError::Disconnected) => {
+            let _ = live.thread.join();
+        }
+        // The thread may outlive its SystemTap: it holds only Arc clones and exits once `connect` returns, since
+        // `stop` is set.
+        Err(mpsc::RecvTimeoutError::Timeout) => eprintln!("loopback: capture thread still busy, detached"),
+    }
 }
 
 impl AudioSource for SystemTap {
@@ -363,10 +433,53 @@ mod tests {
     }
 
     #[test]
-    fn reconnects_a_few_times_then_gives_up() {
-        assert_eq!(reconnect_delay(1), Some(Duration::from_millis(500)));
-        assert_eq!(reconnect_delay(MAX_RECONNECTS), Some(Duration::from_millis(500)));
-        assert_eq!(reconnect_delay(MAX_RECONNECTS + 1), None);
+    fn errors_give_up_after_the_limit() {
+        let mut r = Reconnects::default();
+        for _ in 0..MAX_RECONNECTS {
+            assert!(r.lost(Loss::Error));
+            r.connected(Loss::Error); // a reconnect that then breaks again before any packet
+        }
+        assert!(!r.lost(Loss::Error));
+    }
+
+    #[test]
+    fn silence_never_gives_up() {
+        let mut r = Reconnects::default();
+        for _ in 0..1_000 {
+            assert!(r.lost(Loss::Silence));
+            r.connected(Loss::Silence);
+        }
+    }
+
+    #[test]
+    fn a_reconnect_after_silence_clears_earlier_errors() {
+        let mut r = Reconnects::default();
+        for _ in 0..MAX_RECONNECTS {
+            assert!(r.lost(Loss::Error));
+        }
+        assert!(r.lost(Loss::Silence));
+        r.connected(Loss::Silence);
+        assert!(r.lost(Loss::Error));
+    }
+
+    #[test]
+    fn failed_connects_after_silence_still_count() {
+        let mut r = Reconnects::default();
+        assert!(r.lost(Loss::Silence));
+        for _ in 0..MAX_RECONNECTS {
+            assert!(r.lost(Loss::Error)); // each failed connect
+        }
+        assert!(!r.lost(Loss::Error));
+    }
+
+    #[test]
+    fn packets_flowing_clear_the_count() {
+        let mut r = Reconnects::default();
+        for _ in 0..MAX_RECONNECTS {
+            assert!(r.lost(Loss::Error));
+        }
+        r.flowing();
+        assert!(r.lost(Loss::Error));
     }
 
     #[test]
@@ -468,6 +581,28 @@ mod tests {
         }
         let skew = first.map(|t| (t as i64 - opened_ns as i64) / 1_000_000).unwrap_or(i64::MAX);
         (mono.len() as f64 / RATE as f64, rms(&mono), tone(&mono, RATE as f64, 440.0), skew)
+    }
+
+    /// A loopback of a process that plays nothing (this test process) still delivers zero-filled packets every
+    /// period, so 30 s of silence is 30 s of samples and never trips the 2 s dead-stream check (no
+    /// "loopback: no packets" on stderr). Runs from `src-tauri/`.
+    /// `cargo test system_silence_keeps_packets_flowing -- --ignored --nocapture`
+    #[test]
+    #[ignore]
+    fn system_silence_keeps_packets_flowing() {
+        let (p, mut c) = crate::recorder::feed::feed();
+        let feed: SharedFeed = Arc::new(std::sync::Mutex::new(p));
+        let opened = host_now_ns();
+        let (live, _) = open(Target::OnlyUs, &feed).unwrap();
+        let mut secs = 0.0;
+        for _ in 0..30 {
+            std::thread::sleep(Duration::from_secs(1));
+            secs += feed_stats(&mut c, opened).0; // drain so the 20 s feed never fills
+        }
+        close(live);
+        secs += feed_stats(&mut c, opened).0;
+        println!("silence: {secs:.2} s of samples in 30 s");
+        assert!(secs > 29.0, "packets stopped during silence");
     }
 
     /// The exclusion check: this test process plays a tone while it records. The tone is ours, so the normal

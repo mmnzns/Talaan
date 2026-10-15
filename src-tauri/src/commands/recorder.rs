@@ -333,6 +333,9 @@ pub fn setup(app: &AppHandle) {
             if system_failed && !warned_lost {
                 warned_lost = true;
                 notice(&app, "Call audio stopped coming through, so only your side is being recorded from here.".into(), "warning", None);
+            } else if !system_failed {
+                // Back (an output switch restarted it): a later failure warns again.
+                warned_lost = false;
             }
 
             heard_them |= them > 0.0;
