@@ -1,6 +1,6 @@
-import { Calendar, FolderOpen, MessageCircle, MoreHorizontal, Pin, Sparkles, Trash2, VolumeX, X } from "lucide-react";
+import { AudioLines, Calendar, FolderOpen, MessageCircle, MoreHorizontal, Pin, Sparkles, Trash2, VolumeX, X } from "lucide-react";
 import { useState } from "react";
-import { useFolders } from "../../data/hooks";
+import { useFolders, useSettings } from "../../data/hooks";
 import { useStore } from "../../data/StoreProvider";
 import type { Meeting } from "../../data/types";
 import { formatClock, formatDate, formatDuration } from "../../lib/format";
@@ -35,6 +35,7 @@ export function MeetingHeader({ meeting, editing, canRevert, onToggleEdit, onRev
   const [tagDraft, setTagDraft] = useState("");
   const [title, setTitle] = useState(meeting.title);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [retranscribing, setRetranscribing] = useState(false);
 
   const ready = meeting.status === "ready";
 
@@ -186,6 +187,15 @@ export function MeetingHeader({ meeting, editing, canRevert, onToggleEdit, onRev
                     <Sparkles size={14} aria-hidden="true" /> {meeting.summary ? "Write the summary again" : "Generate summary"}
                   </MenuItem>
                   <MenuItem
+                    disabled={!meeting.hasAudio}
+                    onClick={() => {
+                      setRetranscribing(true);
+                      close();
+                    }}
+                  >
+                    <AudioLines size={14} aria-hidden="true" /> Transcribe again…
+                  </MenuItem>
+                  <MenuItem
                     disabled={!meeting.hasAudio || meeting.pinned}
                     onClick={() => {
                       store
@@ -230,6 +240,8 @@ export function MeetingHeader({ meeting, editing, canRevert, onToggleEdit, onRev
         </div>
       )}
 
+      <RetranscribeSheet meeting={meeting} open={retranscribing} onClose={() => setRetranscribing(false)} />
+
       <Sheet open={confirmDelete} title="Delete meeting" onClose={() => setConfirmDelete(false)}>
         <div className="flex flex-col gap-3 p-5">
           <h2 className="m-0 font-display text-xl font-bold tracking-[-0.02em]">Delete “{meeting.title}”?</h2>
@@ -252,5 +264,62 @@ export function MeetingHeader({ meeting, editing, canRevert, onToggleEdit, onRev
         </div>
       </Sheet>
     </header>
+  );
+}
+
+/** Transcribe again with another speech model: says what is replaced and what stays before it starts. */
+function RetranscribeSheet({ meeting, open, onClose }: { meeting: Meeting; open: boolean; onClose: () => void }) {
+  const store = useStore();
+  const toast = useToast();
+  const { settings } = useSettings();
+  const ready = (settings?.speechModels ?? []).filter((m) => m.state === "downloaded" || m.state === "on_this_mac");
+  const used = meeting.transcription?.model;
+  const [choice, setChoice] = useState<string>();
+  const model = choice ?? ready.find((m) => m.id !== used)?.id ?? ready[0]?.id;
+  const edited = meeting.transcript.some((l) => l.edited);
+  const waits = meeting.transcriptOnly || settings?.summarizeAutomatically === false;
+
+  const start = async () => {
+    if (!model) return;
+    onClose();
+    try {
+      await store.retranscribe(meeting.id, model);
+    } catch (e) {
+      toast(describeError(e));
+    }
+  };
+
+  return (
+    <Sheet open={open} title="Transcribe again" onClose={onClose}>
+      <div className="flex flex-col gap-3 p-5">
+        <h2 className="m-0 font-display text-xl font-bold tracking-[-0.02em]">Transcribe again</h2>
+        <p className="m-0 text-[13px] text-subtle">Runs a speech model on this call’s audio again, for example a more accurate one.</p>
+        {ready.length > 0 ? (
+          <Select label="Speech model" value={model} onChange={(e) => setChoice(e.target.value)}>
+            {ready.map((m) => (
+              <option key={m.id} value={m.id}>
+                {m.name}
+                {m.id === used ? " · used for this call" : ""}
+              </option>
+            ))}
+          </Select>
+        ) : (
+          <p className="m-0 text-[13px]">Download a speech model in Settings › Speech models first.</p>
+        )}
+        <ul className="m-0 flex list-disc flex-col gap-1 pl-5 text-[13px]">
+          <li className={edited ? "font-semibold text-warn-fg" : undefined}>
+            {edited ? "Your edits to the transcript will be replaced." : "The transcript is replaced."}
+          </li>
+          <li>Speaker names stay. Check them afterwards: people may be numbered differently.</li>
+          <li>{waits ? "The summary is removed. Generate a new one when you’re ready." : "The summary is written again from the new transcript; summary edits are replaced."}</li>
+        </ul>
+        <div className="flex justify-end gap-2">
+          <Button onClick={onClose}>Cancel</Button>
+          <Button variant="primary" disabled={!model} onClick={start}>
+            Transcribe again
+          </Button>
+        </div>
+      </div>
+    </Sheet>
   );
 }

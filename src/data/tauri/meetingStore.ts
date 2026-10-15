@@ -45,6 +45,10 @@ export class TauriMeetingStore implements MeetingStore {
     return call<void>("meetings_retry", { id });
   }
 
+  retranscribe(id: MeetingId, model: string) {
+    return call<void>("meetings_retranscribe", { id, model });
+  }
+
   generateSummary(id: MeetingId) {
     return call<void>("meetings_generate_summary", { id });
   }

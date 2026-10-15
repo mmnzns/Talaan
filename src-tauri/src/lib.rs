@@ -115,6 +115,7 @@ pub fn run() {
             rec_cmd::permissions_request_mic,
             rec_cmd::permissions_open_settings,
             commands::transcriber::meetings_retry,
+            commands::transcriber::meetings_retranscribe,
             commands::transcriber::models_list,
             commands::transcriber::models_download,
             commands::transcriber::models_cancel,
