@@ -63,7 +63,11 @@ Models are downloaded on demand from their sources, not bundled or redistributed
 | Model | License | Source |
 |---|---|---|
 | NVIDIA Parakeet TDT 0.6B v3 (ONNX export by istupakov) | CC-BY-4.0, © NVIDIA | https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3, https://huggingface.co/istupakov/parakeet-tdt-0.6b-v3-onnx |
-| OpenAI Whisper large-v3-turbo, small (ggml conversions) | MIT | https://github.com/openai/whisper, https://huggingface.co/ggerganov/whisper.cpp |
+| NVIDIA Parakeet TDT 0.6B v2 (ONNX export by istupakov) | CC-BY-4.0, © NVIDIA | https://huggingface.co/nvidia/parakeet-tdt-0.6b-v2, https://huggingface.co/istupakov/parakeet-tdt-0.6b-v2-onnx |
+| Parakeet Ultra (Parakeet TDT 0.6B v3 further trained by Moondream; ONNX export by Olicorne) | CC-BY-4.0 | https://huggingface.co/moondream/parakeet-ultra, https://huggingface.co/Olicorne/parakeet-tdt-0.6b-v3-ultra-onnx |
+| NVIDIA Parakeet Unified EN 0.6B (ONNX export by bobNight) | NVIDIA Open Model License | https://huggingface.co/nvidia/parakeet-unified-en-0.6b, https://huggingface.co/bobNight/parakeet-unified-en-0.6b-onnx, license text: https://www.nvidia.com/en-us/agreements/enterprise-software/nvidia-open-model-license/ |
+| NVIDIA Nemotron 3.5 ASR Streaming 0.6B (ONNX export by altunenes for parakeet-rs) | OpenMDW-1.1, © NVIDIA | https://huggingface.co/nvidia/nemotron-3.5-asr-streaming-0.6b, https://huggingface.co/altunenes/parakeet-rs (`nemotron-3.5-asr-streaming-0.6b-onnx/`), license text: https://openmdw.ai/license |
+| OpenAI Whisper large-v3-turbo, large-v3, large-v2, medium, small, base, tiny (ggml conversions) | MIT | https://github.com/openai/whisper, https://huggingface.co/ggerganov/whisper.cpp |
 | Silero VAD (ggml conversion) | MIT | https://github.com/snakers4/silero-vad, https://huggingface.co/ggml-org/whisper-vad |
 | NVIDIA Nemotron 3 Diarization (streaming Sortformer; ONNX export by altunenes for parakeet-rs) | OpenMDW-1.1, © NVIDIA | https://huggingface.co/nvidia, https://huggingface.co/altunenes/parakeet-rs (`nemotron-3-diarization/`), license text: https://openmdw.ai/license |
 | Qwen3-Embedding 0.6B (GGUF, Q8_0) | Apache-2.0 | https://huggingface.co/Qwen/Qwen3-Embedding-0.6B-GGUF |

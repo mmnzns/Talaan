@@ -204,6 +204,9 @@ function AudioAccess({ systemAudio, setSystemAudio }: { systemAudio: Perm; setSy
 
 type StepProps = { settings: Settings; update: (p: Partial<Settings>) => Promise<Settings> };
 
+/** How many speech models setup lists before "Show all" (the catalog lists the recommended ones first). */
+const FEATURED_MODELS = 3;
+
 function ModelStep({ settings: s, update }: StepProps) {
   const t = useT();
   const store = useSettingsStore();
@@ -214,12 +217,15 @@ function ModelStep({ settings: s, update }: StepProps) {
     return t("onboarding.modelSize", { size: (m.sizeMb / 1000).toFixed(1) });
   };
   const chosen = s.speechModels.find((m) => m.id === s.activeSpeechModel);
+  // The three recommended models first; the rest behind "Show all" (the chosen one always shows).
+  const [all, setAll] = useState(false);
+  const shown = all ? s.speechModels : s.speechModels.filter((m, i) => i < FEATURED_MODELS || m.id === s.activeSpeechModel);
   return (
     <>
       <h1 className={h1}>{t("onboarding.modelTitle")}</h1>
       <p className={desc}>{t("onboarding.modelDesc")}</p>
       <div role="radiogroup" aria-label={t("onboarding.modelGroup")} className="flex flex-col gap-2">
-        {s.speechModels.map((m) => (
+        {shown.map((m) => (
           <Option
             key={m.id}
             on={s.activeSpeechModel === m.id}
@@ -231,6 +237,11 @@ function ModelStep({ settings: s, update }: StepProps) {
           </Option>
         ))}
       </div>
+      {!all && s.speechModels.length > shown.length && (
+        <button type="button" className="cursor-pointer self-start border-0 bg-transparent p-0 text-[13px] font-semibold text-ink underline" onClick={() => setAll(true)}>
+          {t("onboarding.showAllModels", { count: s.speechModels.length })}
+        </button>
+      )}
       {chosen && <DownloadRow item={chosen} onDownload={() => void store.downloadModel(chosen.id)} onCancel={() => void store.cancelModelDownload(chosen.id)} />}
     </>
   );

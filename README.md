@@ -49,6 +49,7 @@ Downloaded on demand, checked by checksum, kept on your computer. Licenses in [T
 | Speech (recommended on the Mac) | Whisper Large Turbo (OpenAI) | 575 MB |
 | Speech (fastest; recommended on Windows, 25 European languages) | Parakeet v3 (NVIDIA) | 671 MB |
 | Speech (light) | Whisper Small (OpenAI) | 488 MB |
+| Speech (more choices) | Whisper Large v3, Large v2, Medium, Base, Tiny (OpenAI); Parakeet Ultra, Parakeet v2, Parakeet Unified, Nemotron 3.5 (NVIDIA) | 78 MB to 2.6 GB |
 | Summaries | Qwen3.5 4B (recommended) or 9B | 2.7 / 5.7 GB |
 | Speaker separation (optional) | Nemotron 3 Diarization (NVIDIA) | 401 MB |
 | Search by meaning (optional) | Qwen3-Embedding 0.6B | 640 MB |

@@ -116,7 +116,7 @@ pub fn meetings_retry(app: AppHandle, state: State<AppState>, t: State<Transcrib
 /// are dropped, speaker names stay, and the new transcript is summarized like a new call.
 #[tauri::command]
 pub fn meetings_retranscribe(app: AppHandle, state: State<AppState>, t: State<TranscriberState>, id: String, model: String) -> CmdResult<()> {
-    let m = find(&model).filter(|m| matches!(m.engine, EngineKind::Parakeet | EngineKind::Whisper)).ok_or_else(|| err(format!("No speech model called {model}")))?;
+    let m = find(&model).filter(|m| m.engine.is_speech()).ok_or_else(|| err(format!("No speech model called {model}")))?;
     let storage = state.lock();
     let config = Config::from_settings(storage.settings_get()?.as_ref());
     if ModelStore::new(&t.data_dir, config.reuse).locate(m) == Location::Missing {
@@ -170,7 +170,7 @@ pub fn models_list(state: State<AppState>, t: State<TranscriberState>) -> CmdRes
                 maker: m.maker,
                 note: m.note,
                 engine: match m.engine {
-                    crate::transcriber::models::EngineKind::Parakeet => "parakeet",
+                    crate::transcriber::models::EngineKind::Parakeet | crate::transcriber::models::EngineKind::ParakeetUnified | crate::transcriber::models::EngineKind::Nemotron => "parakeet",
                     crate::transcriber::models::EngineKind::Whisper => "whisper",
                     crate::transcriber::models::EngineKind::Llm => "llm",
                     crate::transcriber::models::EngineKind::Diarization => "diarization",
@@ -221,7 +221,7 @@ pub fn models_download(app: AppHandle, t: State<TranscriberState>, id: String) -
             }
         };
         // Speech models need the voice detector too; the add-on models don't.
-        let speech = matches!(model.engine, EngineKind::Parakeet | EngineKind::Whisper);
+        let speech = model.engine.is_speech();
         let vad_missing = speech && store.locate(&VAD) == Location::Missing && ModelStore::new(&data_dir, true).locate(&VAD) == Location::Missing;
         let mut result = Ok(());
         if vad_missing {

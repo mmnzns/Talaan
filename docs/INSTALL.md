@@ -206,6 +206,18 @@ Speech, summary, speaker and search models download only when you click Download
 | **Parakeet** | Fastest, 25 European languages. Best choice on most Windows PCs. | 671 MB |
 | **Whisper Small** | Lighter, for older computers. Lower accuracy. | 488 MB |
 
+Setup shows these three. **Show all models** (or Settings › Speech models) lists the rest:
+
+| Model | Best for | Download |
+|---|---|---|
+| **Whisper Large v3** / **Large v2** | Whisper's largest, very accurate, slower than Turbo. 99 languages. | 1.1 GB each |
+| **Whisper Medium** | Between Small and Large. 99 languages. | 1.5 GB |
+| **Whisper Base** / **Tiny** | Very small and fast, rough on names and accents. | 148 / 78 MB |
+| **Parakeet Ultra** | Parakeet v3 further trained by Moondream, more accurate. 25 European languages. | 668 MB |
+| **Parakeet v2** | English only, fast and very accurate in English. | 662 MB |
+| **Parakeet Unified** | English only, NVIDIA's newer English model. | 664 MB |
+| **Nemotron 3.5** | NVIDIA's newest, 35 languages. | 2.6 GB |
+
 On Windows, speech recognition runs on the processor, and Parakeet is many times faster than Whisper there.
 
 ### What's different on Windows

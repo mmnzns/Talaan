@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- **More speech models, all on your computer:** Whisper Large v3, Large v2, Medium, Base and Tiny; Parakeet Ultra, Parakeet v2 (English), Parakeet Unified (English) and Nemotron 3.5 (35 languages), alongside Whisper Large Turbo, Parakeet v3 and Whisper Small. Setup shows the three recommended ones with "Show all models".
 - **Setup downloads nothing on its own.** Choosing a speech model or the local AI only selects it; each has its own Download button, and you can skip both and download later in Settings.
 - **Fixed:** your own key is remembered per provider. Switching provider no longer looks like the key was lost, and the menu marks providers that have a saved key.
 - **Fixed:** Privacy › Saved API keys › Remove keys now deletes every summary provider's key from secure key storage. Before, it only hid them in Settings.
