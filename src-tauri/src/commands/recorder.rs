@@ -99,8 +99,9 @@ pub fn start_recording(app: &AppHandle, app_id: &str, app_label: &str) -> CmdRes
     let mut engine = rec.lock();
     let storage = state.lock();
     let started_at = chrono::Local::now().fixed_offset();
+    let mic = storage.settings_get().ok().flatten().and_then(|s| s["microphone"].as_str().map(String::from)).unwrap_or_default();
     engine
-        .start(&storage, app_id, app_label, Box::new(MicSource::default()), system_source(), platform::host_now_ns(), started_at)
+        .start(&storage, app_id, app_label, Box::new(MicSource::with_device(&mic)), system_source(), platform::host_now_ns(), started_at)
         .map_err(err)?;
     let st = engine.status(platform::host_now_ns());
     if let Some(id) = &st.meeting_id {
@@ -128,6 +129,12 @@ pub fn start_recording(app: &AppHandle, app_id: &str, app_label: &str) -> CmdRes
 fn auto_tag(settings: Option<&serde_json::Value>, app_id: &str, app_label: &str) -> Option<String> {
     let on = settings.and_then(|s| s["autoTagApps"].as_bool()).unwrap_or(false);
     (on && app_id != "other" && !app_label.trim().is_empty()).then(|| app_label.trim().to_lowercase())
+}
+
+/// Connected microphones for Settings › General.
+#[tauri::command]
+pub fn audio_inputs() -> Vec<String> {
+    crate::recorder::mic::input_devices()
 }
 
 #[tauri::command]

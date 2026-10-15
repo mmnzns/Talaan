@@ -100,6 +100,7 @@ pub fn run() {
             commands::calls::calls_hide,
             commands::calls::browsers_status,
             commands::updates::updates_check,
+            rec_cmd::audio_inputs,
             commands::updates::updates_install,
             rec_cmd::recorder_start,
             rec_cmd::recorder_pause,

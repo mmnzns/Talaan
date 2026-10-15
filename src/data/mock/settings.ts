@@ -118,6 +118,10 @@ export class MockSettingsStore implements SettingsStore {
     ];
   }
 
+  async audioInputs() {
+    return ["Built-in microphone", "Headset microphone"];
+  }
+
   async checkForUpdate() {
     await sleep(600);
     return null;

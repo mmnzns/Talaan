@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Logo } from "../../brand/Logo";
 import { describeError } from "../../data/errors";
 import { useSettingsStore } from "../../data/StoreProvider";
@@ -26,13 +26,7 @@ export function GeneralTab({ settings: s, update }: TabProps) {
           className="w-full resize-y rounded-control border border-input bg-paper p-2.5 font-[inherit] text-[13px] leading-[18px] text-ink outline-none focus:border-edge"
         />
       </Row>
-      <Row title="Microphone" desc="Follows the system default. Switches automatically if AirPods connect mid-call.">
-        <Select label="Microphone" wrapperClassName="w-52" value={s.microphone} onChange={(e) => update({ microphone: e.target.value })}>
-          <option value="default">System default</option>
-          <option value="MacBook Pro Microphone">MacBook Pro Microphone</option>
-          <option value="AirPods Pro">AirPods Pro</option>
-        </Select>
-      </Row>
+      <MicrophoneRow settings={s} update={update} />
       <Row title="Warn when using speakers" desc="Recommends headphones so other voices aren't recorded twice.">
         <Switch aria-label="Warn when using speakers" checked={s.warnOnSpeakers} onChange={(v) => update({ warnOnSpeakers: v })} />
       </Row>
@@ -132,5 +126,28 @@ function About() {
         </div>
       </div>
     </div>
+  );
+}
+
+function MicrophoneRow({ settings: s, update }: TabProps) {
+  const store = useSettingsStore();
+  const [inputs, setInputs] = useState<string[]>([]);
+  useEffect(() => {
+    store.audioInputs().then(setInputs, () => setInputs([]));
+  }, [store]);
+  const chosen = s.microphone && s.microphone !== "default" ? s.microphone : "default";
+  const missing = chosen !== "default" && inputs.length > 0 && !inputs.includes(chosen);
+  return (
+    <Row title="Microphone" desc={missing ? "That microphone isn't connected, so the system default is used." : "Follows the system default unless you pick one. If headphones connect mid-call, recording keeps going."}>
+      <Select label="Microphone" wrapperClassName="w-56" value={chosen} onChange={(e) => update({ microphone: e.target.value })}>
+        <option value="default">System default</option>
+        {inputs.map((n) => (
+          <option key={n} value={n}>
+            {n}
+          </option>
+        ))}
+        {missing && <option value={chosen}>{chosen} (not connected)</option>}
+      </Select>
+    </Row>
   );
 }

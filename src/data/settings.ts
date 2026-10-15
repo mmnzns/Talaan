@@ -131,6 +131,8 @@ export interface SettingsStore {
   notionDestinations(): Promise<NotionDestination[]>;
   /** Browsers tab detection works with, and whether Talaan may read their tabs. */
   browsersStatus(): Promise<{ name: string; state: BrowserState }[]>;
+  /** Connected microphones by name. */
+  audioInputs(): Promise<string[]>;
   /** A newer version on GitHub, if any. */
   checkForUpdate(): Promise<{ version: string; notes?: string } | null>;
   /** Downloads, installs and relaunches. */

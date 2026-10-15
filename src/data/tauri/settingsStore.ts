@@ -134,6 +134,10 @@ export class TauriSettingsStore implements SettingsStore {
     return call("browsers_status");
   }
 
+  audioInputs() {
+    return call<string[]>("audio_inputs");
+  }
+
   checkForUpdate() {
     return call<{ version: string; notes?: string } | null>("updates_check");
   }

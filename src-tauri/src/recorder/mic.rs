@@ -1,4 +1,5 @@
-//! The microphone ("me") through cpal: the default input device, rebuilt when the default changes.
+//! The microphone ("me") through cpal: the chosen input device (Settings › General › Microphone), else the
+//! system default, rebuilt when devices change. A chosen device that isn't connected falls back to the default.
 //!
 //! cpal streams are not `Send` on every platform, so the stream lives on its own thread and is
 //! controlled through a channel.
@@ -17,11 +18,22 @@ enum Cmd {
 #[derive(Default)]
 pub struct MicSource {
     control: Option<(Sender<Cmd>, JoinHandle<()>)>,
+    /// A device name from `input_devices`; None = the system default.
+    preferred: Option<String>,
 }
 
-fn open(feed: &SharedFeed) -> Result<(Stream, String), String> {
+/// Names of the connected input devices, for Settings.
+pub fn input_devices() -> Vec<String> {
+    let mut names: Vec<String> = cpal::default_host().input_devices().map(|d| d.map(|d| d.to_string()).collect()).unwrap_or_default();
+    names.sort();
+    names.dedup();
+    names
+}
+
+fn open(feed: &SharedFeed, preferred: Option<&str>) -> Result<(Stream, String), String> {
     let host = cpal::default_host();
-    let device = host.default_input_device().ok_or("No microphone found")?;
+    let chosen = preferred.and_then(|want| host.input_devices().ok()?.find(|d| d.to_string() == want));
+    let device = chosen.or_else(|| host.default_input_device()).ok_or("No microphone found")?;
     let name = device.to_string();
     let supported = device.default_input_config().map_err(|e| e.to_string())?;
     let format = supported.sample_format();
@@ -62,13 +74,13 @@ fn open(feed: &SharedFeed) -> Result<(Stream, String), String> {
     Ok((stream, name))
 }
 
-fn run(feed: SharedFeed, rx: Receiver<Cmd>) {
+fn run(feed: SharedFeed, rx: Receiver<Cmd>, preferred: Option<String>) {
     let mut stream: Option<Stream> = None;
     while let Ok(cmd) = rx.recv() {
         match cmd {
             Cmd::Open(reply) => {
                 stream = None; // drop the old stream before opening the new device
-                let _ = reply.send(match open(&feed) {
+                let _ = reply.send(match open(&feed, preferred.as_deref()) {
                     Ok((s, name)) => {
                         stream = Some(s);
                         Ok(name)
@@ -83,6 +95,12 @@ fn run(feed: SharedFeed, rx: Receiver<Cmd>) {
 }
 
 impl MicSource {
+    /// The given device ("default" or empty means the system default).
+    pub fn with_device(name: &str) -> Self {
+        let name = name.trim();
+        MicSource { control: None, preferred: (!name.is_empty() && name != "default").then(|| name.to_string()) }
+    }
+
     fn request_open(&self) -> Result<String, String> {
         let (tx, _) = self.control.as_ref().ok_or("Microphone not started")?;
         let (reply, answer) = channel();
@@ -94,7 +112,8 @@ impl MicSource {
 impl AudioSource for MicSource {
     fn start(&mut self, feed: SharedFeed) -> Result<String, String> {
         let (tx, rx) = channel();
-        let handle = std::thread::Builder::new().name("talaan-mic".into()).spawn(move || run(feed, rx)).map_err(|e| e.to_string())?;
+        let preferred = self.preferred.clone();
+        let handle = std::thread::Builder::new().name("talaan-mic".into()).spawn(move || run(feed, rx, preferred)).map_err(|e| e.to_string())?;
         self.control = Some((tx, handle));
         let result = self.request_open();
         if result.is_err() {
