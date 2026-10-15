@@ -7,7 +7,7 @@ use std::process::{Child, ChildStdin, Command, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError};
 use std::time::{Duration, Instant};
-use talaan_llm_protocol::{encode, Completion, Event, Phase, Reply, Request};
+use talaan_llm_protocol::{encode, Completion, Embedding, Event, Phase, Reply, Request};
 
 pub const HELPER: &str = "talaan-llm";
 
@@ -84,7 +84,7 @@ impl LocalAi {
                 Ok(Event::Progress { phase, done, total }) => progress(phase, done, total),
                 Ok(Event::Done(reply)) => return Ok(reply),
                 Ok(Event::Error { message }) => return Err(message),
-                Ok(Event::Ready) => {}
+                Ok(Event::Ready | Event::Embedded { .. }) => {}
                 Err(RecvTimeoutError::Timeout) => {
                     // A summary should never take this long; something is stuck.
                     if started.elapsed() > Duration::from_secs(30 * 60) {
@@ -95,6 +95,28 @@ impl LocalAi {
                 Err(RecvTimeoutError::Disconnected) => {
                     self.stop();
                     return Err("the local AI stopped unexpectedly, probably out of memory. Try the smaller model, or close other apps.".into());
+                }
+            }
+        }
+    }
+
+    /// Embeds texts with an embedding model (one vector per text, L2-normalized).
+    pub fn embed(&mut self, model_path: &Path, texts: Vec<String>, cancel: &AtomicBool) -> Result<Vec<Vec<f32>>, String> {
+        let r = self.start()?;
+        send(&mut r.stdin, &Request::Embed(Embedding { model_path: model_path.to_string_lossy().into_owned(), texts }))?;
+        loop {
+            if cancel.load(Ordering::Relaxed) {
+                self.stop();
+                return Err("cancelled".into());
+            }
+            let r = self.running.as_mut().expect("running");
+            match r.events.recv_timeout(Duration::from_millis(250)) {
+                Ok(Event::Embedded { vectors }) => return Ok(vectors),
+                Ok(Event::Error { message }) => return Err(message),
+                Ok(_) | Err(RecvTimeoutError::Timeout) => {}
+                Err(RecvTimeoutError::Disconnected) => {
+                    self.stop();
+                    return Err("the search model stopped unexpectedly".into());
                 }
             }
         }

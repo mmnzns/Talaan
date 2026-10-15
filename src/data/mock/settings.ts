@@ -64,6 +64,7 @@ export class MockSettingsStore implements SettingsStore {
       speechModels: this.state.speechModels.map((m) => (m.id === id ? { ...m, ...patch } : m)),
       localModels: this.state.localModels.map((m) => (m.id === id ? { ...m, ...patch } : m)),
       speakerModel: this.state.speakerModel.id === id ? { ...this.state.speakerModel, ...patch } : this.state.speakerModel,
+      searchModel: this.state.searchModel.id === id ? { ...this.state.searchModel, ...patch } : this.state.searchModel,
     };
     this.save();
   }

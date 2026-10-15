@@ -12,6 +12,7 @@ export class TauriSettingsStore implements SettingsStore {
   private state?: Settings;
   private models?: SpeechModel[];
   private speaker?: SpeechModel;
+  private search?: SpeechModel;
   private localModels?: LocalModel[];
   private listeners = new Set<() => void>();
 
@@ -23,12 +24,14 @@ export class TauriSettingsStore implements SettingsStore {
     onEvent("models-changed", () => {
       this.models = undefined;
       this.speaker = undefined;
+      this.search = undefined;
       this.localModels = undefined;
       this.emit();
     });
     onEvent<{ id: string; progress: number }>("model-download", ({ id, progress }) => {
       this.models = this.models?.map((m) => (m.id === id ? { ...m, state: "downloading", progress } : m));
       if (this.speaker?.id === id) this.speaker = { ...this.speaker, state: "downloading", progress };
+      if (this.search?.id === id) this.search = { ...this.search, state: "downloading", progress };
       this.localModels = this.localModels?.map((m) => (m.id === id ? { ...m, state: "downloading", progress } : m));
       this.emit();
     });
@@ -36,12 +39,17 @@ export class TauriSettingsStore implements SettingsStore {
 
   private async loadModels(): Promise<SpeechModel[]> {
     if (!this.models) {
-      // One list from Rust: the speech models plus the speaker separation model.
+      // One list from Rust: the speech models plus the speaker separation and search models.
       const all = await call<SpeechModel[]>("models_list");
-      this.models = all.filter((m) => m.engine !== "diarization");
+      this.models = all.filter((m) => m.engine === "whisper" || m.engine === "parakeet");
       this.speaker = all.find((m) => m.engine === "diarization");
+      this.search = all.find((m) => m.engine === "search");
     }
     return this.models;
+  }
+
+  private extraModels() {
+    return { speakerModel: this.speaker ?? defaultSettings.speakerModel, searchModel: this.search ?? defaultSettings.searchModel };
   }
 
   private async loadLocalModels(): Promise<LocalModel[]> {
@@ -66,18 +74,17 @@ export class TauriSettingsStore implements SettingsStore {
     const [s, speechModels, localModels] = await Promise.all([this.load(), this.loadModels(), this.loadLocalModels()]);
     // A model id that no longer exists (older builds used other ids) means the default, as Rust does.
     const activeSpeechModel = speechModels.some((m) => m.id === s.activeSpeechModel) ? s.activeSpeechModel : defaultSettings.activeSpeechModel;
-    const speakerModel = this.speaker ?? defaultSettings.speakerModel;
-    return structuredClone({ ...s, speechModels, speakerModel, localModels, activeSpeechModel });
+    return structuredClone({ ...s, speechModels, ...this.extraModels(), localModels, activeSpeechModel });
   }
 
   async update(patch: Partial<Settings>): Promise<Settings> {
     const next = { ...(await this.load()), ...patch };
     this.state = next;
-    const { speechModels: _speech, speakerModel: _speaker, localModels: _local, ...stored } = next;
+    const { speechModels: _speech, speakerModel: _speaker, searchModel: _search, localModels: _local, ...stored } = next;
     await call<void>("settings_set", { value: stored });
     this.emit();
     const speechModels = await this.loadModels();
-    return structuredClone({ ...next, speechModels, speakerModel: this.speaker ?? defaultSettings.speakerModel, localModels: await this.loadLocalModels() });
+    return structuredClone({ ...next, speechModels, ...this.extraModels(), localModels: await this.loadLocalModels() });
   }
 
   downloadModel(id: string): Promise<void> {

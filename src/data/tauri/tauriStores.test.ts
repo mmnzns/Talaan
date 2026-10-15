@@ -65,10 +65,12 @@ describe("TauriMeetingStore", () => {
     await expect(new TauriMeetingStore().generateSummary("m1")).rejects.toBeInstanceOf(StoreError);
   });
 
-  it("answers Ask honestly until M8", async () => {
-    invoke.mockResolvedValue([{}, {}, {}]);
-    const a = await new TauriMeetingStore().ask("anything", { kind: "all" });
-    expect(a).toEqual({ text: "", points: [], fromMeetings: 0, totalMeetings: 3 });
+  it("sends Ask questions to Rust with their scope", async () => {
+    const answer = { text: "Q1.", points: [], fromMeetings: 1, totalMeetings: 3 };
+    invoke.mockResolvedValue(answer);
+    const a = await new TauriMeetingStore().ask("pricing?", { kind: "tag", tag: "roadmap" });
+    expect(invoke).toHaveBeenCalledWith("meetings_ask", { question: "pricing?", scope: { kind: "tag", tag: "roadmap" } });
+    expect(a).toEqual(answer);
   });
 
   it("subscribes to meetings-changed and unsubscribes", async () => {

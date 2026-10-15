@@ -11,6 +11,8 @@ pub enum EngineKind {
     Llm,
     /// Speaker separation for the Them track.
     Diarization,
+    /// Text embeddings for Ask's search (run by the `talaan-llm` helper).
+    Embedding,
 }
 
 #[derive(Debug)]
@@ -129,6 +131,25 @@ pub static DIARIZATION: ModelInfo = ModelInfo {
     reuse_dirs: &[],
 };
 
+/// Ask's search by meaning: Qwen3-Embedding 0.6B, 100+ languages. Without it Ask searches by keywords.
+pub static SEARCH: ModelInfo = ModelInfo {
+    id: "search",
+    name: "Search by meaning",
+    maker: "Qwen",
+    note: "Lets Ask find answers phrased differently from the question, in 100+ languages.",
+    engine: EngineKind::Embedding,
+    languages: "100+ languages",
+    speed: 3,
+    accuracy: 2,
+    files: &[ModelFile {
+        name: "Qwen3-Embedding-0.6B-Q8_0.gguf",
+        url: "https://huggingface.co/Qwen/Qwen3-Embedding-0.6B-GGUF/resolve/370f27d7550e0def9b39c1f16d3fbaa13aa67728/Qwen3-Embedding-0.6B-Q8_0.gguf",
+        size: 639_150_592,
+        sha256: "06507c7b42688469c4e7298b0a1e16deff06caf291cf0a5b278c308249c3e439",
+    }],
+    reuse_dirs: &[],
+};
+
 pub const DEFAULT_MODEL: &str = "whisper-turbo";
 
 pub fn find(id: &str) -> Option<&'static ModelInfo> {
@@ -137,6 +158,9 @@ pub fn find(id: &str) -> Option<&'static ModelInfo> {
     }
     if id == DIARIZATION.id {
         return Some(&DIARIZATION);
+    }
+    if id == SEARCH.id {
+        return Some(&SEARCH);
     }
     CATALOG.iter().find(|m| m.id == id)
 }

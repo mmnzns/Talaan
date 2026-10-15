@@ -88,9 +88,8 @@ export class TauriMeetingStore implements MeetingStore {
   }
 
   /** Real answers arrive with M8. Until then: an honest "nothing found". */
-  async ask(_question: string, _scope: AskScope): Promise<AskAnswer> {
-    const total = (await this.listMeetings()).length;
-    return { text: "", points: [], fromMeetings: 0, totalMeetings: total };
+  ask(question: string, scope: AskScope): Promise<AskAnswer> {
+    return call<AskAnswer>("meetings_ask", { question, scope });
   }
 
   subscribe(listener: () => void): () => void {

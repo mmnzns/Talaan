@@ -27,7 +27,7 @@ export interface SpeechModel {
   name: string;
   maker: string;
   note: string;
-  engine: "whisper" | "parakeet" | "diarization";
+  engine: "whisper" | "parakeet" | "diarization" | "search";
   sizeMb: number;
   speed: 1 | 2 | 3;
   accuracy: 1 | 2 | 3;
@@ -66,6 +66,8 @@ export interface Settings {
   speakerModel: SpeechModel;
   /** Split the other side into Speaker 1, 2, 3 when the speaker model is downloaded. */
   separateSpeakers: boolean;
+  /** Ask's search by meaning (from disk in the app). */
+  searchModel: SpeechModel;
   reuseModels: boolean;
   meetingLanguage: "auto" | string;
   useGpu: boolean;

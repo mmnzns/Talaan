@@ -1,3 +1,4 @@
+mod ask;
 mod calls;
 mod commands;
 mod importer;
@@ -33,6 +34,7 @@ pub fn run() {
             app.manage(AppState::new(store));
             rec_cmd::setup(app.handle());
             commands::summarizer::setup(app.handle(), root.clone());
+            commands::ask::setup(app.handle(), root.clone());
             #[cfg(target_os = "macos")]
             {
                 let handle = app.handle().clone();
@@ -104,6 +106,7 @@ pub fn run() {
             commands::transcriber::models_cancel,
             commands::transcriber::models_delete,
             commands::summarizer::meetings_generate_summary,
+            commands::ask::meetings_ask,
             commands::summarizer::llm_models_list,
             commands::summarizer::keys_save,
             commands::summarizer::keys_clear,

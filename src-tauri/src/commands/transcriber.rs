@@ -5,7 +5,7 @@ use crate::storage::model::MeetingStatus;
 use crate::storage::StorageError;
 use crate::transcriber::download::{download_model, DownloadError};
 use crate::transcriber::engine;
-use crate::transcriber::models::{find, Location, ModelStore, CATALOG, VAD};
+use crate::transcriber::models::{find, EngineKind, Location, ModelStore, CATALOG, VAD};
 use crate::transcriber::pipeline::Detector;
 use crate::transcriber::vad::Vad;
 use crate::transcriber::worker::{Config, Deps, Worker, NO_MODEL};
@@ -138,7 +138,7 @@ pub fn models_list(state: State<AppState>, t: State<TranscriberState>) -> CmdRes
     let downloads = t.downloads.lock().unwrap_or_else(|e| e.into_inner());
     Ok(CATALOG
         .iter()
-        .chain([&crate::transcriber::models::DIARIZATION])
+        .chain([&crate::transcriber::models::DIARIZATION, &crate::transcriber::models::SEARCH])
         .map(|m| {
             let (state, progress) = match (downloads.get(m.id), store.locate(m)) {
                 (Some((_, p)), _) => ("downloading", Some(*p)),
@@ -156,6 +156,7 @@ pub fn models_list(state: State<AppState>, t: State<TranscriberState>) -> CmdRes
                     crate::transcriber::models::EngineKind::Whisper => "whisper",
                     crate::transcriber::models::EngineKind::Llm => "llm",
                     crate::transcriber::models::EngineKind::Diarization => "diarization",
+                    crate::transcriber::models::EngineKind::Embedding => "search",
                 },
                 size_mb: m.size().div_ceil(1_000_000),
                 speed: m.speed,
@@ -201,7 +202,9 @@ pub fn models_download(app: AppHandle, t: State<TranscriberState>, id: String) -
                 let _ = app.emit("model-download", DownloadProgress { id: id.clone(), progress: p });
             }
         };
-        let vad_missing = !is_llm && store.locate(&VAD) == Location::Missing && ModelStore::new(&data_dir, true).locate(&VAD) == Location::Missing;
+        // Speech models need the voice detector too; the add-on models don't.
+        let speech = matches!(model.engine, EngineKind::Parakeet | EngineKind::Whisper);
+        let vad_missing = speech && store.locate(&VAD) == Location::Missing && ModelStore::new(&data_dir, true).locate(&VAD) == Location::Missing;
         let mut result = Ok(());
         if vad_missing {
             result = download_model(&VAD, &store.own_dir(&VAD), &cancel, &mut |_| {});
@@ -213,7 +216,9 @@ pub fn models_download(app: AppHandle, t: State<TranscriberState>, id: String) -
         let _ = app.emit(MODELS_CHANGED, ());
         match result {
             Ok(()) if is_llm => super::summarizer::requeue_waiting(&app),
-            Ok(()) => requeue_waiting_for_model(&app),
+            Ok(()) if model.engine == EngineKind::Embedding => super::ask::reindex_soon(&app),
+            Ok(()) if speech => requeue_waiting_for_model(&app),
+            Ok(()) => {}
             Err(DownloadError::Cancelled) => {}
             Err(e) => {
                 let _ = app.emit("recorder-notice", serde_json::json!({ "text": e.to_string(), "kind": "warning" }));

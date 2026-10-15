@@ -14,7 +14,8 @@ use std::io::{BufRead, Write};
 use std::num::NonZeroU32;
 use std::sync::mpsc;
 use std::time::{Duration, Instant};
-use talaan_llm_protocol::{encode, Completion, Event, Phase, Reply, Request};
+use llama_cpp_2::context::params::LlamaPoolingType;
+use talaan_llm_protocol::{encode, Completion, Embedding, Event, Phase, Reply, Request};
 
 const IDLE_EXIT: Duration = Duration::from_secs(120);
 const BATCH: usize = 512;
@@ -56,21 +57,65 @@ fn main() {
                 Ok(reply) => send(&Event::Done(reply)),
                 Err(message) => send(&Event::Error { message }),
             },
+            Ok(Request::Embed(e)) => match embed(&backend, &mut loaded, &e) {
+                Ok(vectors) => send(&Event::Embedded { vectors }),
+                Err(message) => send(&Event::Error { message }),
+            },
             Err(e) => send(&Event::Error { message: format!("bad request: {e}") }),
         }
     }
 }
 
-fn complete(backend: &LlamaBackend, loaded: &mut Option<(String, LlamaModel)>, c: &Completion) -> Result<Reply, String> {
-    let started = Instant::now();
-    if loaded.as_ref().map(|(p, _)| p != &c.model_path).unwrap_or(true) {
+fn load<'a>(backend: &LlamaBackend, loaded: &'a mut Option<(String, LlamaModel)>, path: &str) -> Result<&'a LlamaModel, String> {
+    if loaded.as_ref().map(|(p, _)| p != path).unwrap_or(true) {
         *loaded = None;
         send(&Event::Progress { phase: Phase::Loading, done: 0, total: 0 });
         let params = LlamaModelParams::default().with_n_gpu_layers(999);
-        let model = LlamaModel::load_from_file(backend, &c.model_path, &params).map_err(|e| format!("couldn't load the AI model: {e}"))?;
-        *loaded = Some((c.model_path.clone(), model));
+        let model = LlamaModel::load_from_file(backend, path, &params).map_err(|e| format!("couldn't load the AI model: {e}"))?;
+        *loaded = Some((path.to_string(), model));
     }
-    let model = &loaded.as_ref().expect("loaded above").1;
+    Ok(&loaded.as_ref().expect("loaded above").1)
+}
+
+/// Longest text embedded, in tokens; longer ones are cut (passages are built well under this).
+const EMBED_MAX_TOKENS: usize = 1024;
+
+fn embed(backend: &LlamaBackend, loaded: &mut Option<(String, LlamaModel)>, e: &Embedding) -> Result<Vec<Vec<f32>>, String> {
+    let model = load(backend, loaded, &e.model_path)?;
+    let threads = std::thread::available_parallelism().map(|n| n.get() as i32).unwrap_or(4).clamp(2, 8);
+    let ctx_params = LlamaContextParams::default()
+        .with_n_ctx(NonZeroU32::new(EMBED_MAX_TOKENS as u32))
+        .with_n_batch(EMBED_MAX_TOKENS as u32)
+        .with_n_ubatch(EMBED_MAX_TOKENS as u32)
+        .with_n_threads(threads)
+        .with_n_threads_batch(threads)
+        .with_embeddings(true)
+        // The model's own pooling (Qwen3-Embedding: last token) from its metadata.
+        .with_pooling_type(LlamaPoolingType::Unspecified);
+    let mut ctx = model.new_context(backend, ctx_params).map_err(|e| format!("not enough memory for the search model: {e}"))?;
+    let vocab = model.vocab();
+    let mut out = Vec::with_capacity(e.texts.len());
+    let mut batch = LlamaBatch::new(EMBED_MAX_TOKENS, 1);
+    for text in &e.texts {
+        // add_special: the tokenizer adds what the model expects (Qwen3-Embedding pools on the closing token).
+        let mut tokens = vocab.tokenize(text.as_bytes(), true, false);
+        tokens.truncate(EMBED_MAX_TOKENS);
+        ctx.clear_kv_cache();
+        batch.clear();
+        for (i, t) in tokens.iter().enumerate() {
+            batch.add(*t, i as i32, &[0], true).map_err(|e| e.to_string())?;
+        }
+        ctx.decode(&mut batch).map_err(|e| format!("the search model failed: {e}"))?;
+        let v = ctx.embeddings_seq_ith(0).map_err(|e| format!("the search model gave no vector: {e}"))?;
+        let norm = v.iter().map(|x| x * x).sum::<f32>().sqrt().max(1e-12);
+        out.push(v.iter().map(|x| x / norm).collect());
+    }
+    Ok(out)
+}
+
+fn complete(backend: &LlamaBackend, loaded: &mut Option<(String, LlamaModel)>, c: &Completion) -> Result<Reply, String> {
+    let started = Instant::now();
+    let model = load(backend, loaded, &c.model_path)?;
 
     let template = model.chat_template(None).map_err(|e| format!("the model has no chat template: {e}"))?;
     let messages = [

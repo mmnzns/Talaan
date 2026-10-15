@@ -43,6 +43,7 @@ export const defaultSettings: Settings = {
   activeSpeechModel: "whisper-turbo",
   speakerModel: { id: "diarization", name: "Speaker separation", maker: "NVIDIA", note: "Tells the other people on a call apart: Speaker 1, 2, 3. Up to 8 people.", engine: "diarization", sizeMb: 401, speed: 3, accuracy: 2, languages: "Any language", state: "not_downloaded" },
   separateSpeakers: true,
+  searchModel: { id: "search", name: "Search by meaning", maker: "Qwen", note: "Lets Ask find answers phrased differently from the question, in 100+ languages.", engine: "search", sizeMb: 640, speed: 3, accuracy: 2, languages: "100+ languages", state: "not_downloaded" },
   reuseModels: true,
   meetingLanguage: "auto",
   useGpu: true,

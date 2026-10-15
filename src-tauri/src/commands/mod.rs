@@ -1,5 +1,6 @@
 //! Tauri commands. Thin wrappers: lock the storage, call it, tell every window what changed.
 
+pub mod ask;
 pub mod calls;
 pub mod dev;
 pub mod import;
@@ -41,6 +42,9 @@ pub const SETTINGS_CHANGED: &str = "settings-changed";
 
 pub fn notify(app: &AppHandle, event: &str) {
     let _ = app.emit(event, ());
+    if event == MEETINGS_CHANGED {
+        ask::reindex_soon(app);
+    }
 }
 
 /// Where Talaan keeps its data: `TALAAN_DATA_DIR` if set, otherwise the OS data folder.

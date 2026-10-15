@@ -10,6 +10,14 @@ pub enum Request {
     Ping,
     /// Generates one reply. The model stays loaded for the next request with the same path and context size.
     Complete(Completion),
+    /// Turns texts into embedding vectors (L2-normalized), for Ask's search index.
+    Embed(Embedding),
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct Embedding {
+    pub model_path: String,
+    pub texts: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -33,6 +41,8 @@ pub enum Event {
     /// Reading the prompt (`done` of `total` tokens), then writing (`done` tokens written, `total` 0).
     Progress { phase: Phase, done: u32, total: u32 },
     Done(Reply),
+    /// One vector per input text, in order.
+    Embedded { vectors: Vec<Vec<f32>> },
     Error { message: String },
 }
 

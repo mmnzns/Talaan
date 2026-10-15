@@ -3,11 +3,12 @@ import { useEffect, useRef, useState } from "react";
 import { useFolders, useMeeting, useSettings, useTags } from "../../data/hooks";
 import { useStore } from "../../data/StoreProvider";
 import type { AskAnswer, AskCitation, AskScope } from "../../data/types";
+import { describeError } from "../../data/errors";
 import { formatTime } from "../../lib/format";
 import { navigate, routes } from "../../lib/router";
 import { Button, Chip, Label, Select, cn } from "../../ui";
 
-type Turn = { id: number; question: string; scope: string; state: "loading" | "done" | "error"; answer?: AskAnswer };
+type Turn = { id: number; question: string; scope: string; state: "loading" | "done" | "error"; answer?: AskAnswer; error?: string };
 
 const SUGGESTIONS = [
   "What did we decide about pricing?",
@@ -55,8 +56,8 @@ export function AskScreen({ meetingId }: { meetingId?: string }) {
     try {
       const answer = await store.ask(q, scope);
       setTurns((t) => t.map((x) => (x.id === id ? { ...x, state: "done", answer } : x)));
-    } catch {
-      setTurns((t) => t.map((x) => (x.id === id ? { ...x, state: "error" } : x)));
+    } catch (e) {
+      setTurns((t) => t.map((x) => (x.id === id ? { ...x, state: "error", error: describeError(e) } : x)));
     }
   };
 
@@ -182,7 +183,7 @@ function AnswerCard({ turn, onRetry }: { turn: Turn; onRetry: () => void }) {
     return (
       <div className={card} role="alert">
         <span className="font-semibold text-danger">That didn’t work.</span>
-        <p className="m-0 text-[13px] text-subtle">The summary engine didn’t answer. Check Summary AI in Settings, then try again.</p>
+        <p className="m-0 text-[13px] text-subtle">{turn.error ?? "The summary engine didn’t answer. Check Summary AI in Settings, then try again."}</p>
         <div>
           <Button onClick={onRetry}>Try again</Button>
         </div>
