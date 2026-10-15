@@ -62,7 +62,12 @@ RECURRENCE-ID overrides, IANA and Windows time zone names (Outlook's "Eastern St
 at most 1,000 occurrences per event. Reading is tolerant: a bad event is skipped and the rest are kept. The user's own
 address (from a Google address) and declined attendees are left out. The public Google holidays feed reads as 433 events.
 A 21 MB synthetic feed reads in about 0.15 s in a release build. *Browser tabs:* UI Automation reads the address bar
-(`OmniboxViewViews`) of each Chromium browser window, within 300 ms. **Limitation:** only the tab in front of each window is
+(`OmniboxViewViews`) of each Chromium browser frame (`Chrome_WidgetWin_1`), within 300 ms. It searches the browser's own
+views breadth-first (at most 12 levels and 600 elements, one cached round trip per element) and never enters web content, so
+a heavy page doesn't slow it down. Every UI Automation call is capped at 250 ms (`CUIAutomation8` with `IUIAutomation2`
+connection and transaction timeouts), and the budget is checked before each step. Live check (2026-10-15, a new Edge
+window each, closed afterwards): Meet → `Urls` (call seen) in 39 ms, example.com → `Unknown` in 45 ms, a long Wikipedia
+article → `Unknown` in 22 ms. **Limitation:** only the tab in front of each window is
 visible. So a call tab seen means the call (Always works), but no call tab seen means "can't tell" (Ask), never "not a call":
 a Meet call in a background tab still asks. Settings shows installed browsers as "ready" (Windows has no permission for this).
 Firefox stays Ask, as on the Mac.
@@ -90,7 +95,7 @@ Firefox stays Ask, as on the Mac.
 | `capture_sessions_live_smoke` (our pid is an active capture session while recording, is kept out of `mic_users()`, and is gone 1.5 s after stopping) | `cargo test capture_sessions_live_smoke -- --ignored --nocapture` |
 | `toast_smoke` (posts one toast under the PowerShell app id, waits 5 s, prints what `show()` returned) | `cargo test toast_smoke -- --ignored --nocapture` |
 | `public_holiday_feed_smoke` (downloads Google's public Canadian holidays calendar and reads it; network) | `cargo test public_holiday_feed_smoke -- --ignored --nocapture` |
-| `tab_urls_live_smoke` (opens a new Edge window on a Meet URL, then on example.com; expects `Urls`, then `Unknown`; closes only the windows it opened) | `cargo test tab_urls_live_smoke -- --ignored --nocapture --test-threads=1` |
+| `tab_urls_live_smoke` (opens a new Edge window on a Meet URL, then example.com, then a long Wikipedia article; expects `Urls`, then `Unknown` twice, with timings; closes only the windows it opened) | `cargo test tab_urls_live_smoke -- --ignored --nocapture --test-threads=1` |
 | `large_feed_timing` (reads a 21 MB synthetic calendar) | `cargo test --release large_feed_timing -- --ignored --nocapture` |
 | `pipeline_smoke` (real models on a recorded meeting) | `TALAAN_SMOKE_MEETING=<meeting dir> cargo test --release pipeline_smoke -- --ignored --nocapture` |
 
