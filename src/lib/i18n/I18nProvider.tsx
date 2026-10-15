@@ -1,4 +1,6 @@
-import { createContext, useContext, useMemo, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useMemo, type ReactNode } from "react";
+import { call } from "../../data/tauri/invoke";
+import { inTauri } from "../windows";
 import { useSettings } from "../../data/hooks";
 import { languageFor, setLang, translate, type Lang, type T } from "./index";
 
@@ -15,6 +17,10 @@ export function I18nProvider({ children }: { children: ReactNode }) {
   const lang = languageFor(settings?.uiLanguage);
   setLang(lang); // during render, so children and non-React callers agree within one pass
   const value = useMemo<Ctx>(() => ({ lang, t: (key, vars) => translate(lang, key, vars) }), [lang]);
+  // The menu bar menu, notifications and recorder warnings are made in Rust; it needs the resolved language too.
+  useEffect(() => {
+    if (inTauri()) call("i18n_set_language", { lang }).catch(() => {});
+  }, [lang]);
   if (typeof document !== "undefined") document.documentElement.lang = lang; // screen readers pick the voice from this
   return <I18nContext.Provider value={value}>{children}</I18nContext.Provider>;
 }

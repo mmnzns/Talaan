@@ -2,6 +2,7 @@
 //! internal integration in Notion, shares the pages or databases it may write to, and pastes its secret, which is
 //! kept in secure key storage like API keys. Nothing is sent unless the user clicks Export.
 
+use crate::i18n::{tr, tr_with};
 use crate::storage::model::Meeting;
 use crate::summarizer::prompt::{speaker_name, stamp};
 use serde::Serialize;
@@ -43,36 +44,36 @@ fn when(at: Option<u64>) -> String {
 /// The page body: a meta line, the summary, and the transcript when asked for. Uses the edited text the user sees.
 pub fn blocks(m: &Meeting, include_transcript: bool) -> Vec<Value> {
     let mut out = vec![];
-    let meta = format!("{} · {} · {} · recorded with Talaan", m.item.app_label, m.item.started_at.get(..10).unwrap_or(""), stamp(m.item.duration_ms));
+    let meta = format!("{} · {} · {} · {}", m.item.app_label, m.item.started_at.get(..10).unwrap_or(""), stamp(m.item.duration_ms), tr("notion.recorded_with"));
     out.push(json!({ "object": "block", "type": "paragraph", "paragraph": { "rich_text": [{ "type": "text", "text": { "content": meta }, "annotations": { "italic": true, "color": "gray" } }] } }));
     if let Some(s) = &m.summary {
-        out.push(block("heading_2", "Recap"));
+        out.push(block("heading_2", &tr("notion.recap")));
         out.push(block("paragraph", s.recap.trim()));
         if !s.decisions.is_empty() {
-            out.push(block("heading_2", "Decisions"));
+            out.push(block("heading_2", &tr("notion.decisions")));
             out.extend(s.decisions.iter().map(|d| block("bulleted_list_item", &format!("{}{}", d.text.trim(), when(d.at)))));
         }
         if !s.action_items.is_empty() {
-            out.push(block("heading_2", "Action items"));
+            out.push(block("heading_2", &tr("notion.action_items")));
             for a in &s.action_items {
                 let mut who = vec![];
                 if let Some(o) = a.owner.as_deref().filter(|o| !o.trim().is_empty()) {
                     who.push(o.trim().to_string());
                 }
                 if let Some(d) = a.due.as_deref().filter(|d| !d.trim().is_empty()) {
-                    who.push(format!("due {}", d.trim()));
+                    who.push(tr_with("notion.due", &[("due", d.trim())]));
                 }
                 let who = if who.is_empty() { String::new() } else { format!(" — {}", who.join(", ")) };
                 out.push(json!({ "object": "block", "type": "to_do", "to_do": { "rich_text": rich(&format!("{}{}{}", a.text.trim(), who, when(a.at))), "checked": a.done } }));
             }
         }
         if !s.open_questions.is_empty() {
-            out.push(block("heading_2", "Open questions"));
+            out.push(block("heading_2", &tr("notion.open_questions")));
             out.extend(s.open_questions.iter().map(|q| block("bulleted_list_item", q.text.trim())));
         }
     }
     if include_transcript && !m.transcript.is_empty() {
-        out.push(block("heading_2", "Transcript"));
+        out.push(block("heading_2", &tr("notion.transcript")));
         out.extend(m.transcript.iter().map(|l| block("paragraph", &format!("[{}] {}: {}", stamp(l.at), speaker_name(m, &l.speaker), l.text.trim()))));
     }
     out

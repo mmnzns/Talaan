@@ -114,7 +114,7 @@ pub fn start_recording(app: &AppHandle, app_id: &str, app_label: &str) -> CmdRes
         super::calendar::link_soon(app, id);
     }
     if !st.system_audio {
-        notice(app, "Talaan can't hear the call audio, so only your side is recorded. Allow system audio recording in System Settings.".into(), "warning", Some("system-audio"));
+        notice(app, crate::i18n::tr("notice.no_system_audio"), "warning", Some("system-audio"));
     }
     rec.auto_paused.store(false, Ordering::Relaxed);
     let p = payload(&engine);
@@ -283,10 +283,10 @@ fn restart_later(app: AppHandle, flag: Arc<AtomicBool>, mic: bool) {
         let result = if mic { engine.restart_mic() } else { engine.restart_system() };
         drop(engine);
         match (mic, result) {
-            (true, Ok(name)) => notice(&app, format!("Switched to {name}. Recording continues."), "info", None),
-            (false, Ok(name)) => notice(&app, format!("Sound now plays through {name}. Recording continues."), "info", None),
-            (true, Err(e)) => notice(&app, format!("Couldn't switch microphones: {e}"), "warning", Some("microphone")),
-            (false, Err(e)) => notice(&app, format!("Couldn't follow the new output device: {e}"), "warning", None),
+            (true, Ok(name)) => notice(&app, crate::i18n::tr_with("notice.mic_switched", &[("name", name.as_str())]), "info", None),
+            (false, Ok(name)) => notice(&app, crate::i18n::tr_with("notice.output_switched", &[("name", name.as_str())]), "info", None),
+            (true, Err(e)) => notice(&app, crate::i18n::tr_with("notice.mic_switch_failed", &[("error", e.as_str())]), "warning", Some("microphone")),
+            (false, Err(e)) => notice(&app, crate::i18n::tr_with("notice.output_failed", &[("error", e.as_str())]), "warning", None),
         }
         emit_state(&app);
     });
@@ -357,7 +357,7 @@ pub fn setup(app: &AppHandle) {
                     let since = *silent_since.get_or_insert_with(Instant::now);
                     if !warned && since.elapsed() > Duration::from_secs(10) {
                         warned = true;
-                        notice(&app, "No call audio is coming through. If the other people are talking, allow Talaan under Screen & System Audio Recording.".into(), "warning", Some("system-audio"));
+                        notice(&app, crate::i18n::tr("notice.no_call_audio"), "warning", Some("system-audio"));
                     }
                 } else if paused || !playing {
                     silent_since = None;
