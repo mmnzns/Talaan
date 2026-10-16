@@ -435,7 +435,10 @@ mod tests {
         assert_eq!(summarize(&mut r.ai).unwrap(), "cpu");
         let recorded = r.recorded.lock().unwrap().clone();
         assert_eq!(recorded.len(), 1);
-        assert!(recorded[0].contains("ErrorDeviceLost") && recorded[0].contains("0xC0000409"), "{recorded:?}");
+        assert!(recorded[0].contains("ErrorDeviceLost"), "{recorded:?}");
+        // Windows keeps the whole NTSTATUS; sh's exit code is that number mod 256.
+        let status = if cfg!(windows) { "exit code -1073740791 (0xC0000409)" } else { "exit code 9" };
+        assert!(recorded[0].contains(status), "{recorded:?}");
         assert_eq!(r.ai.take_detail(), None, "the summary itself didn't fail");
         assert_eq!(summarize(&mut r.ai).unwrap(), "cpu", "and it stays on the processor");
         assert_eq!(r.recorded.lock().unwrap().len(), 1);
