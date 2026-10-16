@@ -64,6 +64,10 @@ pub fn settings_for_report(v: &Value) -> Value {
                 *x = marker(x);
             }
         }
+        // The chosen microphone, without its owner's name ("Miguel's AirPods" → "…'s AirPods").
+        if let Some(Value::String(m)) = o.get_mut("microphone") {
+            *m = logging::device(m);
+        }
         for k in ADDRESSES {
             if let Some(x) = o.get_mut(*k) {
                 if !x.as_str().is_some_and(is_local) {
@@ -95,7 +99,27 @@ pub struct Facts {
     pub log_dir: String,
 }
 
-pub fn report(facts: &Facts, setup: &[String], settings: Option<&Value>, log: &[String]) -> String {
+/// A line with every known device name replaced by its owner-free form (`logging::device`), longest names first.
+pub fn scrub_devices(line: &str, devices: &[String]) -> String {
+    let mut names: Vec<&String> = devices.iter().filter(|d| !d.trim().is_empty()).collect();
+    names.sort_by_key(|d| std::cmp::Reverse(d.len()));
+    let mut out = line.to_string();
+    for name in names {
+        let clean = logging::device(name);
+        if clean != *name {
+            out = out.replace(name.as_str(), &clean);
+        }
+    }
+    out
+}
+
+/// `devices`: the connected microphones' names; the chosen one from the settings is added here. Check setup lines
+/// name them ("Miguel's AirPods isn't connected"), so they lose their owner's name.
+pub fn report(facts: &Facts, setup: &[String], settings: Option<&Value>, devices: &[String], log: &[String]) -> String {
+    let mut devices = devices.to_vec();
+    if let Some(m) = settings.and_then(|s| s["microphone"].as_str()) {
+        devices.push(m.to_string());
+    }
     let mut s = String::new();
     s.push_str("Talaan diagnostics\n");
     s.push_str("No meeting content: no transcripts, summaries, titles, names, addresses or keys.\n\n");
@@ -109,7 +133,7 @@ pub fn report(facts: &Facts, setup: &[String], settings: Option<&Value>, log: &[
         s.push_str("(not run)\n");
     }
     for line in setup {
-        s.push_str(&logging::redact(line));
+        s.push_str(&logging::redact(&scrub_devices(line, &devices)));
         s.push('\n');
     }
     s.push_str("\n== Settings (personal values removed) ==\n");
@@ -179,7 +203,7 @@ pub fn diagnostics_report(app: AppHandle, setup: Vec<String>) -> String {
     let settings = app.state::<AppState>().lock().settings_get().ok().flatten();
     let log = logging::dir().map(|d| logging::tail(d, TAIL_LINES)).unwrap_or_default();
     log::info!("diagnostics copied ({} log lines)", log.len());
-    report(&f, &setup, settings.as_ref(), &log)
+    report(&f, &setup, settings.as_ref(), &crate::recorder::mic::input_devices(), &log)
 }
 
 /// Open log folder: shows talaan.log in the file manager.
@@ -249,13 +273,30 @@ mod tests {
         let facts = Facts { version: "1.1.0".into(), os: "Windows 11 Pro 24H2 (build 26100)".into(), cpu: "AMD Ryzen 7, x86_64, 16 threads".into(), graphics: "speech: GPU helper".into(), log_dir: "C:\\logs".into() };
         let setup = vec!["ok · Microphone · Allowed".to_string()];
         let log = vec!["2026-10-16T14:30:00.000-04:00 INFO  commands::recorder: started".to_string(), "x see https://outlook.office365.com/owa/calendar/secret/calendar.ics".to_string()];
-        let r = report(&facts, &setup, Some(&personal_settings()), &log);
+        let r = report(&facts, &setup, Some(&personal_settings()), &[], &log);
         for part in ["App: Talaan 1.1.0", "System: Windows 11", "Processor: AMD", "Graphics: speech", "== Check setup ==", "ok · Microphone · Allowed", "== Settings (personal values removed) ==", "\"retention\": \"7d\"", "== Last 2 log lines ==", "commands::recorder: started", "https://outlook.office365.com/…"] {
             assert!(r.contains(part), "missing {part}:\n{r}");
         }
         for leak in ["Ana", "Acme", "secret123", "/secret", "Board meetings", "office365.com/owa"] {
             assert!(!r.contains(leak), "{leak} leaked:\n{r}");
         }
-        assert!(report(&facts, &[], None, &[]).contains("(not run)"));
+        assert!(report(&facts, &[], None, &[], &[]).contains("(not run)"));
+    }
+
+    #[test]
+    fn microphone_names_lose_their_owner_in_the_report() {
+        let facts = Facts { version: "1.1.0".into(), os: "macOS 15.1".into(), cpu: "Apple M2".into(), graphics: "Metal".into(), log_dir: "~/Library/Logs/Talaan".into() };
+        let setup = vec![
+            "warn · Microphone · Miguel's AirPods Pro isn't connected, so the system default is used.".to_string(),
+            "ok · Microphone access · Allowed. Your side of the call is recorded.".to_string(),
+            "ok · Microphone · AirPods de Ana is ready".to_string(),
+        ];
+        let settings = json!({ "microphone": "Miguel's AirPods Pro" });
+        let r = report(&facts, &setup, Some(&settings), &["AirPods de Ana".to_string(), "MacBook Pro Microphone".to_string()], &[]);
+        assert!(r.contains("warn · Microphone · …'s AirPods Pro isn't connected"), "{r}");
+        assert!(r.contains("ok · Microphone · AirPods de … is ready"), "{r}");
+        assert!(r.contains("\"microphone\": \"…'s AirPods Pro\""), "{r}");
+        assert!(!r.contains("Miguel") && !r.contains("Ana"), "{r}");
+        assert_eq!(scrub_devices("MacBook Pro Microphone is ready", &["MacBook Pro Microphone".into()]), "MacBook Pro Microphone is ready");
     }
 }
