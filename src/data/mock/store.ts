@@ -25,6 +25,7 @@ function toListItem(m: Meeting): MeetingListItem {
     durationMs: m.durationMs,
     status: m.status,
     progress: m.progress,
+    eta: m.eta,
     folderId: m.folderId,
     tags: [...m.tags],
     peopleCount: m.peopleCount,
@@ -138,6 +139,7 @@ export class MockMeetingStore implements MeetingStore {
     this.mutate(id, (m) => {
       m.status = status;
       m.progress = 0;
+      m.eta = { finishAt: new Date(Date.now() + 2400).toISOString(), onCpu: true };
     });
     let p = 0;
     const timer = setInterval(() => {
@@ -147,6 +149,7 @@ export class MockMeetingStore implements MeetingStore {
         this.mutate(id, (m) => {
           done(m);
           m.progress = undefined;
+          m.eta = undefined;
         });
       } else {
         this.mutate(id, (m) => (m.progress = p));

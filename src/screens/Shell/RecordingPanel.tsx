@@ -9,6 +9,8 @@ import { Button, Sheet, useToast } from "../../ui";
 import { RecordingPopover } from "../Recording/RecordingPopover";
 import { usePlatform } from "../../lib/platform";
 import { useT } from "../../lib/i18n/I18nProvider";
+import { useStore } from "../../data/StoreProvider";
+import { savedText } from "../../lib/eta";
 
 /** Lets screens inside the main window start a recording (e.g. the empty state's "Record a call"). */
 export const RecordingContext = createContext<{ start: () => void } | null>(null);
@@ -22,6 +24,7 @@ export function useRecording() {
   const rec = useRecorder(recorderClient);
   const toast = useToast();
   const t = useT();
+  const store = useStore();
   const platform = usePlatform();
   const [open, setOpen] = useState(false);
   const [micDenied, setMicDenied] = useState(false);
@@ -59,12 +62,18 @@ export function useRecording() {
     await begin();
   };
 
+  /** After Stop: say the recording is safe and how long the transcript will take, then open the meeting. */
+  const announceSaved = async (id?: string) => {
+    const meeting = id ? await store.getMeeting(id).catch(() => undefined) : undefined;
+    toast(savedText(t, meeting?.eta));
+    if (id) navigate(routes.meeting(id));
+  };
+
   const stop = async () => {
     try {
       const id = await recorderClient.stop();
       setOpen(false);
-      toast(t("shell.saved"));
-      if (id) navigate(routes.meeting(id));
+      await announceSaved(id || undefined);
     } catch (e) {
       toast(describeError(e));
     }
@@ -99,9 +108,7 @@ export function useRecording() {
             {t("shell.micOffBody", { path: platform.micSettingsPath })}
           </p>
           <div className="flex flex-wrap justify-end gap-2">
-            <Button onClick={() => recorderClient.openSettings("microphone")}>{platform.openSettings}</Button>
             <Button
-              variant="primary"
               onClick={async () => {
                 setMicDenied(false);
                 await begin();
@@ -109,11 +116,15 @@ export function useRecording() {
             >
               {t("shell.recordCallOnly")}
             </Button>
+            {/* Fixing the permission is what most people want, so it's the main button. */}
+            <Button variant="primary" onClick={() => recorderClient.openSettings("microphone")}>
+              {platform.openSettings}
+            </Button>
           </div>
         </div>
       </Sheet>
     </>
   );
 
-  return { state: rec.state, active, open, start, panel };
+  return { state: rec.state, active, open, start, announceSaved, panel };
 }

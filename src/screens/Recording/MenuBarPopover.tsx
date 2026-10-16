@@ -8,6 +8,7 @@ import { navigate, routes } from "../../lib/router";
 import { Button, Label, useToast } from "../../ui";
 import { useT } from "../../lib/i18n/I18nProvider";
 import { Logo } from "../../brand/Logo";
+import { etaText, PROCESSING_KEYS, useNow } from "../../lib/eta";
 import { SunCorner } from "../../brand/SunCorner";
 
 interface Props {
@@ -26,6 +27,7 @@ export function MenuBarPopover({ onStart, onOpenMeeting, onOpenApp, onQuit }: Pr
   const { meetings } = useMeetings();
   const [copied, setCopied] = useState<string>();
   const recent = meetings.slice(0, 3);
+  const now = useNow();
 
   const copy = async (id: string) => {
     const m = await store.getMeeting(id);
@@ -62,6 +64,12 @@ export function MenuBarPopover({ onStart, onOpenMeeting, onOpenApp, onQuit }: Pr
         {recent.length === 0 && <span className="px-2.5 py-2 text-[13px] text-subtle">{t("recording.recentEmpty")}</span>}
         {recent.map((m) => {
           const busy = m.status === "summarizing" || m.status === "transcribing";
+          const left = busy ? etaText(t, m.eta, now) : undefined;
+          const busyText = !busy
+            ? ""
+            : left
+              ? t(m.status === "summarizing" ? "recording.busySummarizing" : "recording.busyTranscribing", { eta: left })
+              : t(PROCESSING_KEYS[m.status as keyof typeof PROCESSING_KEYS]);
           const day = dayGroup(m.startedAt).label;
           return (
             <div key={m.id} className={item}>
@@ -71,7 +79,7 @@ export function MenuBarPopover({ onStart, onOpenMeeting, onOpenApp, onQuit }: Pr
                 className="flex min-w-0 flex-1 cursor-pointer flex-col border-0 bg-transparent p-0 text-left font-[inherit] text-ink"
               >
                 <span className="truncate font-semibold">{m.title}</span>
-                <Label>{busy ? t(m.status === "summarizing" ? "recording.busySummarizing" : "recording.busyTranscribing") : `${day} ${formatClock(m.startedAt)}`}</Label>
+                <Label>{busy ? busyText : `${day} ${formatClock(m.startedAt)}`}</Label>
               </button>
               {m.status === "ready" && (
                 <button

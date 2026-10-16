@@ -71,6 +71,8 @@ export interface MeetingListItem {
   durationMs: Ms;
   status: MeetingStatus;
   progress?: number; // 0..1 while transcribing/summarizing
+  /** While transcribing/summarizing: when that step should be done (from Rust's estimate) and whether it runs on the processor. */
+  eta?: { finishAt: string; onCpu: boolean };
   folderId?: string;
   tags: string[];
   peopleCount: number;

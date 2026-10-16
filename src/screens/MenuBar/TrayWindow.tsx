@@ -52,7 +52,7 @@ export function TrayWindow() {
           onStop={async () => {
             try {
               const id = await recorderClient.stop();
-              if (id) await inMain("open-meeting", id);
+              if (id) await inMain("recording-saved", id);
             } catch (e) {
               toast(describeError(e));
             }
