@@ -1,16 +1,33 @@
 import { useEffect, useState, type ReactNode } from "react";
-import { Check, Headphones } from "lucide-react";
+import { Check, Headphones, MessageSquareText, ShieldCheck } from "lucide-react";
 import { Logo } from "../../brand/Logo";
 import { recorderClient } from "../../data";
 import { useSettings } from "../../data/hooks";
 import { useSettingsStore } from "../../data/StoreProvider";
 import type { Settings } from "../../data/settings";
-import { Button, Chip, Label, Radio, Switch, cn, useToast } from "../../ui";
+import { Button, Chip, Field, Label, Radio, Switch, cn, useToast } from "../../ui";
 import { SunCorner } from "../../brand/SunCorner";
 import { onWindows, systemAudioNeedsPermission, usePlatform } from "../../lib/platform";
+import { openSettings } from "../../lib/windows";
 import { useT } from "../../lib/i18n/I18nProvider";
+import { LeavesTable } from "../Settings/LeavesTable";
+import { neededItems } from "../../lib/setupDownload";
+import { SetupProgress, gb, useSetupDownload } from "./SetupDownload";
 
-const STEPS = ["step0", "step1", "step2", "step3", "step4", "step5", "step6"] as const;
+/** The steps, in order. "audio" is left out on Windows when the microphone is already allowed (nothing to do);
+ *  "speech" and "summary" only show after "Choose individually". */
+type StepId = "welcome" | "audio" | "setup" | "speech" | "summary" | "apps" | "extras" | "done";
+
+const STEP_NAME: Record<StepId, "step0" | "step1" | "stepSetup" | "step2" | "step3" | "step4" | "step5" | "step6"> = {
+  welcome: "step0",
+  audio: "step1",
+  setup: "stepSetup",
+  speech: "step2",
+  summary: "step3",
+  apps: "step4",
+  extras: "step5",
+  done: "step6",
+};
 
 /**
  * "asked": the system prompt was shown; its answer can't be read, only seen in the first recording.
@@ -18,29 +35,74 @@ const STEPS = ["step0", "step1", "step2", "step3", "step4", "step5", "step6"] as
  */
 type Perm = "idle" | "allowed" | "asked" | "denied" | "not_needed";
 
+const micState = (p: string): Perm => (p === "granted" ? "allowed" : p === "denied" || p === "restricted" ? "denied" : "idle");
+
 export function OnboardingScreen() {
   const t = useT();
   const { settings, update } = useSettings();
-  const [step, setStep] = useState(0);
+  const [at, setAt] = useState<StepId>("welcome");
   const [systemAudio, setSystemAudio] = useState<Perm>(systemAudioNeedsPermission ? "idle" : "not_needed");
+  const [mic, setMic] = useState<Perm>("idle");
+  // Windows: a microphone that was allowed before onboarding started means the audio step has nothing to ask.
+  const [micAllowedAtStart, setMicAllowedAtStart] = useState(false);
+  const [custom, setCustom] = useState(false);
+  const [name, setName] = useState<string>();
+  const [connectionsAfter, setConnectionsAfter] = useState<string[]>([]);
+
+  useEffect(() => {
+    recorderClient.microphonePermission().then(
+      (p) => {
+        setMic(micState(p));
+        setMicAllowedAtStart(p === "granted");
+      },
+      () => {},
+    );
+  }, []);
 
   if (!settings) return null;
-  const last = step === STEPS.length - 1;
 
-  const finish = () => update({ onboardingDone: true });
+  const steps: StepId[] = [
+    "welcome",
+    ...(onWindows && micAllowedAtStart ? [] : (["audio"] as const)),
+    "setup",
+    ...(custom ? (["speech", "summary"] as const) : []),
+    "apps",
+    "extras",
+    "done",
+  ];
+  const index = Math.max(0, steps.indexOf(at));
+  const last = at === "done";
 
-  const next = () => (last ? finish() : setStep(step + 1));
+  const finish = async () => {
+    await update({
+      onboardingDone: true,
+      // The one-time "find Talaan in the system tray" hint (Windows hides new tray icons).
+      ...(onWindows ? { showTrayTip: true } : {}),
+      ...(name !== undefined ? { yourName: name.trim() } : {}),
+    });
+    if (connectionsAfter.length > 0) void openSettings("connections");
+  };
+  const go = (to: StepId | undefined) => to && setAt(to);
+  const next = () => (last ? void finish() : go(steps[index + 1]));
+
+  const welcome = at === "welcome";
+  const compact = welcome || at === "done";
 
   return (
-    <div className="grid h-full place-items-center bg-paper p-6">
-      <div className="relative flex h-[620px] max-h-full w-[800px] max-w-full flex-col overflow-hidden rounded-[18px] border border-line bg-surface shadow-[0_16px_40px_rgba(17,19,24,0.12)]">
-        <SunCorner size={step === 0 ? 220 : 170} className="absolute right-0 top-0" />
-        {step === 0 ? (
+    <div className="flex h-full items-center justify-center overflow-hidden bg-paper p-6 [@media(max-height:680px)]:p-3">
+      <div
+        className={cn(
+          "relative flex max-h-full w-[800px] max-w-full flex-col overflow-hidden rounded-[18px] border border-line bg-surface shadow-[0_16px_40px_rgba(17,19,24,0.12)]",
+          !compact && "h-[620px]",
+        )}
+      >
+        <SunCorner size={welcome ? 200 : 170} className="absolute right-0 top-0" />
+        {welcome ? (
           <>
-            <div className="relative flex flex-1 flex-col items-center gap-5 px-16 pt-14 text-center">
+            <div className="relative flex min-h-0 flex-1 flex-col items-center gap-4 overflow-auto px-16 pb-2 pt-10 text-center [@media(max-height:680px)]:pt-6">
               <Welcome />
             </div>
-            <div className="relative flex justify-center pb-[34px]">
+            <div className="relative flex justify-center pb-7 pt-4">
               <Button variant="primary" className="h-[42px] px-6 text-sm" onClick={next}>
                 {t("onboarding.getStarted")}
               </Button>
@@ -48,39 +110,44 @@ export function OnboardingScreen() {
           </>
         ) : (
           <>
-            <div className="relative flex items-center gap-2.5 px-7 py-[22px]">
+            <div className="relative flex items-center gap-2.5 px-7 py-[18px] [@media(max-height:680px)]:py-3">
               <Logo size={28} />
               <span className="font-display text-[17px] font-bold tracking-[-0.02em]">talaan</span>
               <span className="flex-1" />
               <ol className="m-0 mr-24 flex list-none gap-1.5 p-0" aria-label={t("onboarding.setupSteps")}>
-                {STEPS.map((name, k) => (
+                {steps.slice(1).map((id, k) => (
                   <li
-                    key={name}
-                    aria-label={t(`onboarding.${name}`)}
-                    aria-current={k === step ? "step" : undefined}
-                    className={cn("h-1.5 rounded-full transition-[width]", k === step ? "w-[22px]" : "w-1.5", k <= step ? "bg-gold" : "bg-edge")}
+                    key={id}
+                    aria-label={t(`onboarding.${STEP_NAME[id]}`)}
+                    aria-current={id === at ? "step" : undefined}
+                    className={cn("h-1.5 rounded-full transition-[width]", id === at ? "w-[22px]" : "w-1.5", k + 1 <= index ? "bg-gold" : "bg-edge")}
                   />
                 ))}
               </ol>
             </div>
-            <div className="relative flex min-h-0 flex-1 flex-col gap-[26px] overflow-auto px-16 pt-[18px]">
-              {step === 1 && <AudioAccess systemAudio={systemAudio} setSystemAudio={setSystemAudio} />}
-              {step === 2 && <ModelStep settings={settings} update={update} />}
-              {step === 3 && <SummaryStep settings={settings} update={update} />}
-              {step === 4 && <AppsStep settings={settings} update={update} />}
-              {step === 5 && <ExtrasStep settings={settings} update={update} />}
-              {step === 6 && <Done systemAudio={systemAudio} settings={settings} />}
-            </div>
-            <div className="relative flex items-center gap-2 border-t border-line px-7 py-[18px]">
-              <Label>
-                {t("onboarding.stepOf", { n: step + 1, total: STEPS.length, name: t(`onboarding.${STEPS[step]}`) })}
-              </Label>
+            {at === "audio" && <AudioAccess mic={mic} setMic={setMic} systemAudio={systemAudio} setSystemAudio={setSystemAudio} />}
+            {at === "setup" && (
+              <SetupStep
+                settings={settings}
+                onChooseIndividually={() => {
+                  setCustom(true);
+                  setAt("speech");
+                }}
+              />
+            )}
+            {at === "speech" && <ModelStep settings={settings} update={update} />}
+            {at === "summary" && <SummaryStep settings={settings} update={update} />}
+            {at === "apps" && <AppsStep settings={settings} update={update} />}
+            {at === "extras" && <ExtrasStep settings={settings} update={update} connectionsAfter={connectionsAfter} setConnectionsAfter={setConnectionsAfter} />}
+            {at === "done" && <Done systemAudio={systemAudio} settings={settings} name={name} setName={setName} />}
+            <div className="relative flex items-center gap-2 border-t border-line px-7 py-[16px] [@media(max-height:680px)]:py-3">
+              <Label>{t("onboarding.stepOf", { n: index, total: steps.length - 1, name: t(`onboarding.${STEP_NAME[at]}`) })}</Label>
               <span className="flex-1" />
-              <Button variant="ghost" onClick={() => setStep(step - 1)}>
+              <Button variant="ghost" onClick={() => go(steps[index - 1])}>
                 {t("onboarding.back")}
               </Button>
               <Button variant="primary" onClick={next}>
-                {last ? t("onboarding.openTalaan") : t("onboarding.continue")}
+                {last ? t("onboarding.openTalaan") : skippable(at, settings) ? t("onboarding.skipForNow") : t("onboarding.continue")}
               </Button>
             </div>
           </>
@@ -90,8 +157,29 @@ export function OnboardingScreen() {
   );
 }
 
-const h1 = "m-0 font-display text-[30px] font-bold leading-[34px] tracking-[-0.02em]";
-const desc = "m-0 max-w-[520px] text-sm leading-[21px] text-subtle";
+const ready = (state: string) => state === "downloaded" || state === "on_this_mac";
+
+/** The step's Continue reads "Skip for now" while what it offers isn't downloaded (or downloading). */
+function skippable(at: StepId, s: Settings): boolean {
+  if (at === "setup") return neededItems(s).every((m) => m.state === "not_downloaded");
+  if (at === "speech") return s.speechModels.find((m) => m.id === s.activeSpeechModel)?.state === "not_downloaded";
+  if (at === "summary") return s.summaryEngine === "local" && s.localModels.find((m) => m.choice === (s.localModel ?? "recommended"))?.state === "not_downloaded";
+  return false;
+}
+
+const h1 = "m-0 font-display text-[30px] font-bold leading-[34px] tracking-[-0.02em] [@media(max-height:680px)]:text-[26px] [@media(max-height:680px)]:leading-[30px]";
+const desc = "m-0 max-w-[560px] text-sm leading-[21px] text-subtle";
+
+/** A step's scrolling content, and an optional strip pinned above the footer (the download button, so it's always
+ *  in view at the smallest window size). */
+function StepBody({ children, pinned }: { children: ReactNode; pinned?: ReactNode }) {
+  return (
+    <>
+      <div className="relative flex min-h-0 flex-1 flex-col gap-[22px] overflow-auto px-16 pb-6 pt-2 [@media(max-height:680px)]:gap-4 [@media(max-height:680px)]:pb-4">{children}</div>
+      {pinned && <div className="relative border-t border-line bg-surface px-16 py-3.5">{pinned}</div>}
+    </>
+  );
+}
 
 function Option({ on, onClick, title, tag, children, role = "radio" }: { on: boolean; onClick?: () => void; title: string; tag?: string; children: ReactNode; role?: "radio" | "group" }) {
   return (
@@ -122,14 +210,24 @@ function Welcome() {
   return (
     <>
       <div className="flex items-center gap-3.5">
-        <Logo size={56} />
-        <span className="font-display text-[44px] font-bold leading-none tracking-[-0.02em]">talaan</span>
+        <Logo size={52} />
+        <span className="font-display text-[42px] font-bold leading-none tracking-[-0.02em]">talaan</span>
       </div>
-      <Label className="text-balance">{t("onboarding.welcomeOrigin")}</Label>
-      <h1 className="m-0 max-w-[540px] font-display text-[40px] font-bold leading-[44px] tracking-[-0.02em]">{t("onboarding.welcomeTitle")}</h1>
-      <p className="m-0 max-w-[470px] text-[15px] leading-[23px] text-subtle">
-        {t("onboarding.welcomeDesc")}
-      </p>
+      <p className="m-0 max-w-[520px] text-balance text-[13px] leading-[19px] text-subtle">{t("onboarding.welcomeOrigin")}</p>
+      <h1 className="m-0 max-w-[560px] font-display text-[38px] font-bold leading-[42px] tracking-[-0.02em] [@media(max-height:680px)]:text-[32px] [@media(max-height:680px)]:leading-[36px]">
+        {t("onboarding.welcomeTitle")}
+      </h1>
+      <p className="m-0 max-w-[480px] text-[15px] leading-[23px] text-subtle">{t("onboarding.welcomeDesc")}</p>
+      <div className="flex max-w-[540px] flex-col gap-2 rounded-card bg-sunken px-4 py-3 text-left text-[13px] leading-[19px]">
+        <span className="flex gap-2.5">
+          <ShieldCheck size={16} aria-hidden="true" className="mt-px flex-none text-gold-ink" />
+          {t("onboarding.welcomePrivacy")}
+        </span>
+        <span className="flex gap-2.5">
+          <MessageSquareText size={16} aria-hidden="true" className="mt-px flex-none text-gold-ink" />
+          {t("onboarding.welcomeConsent")}
+        </span>
+      </div>
       <div className="flex flex-wrap justify-center gap-2">
         <Chip>{t("onboarding.chipNoBot")}</Chip>
         <Chip>{t("onboarding.chipOffline")}</Chip>
@@ -139,45 +237,68 @@ function Welcome() {
   );
 }
 
-function PermRow({ title, desc: d, state, onAllow, onDeny, onOpen }: { title: string; desc: string; state: Perm; onAllow?: () => void; onDeny?: () => void; onOpen?: () => void }) {
+function PermRow({ title, desc: d, state, onAllow, onDeny, onOpen, deniedNote }: { title: string; desc: string; state: Perm; onAllow?: () => void; onDeny?: () => void; onOpen?: () => void; deniedNote?: string }) {
   const t = useT();
   const platform = usePlatform();
   return (
-    <div className="flex items-center gap-3.5 rounded-card border border-line bg-surface px-[18px] py-4 shadow-card">
-      <span className="flex-1">
-        <span className="block font-semibold">{title}</span>
-        <span className="text-xs leading-[17px] text-subtle">{d}</span>
-      </span>
-      {state === "allowed" || state === "asked" || state === "not_needed" ? (
-        <Chip tone="gold">
-          <Check size={11} aria-hidden="true" /> {state === "asked" ? t("onboarding.asked") : t("onboarding.allowed")}
-        </Chip>
-      ) : state === "denied" && onOpen ? (
-        <Button onClick={onOpen}>{platform.openSettings}</Button>
-      ) : (
-        <span className="flex gap-2">
-          {onDeny && <Button variant="ghost" onClick={onDeny}>{t("onboarding.notNow")}</Button>}
-          <Button variant="primary" onClick={onAllow}>{t("onboarding.allow")}</Button>
+    <div className="flex flex-col gap-2 rounded-card border border-line bg-surface px-[18px] py-4 shadow-card">
+      <div className="flex items-center gap-3.5">
+        <span className="flex-1">
+          <span className="block font-semibold">{title}</span>
+          <span className="text-xs leading-[17px] text-subtle">{d}</span>
         </span>
+        {state === "allowed" || state === "asked" || state === "not_needed" ? (
+          <Chip tone="gold">
+            <Check size={11} aria-hidden="true" /> {state === "asked" ? t("onboarding.asked") : t("onboarding.allowed")}
+          </Chip>
+        ) : state === "denied" && onOpen ? (
+          <Button onClick={onOpen}>{platform.openSettings}</Button>
+        ) : (
+          <span className="flex gap-2">
+            {onDeny && <Button variant="ghost" onClick={onDeny}>{t("onboarding.notNow")}</Button>}
+            <Button variant="primary" onClick={onAllow}>{t("onboarding.allow")}</Button>
+          </span>
+        )}
+      </div>
+      {state === "denied" && deniedNote && (
+        <p role="alert" className="m-0 text-[13px] leading-[19px] text-warn-fg">
+          {deniedNote}
+        </p>
       )}
     </div>
   );
 }
 
-function AudioAccess({ systemAudio, setSystemAudio }: { systemAudio: Perm; setSystemAudio: (p: Perm) => void }) {
+function AudioAccess({ mic, setMic, systemAudio, setSystemAudio }: { mic: Perm; setMic: (p: Perm) => void; systemAudio: Perm; setSystemAudio: (p: Perm) => void }) {
   const t = useT();
   const platform = usePlatform();
-  const [mic, setMic] = useState<Perm>("idle");
-  useEffect(() => {
-    recorderClient.microphonePermission().then((p) => setMic(p === "granted" ? "allowed" : p === "denied" || p === "restricted" ? "denied" : "idle"));
-  }, []);
   const askMic = async () => setMic((await recorderClient.requestMicrophone()) ? "allowed" : "denied");
   const askSystem = async () => setSystemAudio((await recorderClient.requestSystemAudio()) ? "asked" : "denied");
+  const micRow = (
+    <PermRow
+      title={t("onboarding.micTitle")}
+      desc={t("onboarding.micDesc")}
+      state={mic}
+      onAllow={() => void askMic()}
+      onOpen={() => void recorderClient.openSettings("microphone")}
+      deniedNote={t("onboarding.micDenied")}
+    />
+  );
+  // Windows: system audio needs no permission, so this step is the microphone alone (and the intro says so).
+  if (!systemAudioNeedsPermission) {
+    return (
+      <StepBody>
+        <h1 className={h1}>{t("onboarding.audioTitleMic")}</h1>
+        <p className={desc}>{platform.audioIntro}</p>
+        {micRow}
+      </StepBody>
+    );
+  }
   return (
-    <>
+    <StepBody>
       <h1 className={h1}>{t("onboarding.audioTitle")}</h1>
       <p className={desc}>{platform.audioIntro}</p>
-      <PermRow title={t("onboarding.micTitle")} desc={t("onboarding.micDesc")} state={mic} onAllow={() => void askMic()} onOpen={() => void recorderClient.openSettings("microphone")} />
+      {micRow}
       <PermRow
         title={t("onboarding.systemTitle")}
         desc={platform.systemAudioDesc}
@@ -198,7 +319,74 @@ function AudioAccess({ systemAudio, setSystemAudio }: { systemAudio: Perm; setSy
       ) : systemAudio === "idle" ? (
         <p className={desc}>{t("onboarding.systemIdle", { app: platform.settingsApp })}</p>
       ) : null}
-    </>
+    </StepBody>
+  );
+}
+
+/** "Get Talaan ready": one button for the speech model and the summary model, or "Choose individually". */
+function SetupStep({ settings: s, onChooseIndividually }: { settings: Settings; onChooseIndividually: () => void }) {
+  const t = useT();
+  const setup = useSetupDownload(s, { probe: true });
+  const { speech, summary, view } = setup;
+  const allReady = setup.missingMb === 0;
+
+  const row = (label: string, item: typeof speech) =>
+    item && (
+      <div key={label} className="flex items-center gap-3 border-t border-line py-2.5 first:border-t-0">
+        <span className="flex-1">
+          <span className="block text-[13px] font-semibold">{label}</span>
+          <span className="text-xs text-faint">{item.name}</span>
+        </span>
+        {ready(item.state) ? (
+          <Chip tone="gold">
+            <Check size={11} aria-hidden="true" /> {t("onboarding.setupItemReady")}
+          </Chip>
+        ) : item.state === "downloading" ? (
+          <span className="font-mono text-xs text-subtle">{Math.floor((item.progress ?? 0) * 100)}%</span>
+        ) : (
+          <span className="font-mono text-xs text-subtle">{gb(item.sizeMb)} GB</span>
+        )}
+      </div>
+    );
+
+  return (
+    <StepBody>
+      <h1 className={h1}>{t("onboarding.setupTitle")}</h1>
+      <p className={desc}>{t("onboarding.setupDesc")}</p>
+      <div className="flex flex-col rounded-card border border-line bg-surface px-[18px] py-1.5 shadow-card">
+        {row(t("onboarding.setupSpeech"), speech)}
+        {row(t("onboarding.setupSummary"), summary)}
+      </div>
+      {allReady ? (
+        <p role="status" className="m-0 text-sm font-semibold">
+          {t("onboarding.setupReady")}
+        </p>
+      ) : view.active ? (
+        <div className="flex flex-col gap-3">
+          <SetupProgress fraction={view.fraction} minutesLeft={view.minutesLeft} />
+          <div className="flex flex-wrap items-center gap-3">
+            <span className="flex-1 basis-56 text-[13px] text-subtle">{t("onboarding.setupKeepUsing")}</span>
+            <Button variant="ghost" onClick={() => void setup.cancel()}>
+              {t("onboarding.cancelDownload")}
+            </Button>
+          </div>
+        </div>
+      ) : (
+        <div className="flex flex-col items-start gap-2.5">
+          <Button variant="primary" size="lg" onClick={() => void setup.start()}>
+            {setup.minutes
+              ? t("onboarding.setupButton", { size: gb(setup.missingMb), time: t("onboarding.aboutMin", { count: setup.minutes }) })
+              : t("onboarding.setupButtonNoTime", { size: gb(setup.missingMb) })}
+          </Button>
+          <span className="text-[13px] text-subtle">
+            {t("onboarding.setupKeepUsing")} {t("onboarding.notYet")}
+          </span>
+        </div>
+      )}
+      <button type="button" className="cursor-pointer self-start border-0 bg-transparent p-0 text-[13px] font-semibold text-ink underline" onClick={onChooseIndividually}>
+        {t("onboarding.chooseIndividually")}
+      </button>
+    </StepBody>
   );
 }
 
@@ -214,14 +402,14 @@ function ModelStep({ settings: s, update }: StepProps) {
     if (m.state === "on_this_mac") return t("onboarding.modelOnThisComputer");
     if (m.state === "downloaded") return t("onboarding.modelDownloaded");
     if (m.state === "downloading") return t("onboarding.modelDownloading", { pct: Math.round((m.progress ?? 0) * 100) });
-    return t("onboarding.modelSize", { size: (m.sizeMb / 1000).toFixed(1) });
+    return t("onboarding.modelSize", { size: gb(m.sizeMb) });
   };
   const chosen = s.speechModels.find((m) => m.id === s.activeSpeechModel);
   // The three recommended models first; the rest behind "Show all" (the chosen one always shows).
   const [all, setAll] = useState(false);
   const shown = all ? s.speechModels : s.speechModels.filter((m, i) => i < FEATURED_MODELS || m.id === s.activeSpeechModel);
   return (
-    <>
+    <StepBody pinned={chosen && <DownloadRow item={chosen} onDownload={() => void store.downloadModel(chosen.id)} onCancel={() => void store.cancelModelDownload(chosen.id)} />}>
       <h1 className={h1}>{t("onboarding.modelTitle")}</h1>
       <p className={desc}>{t("onboarding.modelDesc")}</p>
       <div role="radiogroup" aria-label={t("onboarding.modelGroup")} className="flex flex-col gap-2">
@@ -242,19 +430,19 @@ function ModelStep({ settings: s, update }: StepProps) {
           {t("onboarding.showAllModels", { count: s.speechModels.length })}
         </button>
       )}
-      {chosen && <DownloadRow item={chosen} onDownload={() => void store.downloadModel(chosen.id)} onCancel={() => void store.cancelModelDownload(chosen.id)} />}
-    </>
+    </StepBody>
   );
 }
 
 /** The chosen model's download: nothing downloads until the person clicks, and Continue never waits for it. */
-function DownloadRow({ item, onDownload, onCancel }: { item: { name: string; state: string; progress?: number; sizeMb: number }; onDownload: () => void; onCancel: () => void }) {
+function DownloadRow({ item, onDownload, onCancel, missingNote }: { item: { name: string; state: string; progress?: number; sizeMb: number }; onDownload: () => void; onCancel: () => void; missingNote?: string }) {
   const t = useT();
   const pct = Math.round((item.progress ?? 0) * 100);
-  if (item.state === "downloaded" || item.state === "on_this_mac") {
+  if (ready(item.state)) {
     return (
-      <div role="status">
-        <Label>{t("onboarding.readyName", { name: item.name })}</Label>
+      <div role="status" className="flex items-center gap-2 text-[13px] font-semibold">
+        <Check size={15} aria-hidden="true" className="text-gold-ink" />
+        {t("onboarding.readyName", { name: item.name })}
       </div>
     );
   }
@@ -272,11 +460,14 @@ function DownloadRow({ item, onDownload, onCancel }: { item: { name: string; sta
     );
   }
   return (
-    <div className="flex flex-wrap items-center gap-3">
+    <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
       <Button variant="primary" onClick={onDownload}>
-        {t("onboarding.downloadName", { name: item.name, size: (item.sizeMb / 1000).toFixed(1) })}
+        {t("onboarding.downloadName", { name: item.name, size: gb(item.sizeMb) })}
       </Button>
-      <span className="flex-1 basis-56 text-[13px] text-subtle">{t("onboarding.notYet")}</span>
+      <span className="flex-1 basis-56 text-[13px] leading-[18px] text-subtle">
+        {missingNote ? <strong className="font-semibold text-ink">{missingNote} </strong> : null}
+        {t("onboarding.notYet")}
+      </span>
     </div>
   );
 }
@@ -288,19 +479,33 @@ function SummaryStep({ settings: s, update }: StepProps) {
   const model = s.localModels.find((m) => m.choice === (s.localModel ?? "recommended")) ?? s.localModels[0];
 
   return (
-    <>
+    <StepBody
+      pinned={
+        local &&
+        model && (
+          <DownloadRow
+            item={model}
+            onDownload={() => void store.downloadModel(model.id)}
+            onCancel={() => void store.cancelModelDownload(model.id)}
+            missingNote={t("onboarding.summaryNoDownload")}
+          />
+        )
+      }
+    >
       <h1 className={h1}>{t("onboarding.summaryTitle")}</h1>
       <p className={desc}>{t("onboarding.summaryDesc")}</p>
       <div role="radiogroup" aria-label={t("onboarding.summaryGroup")} className="flex flex-col gap-2">
         <Option on={local} title={t("onboarding.localTitle")} tag={t("onboarding.defaultTag")} onClick={() => update({ summaryEngine: "local" })}>
-          {model ? t("onboarding.localDesc", { size: (model.sizeMb / 1000).toFixed(1) }) : t("onboarding.localDescNoSize")}
+          {model ? t("onboarding.localDesc", { size: gb(model.sizeMb) }) : t("onboarding.localDescNoSize")}
         </Option>
         <Option on={s.summaryEngine === "byok"} title={t("onboarding.byokTitle")} onClick={() => update({ summaryEngine: "byok" })}>
           {t("onboarding.byokDesc")}
         </Option>
       </div>
-      {local && model && <DownloadRow item={model} onDownload={() => void store.downloadModel(model.id)} onCancel={() => void store.cancelModelDownload(model.id)} />}
-    </>
+      <div className="rounded-card bg-sunken px-4 py-3">
+        <LeavesTable settings={s} compact />
+      </div>
+    </StepBody>
   );
 }
 
@@ -309,7 +514,7 @@ function AppsStep({ settings: s, update }: StepProps) {
   const setAlways = (id: string, always: boolean) =>
     update({ callApps: s.callApps.map((a) => (a.id === id ? { ...a, rule: always ? "always" : "ask" } : a)) });
   return (
-    <>
+    <StepBody>
       <h1 className={h1}>{t("onboarding.appsTitle")}</h1>
       <p className={desc}>{t("onboarding.appsDesc")}</p>
       {["zoom", "slack", "teams"].map((id) => {
@@ -324,44 +529,40 @@ function AppsStep({ settings: s, update }: StepProps) {
         );
       })}
       <p className={desc}>{t(onWindows ? "onboarding.appsIgnoredWindows" : "onboarding.appsIgnored")}</p>
-    </>
+    </StepBody>
   );
 }
 
-function ExtrasStep({ settings: s, update }: StepProps) {
+function ExtrasStep({ settings: s, update, connectionsAfter, setConnectionsAfter }: StepProps & { connectionsAfter: string[]; setConnectionsAfter: (keys: string[]) => void }) {
   const t = useT();
+  const connected = (key: string, label: string) => (
+    <Chip key={key} tone="gold">
+      <Check size={11} aria-hidden="true" /> {label}
+    </Chip>
+  );
+  // Calendar (Windows) and Notion are set up in Settings › Connections, which opens when onboarding ends.
+  const setUp = (key: string) =>
+    connectionsAfter.includes(key) ? (
+      <Chip key={key} tone="gold" onClick={() => setConnectionsAfter(connectionsAfter.filter((k) => k !== key))}>
+        <Check size={11} aria-hidden="true" /> {t("onboarding.setUpAfter")}
+      </Chip>
+    ) : (
+      <Button key={key} onClick={() => setConnectionsAfter([...connectionsAfter, key])}>
+        {t("onboarding.setUp")}
+      </Button>
+    );
   const rows: [string, string, ReactNode][] = [
     [
       t("onboarding.calendarTitle"),
       t("onboarding.calendarDesc"),
       // Windows reads the calendar's iCal address, which is pasted (and disconnected) in Settings: no toggle here.
-      onWindows ? (
-        s.calendarConnected ? (
-          <Chip key="c" tone="gold">
-            <Check size={11} aria-hidden="true" /> {t("onboarding.calendarConnected")}
-          </Chip>
-        ) : (
-          <Label key="c">{t("onboarding.calendarLater")}</Label>
-        )
-      ) : (
-        <CalendarSwitch key="c" settings={s} update={update} />
-      ),
+      onWindows ? (s.calendarConnected ? connected("c", t("onboarding.calendarConnected")) : setUp("c")) : <CalendarSwitch key="c" settings={s} update={update} />,
     ],
     [t("onboarding.browserTitle"), t("onboarding.browserDesc"), <Switch key="b" aria-label={t("onboarding.browserTitle")} checked={s.tabDetection} onChange={(v) => update({ tabDetection: v })} />],
-    [
-      t("onboarding.notionTitle"),
-      t("onboarding.notionDesc"),
-      s.notion.connected ? (
-        <Chip key="n" tone="gold">
-          <Check size={11} aria-hidden="true" /> {t("onboarding.connected")}
-        </Chip>
-      ) : (
-        <Label key="n">{t("onboarding.notionLater")}</Label>
-      ),
-    ],
+    [t("onboarding.notionTitle"), t("onboarding.notionDesc"), s.notion.connected ? connected("n", t("onboarding.connected")) : setUp("n")],
   ];
   return (
-    <>
+    <StepBody>
       <h1 className={h1}>{t("onboarding.extrasTitle")}</h1>
       <p className={desc}>{t("onboarding.extrasDesc")}</p>
       {rows.map(([title, d, control]) => (
@@ -373,29 +574,71 @@ function ExtrasStep({ settings: s, update }: StepProps) {
           {control}
         </div>
       ))}
-    </>
+    </StepBody>
   );
 }
 
-function Done({ systemAudio, settings: s }: { systemAudio: Perm; settings: Settings }) {
+function Done({ systemAudio, settings: s, name, setName }: { systemAudio: Perm; settings: Settings; name?: string; setName: (n: string | undefined) => void }) {
   const t = useT();
   const platform = usePlatform();
+  const [skipped, setSkipped] = useState(false);
+  const speech = s.speechModels.find((m) => m.id === s.activeSpeechModel);
+  const local = s.localModels.find((m) => m.choice === (s.localModel ?? "recommended"));
+  const noSpeech = !s.speechModels.some((m) => m.state !== "not_downloaded");
+  const downloading = speech?.state === "downloading" || (s.summaryEngine === "local" && local?.state === "downloading");
+  const noSummary = s.summaryEngine === "local" && local?.state === "not_downloaded";
+  const noKey = s.summaryEngine === "byok" && s.byokKeys.length === 0;
+  const warn = "m-0 rounded-card bg-warn-bg px-3.5 py-2.5 text-[13px] leading-[19px] text-warn-fg";
   return (
-    <>
+    <div className="relative flex min-h-0 flex-1 flex-col gap-4 overflow-auto px-16 pb-6 pt-2">
       <h1 className={h1}>{t("onboarding.doneTitle")}</h1>
       <p className={desc}>{t("onboarding.doneDesc", { tray: platform.trayName })}</p>
-      <div className="flex items-center gap-3.5 rounded-card bg-sp1 px-[18px] py-4">
+      {!skipped && (
+        <div className="flex flex-col gap-2 rounded-card border border-line bg-surface px-[18px] py-3.5 shadow-card">
+          <span aria-hidden="true" className="font-semibold">
+            {t("onboarding.nameQuestion")}
+          </span>
+          <div className="flex items-center gap-2">
+            <Field
+              label={t("onboarding.nameQuestion")}
+              wrapperClassName="w-64"
+              placeholder={t("onboarding.namePlaceholder")}
+              value={name ?? s.yourName}
+              maxLength={60}
+              autoComplete="given-name"
+              onChange={(e) => setName(e.target.value)}
+            />
+            <Button
+              variant="ghost"
+              onClick={() => {
+                setName(undefined);
+                setSkipped(true);
+              }}
+            >
+              {t("onboarding.nameSkip")}
+            </Button>
+          </div>
+          <span className="text-xs text-subtle">{t("onboarding.nameHint")}</span>
+        </div>
+      )}
+      <div className="flex items-center gap-3.5 rounded-card bg-sp1 px-[18px] py-3.5">
         <Headphones size={22} aria-hidden="true" className="flex-none text-sp1-fg" />
         <div>
           <div className="font-semibold text-sp1-fg">{t("onboarding.tipTitle")}</div>
           <div className="mt-0.5 text-xs leading-[17px] text-subtle">{t("onboarding.tipDesc")}</div>
         </div>
       </div>
-      {systemAudio === "denied" && (
-        <p className={desc}>{t("onboarding.doneReminder", { app: platform.settingsApp })}</p>
+      {systemAudio === "denied" && <p className={warn}>{t("onboarding.doneReminder", { app: platform.settingsApp })}</p>}
+      {downloading ? (
+        <p className={desc}>{t("onboarding.doneDownloading")}</p>
+      ) : (
+        <>
+          {noSpeech && <p className={warn}>{t("onboarding.doneNoModel")}</p>}
+          {noSummary && <p className={warn}>{t("onboarding.doneNoSummary")}</p>}
+        </>
       )}
-      {!s.speechModels.some((m) => m.state !== "not_downloaded") && <p className={desc}>{t("onboarding.doneNoModel")}</p>}
-    </>
+      {noKey && <p className={warn}>{t("onboarding.doneNoKey")}</p>}
+    </div>
   );
 }
 

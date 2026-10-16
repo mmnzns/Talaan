@@ -170,12 +170,18 @@ export class MockRecorderClient implements RecorderClient {
     await this.stop();
   }
 
+  /** `?mic=denied` or `?mic=ask` in the browser preview shows those states. */
+  private micParam() {
+    return typeof location === "undefined" ? null : new URLSearchParams(location.search).get("mic");
+  }
+
   async microphonePermission() {
-    return "granted" as const;
+    const p = this.micParam();
+    return p === "denied" ? ("denied" as const) : p === "ask" ? ("undetermined" as const) : ("granted" as const);
   }
 
   async requestMicrophone() {
-    return true;
+    return this.micParam() !== "denied";
   }
 
   async requestSystemAudio() {

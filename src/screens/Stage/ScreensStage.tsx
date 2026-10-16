@@ -1,4 +1,5 @@
 import { useSettings } from "../../data/hooks";
+import { usingRealStorage } from "../../data";
 import type { ThemePreference } from "../../lib/theme";
 import { navigate, routes } from "../../lib/router";
 import { Button, Label } from "../../ui";
@@ -58,8 +59,11 @@ export function ScreensStage({ which }: { which?: string }) {
           {current === "onboarding" && (
             <div className="flex max-w-md flex-col gap-3">
               <h2 className="m-0 text-lg font-extrabold">Onboarding</h2>
-              <p className="m-0 text-[13px] text-subtle">Shows the 7-step first-run flow again in the main window. Finishing it brings you back to Talaan.</p>
-              <div>
+              <p className="m-0 text-[13px] text-subtle">
+                Shows the first-run flow again in the main window. Finishing it brings you back to Talaan. In the browser preview, "as a new install" also
+                marks every model as not downloaded. Add ?os=mac or ?os=windows, and ?mic=denied or ?mic=ask, to the URL to see those cases.
+              </p>
+              <div className="flex gap-2">
                 <Button
                   variant="primary"
                   onClick={async () => {
@@ -69,6 +73,24 @@ export function ScreensStage({ which }: { which?: string }) {
                 >
                   Restart onboarding
                 </Button>
+                {!usingRealStorage && settings && (
+                  <Button
+                    onClick={async () => {
+                      const none = <T extends { state: string; progress?: number }>(m: T): T => ({ ...m, state: "not_downloaded", progress: undefined });
+                      await update({
+                        onboardingDone: false,
+                        showTrayTip: false,
+                        testMeetingId: undefined,
+                        yourName: "",
+                        speechModels: settings.speechModels.map(none),
+                        localModels: settings.localModels.map(none),
+                      });
+                      navigate(routes.meetings());
+                    }}
+                  >
+                    Restart as a new install
+                  </Button>
+                )}
               </div>
             </div>
           )}
