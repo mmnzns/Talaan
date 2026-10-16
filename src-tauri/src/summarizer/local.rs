@@ -384,8 +384,9 @@ mod tests {
         #[cfg(unix)]
         {
             let fake = dir.join("fake-llm");
-            let lines: String = stderr.iter().map(|l| format!("echo '{l}' 1>&2
-")).collect();
+            // Single-quoted for sh, with any ' in the line written as '\'' (a panic header has quotes).
+            let lines: String = stderr.iter().map(|l| format!("echo '{}' 1>&2
+", l.replace('\'', r"'\''"))).collect();
             std::fs::write(&fake, format!("#!/bin/sh
 read line
 echo '{{\"event\":\"ready\"}}'
