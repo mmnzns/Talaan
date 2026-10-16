@@ -1,15 +1,15 @@
 import type { RecorderClient } from "../data/recorder";
-import { hasByokKey, type CalendarAccess, type Settings, type SettingsStore } from "../data/settings";
+import { hasByokKey, type CalendarAccess, type GpuStatus, type Settings, type SettingsStore } from "../data/settings";
 import { formatBytes, tildePath } from "./format";
 import { currentLang, t } from "./i18n";
 import { onWindows, os, platformCopy } from "./platform";
 
 /** `unknown`: can't be told without a test (call audio has no permission to read). */
 export type CheckStatus = "ok" | "warn" | "fail" | "unknown";
-export type FixAction = "allowMic" | "micSettings" | "testSystemAudio" | "systemAudioSettings" | "speechModels" | "summaryAI" | "connections" | "openData";
+export type FixAction = "allowMic" | "micSettings" | "testSystemAudio" | "systemAudioSettings" | "speechModels" | "summaryAI" | "connections" | "openData" | "retryGpu";
 
 export interface CheckResult {
-  id: "mic" | "device" | "systemAudio" | "speech" | "speakers" | "summary" | "calendar" | "data";
+  id: "mic" | "device" | "systemAudio" | "speech" | "speakers" | "gpu" | "summary" | "calendar" | "data";
   title: string;
   status: CheckStatus;
   detail: string;
@@ -31,6 +31,8 @@ export interface Probe {
   systemAudioNeedsPermission?: boolean;
   /** Windows, calendar on: whether its iCal address is in secure key storage ("allowed"). Undefined = no row. */
   calendar?: CalendarAccess;
+  /** Whether the GPU is used. Undefined (couldn't be asked) = no row. */
+  gpu?: GpuStatus;
 }
 
 const READY = new Set(["downloaded", "on_this_mac"]);
@@ -40,7 +42,7 @@ const pct = (p?: number) => Math.round((p ?? 0) * 100);
 /** One line per thing a call needs, in the order a call uses them, each with what to do about it. */
 export function checkSetup(p: Probe): CheckResult[] {
   const s = p.settings;
-  return [mic(p), device(p), systemAudio(p), speech(s), speakers(s), summary(p), ...calendar(p), data(p)];
+  return [mic(p), device(p), systemAudio(p), speech(s), speakers(s), ...gpu(p), summary(p), ...calendar(p), data(p)];
 }
 
 /** Windows only (the Mac's calendar is a system permission, asked in Connections): the saved iCal address. */
@@ -49,6 +51,35 @@ function calendar(p: Probe): CheckResult[] {
   const title = t("settings.calendar_title");
   if (p.calendar === "allowed") return [{ id: "calendar", title, status: "ok", detail: t("settings.setup_calendar_ok") }];
   return [{ id: "calendar", title, status: "warn", detail: t("settings.setup_calendar_missing"), fix: { label: t("settings.tab_connections"), action: "connections" } }];
+}
+
+/** Speech and local summaries on the graphics chip. Not using it is never an error: Talaan uses the processor. */
+function gpu(p: Probe): CheckResult[] {
+  const g = p.gpu;
+  if (!g) return [];
+  const title = t("settings.setup_gpu");
+  const ok = (detail: string): CheckResult[] => [{ id: "gpu", title, status: "ok", detail }];
+  const warn = (detail: string, retry = true): CheckResult[] => [
+    { id: "gpu", title, status: "warn", detail, fix: retry ? { label: t("settings.setup_gpu_retry"), action: "retryGpu" } : undefined },
+  ];
+  const error = g.detail ?? "?";
+  switch (g.state) {
+    case "metal":
+      return ok(t("settings.setup_gpu_metal"));
+    case "off":
+      return ok(t("settings.setup_gpu_off"));
+    case "in_use": {
+      const name = g.device ?? "GPU";
+      return ok(g.vramMb ? t("settings.setup_gpu_in_use", { name, size: Math.round(g.vramMb / 1024) }) : t("settings.setup_gpu_in_use_plain", { name }));
+    }
+    case "failed":
+      return warn(t("settings.setup_gpu_failed", { error }));
+    case "unavailable":
+      if (g.reason === "no_gpu") return ok(t("settings.setup_gpu_no_gpu"));
+      if (g.reason === "no_helper") return warn(t("settings.setup_gpu_no_helper"), false);
+      if (g.reason === "no_vulkan") return warn(t("settings.setup_gpu_no_vulkan"));
+      return warn(t("settings.setup_gpu_no_start", { error }));
+  }
 }
 
 function mic(p: Probe): CheckResult {
@@ -137,7 +168,8 @@ function data(p: Probe): CheckResult {
 const message = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
 /** Looks at this computer. Never prompts: call audio is only tested when the user asks (`testSystemAudio`). */
-export async function probeSetup(store: SettingsStore, recorder: RecorderClient, testSystemAudio?: boolean): Promise<Probe> {
+/** `retryGpu`: forget a remembered GPU failure first (Try again on the Graphics chip row). */
+export async function probeSetup(store: SettingsStore, recorder: RecorderClient, testSystemAudio?: boolean, retryGpu?: boolean): Promise<Probe> {
   const settings = await store.get();
   const [mic, inputs, data, localServer] = await Promise.all([
     recorder.microphonePermission().catch(() => "unknown" as const),
@@ -152,5 +184,6 @@ export async function probeSetup(store: SettingsStore, recorder: RecorderClient,
   ]);
   const systemAudio = testSystemAudio ? await recorder.requestSystemAudio().catch(() => false) : undefined;
   const calendar = onWindows && settings.calendarConnected ? await store.calendarAccess().catch(() => undefined) : undefined;
-  return { settings, mic, inputs, data, localServer, systemAudio, systemAudioNeedsPermission: os === "mac", calendar };
+  const gpu = await (retryGpu ? store.retryGpu() : store.gpuStatus()).catch(() => undefined);
+  return { settings, mic, inputs, data, localServer, systemAudio, systemAudioNeedsPermission: os === "mac", calendar, gpu };
 }

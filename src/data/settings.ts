@@ -13,6 +13,18 @@ export interface NotionDestination {
 }
 
 export type CalendarAccess = "allowed" | "not_asked" | "denied";
+
+/** Check setup › Graphics chip, from Rust (`commands/gpu.rs`). */
+export interface GpuStatus {
+  /** `metal`: the Mac's GPU. `unavailable`: see `reason`. `failed`: it failed with this app and driver (Try again). */
+  state: "metal" | "in_use" | "off" | "unavailable" | "failed";
+  reason?: "no_vulkan" | "no_helper" | "no_gpu" | "no_start";
+  /** The GPU in use ("NVIDIA GeForce RTX 5070 Ti"). */
+  device?: string;
+  vramMb?: number;
+  /** The technical error behind `failed` or `no_start` (English). */
+  detail?: string;
+}
 export type BrowserState = "allowed" | "denied" | "not_asked" | "not_installed";
 
 export interface CallAppRule {
@@ -157,6 +169,10 @@ export interface SettingsStore {
   connectCalendar(url: string): Promise<number>;
   /** Windows: forgets the calendar address and turns the calendar off. */
   disconnectCalendar(): Promise<void>;
+  /** Whether the GPU is used for speech and local summaries, and if not, why. */
+  gpuStatus(): Promise<GpuStatus>;
+  /** Forgets a remembered GPU failure and checks again. */
+  retryGpu(): Promise<GpuStatus>;
   /** Where the data lives and how much space it uses. */
   dataInfo(): Promise<{ path: string; bytes: number }>;
   /** Shows the data folder in the file manager. */

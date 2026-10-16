@@ -1,5 +1,6 @@
 import { defaultSettings, withDefaults } from "../defaultSettings";
-import type { ByokProvider, Settings, SettingsStore } from "../settings";
+import { onWindows } from "../../lib/platform";
+import type { ByokProvider, GpuStatus, Settings, SettingsStore } from "../settings";
 
 export { defaultSettings };
 
@@ -180,6 +181,17 @@ export class MockSettingsStore implements SettingsStore {
     return ["llama3.2:3b", "qwen3.5:4b"];
   }
 
+
+  async gpuStatus(): Promise<GpuStatus> {
+    await sleep(200);
+    const s = await this.get();
+    if (!s.useGpu) return { state: "off" };
+    return onWindows ? { state: "in_use", device: "NVIDIA GeForce RTX 5070 Ti", vramMb: 16303 } : { state: "metal" };
+  }
+
+  async retryGpu(): Promise<GpuStatus> {
+    return this.gpuStatus();
+  }
 
   async dataInfo() {
     return { path: "~/Library/Application Support/Talaan", bytes: 1_200_000_000 };
