@@ -52,7 +52,8 @@ fn main() {
             Err(_) => break, // idle or stdin closed: free everything by exiting
         };
         match serde_json::from_str::<Request>(&line) {
-            Ok(Request::Ping) => send(&Event::Ready),
+            Ok(Request::Ping) => send(&Event::Ready { backend: talaan_llm_protocol::Backend::cpu() }),
+            Ok(Request::Devices) => send(&Event::Devices { devices: vec![], chosen: None }),
             Ok(Request::Complete(c)) => match complete(&backend, &mut loaded, &c) {
                 Ok(reply) => send(&Event::Done(reply)),
                 Err(message) => send(&Event::Error { message }),

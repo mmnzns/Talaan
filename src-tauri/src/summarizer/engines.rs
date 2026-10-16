@@ -122,6 +122,7 @@ impl SummaryEngine for LocalEngine {
             json_schema: Some(schema.into()),
             max_tokens,
             temperature: 0.2,
+            gpu: true,
         };
         match self.ai.complete(&c, cancel, &mut |_, _, _| {}) {
             Ok(r) => Ok(r.text),

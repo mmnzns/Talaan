@@ -188,7 +188,7 @@ impl LocalAi {
             send(&mut r.stdin, &Request::Ping)?;
             // Generous: the first launch after an install or update waits on macOS checking the new binary.
             match r.events.recv_timeout(Duration::from_secs(60)) {
-                Ok(Event::Ready) => {}
+                Ok(Event::Ready { .. }) => {}
                 Ok(Event::Error { message }) => return Err(message),
                 Err(RecvTimeoutError::Disconnected) => {
                     self.running = Some(r);
@@ -253,7 +253,7 @@ impl LocalAi {
                 Ok(Event::Progress { phase, done, total }) => progress(phase, done, total),
                 Ok(Event::Done(reply)) => return Ok(reply),
                 Ok(Event::Error { message }) => return Err(message),
-                Ok(Event::Ready | Event::Embedded { .. }) => {}
+                Ok(Event::Ready { .. } | Event::Embedded { .. } | Event::Devices { .. }) => {}
                 Err(RecvTimeoutError::Timeout) => {
                     // A summary should never take this long; something is stuck.
                     if started.elapsed() > Duration::from_secs(30 * 60) {
@@ -272,7 +272,7 @@ impl LocalAi {
     /// Embeds texts with an embedding model (one vector per text, L2-normalized).
     pub fn embed(&mut self, model_path: &Path, texts: Vec<String>, cancel: &AtomicBool) -> Result<Vec<Vec<f32>>, String> {
         let r = self.start()?;
-        send(&mut r.stdin, &Request::Embed(Embedding { model_path: model_path.to_string_lossy().into_owned(), texts }))?;
+        send(&mut r.stdin, &Request::Embed(Embedding { model_path: model_path.to_string_lossy().into_owned(), texts, gpu: false }))?;
         loop {
             if cancel.load(Ordering::Relaxed) {
                 self.stop();
@@ -330,7 +330,7 @@ mod tests {
     #[test]
     fn a_missing_helper_is_a_clear_error() {
         let mut ai = LocalAi::new(Path::new("/nonexistent/talaan-llm"));
-        let c = Completion { model_path: "x".into(), n_ctx: 512, system: "".into(), user: "".into(), json_schema: None, max_tokens: 1, temperature: 0.0 };
+        let c = Completion { model_path: "x".into(), n_ctx: 512, system: "".into(), user: "".into(), json_schema: None, max_tokens: 1, temperature: 0.0, gpu: false };
         let e = ai.complete(&c, &AtomicBool::new(false), &mut |_, _, _| {}).unwrap_err();
         assert!(e.starts_with("couldn't start the local AI"), "{e}");
     }
@@ -367,7 +367,7 @@ set /p line=
     }
 
     fn completion() -> Completion {
-        Completion { model_path: "x".into(), n_ctx: 512, system: "".into(), user: "".into(), json_schema: None, max_tokens: 1, temperature: 0.0 }
+        Completion { model_path: "x".into(), n_ctx: 512, system: "".into(), user: "".into(), json_schema: None, max_tokens: 1, temperature: 0.0, gpu: false }
     }
 
     /// A helper that dies mid-request becomes a readable error, and it doesn't blame memory without a reason
@@ -450,6 +450,7 @@ set /p line=
             json_schema: Some(r#"{"type":"object","properties":{"title":{"type":"string"},"recap":{"type":"string"}},"required":["title","recap"]}"#.into()),
             max_tokens: 200,
             temperature: 0.0,
+            gpu: true,
         };
         let r = ai.complete(&c, &AtomicBool::new(false), &mut |p, d, t| eprintln!("{p:?} {d}/{t}")).unwrap();
         eprintln!("{} ({} prompt, {} out, {:.1}s)", r.text, r.prompt_tokens, r.output_tokens, r.seconds);
@@ -483,7 +484,7 @@ mod bakeoff {
         models.sort();
         for path in models {
             let mut ai = LocalAi::new(&exe);
-            let c = Completion { model_path: path.to_string_lossy().into(), n_ctx: 8192, system: prompt.system.clone(), user: prompt.user.clone(), json_schema: Some(SCHEMA.into()), max_tokens: 1500, temperature: 0.2 };
+            let c = Completion { model_path: path.to_string_lossy().into(), n_ctx: 8192, system: prompt.system.clone(), user: prompt.user.clone(), json_schema: Some(SCHEMA.into()), max_tokens: 1500, temperature: 0.2, gpu: true };
             let mut read_s = 0.0;
             let t = Instant::now();
             let r = ai.complete(&c, &AtomicBool::new(false), &mut |p, d, total| {

@@ -5408,6 +5408,7 @@ dependencies = [
 name = "talaan-llm-protocol"
 version = "1.0.0"
 dependencies = [
+ "base64 0.22.1",
  "serde",
  "serde_json",
 ]
