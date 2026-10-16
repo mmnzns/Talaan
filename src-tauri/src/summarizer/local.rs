@@ -1,19 +1,22 @@
 //! The app's side of the local AI helper (`talaan-llm`): starts it when needed, sends one request at a time,
 //! streams progress, and turns a crash into a plain error instead of taking Talaan down (saying "out of memory"
 //! only when that is what happened).
+//!
+//! On Windows a summary can first go to the GPU build (`talaan-llm-vulkan`, see `gpu.rs`). If that helper fails to
+//! start, crashes, stalls, runs out of memory or returns an error, the same request is run again on the processor
+//! helper; when the processor succeeds, the GPU failure is reported (`on_failure`, which writes gpu.json) and this
+//! `LocalAi` stays on the processor.
 
-use std::io::{BufRead, BufReader, Write};
+use crate::helper::{Death, Process};
 use std::path::{Path, PathBuf};
-use std::collections::VecDeque;
-use std::process::{Child, ChildStdin, Command, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::mpsc::{self, Receiver, RecvTimeoutError};
-use std::sync::{Arc, Mutex};
-use std::thread::JoinHandle;
+use std::sync::mpsc::RecvTimeoutError;
+use std::sync::Arc;
 use std::time::{Duration, Instant};
-use talaan_llm_protocol::{encode, Completion, Embedding, Event, Phase, Reply, Request};
+use talaan_llm_protocol::{Backend, Completion, Embedding, Event, Phase, Reply, Request};
 
 pub const HELPER: &str = "talaan-llm";
+const WHO: &str = "local AI helper";
 
 /// The helper's file name on this OS (`talaan-llm`, or `talaan-llm.exe` on Windows).
 pub fn helper_file() -> String {
@@ -27,121 +30,70 @@ pub fn helper_path() -> PathBuf {
     std::env::current_exe().ok().and_then(|p| p.parent().map(|d| d.join(&name))).unwrap_or_else(|| PathBuf::from(name))
 }
 
-struct Running {
-    child: Child,
-    stdin: ChildStdin,
-    events: Receiver<Event>,
-    /// What the helper printed to stderr that looks like an error (see `StderrTail`).
-    stderr: Arc<Mutex<StderrTail>>,
-    stderr_reader: Option<JoinHandle<()>>,
+/// A GPU build of the helper to try first.
+pub struct GpuHelper {
+    pub exe: PathBuf,
+    pub env: Vec<(String, String)>,
+    /// Called with what went wrong when the GPU failed and the processor then did the job.
+    pub on_failure: Arc<dyn Fn(&str) + Send + Sync>,
+    /// No word from the GPU helper for this long counts as a hang (a GPU reset can leave it stuck).
+    pub stall: Duration,
+}
+
+/// No progress for this long from the GPU helper is a hang. Loading a 9B model from a slow disk takes well under it.
+pub const GPU_STALL: Duration = Duration::from_secs(5 * 60);
+
+struct Gpu {
+    cfg: GpuHelper,
+    proc: Option<Process<Event>>,
+    /// The GPU failed or isn't there: the processor from now on.
+    off: bool,
+    backend: Option<Backend>,
 }
 
 pub struct LocalAi {
     exe: PathBuf,
-    running: Option<Running>,
+    running: Option<Process<Event>>,
+    gpu: Option<Gpu>,
     /// Why the helper last stopped unexpectedly (exit status and its error lines), for debugging. Never shown as
     /// the message, never transcript text.
     last_detail: Option<String>,
 }
 
-/// The last ~2 KB of the helper's stderr, keeping only lines that look like errors. llama.cpp's own logging is
-/// turned off in the helper, so stderr only carries Rust panics, allocation failures and ggml asserts; filtering
-/// to those lines (each capped) means prompt or transcript text never ends up here even if something printed it.
-#[derive(Default)]
-pub struct StderrTail {
-    lines: VecDeque<String>,
-    bytes: usize,
+/// How a request ended, before it becomes words for the user.
+enum RunError {
+    Cancelled,
+    /// The helper answered with an error.
+    Said(String),
+    /// Couldn't start it (spawn failed): the message names the exe.
+    NoSpawn(String),
+    /// It started but never said it was ready (`Death` when it died doing so).
+    NoStart(Option<Death>),
+    /// Over the total time limit.
+    TooSlow,
+    /// No event for longer than the stall limit (GPU only).
+    Stalled,
+    Died(Death),
+    Io(String),
 }
 
-const TAIL_BYTES: usize = 2048;
-const LINE_BYTES: usize = 200;
-
-impl StderrTail {
-    pub fn push(&mut self, line: &str) {
-        let line = line.trim();
-        if !is_error_line(line) {
-            return;
-        }
-        let mut cut = line.len().min(LINE_BYTES);
-        while !line.is_char_boundary(cut) {
-            cut -= 1;
-        }
-        let line = line[..cut].to_string();
-        self.bytes += line.len() + 1;
-        self.lines.push_back(line);
-        while self.bytes > TAIL_BYTES {
-            match self.lines.pop_front() {
-                Some(l) => self.bytes -= l.len() + 1,
-                None => break,
-            }
-        }
-    }
-
-    pub fn text(&self) -> String {
-        self.lines.iter().cloned().collect::<Vec<_>>().join("\n")
-    }
-}
-
-/// Lines worth keeping: a Rust panic header (it names only the source location), an allocation failure, or a
-/// ggml / llama.cpp diagnostic.
-fn is_error_line(line: &str) -> bool {
-    let lower = line.to_ascii_lowercase();
-    (line.starts_with("thread '") && line.contains("panicked at"))
-        || line.starts_with("ggml_")
-        || line.starts_with("llama_")
-        || line.starts_with("GGML_")
-        || line.contains("GGML_ASSERT")
-        || line.contains("GGML_ABORT")
-        || MEMORY_MARKERS.iter().any(|m| lower.contains(m))
-}
-
-const MEMORY_MARKERS: &[&str] = &["memory allocation of", "out of memory", "failed to allocate", "bad_alloc", "cannot allocate", "unable to allocate", "insufficient memory"];
-
-/// Windows' STATUS_NO_MEMORY, the exit code of a process that died because an allocation failed.
-#[cfg(windows)]
-const STATUS_NO_MEMORY: u32 = 0xC000_0017;
-
-/// Whether the helper died for lack of memory: it said so on stderr (Rust's "memory allocation of N bytes failed"
-/// before aborting, ggml's "failed to allocate"), Windows ended it with STATUS_NO_MEMORY, or on macOS/Linux it was
-/// killed with SIGKILL (what the system does to a process using too much memory; Talaan's own stop comes later).
-pub fn ran_out_of_memory(status: Option<std::process::ExitStatus>, stderr: &str) -> bool {
-    let lower = stderr.to_ascii_lowercase();
-    if MEMORY_MARKERS.iter().any(|m| lower.contains(m)) {
-        return true;
-    }
-    let Some(status) = status else { return false };
-    #[cfg(windows)]
-    {
-        status.code().is_some_and(|c| c as u32 == STATUS_NO_MEMORY)
-    }
-    #[cfg(unix)]
-    {
-        use std::os::unix::process::ExitStatusExt;
-        status.signal() == Some(9)
-    }
-    #[cfg(not(any(windows, unix)))]
-    {
-        let _ = status;
-        false
-    }
-}
-
-fn describe_status(status: Option<std::process::ExitStatus>) -> String {
-    match status {
-        None => "still running, stopped by Talaan".into(),
-        Some(s) => match s.code() {
-            #[cfg(windows)]
-            Some(c) => format!("exit code {c} (0x{:08X})", c as u32),
-            #[cfg(not(windows))]
-            Some(c) => format!("exit code {c}"),
-            None => format!("{s}"),
-        },
-    }
+/// What happened when trying the GPU first.
+enum GpuTry {
+    Done(Reply),
+    Cancelled,
+    /// No GPU in that helper after all (it said `cpu`): nothing to remember.
+    NoGpu,
+    Failed(String),
 }
 
 impl LocalAi {
     pub fn new(exe: &Path) -> Self {
-        LocalAi { exe: exe.to_path_buf(), running: None, last_detail: None }
+        LocalAi { exe: exe.to_path_buf(), running: None, gpu: None, last_detail: None }
+    }
+
+    /// Tries `gpu` first for completions, with `exe` (the processor helper) behind it.
+    pub fn with_gpu(exe: &Path, gpu: GpuHelper) -> Self {
+        LocalAi { exe: exe.to_path_buf(), running: None, gpu: Some(Gpu { cfg: gpu, proc: None, off: false, backend: None }), last_detail: None }
     }
 
     /// Why the helper last stopped unexpectedly (taken, so it's reported once).
@@ -149,153 +101,142 @@ impl LocalAi {
         self.last_detail.take()
     }
 
-    fn start(&mut self) -> Result<&mut Running, String> {
-        let alive = self.running.as_mut().is_some_and(|r| matches!(r.child.try_wait(), Ok(None)));
-        if !alive {
-            self.running = None;
-            let mut cmd = Command::new(&self.exe);
-            cmd.stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped());
-            hide_console(&mut cmd);
-            let mut child = cmd
-                .spawn()
-                .map_err(|e| format!("couldn't start the local AI ({}): {e}", self.exe.display()))?;
-            let stdin = child.stdin.take().expect("piped");
-            let stdout = child.stdout.take().expect("piped");
-            let stderr_pipe = child.stderr.take().expect("piped");
-            let (tx, events) = mpsc::channel();
-            std::thread::spawn(move || {
-                for line in BufReader::new(stdout).lines() {
-                    let Ok(line) = line else { break };
-                    if let Ok(ev) = serde_json::from_str::<Event>(&line) {
-                        if tx.send(ev).is_err() {
-                            break;
-                        }
-                    }
-                }
-            });
-            let stderr: Arc<Mutex<StderrTail>> = Arc::default();
-            let tail = stderr.clone();
-            // Always drained, so a chatty helper can never block on a full pipe.
-            let stderr_reader = std::thread::spawn(move || {
-                let mut reader = BufReader::new(stderr_pipe);
-                let mut buf = Vec::new();
-                while reader.read_until(b'\n', &mut buf).map(|n| n > 0).unwrap_or(false) {
-                    tail.lock().unwrap_or_else(|e| e.into_inner()).push(&String::from_utf8_lossy(&buf));
-                    buf.clear();
-                }
-            });
-            let mut r = Running { child, stdin, events, stderr, stderr_reader: Some(stderr_reader) };
-            send(&mut r.stdin, &Request::Ping)?;
-            // Generous: the first launch after an install or update waits on macOS checking the new binary.
-            match r.events.recv_timeout(Duration::from_secs(60)) {
-                Ok(Event::Ready { .. }) => {}
-                Ok(Event::Error { message }) => return Err(message),
-                Err(RecvTimeoutError::Disconnected) => {
-                    self.running = Some(r);
-                    let oom = self.died();
-                    return Err(crate::i18n::tr(if oom { "local_ai.out_of_memory" } else { "local_ai.no_start" }));
-                }
-                _ => return Err(crate::i18n::tr("local_ai.no_start")),
-            }
-            self.running = Some(r);
-        }
-        Ok(self.running.as_mut().expect("started above"))
-    }
-
-    /// The helper closed its output without answering: wait briefly for it to exit, keep its exit status and error
-    /// lines in `last_detail`, and say whether it ran out of memory.
-    fn died(&mut self) -> bool {
-        let Some(mut r) = self.running.take() else { return false };
-        let deadline = Instant::now() + Duration::from_secs(2);
-        let mut status = None;
-        while Instant::now() < deadline {
-            match r.child.try_wait() {
-                Ok(Some(s)) => {
-                    status = Some(s);
-                    break;
-                }
-                Ok(None) => std::thread::sleep(Duration::from_millis(20)),
-                Err(_) => break,
-            }
-        }
-        if status.is_none() {
-            let _ = r.child.kill();
-            let _ = r.child.wait();
-        }
-        // The pipe closes once the process is gone, so the reader finishes.
-        if let Some(h) = r.stderr_reader.take() {
-            let _ = h.join();
-        }
-        let tail = r.stderr.lock().unwrap_or_else(|e| e.into_inner()).text();
-        let oom = ran_out_of_memory(status, &tail);
-        let mut detail = format!("local AI helper stopped: {}", describe_status(status));
-        if !tail.is_empty() {
-            detail.push('\n');
-            detail.push_str(&tail);
-        }
-        self.last_detail = Some(detail);
-        oom
+    /// The GPU this LocalAi last ran on, if any.
+    #[cfg(test)]
+    fn gpu_backend(&self) -> Option<&Backend> {
+        self.gpu.as_ref().filter(|g| !g.off).and_then(|g| g.backend.as_ref())
     }
 
     /// Runs one completion. `progress` gets (phase, done, total). Cancelling stops the helper.
     pub fn complete(&mut self, c: &Completion, cancel: &AtomicBool, progress: &mut dyn FnMut(Phase, u32, u32)) -> Result<Reply, String> {
         self.last_detail = None;
-        let r = self.start()?;
-        send(&mut r.stdin, &Request::Complete(c.clone()))?;
-        let started = Instant::now();
-        loop {
-            if cancel.load(Ordering::Relaxed) {
-                self.stop();
-                return Err("cancelled".into());
+        let mut pending = None;
+        if self.gpu.as_ref().is_some_and(|g| !g.off) {
+            match self.try_gpu(c, cancel, progress) {
+                GpuTry::Done(r) => return Ok(r),
+                GpuTry::Cancelled => return Err("cancelled".into()),
+                GpuTry::NoGpu => {}
+                GpuTry::Failed(reason) => pending = Some(reason),
             }
-            let r = self.running.as_mut().expect("running");
-            match r.events.recv_timeout(Duration::from_millis(250)) {
-                Ok(Event::Progress { phase, done, total }) => progress(phase, done, total),
-                Ok(Event::Done(reply)) => return Ok(reply),
-                Ok(Event::Error { message }) => return Err(message),
-                Ok(Event::Ready { .. } | Event::Embedded { .. } | Event::Devices { .. }) => {}
-                Err(RecvTimeoutError::Timeout) => {
-                    // A summary should never take this long; something is stuck.
-                    if started.elapsed() > Duration::from_secs(30 * 60) {
-                        self.stop();
-                        return Err(crate::i18n::tr("local_ai.too_slow"));
-                    }
+        }
+        let cpu = Completion { gpu: false, ..c.clone() };
+        let result = self.run_cpu(&Request::Complete(cpu), cancel, progress, |ev| match ev {
+            Event::Done(r) => Some(r),
+            _ => None,
+        });
+        let result = result.map_err(|e| self.message(e));
+        if result.is_ok() {
+            if let (Some(reason), Some(g)) = (pending, &self.gpu) {
+                (g.cfg.on_failure)(&reason);
+            }
+        }
+        result
+    }
+
+    fn try_gpu(&mut self, c: &Completion, cancel: &AtomicBool, progress: &mut dyn FnMut(Phase, u32, u32)) -> GpuTry {
+        let g = self.gpu.as_mut().expect("checked");
+        let stall = g.cfg.stall;
+        let mut proc = g.proc.take();
+        let backend = match start(&mut proc, &g.cfg.exe, &g.cfg.env) {
+            Ok(b) => b,
+            Err(e) => {
+                g.off = true;
+                return GpuTry::Failed(describe(e));
+            }
+        };
+        if let Some(b) = backend {
+            if !b.on_gpu() {
+                g.off = true;
+                if let Some(p) = proc.take() {
+                    p.kill();
                 }
-                Err(RecvTimeoutError::Disconnected) => {
-                    let oom = self.died();
-                    return Err(crate::i18n::tr(if oom { "local_ai.out_of_memory" } else { "local_ai.crashed" }));
-                }
+                return GpuTry::NoGpu;
+            }
+            g.backend = Some(b);
+        }
+        let mut p = proc.expect("started");
+        let req = Request::Complete(Completion { gpu: true, ..c.clone() });
+        match run(&mut p, &req, cancel, progress, Some(stall), |ev| match ev {
+            Event::Done(r) => Some(r),
+            _ => None,
+        }) {
+            Ok(r) => {
+                g.proc = Some(p);
+                GpuTry::Done(r)
+            }
+            Err(RunError::Cancelled) => {
+                p.kill();
+                GpuTry::Cancelled
+            }
+            Err(e) => {
+                g.off = true;
+                GpuTry::Failed(describe(finish(e, p)))
             }
         }
     }
 
-    /// Embeds texts with an embedding model (one vector per text, L2-normalized).
+    /// Sends a request to the processor helper (starting it if needed) and waits for the event `want` accepts.
+    fn run_cpu<T>(&mut self, req: &Request, cancel: &AtomicBool, progress: &mut dyn FnMut(Phase, u32, u32), want: impl Fn(Event) -> Option<T>) -> Result<T, RunError> {
+        let mut proc = self.running.take();
+        start(&mut proc, &self.exe, &[])?;
+        let mut p = proc.expect("started");
+        match run(&mut p, req, cancel, progress, None, want) {
+            Ok(t) => {
+                self.running = Some(p);
+                Ok(t)
+            }
+            // The helper is still fine after reporting an error (a prompt too long, a bad schema).
+            Err(RunError::Said(m)) => {
+                self.running = Some(p);
+                Err(RunError::Said(m))
+            }
+            Err(e) => Err(finish(e, p)),
+        }
+    }
+
+    /// Words for the user (and `last_detail` for the log).
+    fn message(&mut self, e: RunError) -> String {
+        use crate::i18n::tr;
+        match e {
+            RunError::Cancelled => "cancelled".into(),
+            RunError::Said(m) | RunError::NoSpawn(m) | RunError::Io(m) => m,
+            RunError::NoStart(death) => {
+                let oom = death.as_ref().is_some_and(|d| d.out_of_memory);
+                self.last_detail = death.map(|d| d.detail);
+                tr(if oom { "local_ai.out_of_memory" } else { "local_ai.no_start" })
+            }
+            RunError::TooSlow | RunError::Stalled => tr("local_ai.too_slow"),
+            RunError::Died(d) => {
+                let oom = d.out_of_memory;
+                self.last_detail = Some(d.detail);
+                tr(if oom { "local_ai.out_of_memory" } else { "local_ai.crashed" })
+            }
+        }
+    }
+
+    /// Embeds texts with an embedding model (one vector per text, L2-normalized). Always the processor helper.
     pub fn embed(&mut self, model_path: &Path, texts: Vec<String>, cancel: &AtomicBool) -> Result<Vec<Vec<f32>>, String> {
-        let r = self.start()?;
-        send(&mut r.stdin, &Request::Embed(Embedding { model_path: model_path.to_string_lossy().into_owned(), texts, gpu: false }))?;
-        loop {
-            if cancel.load(Ordering::Relaxed) {
-                self.stop();
-                return Err("cancelled".into());
+        let req = Request::Embed(Embedding { model_path: model_path.to_string_lossy().into_owned(), texts, gpu: false });
+        self.run_cpu(&req, cancel, &mut |_, _, _| {}, |ev| match ev {
+            Event::Embedded { vectors } => Some(vectors),
+            _ => None,
+        })
+        .map_err(|e| match e {
+            RunError::Died(d) => {
+                self.last_detail = Some(d.detail);
+                "the search model stopped unexpectedly".into()
             }
-            let r = self.running.as_mut().expect("running");
-            match r.events.recv_timeout(Duration::from_millis(250)) {
-                Ok(Event::Embedded { vectors }) => return Ok(vectors),
-                Ok(Event::Error { message }) => return Err(message),
-                Ok(_) | Err(RecvTimeoutError::Timeout) => {}
-                Err(RecvTimeoutError::Disconnected) => {
-                    self.died();
-                    return Err("the search model stopped unexpectedly".into());
-                }
-            }
-        }
+            e => self.message(e),
+        })
     }
 
-    /// Ends the helper now (frees all of the model's memory).
+    /// Ends the helpers now (frees all of the model's memory).
     pub fn stop(&mut self) {
-        if let Some(mut r) = self.running.take() {
-            let _ = r.child.kill();
-            let _ = r.child.wait();
+        if let Some(p) = self.running.take() {
+            p.kill();
+        }
+        if let Some(p) = self.gpu.as_mut().and_then(|g| g.proc.take()) {
+            p.kill();
         }
     }
 }
@@ -306,68 +247,123 @@ impl Drop for LocalAi {
     }
 }
 
-/// Windows: the helper is a console program, so starting it from Talaan (a windowed app with no console) would
-/// open a black console window for every summary, and closing that window kills the summary. `CREATE_NO_WINDOW`
-/// runs it without one; the piped stdin/stdout/stderr are unaffected. Nothing to do elsewhere.
-#[cfg(windows)]
-pub fn hide_console(cmd: &mut Command) {
-    use std::os::windows::process::CommandExt;
-    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-    cmd.creation_flags(CREATE_NO_WINDOW);
+/// Starts the helper in `slot` unless it's still running. Returns what it said it runs on when it was (re)started.
+fn start(slot: &mut Option<Process<Event>>, exe: &Path, env: &[(String, String)]) -> Result<Option<Backend>, RunError> {
+    if slot.as_mut().is_some_and(|p| p.alive()) {
+        return Ok(None);
+    }
+    if let Some(p) = slot.take() {
+        p.kill();
+    }
+    let mut p = Process::<Event>::spawn(exe, env).map_err(|e| RunError::NoSpawn(format!("couldn't start the local AI ({}): {e}", exe.display())))?;
+    if let Err(e) = p.send(&Request::Ping) {
+        p.kill();
+        return Err(RunError::Io(format!("couldn't talk to the local AI: {e}")));
+    }
+    // Generous: the first launch after an install or update waits on macOS checking the new binary.
+    match p.recv_timeout(Duration::from_secs(60)) {
+        Ok(Event::Ready { backend }) => {
+            *slot = Some(p);
+            Ok(Some(backend))
+        }
+        Ok(Event::Error { message }) => {
+            p.kill();
+            Err(RunError::Said(message))
+        }
+        Err(RecvTimeoutError::Disconnected) => Err(RunError::NoStart(Some(p.died(WHO)))),
+        _ => {
+            p.kill();
+            Err(RunError::NoStart(None))
+        }
+    }
 }
 
-#[cfg(not(windows))]
-pub fn hide_console(_cmd: &mut Command) {}
+/// Sends `req` and waits for the event `want` accepts, passing progress on. `stall`: the longest silence allowed.
+fn run<T>(p: &mut Process<Event>, req: &Request, cancel: &AtomicBool, progress: &mut dyn FnMut(Phase, u32, u32), stall: Option<Duration>, want: impl Fn(Event) -> Option<T>) -> Result<T, RunError> {
+    p.send(req).map_err(|e| RunError::Io(format!("couldn't talk to the local AI: {e}")))?;
+    let started = Instant::now();
+    let mut heard = Instant::now();
+    loop {
+        if cancel.load(Ordering::Relaxed) {
+            return Err(RunError::Cancelled);
+        }
+        match p.recv_timeout(Duration::from_millis(250)) {
+            Ok(Event::Error { message }) => return Err(RunError::Said(message)),
+            Ok(Event::Progress { phase, done, total }) => {
+                heard = Instant::now();
+                progress(phase, done, total);
+            }
+            Ok(ev) => {
+                heard = Instant::now();
+                if let Some(t) = want(ev) {
+                    return Ok(t);
+                }
+            }
+            Err(RecvTimeoutError::Timeout) => {
+                // A summary should never take this long; something is stuck.
+                if started.elapsed() > Duration::from_secs(30 * 60) {
+                    return Err(RunError::TooSlow);
+                }
+                if stall.is_some_and(|s| heard.elapsed() > s) {
+                    return Err(RunError::Stalled);
+                }
+            }
+            Err(RecvTimeoutError::Disconnected) => return Err(RunError::Died(Death { detail: String::new(), out_of_memory: false })),
+        }
+    }
+}
 
-fn send(stdin: &mut ChildStdin, req: &Request) -> Result<(), String> {
-    writeln!(stdin, "{}", encode(req)).and_then(|_| stdin.flush()).map_err(|e| format!("couldn't talk to the local AI: {e}"))
+/// After a failed request: a helper that died is described, any other is stopped.
+fn finish(e: RunError, p: Process<Event>) -> RunError {
+    match e {
+        RunError::Died(_) => RunError::Died(p.died(WHO)),
+        e => {
+            p.kill();
+            e
+        }
+    }
+}
+
+/// A GPU failure in words for gpu.json (English, technical).
+fn describe(e: RunError) -> String {
+    match e {
+        RunError::Cancelled => "cancelled".into(),
+        RunError::Said(m) | RunError::NoSpawn(m) | RunError::Io(m) => m,
+        RunError::NoStart(Some(d)) | RunError::Died(d) => d.detail,
+        RunError::NoStart(None) => "the GPU helper didn't start".into(),
+        RunError::TooSlow => "the GPU helper took more than 30 minutes".into(),
+        RunError::Stalled => "the GPU helper stopped answering".into(),
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::helper::fake::{crash, reply, script};
+    use std::sync::Mutex;
 
     #[test]
     fn a_missing_helper_is_a_clear_error() {
         let mut ai = LocalAi::new(Path::new("/nonexistent/talaan-llm"));
-        let c = Completion { model_path: "x".into(), n_ctx: 512, system: "".into(), user: "".into(), json_schema: None, max_tokens: 1, temperature: 0.0, gpu: false };
-        let e = ai.complete(&c, &AtomicBool::new(false), &mut |_, _, _| {}).unwrap_err();
+        let e = ai.complete(&completion(), &AtomicBool::new(false), &mut |_, _, _| {}).unwrap_err();
         assert!(e.starts_with("couldn't start the local AI"), "{e}");
+    }
+
+    const READY: &str = r#"{"event":"ready"}"#;
+    const READY_GPU: &str = r#"{"event":"ready","backend":"vulkan","device":"NVIDIA GeForce RTX 5070 Ti","vram_mb":16303}"#;
+    const DONE: &str = r#"{"event":"done","text":"FROM","prompt_tokens":1,"output_tokens":1,"seconds":0.1,"truncated":false}"#;
+
+    fn done(from: &str) -> String {
+        DONE.replace("FROM", from)
     }
 
     /// A fake helper: answers the ping, then on the first real request prints `stderr` lines and exits with `code`.
     fn fake_helper(dir: &Path, stderr: &[&str], code: i32) -> PathBuf {
-        #[cfg(unix)]
-        {
-            let fake = dir.join("fake-llm");
-            let lines: String = stderr.iter().map(|l| format!("echo '{l}' 1>&2
-")).collect();
-            std::fs::write(&fake, format!("#!/bin/sh
-read line
-echo '{{\"event\":\"ready\"}}'
-read line
-{lines}exit {code}
-")).unwrap();
-            std::fs::set_permissions(&fake, std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
-            fake
-        }
-        #[cfg(windows)]
-        {
-            let fake = dir.join("fake-llm.cmd");
-            let lines: String = stderr.iter().map(|l| format!("echo {l} 1>&2
-")).collect();
-            std::fs::write(&fake, format!("@echo off
-set /p line=
-echo {{\"event\":\"ready\"}}
-set /p line=
-{lines}exit /b {code}
-")).unwrap();
-            fake
-        }
+        script(dir, "fake-llm", &[reply(&[READY]), crash(stderr, code)])
     }
 
     fn completion() -> Completion {
-        Completion { model_path: "x".into(), n_ctx: 512, system: "".into(), user: "".into(), json_schema: None, max_tokens: 1, temperature: 0.0, gpu: false }
+        Completion { model_path: "x".into(), n_ctx: 512, system: "".into(), user: "".into(), json_schema: None, max_tokens: 1, temperature: 0.0, gpu: true }
     }
 
     /// A helper that dies mid-request becomes a readable error, and it doesn't blame memory without a reason
@@ -396,41 +392,103 @@ set /p line=
         assert!(ai.take_detail().unwrap().contains("memory allocation of 8589934592 bytes failed"));
     }
 
-    #[test]
-    fn memory_is_blamed_only_on_evidence() {
-        assert!(!ran_out_of_memory(None, ""));
-        assert!(!ran_out_of_memory(None, "thread 'main' panicked at src/main.rs:1:1:"));
-        assert!(ran_out_of_memory(None, "ggml_backend_cpu_buffer_type_alloc_buffer: failed to allocate buffer of size 4294967296"));
-        assert!(ran_out_of_memory(None, "terminate called after throwing an instance of 'std::bad_alloc'"));
-        #[cfg(windows)]
-        {
-            use std::os::windows::process::ExitStatusExt;
-            assert!(ran_out_of_memory(Some(std::process::ExitStatus::from_raw(0xC000_0017)), ""));
-            assert!(!ran_out_of_memory(Some(std::process::ExitStatus::from_raw(1)), ""));
-            // A closed console window (CTRL_CLOSE_EVENT) is not memory.
-            assert!(!ran_out_of_memory(Some(std::process::ExitStatus::from_raw(0xC000_013A)), ""));
-        }
-        #[cfg(unix)]
-        {
-            use std::os::unix::process::ExitStatusExt;
-            assert!(ran_out_of_memory(Some(std::process::ExitStatus::from_raw(9)), "")); // SIGKILL
-            assert!(!ran_out_of_memory(Some(std::process::ExitStatus::from_raw(6)), "")); // SIGABRT
-        }
+    /// GPU then processor, with what was recorded.
+    struct Rig {
+        _dir: tempfile::TempDir,
+        ai: LocalAi,
+        recorded: Arc<Mutex<Vec<String>>>,
+    }
+
+    fn rig(gpu_steps: &[crate::helper::fake::Step], cpu_steps: &[crate::helper::fake::Step], stall: Duration) -> Rig {
+        let dir = tempfile::tempdir().unwrap();
+        let gpu_exe = script(dir.path(), "llm-vulkan", gpu_steps);
+        let cpu_exe = script(dir.path(), "llm", cpu_steps);
+        let recorded: Arc<Mutex<Vec<String>>> = Arc::default();
+        let r = recorded.clone();
+        let on_failure = Arc::new(move |reason: &str| r.lock().unwrap().push(reason.to_string()));
+        let ai = LocalAi::with_gpu(&cpu_exe, GpuHelper { exe: gpu_exe, env: vec![("VK_LOADER_LAYERS_DISABLE".into(), "~implicit~".into())], on_failure, stall });
+        Rig { _dir: dir, ai, recorded }
+    }
+
+    fn summarize(ai: &mut LocalAi) -> Result<String, String> {
+        ai.complete(&completion(), &AtomicBool::new(false), &mut |_, _, _| {}).map(|r| r.text)
     }
 
     #[test]
-    fn the_stderr_tail_is_bounded_and_keeps_only_error_lines() {
-        let mut t = StderrTail::default();
-        t.push("Me: here is the roadmap we discussed
-");
-        assert_eq!(t.text(), "");
-        for i in 0..500 {
-            t.push(&format!("ggml_assert line {i}: {}", "x".repeat(400)));
-        }
-        let text = t.text();
-        assert!(text.len() <= TAIL_BYTES, "{}", text.len());
-        assert!(text.contains("line 499"), "keeps the latest lines");
-        assert!(text.lines().all(|l| l.len() <= LINE_BYTES));
+    fn a_working_gpu_does_the_summary() {
+        let gpu_done = done("gpu");
+        let mut r = rig(&[reply(&[READY_GPU]), reply(&[&gpu_done]), reply(&[&gpu_done])], &[], GPU_STALL);
+        assert_eq!(summarize(&mut r.ai).unwrap(), "gpu");
+        assert_eq!(r.ai.gpu_backend().and_then(|b| b.device.as_deref()), Some("NVIDIA GeForce RTX 5070 Ti"));
+        assert_eq!(summarize(&mut r.ai).unwrap(), "gpu", "the same helper process again");
+        assert!(r.recorded.lock().unwrap().is_empty());
+    }
+
+    #[test]
+    fn a_gpu_crash_is_redone_on_the_processor_and_remembered() {
+        let cpu_done = done("cpu");
+        let mut r = rig(
+            &[reply(&[READY_GPU]), crash(&["ggml_vulkan: vk::Queue::submit: ErrorDeviceLost"], -1073740791)],
+            &[reply(&[READY]), reply(&[&cpu_done]), reply(&[&cpu_done])],
+            GPU_STALL,
+        );
+        assert_eq!(summarize(&mut r.ai).unwrap(), "cpu");
+        let recorded = r.recorded.lock().unwrap().clone();
+        assert_eq!(recorded.len(), 1);
+        assert!(recorded[0].contains("ErrorDeviceLost") && recorded[0].contains("0xC0000409"), "{recorded:?}");
+        assert_eq!(r.ai.take_detail(), None, "the summary itself didn't fail");
+        assert_eq!(summarize(&mut r.ai).unwrap(), "cpu", "and it stays on the processor");
+        assert_eq!(r.recorded.lock().unwrap().len(), 1);
+        assert!(r.ai.gpu_backend().is_none());
+    }
+
+    #[test]
+    fn a_gpu_that_wont_start_or_errors_falls_back_too() {
+        let cpu_done = done("cpu");
+        let mut r = rig(&[crash(&["ggml_vulkan: vk::createInstance: ErrorIncompatibleDriver"], 1)], &[reply(&[READY]), reply(&[&cpu_done])], GPU_STALL);
+        assert_eq!(summarize(&mut r.ai).unwrap(), "cpu");
+        assert!(r.recorded.lock().unwrap()[0].contains("ErrorIncompatibleDriver"));
+
+        let oom = r#"{"event":"error","message":"not enough memory for the AI model: ErrorOutOfDeviceMemory"}"#;
+        let mut r = rig(&[reply(&[READY_GPU]), reply(&[oom])], &[reply(&[READY]), reply(&[&cpu_done])], GPU_STALL);
+        assert_eq!(summarize(&mut r.ai).unwrap(), "cpu");
+        assert_eq!(*r.recorded.lock().unwrap(), ["not enough memory for the AI model: ErrorOutOfDeviceMemory"]);
+    }
+
+    #[test]
+    fn a_stalled_gpu_is_given_up_on() {
+        let cpu_done = done("cpu");
+        // Ready, then silence on the request.
+        let mut r = rig(&[reply(&[READY_GPU])], &[reply(&[READY]), reply(&[&cpu_done])], Duration::from_millis(400));
+        let t = Instant::now();
+        assert_eq!(summarize(&mut r.ai).unwrap(), "cpu");
+        assert!(t.elapsed() < Duration::from_secs(10));
+        assert_eq!(*r.recorded.lock().unwrap(), ["the GPU helper stopped answering"]);
+    }
+
+    #[test]
+    fn an_error_the_processor_repeats_is_not_the_gpus_fault() {
+        let too_long = r#"{"event":"error","message":"the transcript part is too long for the model (9000 tokens, context 512)"}"#;
+        let mut r = rig(&[reply(&[READY_GPU]), reply(&[too_long])], &[reply(&[READY]), reply(&[too_long])], GPU_STALL);
+        let e = summarize(&mut r.ai).unwrap_err();
+        assert!(e.contains("too long"), "{e}");
+        assert!(r.recorded.lock().unwrap().is_empty());
+    }
+
+    #[test]
+    fn a_gpu_helper_without_a_gpu_is_quietly_skipped() {
+        let cpu_done = done("cpu");
+        let mut r = rig(&[reply(&[r#"{"event":"ready","backend":"cpu","vram_mb":0}"#])], &[reply(&[READY]), reply(&[&cpu_done])], GPU_STALL);
+        assert_eq!(summarize(&mut r.ai).unwrap(), "cpu");
+        assert!(r.recorded.lock().unwrap().is_empty());
+    }
+
+    #[test]
+    fn cancelling_on_the_gpu_does_not_fall_back() {
+        let mut r = rig(&[reply(&[READY_GPU])], &[], GPU_STALL);
+        let e = r.ai.complete(&completion(), &AtomicBool::new(true), &mut |_, _, _| {}).unwrap_err();
+        assert_eq!(e, "cancelled");
+        assert!(r.recorded.lock().unwrap().is_empty());
     }
 
     /// Real model through the real helper. Build it first: `cargo build --release -p talaan-llm`, then

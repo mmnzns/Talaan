@@ -42,6 +42,7 @@ impl Default for Timeouts {
 pub struct RemoteWhisper {
     proc: Option<Process<SttEvent>>,
     label: String,
+    #[cfg_attr(not(test), allow(dead_code))]
     backend: Backend,
     timeouts: Timeouts,
 }
@@ -78,6 +79,7 @@ impl RemoteWhisper {
     }
 
     /// The GPU the model is on.
+    #[cfg(test)]
     pub fn backend(&self) -> &Backend {
         &self.backend
     }

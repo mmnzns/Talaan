@@ -4,7 +4,6 @@ use super::{notify, AppState, CmdResult, MEETINGS_CHANGED};
 use crate::storage::model::MeetingStatus;
 use crate::storage::StorageError;
 use crate::transcriber::download::{download_model, DownloadError};
-use crate::transcriber::engine;
 use crate::transcriber::models::{find, EngineKind, Location, ModelStore, CATALOG, VAD};
 use crate::transcriber::pipeline::Detector;
 use crate::transcriber::vad::Vad;
@@ -55,7 +54,11 @@ pub fn setup(app: &AppHandle, data_dir: PathBuf) {
         storage: state.shared(),
         data_dir: data_dir.clone(),
         changed: Arc::new(move || notify(&changed_app, MEETINGS_CHANGED)),
-        load_engine: Box::new(|m, dir, gpu| engine::load(m, dir, gpu)),
+        // Whisper on the GPU helper on Windows when it should be used, the processor behind it (fallback.rs).
+        load_engine: {
+            let gpu = crate::gpu::Gpu::shared(&data_dir);
+            Box::new(move |m, dir, use_gpu| crate::transcriber::fallback::load(m, dir, use_gpu, &gpu))
+        },
         load_detector: Box::new(|path| Vad::load(path).map(|v| Box::new(v) as Box<dyn Detector + Send>)),
         load_splitter: Box::new(|path| crate::transcriber::diarize::Diarizer::load(path).map(|d| Box::new(d) as Box<dyn crate::transcriber::diarize::SpeakerSplitter>)),
         reuse_roots: None,
