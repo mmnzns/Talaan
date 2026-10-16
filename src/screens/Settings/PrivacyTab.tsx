@@ -34,6 +34,7 @@ export function PrivacyTab({ settings: s, update }: TabProps) {
     ["settings.flow_notion", s.notion.connected ? "settings.when_export" : "settings.when_not_connected"],
     ["settings.flow_update", s.checkUpdates ? "settings.when_launch" : "settings.when_off"],
     ...(onWindows && s.calendarConnected ? [["settings.flow_calendar_windows", "settings.when_recording_start"] as [MessageKey, MessageKey]] : []),
+    ["settings.flow_log", "settings.when_you_send"],
     ["settings.flow_analytics", "settings.when_never_collected"],
   ];
 
