@@ -162,6 +162,7 @@ fn lock(storage: &Mutex<Storage>) -> std::sync::MutexGuard<'_, Storage> {
 }
 
 fn fail(deps: &Deps, id: &str, code: &str, message: String) {
+    log::warn!("transcription failed: meeting {id} ({code}): {message}");
     let _ = lock(&deps.storage).update_meeting_file(id, |f| {
         f.status = MeetingStatus::Failed;
         f.progress = None;
@@ -185,6 +186,13 @@ fn process(deps: &Deps, id: &str, loaded: &mut Option<Loaded>, cancel: &AtomicBo
         (dir, config, file.transcript_only)
     };
     let summarize = config.summarize && !transcript_only;
+    log::info!(
+        "transcribing meeting {id}: model {}, GPU {}, language {}, speakers {}",
+        config.model.id,
+        if config.use_gpu { "on" } else { "off" },
+        config.language.as_deref().unwrap_or("auto"),
+        if config.separate_speakers { "separated" } else { "not separated" }
+    );
 
     let mut store = ModelStore::new(&deps.data_dir, config.reuse);
     if let Some(roots) = &deps.reuse_roots {
@@ -198,6 +206,7 @@ fn process(deps: &Deps, id: &str, loaded: &mut Option<Loaded>, cancel: &AtomicBo
     let fresh = !matches!(loaded, Some(l) if l.model_id == config.model.id && l.use_gpu == config.use_gpu);
     if fresh {
         *loaded = None;
+        let load = Instant::now();
         let engine = match (deps.load_engine)(config.model, &model_dir, config.use_gpu) {
             Ok(e) => e,
             Err(e) => return fail(deps, id, "failed", e),
@@ -206,13 +215,14 @@ fn process(deps: &Deps, id: &str, loaded: &mut Option<Loaded>, cancel: &AtomicBo
             Ok(d) => d,
             Err(e) => return fail(deps, id, "failed", e),
         };
+        log::info!("speech engine loaded in {:.1}s: {}", load.elapsed().as_secs_f32(), engine.label());
         *loaded = Some(Loaded { model_id: config.model.id, use_gpu: config.use_gpu, engine, detector, splitter: None });
     }
     let l = loaded.as_mut().expect("loaded above");
     if config.separate_speakers && l.splitter.is_none() {
         if let Some(dir) = store.locate(&DIARIZATION).dir() {
             // A broken speaker model shouldn't cost the transcript: carry on without it.
-            l.splitter = (deps.load_splitter)(&dir.join(DIARIZATION.files[0].name)).ok();
+            l.splitter = (deps.load_splitter)(&dir.join(DIARIZATION.files[0].name)).inspect_err(|e| log::warn!("speaker separation unavailable: {e}")).ok();
         }
     }
     let splitter: Option<&mut dyn SpeakerSplitter> = match (&mut l.splitter, config.separate_speakers) {
@@ -233,6 +243,16 @@ fn process(deps: &Deps, id: &str, loaded: &mut Option<Loaded>, cancel: &AtomicBo
 
     match result {
         Ok(out) => {
+            let count = out.lines.len();
+            log::info!(
+                "transcribed meeting {id} in {:.1}s: engine {}, {count} lines, {:.0}s of speech, {} echo lines removed, language {}, {} speakers",
+                started.elapsed().as_secs_f32(),
+                out.engine,
+                out.speech_ms as f32 / 1000.0,
+                out.echo_removed,
+                out.language.as_deref().unwrap_or("?"),
+                out.speakers
+            );
             let s = lock(&deps.storage);
             if s.save_transcript(id, &out.lines).is_err() {
                 drop(s);
@@ -274,7 +294,7 @@ fn process(deps: &Deps, id: &str, loaded: &mut Option<Loaded>, cancel: &AtomicBo
             }
         }
         // Cancelled means the meeting is being deleted; leave it alone.
-        Err(PipelineError::Cancelled) => {}
+        Err(PipelineError::Cancelled) => log::info!("transcription cancelled: meeting {id} (being deleted)"),
         Err(PipelineError::Failed(e)) => fail(deps, id, "failed", e),
     }
 }

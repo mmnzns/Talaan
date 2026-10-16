@@ -21,6 +21,7 @@ Talaan uses the following libraries, fonts and models. Each is used under its ow
 | dirs | MIT / Apache-2.0 | https://github.com/soc/dirs-rs |
 | rand | MIT / Apache-2.0 | https://github.com/rust-random/rand |
 | thiserror | MIT / Apache-2.0 | https://github.com/dtolnay/thiserror |
+| log (the log file) | MIT / Apache-2.0 | https://github.com/rust-lang/log |
 | tempfile (tests only) | MIT / Apache-2.0 | https://github.com/Stebalien/tempfile |
 | cpal (audio input) | Apache-2.0 | https://github.com/RustAudio/cpal |
 | hound (WAV files) | Apache-2.0 | https://github.com/ruuda/hound |

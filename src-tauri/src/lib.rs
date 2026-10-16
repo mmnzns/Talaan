@@ -7,6 +7,7 @@ mod helper;
 mod i18n;
 mod importer;
 mod keys;
+mod logging;
 mod notion;
 mod platform;
 mod recorder;
@@ -55,14 +56,22 @@ pub fn run() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_autostart::init(tauri_plugin_autostart::MacosLauncher::LaunchAgent, None))
         .setup(|app| {
+            logging::init(&logging::resolve_dir(std::env::var("TALAAN_DATA_DIR").ok(), dirs::home_dir(), dirs::data_local_dir()));
             let root = commands::resolve_data_dir(std::env::var("TALAAN_DATA_DIR").ok(), dirs::data_dir());
-            let mut store = storage::Storage::new(root.clone())?;
-            store.load_policy()?;
-            commands::calendar::remove_legacy_address(&mut store);
-            // Anything still marked "recording" was interrupted; expired audio goes now.
-            store.scan_for_interrupted()?;
-            store.apply_retention(chrono::Utc::now())?;
+            let started = || -> Result<storage::Storage, storage::StorageError> {
+                let mut store = storage::Storage::new(root.clone())?;
+                store.load_policy()?;
+                commands::calendar::remove_legacy_address(&mut store);
+                // Anything still marked "recording" was interrupted; expired audio goes now.
+                store.scan_for_interrupted()?;
+                store.apply_retention(chrono::Utc::now())?;
+                Ok(store)
+            };
+            let store = started().inspect_err(|e| log::error!("couldn't open the data folder: {e}"))?;
             app.manage(AppState::new(store));
+            // Off the main thread: on the Mac it asks sw_vers and sysctl.
+            let handle = app.handle().clone();
+            std::thread::spawn(move || commands::diagnostics::log_startup(&handle));
             rec_cmd::setup(app.handle());
             commands::summarizer::setup(app.handle(), root.clone());
             commands::ask::setup(app.handle(), root.clone());
@@ -96,6 +105,8 @@ pub fn run() {
             commands::tray::app_show_main,
             commands::tray::app_quit,
             platform_name,
+            commands::diagnostics::diagnostics_report,
+            commands::diagnostics::logs_reveal,
             meetings::meetings_list,
             meetings::meetings_get,
             meetings::meetings_rename,
@@ -179,6 +190,7 @@ pub fn run() {
         .run(|app, event| {
             match event {
                 tauri::RunEvent::ExitRequested { code, .. } => {
+                    log::info!("quitting (code {code:?})");
                     // An update's relaunch exits through here too; leave that to Tauri.
                     if code != Some(tauri::RESTART_EXIT_CODE) {
                         exit_watchdog();

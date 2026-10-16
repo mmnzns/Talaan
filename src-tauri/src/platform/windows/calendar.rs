@@ -86,7 +86,7 @@ fn refresh_if_due() {
             s.failed_ms = None;
         }
         Err(e) => {
-            eprintln!("calendar: download failed: {e}");
+            log::warn!("calendar download failed: {e}");
             s.failed_ms = Some(now_ms());
         }
     }

@@ -30,7 +30,7 @@ pub fn setup(on_click: impl Fn(String) + Send + Sync + 'static) {
 /// Shows a toast; a click calls the `setup` callback with `id`. Never fails the caller.
 pub fn post(id: &str, title: &str, body: &str) {
     if let Err(e) = show(id, title, body) {
-        eprintln!("toast failed: {e}");
+        log::warn!("notification failed: {e}");
     }
 }
 

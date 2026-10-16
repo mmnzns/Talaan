@@ -32,6 +32,7 @@ impl Fallback {
             Ok(e) => f.gpu = Some(e),
             Err(LoadError::NoGpu) => f.cpu = Some((f.load_cpu)()?),
             Err(LoadError::Failed(reason)) => {
+                log::warn!("speech GPU helper didn't load, using the processor: {}", reason.replace('\n', " | "));
                 f.cpu = Some((f.load_cpu)()?);
                 (f.on_failure)(&reason);
             }
@@ -53,6 +54,7 @@ impl Engine for Fallback {
             match gpu.transcribe(samples, language) {
                 Ok(r) => return Ok(r),
                 Err(e) => {
+                    log::warn!("speech on the GPU failed, the processor takes over: {}", e.replace('\n', " | "));
                     // The helper is done for this meeting; free its GPU memory now.
                     self.gpu = None;
                     self.pending = Some(e);

@@ -299,14 +299,14 @@ fn capture(
             },
         };
         let Some((mut cause, why)) = lost else { continue };
-        eprintln!("loopback: {why}");
+        log::warn!("call audio (loopback) lost: {why}");
         stream.close();
         // Reconnect: the new stream's stamps start fresh.
         pump.stamps = Stamps::default();
         timeouts = 0;
         stream = loop {
             if !reconnects.lost(cause) {
-                eprintln!("loopback: giving up after {MAX_RECONNECTS} failed reconnects");
+                log::error!("call audio (loopback): giving up after {MAX_RECONNECTS} failed reconnects");
                 failed.store(true, Ordering::Relaxed);
                 return;
             }
@@ -319,7 +319,7 @@ fn capture(
                     break s;
                 }
                 Err(e) => {
-                    eprintln!("loopback: reconnect failed: {e}");
+                    log::warn!("call audio (loopback): reconnect failed: {e}");
                     cause = Loss::Error;
                 }
             }
@@ -361,7 +361,7 @@ fn close(live: Live) {
         }
         // The thread may outlive its SystemTap: it holds only Arc clones and exits once `connect` returns, since
         // `stop` is set.
-        Err(mpsc::RecvTimeoutError::Timeout) => eprintln!("loopback: capture thread still busy, detached"),
+        Err(mpsc::RecvTimeoutError::Timeout) => log::warn!("call audio (loopback): capture thread still busy, detached"),
     }
 }
 

@@ -34,6 +34,7 @@ pub fn data_delete_all(app: AppHandle, state: State<AppState>) -> CmdResult<()> 
     state.lock().delete_all_data()?;
     crate::keys::clear_all();
     super::updates::remove_login_item(&app);
+    crate::logging::delete_files();
     app.exit(0);
     Ok(())
 }

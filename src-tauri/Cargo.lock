@@ -5353,6 +5353,7 @@ dependencies = [
  "dirs 7.0.0",
  "hound",
  "keyring",
+ "log",
  "mach2 0.7.0",
  "objc2",
  "objc2-app-kit",

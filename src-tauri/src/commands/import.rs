@@ -31,6 +31,11 @@ pub fn meetings_import(app: AppHandle, path: String) -> CmdResult<()> {
     }
     std::thread::spawn(move || {
         let send = |e: ImportEvent| {
+            match &e {
+                ImportEvent::Done { id } => log::info!("audio imported as meeting {id}"),
+                ImportEvent::Failed { message } => log::warn!("import failed: {message}"),
+                ImportEvent::Progress { .. } => {}
+            }
             let _ = app.emit(EVENT, e);
         };
         let root = app.state::<AppState>().lock().root().to_path_buf();

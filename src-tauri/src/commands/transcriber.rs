@@ -212,6 +212,8 @@ pub fn models_download(app: AppHandle, t: State<TranscriberState>, id: String) -
     let _ = app.emit(MODELS_CHANGED, ());
     let data_dir = t.data_dir.clone();
     std::thread::spawn(move || {
+        log::info!("downloading model {id}");
+        let started = Instant::now();
         let store = ModelStore::new(&data_dir, false);
         let mut last = Instant::now();
         let mut report = |p: f32| {
@@ -235,6 +237,11 @@ pub fn models_download(app: AppHandle, t: State<TranscriberState>, id: String) -
         }
         app.state::<TranscriberState>().downloads.lock().unwrap_or_else(|e| e.into_inner()).remove(&id);
         let _ = app.emit(MODELS_CHANGED, ());
+        match &result {
+            Ok(()) => log::info!("model {id} downloaded in {:.0}s", started.elapsed().as_secs_f32()),
+            Err(DownloadError::Cancelled) => log::info!("model {id} download cancelled"),
+            Err(e) => log::warn!("model {id} download failed: {e}"),
+        }
         match result {
             Ok(()) if is_llm => super::summarizer::requeue_waiting(&app),
             Ok(()) if model.engine == EngineKind::Embedding => super::ask::reindex_soon(&app),

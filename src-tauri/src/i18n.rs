@@ -143,6 +143,12 @@ const TABLE: &[(&str, &str, &str, &str)] = &[
     // technical detail and stays in English.
     ("error.cancelled", "Cancelled.", "Annulé.", "Cancelado."),
     ("error.open_folder", "Couldn't open the folder: {error}", "Impossible d’ouvrir le dossier : {error}", "No se pudo abrir la carpeta: {error}"),
+    (
+        "error.no_log",
+        "Talaan couldn't write its log file on this computer, so there is no log folder to open.",
+        "Talaan n’a pas pu écrire son fichier journal sur cet ordinateur, donc il n’y a pas de dossier de journal à ouvrir.",
+        "Talaan no pudo escribir su archivo de registro en esta computadora, así que no hay carpeta de registro que abrir.",
+    ),
     ("error.save_file", "Couldn't save the file: {error}", "Impossible d’enregistrer le fichier : {error}", "No se pudo guardar el archivo: {error}"),
     ("error.wait_meeting", "Wait for this meeting to finish first.", "Attendez d’abord que cette réunion soit terminée.", "Primero espera a que termine esta reunión."),
     (

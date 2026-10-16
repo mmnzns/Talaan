@@ -51,9 +51,11 @@ impl StorageError {
     }
 }
 
-/// Errors cross the bridge as `{ code, message }`.
+/// Errors cross the bridge as `{ code, message }`. That is the one way a command's error reaches the screens, so
+/// it is logged here: every error the app shows passes through.
 impl Serialize for StorageError {
     fn serialize<S: serde::Serializer>(&self, s: S) -> std::result::Result<S::Ok, S::Error> {
+        log::warn!("error for the app ({}): {self}", self.code());
         use serde::ser::SerializeStruct;
         let mut st = s.serialize_struct("StorageError", 2)?;
         st.serialize_field("code", self.code())?;
