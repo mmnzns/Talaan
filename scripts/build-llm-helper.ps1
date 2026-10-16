@@ -27,6 +27,16 @@ if (-not $env:VULKAN_SDK) {
 
 $gpuTarget = if ($env:TALAAN_GPU_TARGET_DIR) { $env:TALAAN_GPU_TARGET_DIR } else { 'target\gpu' }
 Reset-StaleGgml 'Cargo.toml' $gpuTarget
+
+# Ninja for the Vulkan builds (scripts/cpu-baseline.ps1, Use-NinjaForGpu).
+Use-NinjaForGpu
+# A cache from another generator can't be reused: CMake refuses to switch generators in a build folder.
+$otherGenerator = @(Get-GgmlCaches $gpuTarget | Where-Object { -not (Select-String -Path $_ -Pattern '^CMAKE_GENERATOR:[A-Z]+=Ninja$' -Quiet) })
+if ($otherGenerator.Count -gt 0) {
+  Write-Host "Rebuilding the GPU helpers' whisper.cpp and llama.cpp with Ninja"
+  cargo clean --manifest-path Cargo.toml --target-dir $gpuTarget --release -p whisper-rs-sys -p llama-cpp-sys-2
+  if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+}
 foreach ($crate in 'talaan-llm', 'talaan-stt') {
   cargo build --release -p $crate --features vulkan --target-dir $gpuTarget
   if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

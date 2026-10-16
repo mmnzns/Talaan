@@ -36,3 +36,18 @@ function Reset-StaleGgml([string]$manifest, [string]$target) {
     if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
   }
 }
+
+# Ninja, not the Visual Studio generator, for the Vulkan builds (as llama.cpp's own Windows Vulkan CI does): under
+# MSBuild the vulkan-shaders-gen ExternalProject's install step failed ("Not a file: .../cmake_install.cmake",
+# "cannot find the batch label specified - VCEnd"). cmake-rs passes cl.exe and its environment to a Ninja build.
+# Only these builds: talaan.exe and the CPU helper keep the generator they were released with. Call it after the
+# CPU builds (it sets CMAKE_GENERATOR for the rest of the session).
+function Use-NinjaForGpu {
+  if (-not (Get-Command ninja -ErrorAction SilentlyContinue)) {
+    $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
+    $ninja = if (Test-Path $vswhere) { & $vswhere -latest -products * -find 'Common7\IDE\CommonExtensions\Microsoft\CMake\Ninja\ninja.exe' | Select-Object -First 1 }
+    if (-not $ninja) { throw "ninja.exe not found (install Visual Studio's C++ CMake tools, or Ninja)" }
+    $env:PATH = "$(Split-Path $ninja);$env:PATH"
+  }
+  $env:CMAKE_GENERATOR = 'Ninja'
+}
