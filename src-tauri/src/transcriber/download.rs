@@ -137,6 +137,39 @@ fn download_file(file: &ModelFile, dir: &Path, cancel: &AtomicBool, progress: &m
     Ok(())
 }
 
+/// Measures the download speed in bytes per second by reading the start of `url` (at most `bytes`, at most
+/// `max_time`). Onboarding uses it to say how long the recommended downloads take. Nothing is saved. The clock
+/// starts when the first byte arrives, so connection setup doesn't make a fast line look slow.
+pub fn measure_speed(url: &str, bytes: u64, max_time: std::time::Duration) -> Result<u64, DownloadError> {
+    let mut resp = client()
+        .get(url)
+        .header(reqwest::header::RANGE, format!("bytes=0-{}", bytes.saturating_sub(1)))
+        .send()
+        .map_err(|e| DownloadError::Network("speed test".into(), e.to_string()))?;
+    if !resp.status().is_success() {
+        return Err(DownloadError::Network("speed test".into(), format!("HTTP {}", resp.status())));
+    }
+    let mut buf = vec![0u8; 1 << 16];
+    let mut got = 0u64;
+    let mut started: Option<std::time::Instant> = None;
+    while got < bytes {
+        let n = resp.read(&mut buf).map_err(|e| DownloadError::Network("speed test".into(), e.to_string()))?;
+        if n == 0 {
+            break;
+        }
+        let t0 = *started.get_or_insert_with(std::time::Instant::now);
+        got += n as u64;
+        if t0.elapsed() >= max_time {
+            break;
+        }
+    }
+    let secs = started.map(|t| t.elapsed().as_secs_f64()).unwrap_or(0.0).max(0.001);
+    if got == 0 {
+        return Err(DownloadError::Network("speed test".into(), "no data".into()));
+    }
+    Ok((got as f64 / secs) as u64)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -231,6 +264,14 @@ mod tests {
         assert_eq!(download_model(m, dir.path(), &AtomicBool::new(false), &mut |_| {}), Err(DownloadError::Corrupt("m.bin".into())));
         assert!(!dir.path().join("m.bin").exists());
         assert!(!dir.path().join("m.bin.part").exists());
+    }
+
+    #[test]
+    fn measures_the_speed_without_saving_anything() {
+        let url = serve(body(), true);
+        let speed = measure_speed(&format!("{url}m.bin"), 1_000_000, std::time::Duration::from_secs(5)).unwrap();
+        assert!(speed > 0);
+        assert!(measure_speed("http://127.0.0.1:9/none", 1000, std::time::Duration::from_secs(1)).is_err());
     }
 
     #[test]

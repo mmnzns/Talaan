@@ -79,8 +79,11 @@ export class MockSettingsStore implements SettingsStore {
     if (this.timers.has(id)) return;
     this.setModel(id, { state: "downloading", progress: 0 });
     let p = 0;
+    // Big models take longer, like real ones (a 1 GB model takes 5 s here).
+    const all = [...this.state.speechModels, ...this.state.localModels, this.state.speakerModel, this.state.searchModel];
+    const step = 0.1 * Math.min(1, 1000 / (all.find((m) => m.id === id)?.sizeMb ?? 1000));
     const timer = setInterval(() => {
-      p += 0.1;
+      p += step;
       if (p >= 1) {
         clearInterval(timer);
         this.timers.delete(id);
@@ -96,6 +99,12 @@ export class MockSettingsStore implements SettingsStore {
     clearInterval(this.timers.get(id));
     this.timers.delete(id);
     this.setModel(id, { state: "not_downloaded", progress: undefined });
+  }
+
+  /** A believable 12 MB/s line. */
+  async downloadSpeed(): Promise<number | undefined> {
+    await sleep(400);
+    return 12_000_000;
   }
 
   async connectNotion(secret: string) {

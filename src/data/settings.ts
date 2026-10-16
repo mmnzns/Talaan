@@ -126,6 +126,10 @@ export interface Settings {
   transcriptRetention: TranscriptRetention;
   // App state
   onboardingDone: boolean;
+  /** Windows: the one-time "Talaan lives in the system tray" hint after onboarding. Set when onboarding ends. */
+  showTrayTip?: boolean;
+  /** The guided test recording's meeting, until the user deletes or keeps it. */
+  testMeetingId?: string;
 }
 
 export interface SettingsStore {
@@ -135,6 +139,8 @@ export interface SettingsStore {
   downloadModel(id: string): Promise<void>;
   /** Stops a download. The part already downloaded is kept, so Download resumes. */
   cancelModelDownload(id: string): Promise<void>;
+  /** Measured download speed in bytes per second (reads a few MB, saves nothing). Undefined when offline. */
+  downloadSpeed(): Promise<number | undefined>;
   /** Deletes Talaan's own copy of a model (models reused from another app are never touched). */
   deleteModel(id: string): Promise<void>;
   /** Checks an API key with the provider and, if it works, saves it in the Keychain (never in settings). */

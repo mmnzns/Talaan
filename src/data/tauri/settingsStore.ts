@@ -95,6 +95,10 @@ export class TauriSettingsStore implements SettingsStore {
     return call<void>("models_cancel", { id });
   }
 
+  async downloadSpeed(): Promise<number | undefined> {
+    return (await call<number | null>("models_speed_test")) ?? undefined;
+  }
+
   deleteModel(id: string): Promise<void> {
     return call<void>("models_delete", { id });
   }

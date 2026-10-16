@@ -249,6 +249,17 @@ pub fn models_download(app: AppHandle, t: State<TranscriberState>, id: String) -
     Ok(())
 }
 
+/// The download speed in bytes per second, from reading up to 4 MB of the recommended speech model (nothing is
+/// saved). Onboarding uses it for "about N min". None when the network can't be reached.
+#[tauri::command]
+pub async fn models_speed_test() -> Option<u64> {
+    let url = find(crate::transcriber::models::DEFAULT_MODEL)?.files.first()?.url;
+    tauri::async_runtime::spawn_blocking(move || crate::transcriber::download::measure_speed(url, 4_000_000, Duration::from_secs(4)).ok())
+        .await
+        .ok()
+        .flatten()
+}
+
 #[tauri::command]
 pub fn models_cancel(app: AppHandle, t: State<TranscriberState>, id: String) -> CmdResult<()> {
     if let Some((flag, _)) = t.downloads.lock().unwrap_or_else(|e| e.into_inner()).get(&id) {

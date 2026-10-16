@@ -146,6 +146,7 @@ pub fn run() {
             commands::transcriber::models_list,
             commands::transcriber::models_download,
             commands::transcriber::models_cancel,
+            commands::transcriber::models_speed_test,
             commands::transcriber::models_delete,
             commands::summarizer::meetings_generate_summary,
             commands::gpu::gpu_status,
