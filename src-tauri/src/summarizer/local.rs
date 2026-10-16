@@ -43,10 +43,10 @@ impl LocalAi {
         let alive = self.running.as_mut().is_some_and(|r| matches!(r.child.try_wait(), Ok(None)));
         if !alive {
             self.running = None;
-            let mut child = Command::new(&self.exe)
-                .stdin(Stdio::piped())
-                .stdout(Stdio::piped())
-                .stderr(Stdio::null())
+            let mut cmd = Command::new(&self.exe);
+            cmd.stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::null());
+            hide_console(&mut cmd);
+            let mut child = cmd
                 .spawn()
                 .map_err(|e| format!("couldn't start the local AI ({}): {e}", self.exe.display()))?;
             let stdin = child.stdin.take().expect("piped");
@@ -142,6 +142,19 @@ impl Drop for LocalAi {
         self.stop();
     }
 }
+
+/// Windows: the helper is a console program, so starting it from Talaan (a windowed app with no console) would
+/// open a black console window for every summary, and closing that window kills the summary. `CREATE_NO_WINDOW`
+/// runs it without one; the piped stdin/stdout/stderr are unaffected. Nothing to do elsewhere.
+#[cfg(windows)]
+pub fn hide_console(cmd: &mut Command) {
+    use std::os::windows::process::CommandExt;
+    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+    cmd.creation_flags(CREATE_NO_WINDOW);
+}
+
+#[cfg(not(windows))]
+pub fn hide_console(_cmd: &mut Command) {}
 
 fn send(stdin: &mut ChildStdin, req: &Request) -> Result<(), String> {
     writeln!(stdin, "{}", encode(req)).and_then(|_| stdin.flush()).map_err(|e| format!("couldn't talk to the local AI: {e}"))
