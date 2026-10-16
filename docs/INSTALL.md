@@ -281,7 +281,7 @@ If something goes wrong, send the diagnostics:
 
 The report never contains meeting content: no transcripts, summaries, titles, attendee names or keys. You can read it before you paste it.
 
-Talaan keeps a small log file of what it did and any errors (never what was said): `~/Library/Logs/Talaan/` on a Mac and `%LOCALAPPDATA%\Talaan\logs\` on Windows. **Open log folder** shows it. It keeps about 10 MB at most (five files of 2 MB) and is removed by **Delete all Talaan data**.
+Talaan keeps a small log file of what it did and any errors (never what was said): `~/Library/Logs/Talaan/` on a Mac and `%LOCALAPPDATA%\com.craftconceptsdigital.talaan\logs\` on Windows. **Open log folder** shows it. It keeps about 10 MB at most (five files of 2 MB) and is removed by **Delete all Talaan data**. On Windows, uninstalling also removes it when you tick **Delete the application data**; updates keep it.
 
 ---
 

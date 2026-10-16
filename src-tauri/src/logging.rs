@@ -1,8 +1,10 @@
 //! Talaan's log file: what the app did and what went wrong, never what was said.
 //!
-//! Where: `~/Library/Logs/Talaan/` on the Mac and `%LOCALAPPDATA%\Talaan\logs\` on Windows (the same `Talaan` folder
-//! name as the data folder; Tauri's own `app_log_dir` would use the bundle identifier instead), or `<data>/logs`
-//! when `TALAAN_DATA_DIR` is set, so dev runs never write into the real log. `talaan.log` rotates at 2 MB into
+//! Where: `~/Library/Logs/Talaan/` on the Mac and `%LOCALAPPDATA%\com.craftconceptsdigital.talaan\logs\` on Windows
+//! (Tauri's `app_log_dir`), or `<data>/logs` when `TALAAN_DATA_DIR` is set, so dev runs never write into the real
+//! log. Not `%LOCALAPPDATA%\Talaan`: that is the installer's `$INSTDIR` (program files; the uninstaller deletes its
+//! own files there and would leave a log behind). Tauri's NSIS uninstaller deletes `$LOCALAPPDATA\<bundle id>` only when "Delete the application data" is
+//! ticked, and never during an update. `talaan.log` rotates at 2 MB into
 //! `talaan.1.log` .. `talaan.4.log` (about 10 MB at most).
 //!
 //! What: startup (version, OS, CPU, GPU plan), recorder start/stop/pause and device changes, call detection
@@ -25,6 +27,9 @@ pub const KEEP: usize = 5;
 /// Longest line written; anything longer is cut.
 const MAX_LINE: usize = 1000;
 
+/// The bundle identifier (`tauri.conf.json`), which names the Windows log folder.
+pub const BUNDLE_ID: &str = "com.craftconceptsdigital.talaan";
+
 /// The log folder: `TALAAN_DATA_DIR/logs` if set, else the OS log location.
 pub fn resolve_dir(env_override: Option<String>, home: Option<PathBuf>, local_data: Option<PathBuf>) -> PathBuf {
     if let Some(p) = env_override.filter(|s| !s.trim().is_empty()) {
@@ -33,7 +38,7 @@ pub fn resolve_dir(env_override: Option<String>, home: Option<PathBuf>, local_da
     if cfg!(target_os = "macos") {
         home.unwrap_or_else(std::env::temp_dir).join("Library").join("Logs").join("Talaan")
     } else {
-        local_data.unwrap_or_else(std::env::temp_dir).join("Talaan").join("logs")
+        local_data.unwrap_or_else(std::env::temp_dir).join(BUNDLE_ID).join("logs")
     }
 }
 
@@ -449,10 +454,17 @@ mod tests {
         if cfg!(target_os = "macos") {
             assert_eq!(d, PathBuf::from("/Users/ana/Library/Logs/Talaan"));
         } else {
-            assert_eq!(d, PathBuf::from(r"C:\Users\ana\AppData\Local").join("Talaan").join("logs"));
+            assert_eq!(d, PathBuf::from(r"C:\Users\ana\AppData\Local").join("com.craftconceptsdigital.talaan").join("logs"));
         }
         assert_eq!(resolve_dir(Some("/tmp/dev".into()), home.clone(), local.clone()), PathBuf::from("/tmp/dev").join("logs"));
         assert_eq!(resolve_dir(Some(" ".into()), home, local), d);
+    }
+
+    /// The Windows folder follows the bundle identifier, which the uninstaller's "Delete the application data" uses.
+    #[test]
+    fn the_windows_folder_is_the_bundle_identifier() {
+        let conf: serde_json::Value = serde_json::from_str(include_str!("../tauri.conf.json")).unwrap();
+        assert_eq!(conf["identifier"], BUNDLE_ID);
     }
 
     #[test]
