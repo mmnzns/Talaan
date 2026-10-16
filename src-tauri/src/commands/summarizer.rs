@@ -27,6 +27,10 @@ impl SummarizerState {
     pub fn enqueue(&self, id: &str) {
         self.worker.enqueue(id);
     }
+    /// Straight from the transcriber: ending without a summary posts "Transcript ready".
+    pub fn enqueue_auto(&self, id: &str) {
+        self.worker.enqueue_auto(id);
+    }
     pub fn cancel_if_running(&self, id: &str) {
         self.worker.cancel_if_running(id);
     }
@@ -126,9 +130,13 @@ pub fn setup(app: &AppHandle, data_dir: PathBuf) {
         unsummarized: Arc::new(move |id, title| notify_done(&done_app, id, "notify.transcript_ready", title)),
         profile: Box::new(move |cfg| summary_profile(cfg, &gpu)),
     });
-    for id in state.lock().ids_with_status(MeetingStatus::Summarizing).unwrap_or_default() {
+    let storage = state.lock();
+    for id in storage.ids_with_status(MeetingStatus::Summarizing).unwrap_or_default() {
+        // An estimate from before the restart means nothing now; the worker makes a new one when it starts.
+        let _ = storage.update_meeting_file(&id, |f| f.eta = None);
         worker.enqueue(&id);
     }
+    drop(storage);
     app.manage(SummarizerState { worker });
 }
 
