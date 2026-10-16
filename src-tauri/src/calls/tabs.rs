@@ -34,6 +34,10 @@ pub const BROWSERS: &[(&str, &str, &str, Family)] = &[
 #[derive(Debug, Clone, PartialEq)]
 pub enum Tabs {
     Urls(Vec<String>),
+    /// Tab titles from the tab strip, at least one of them a call's (`title_call`). Windows only: a call in a tab
+    /// that isn't in front has no address to read there, only its title.
+    #[cfg_attr(not(target_os = "windows"), allow(dead_code))]
+    Titles(Vec<String>),
     /// The user said no to Automation for this browser (macOS; Windows has no such permission).
     #[cfg_attr(target_os = "windows", allow(dead_code))]
     Denied,
@@ -54,6 +58,9 @@ pub enum BrowserCall {
 
 pub fn classify(lookups: &[Tabs]) -> BrowserCall {
     if let Some(label) = lookups.iter().filter_map(|t| if let Tabs::Urls(u) = t { u.iter().find_map(|u| web_call(u)) } else { None }).next() {
+        return BrowserCall::Call(label);
+    }
+    if let Some(label) = lookups.iter().filter_map(|t| if let Tabs::Titles(v) = t { v.iter().find_map(|t| title_call(t)) } else { None }).next() {
         return BrowserCall::Call(label);
     }
     if !lookups.is_empty() && lookups.iter().all(|t| matches!(t, Tabs::Urls(_))) {
@@ -92,9 +99,86 @@ pub fn web_call(url: &str) -> Option<&'static str> {
     None
 }
 
+/// The call a tab is in, by its title in the tab strip (Windows reads titles for the tabs that aren't in front).
+/// Only the shapes the call pages themselves use: "Meet - abc-defg-hij" or "Meet – Weekly sync" (Google Meet),
+/// "… | Microsoft Teams" (any Teams page, as with the address), "Zoom Meeting" / "Zoom Webinar" (the Zoom web
+/// client). Chromium adds its own notes after the title (" - Memory usage - 22.4 MB", " - Audio playing"), so a
+/// match may be followed by " - …". The caller counts a title only for a browser that is using the mic.
+pub fn title_call(title: &str) -> Option<&'static str> {
+    let t = title.trim();
+    // Where a page's own title may end: the end, or the start of a note Chromium appended.
+    let ends_here = |rest: &str| rest.is_empty() || rest.starts_with(" - ");
+    for dash in ["Meet - ", "Meet \u{2013} ", "Meet \u{2014} "] {
+        if let Some(rest) = t.strip_prefix(dash) {
+            // The meeting code or name, which Chromium's notes never are.
+            let name = rest.split(" - ").next().unwrap_or("").trim();
+            if !name.is_empty() && !CHROMIUM_NOTES.iter().any(|n| name.starts_with(n)) {
+                return Some("Google Meet");
+            }
+        }
+    }
+    const TEAMS: &str = "| Microsoft Teams";
+    if let Some(i) = t.find(TEAMS) {
+        if ends_here(&t[i + TEAMS.len()..]) {
+            return Some("Microsoft Teams");
+        }
+    }
+    for zoom in ["Zoom Meeting", "Zoom Webinar"] {
+        if t.strip_prefix(zoom).is_some_and(ends_here) {
+            return Some("Zoom");
+        }
+    }
+    None
+}
+
+/// The notes Chromium appends to a tab's accessible name (English UI), so "Meet - Memory usage - 20 MB" (the
+/// Meet home page) isn't read as a meeting called "Memory usage".
+const CHROMIUM_NOTES: &[&str] = &["Memory usage", "Audio playing", "Audio muted", "Camera", "Microphone", "Network error", "Crashed", "Pinned", "Sharing"];
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn call_tabs_are_recognized_by_title() {
+        assert_eq!(title_call("Meet - abc-defg-hij"), Some("Google Meet"));
+        assert_eq!(title_call("Meet \u{2013} Weekly sync"), Some("Google Meet"));
+        assert_eq!(title_call("Meet - abc-defg-hij - Memory usage - 19.2 MB"), Some("Google Meet"));
+        assert_eq!(title_call("Meet - abc-defg-hij - Camera or microphone recording"), Some("Google Meet"));
+        assert_eq!(title_call("Meeting with Ana | Microsoft Teams"), Some("Microsoft Teams"));
+        assert_eq!(title_call("Chat | Microsoft Teams - Memory usage - 80 MB"), Some("Microsoft Teams"));
+        assert_eq!(title_call("Zoom Meeting"), Some("Zoom"));
+        assert_eq!(title_call("Zoom Webinar - Audio playing"), Some("Zoom"));
+    }
+
+    #[test]
+    fn other_titles_are_not_calls() {
+        for t in [
+            "Meet",
+            "Google Meet",
+            "Meet - ",
+            "Meet - Memory usage - 20 MB",
+            "Meeting notes - Google Docs",
+            "Meetup: Toronto Rust",
+            "Microsoft Teams | Microsoft Learn",
+            "News | Microsoft Teams Blog",
+            "Zoom Workplace",
+            "Zoom Meetings pricing",
+            "Example Domain - Memory usage - 22.4 MB",
+            "",
+        ] {
+            assert_eq!(title_call(t), None, "{t}");
+        }
+    }
+
+    #[test]
+    fn a_call_title_makes_it_a_call() {
+        let titles = |t: &[&str]| Tabs::Titles(t.iter().map(|s| s.to_string()).collect());
+        assert_eq!(classify(&[Tabs::Unknown, titles(&["Example Domain", "Meet - abc-defg-hij"])]), BrowserCall::Call("Google Meet"));
+        // An address in front wins over a title behind it.
+        assert_eq!(classify(&[titles(&["Zoom Meeting"]), Tabs::Urls(vec!["https://teams.microsoft.com/v2/".into()])]), BrowserCall::Call("Microsoft Teams"));
+        assert_eq!(classify(&[titles(&["Example Domain"])]), BrowserCall::Unsure);
+    }
 
     #[test]
     fn calls_are_recognized_by_url() {

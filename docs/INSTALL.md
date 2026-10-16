@@ -170,7 +170,7 @@ Talaan notices when a call app starts using your microphone: Zoom, Microsoft Tea
 With **Settings › Connections › Browser call detection** on, Talaan can tell a Google Meet, Zoom web or Teams web tab from other sites using the mic, so **Browser calls** can be set to **Always**.
 
 - **Mac**: works with Chrome, Safari, Arc and other browsers after you allow each one once.
-- **Windows**: Talaan reads only the address of the tab **in front** in Chrome or Edge (and other Chromium browsers). If the call is in a background tab, Talaan can't see it, so it asks instead of recording automatically. Firefox calls are always asked about.
+- **Windows**: in Chrome or Edge (and other Chromium browsers), Talaan reads the address of the tab in front and the names of the other tabs, only while the browser is using your microphone. A call in a background tab is recognized by its tab name (for example "Meet - abc-defg-hij" or "… | Microsoft Teams"). If Talaan still can't tell, it asks instead of recording automatically. Firefox calls are always asked about.
 
 ### Calendar on Windows
 
@@ -227,7 +227,7 @@ On Windows, speech recognition runs on the processor, and Parakeet is many times
 | Where the icon lives | Menu bar (top) | System tray (bottom right) |
 | System audio permission | Asked once | Not needed |
 | Calendar | Reads the Calendar app | Paste your calendar's iCal address |
-| Browser call detection | All tabs, after allowing each browser | Only the tab in front, Chrome and Edge |
+| Browser call detection | All tabs, after allowing each browser | Tab in front by address, other tabs by name; Chrome and Edge |
 | Speech recognition | Uses the graphics chip | Uses the processor (Parakeet recommended) |
 | Settings shortcut | Cmd+, | Ctrl+, |
 
@@ -263,7 +263,7 @@ System audio permission is off. Open **System Settings › Privacy & Security �
 
 - Check **Settings › General › Detect calls** is on.
 - Check the app's rule in **Settings › Call apps** isn't **Never**, and that it isn't in **Ignored apps**.
-- Browser calls: turn on **Settings › Connections › Browser call detection**. On Windows, keep the call tab in front.
+- Browser calls: turn on **Settings › Connections › Browser call detection**. On Windows, if a background call tab isn't recognized, bring it to the front.
 - Talaan only notices calls while it's running. Keep **Settings › General › Open at login** on.
 - You can always start by hand: click the Talaan icon, then **Start recording**.
 

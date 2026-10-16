@@ -63,7 +63,7 @@ pub fn browser_access() -> Vec<(&'static str, &'static str)> {
 
 fn note_access(name: &'static str, tabs: &Tabs) {
     let state = match tabs {
-        Tabs::Urls(_) => "allowed",
+        Tabs::Urls(_) | Tabs::Titles(_) => "allowed",
         Tabs::Denied => "denied",
         Tabs::Unknown => return,
     };
@@ -73,7 +73,8 @@ fn note_access(name: &'static str, tabs: &Tabs) {
 }
 
 /// With tab detection on, turns the "browser" entry into the call it is, drops it when no tab is a call, or
-/// leaves it (Ask) when Talaan can't tell.
+/// leaves it (Ask) when Talaan can't tell. Only browsers that are using the mic right now are asked, so a call
+/// title in a tab (Windows) counts only while its browser holds the mic.
 fn resolve_browsers(users: &[crate::platform::mic_users::MicUser], apps: &mut Vec<&str>, cache: &mut TabCache) {
     if !apps.contains(&"browser") {
         return;

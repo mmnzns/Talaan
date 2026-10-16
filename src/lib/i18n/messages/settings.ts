@@ -112,8 +112,8 @@ export const settings = area({
     allow_in: "Allow in {app}",
     browser_title: "Browser call detection",
     browser_desc: "Recognizes Google Meet, Zoom web and Teams web tabs, so Browser calls can use Always. Your system asks once per browser.",
-    // Windows: no permission; Talaan reads the address bar of each browser window's front tab.
-    browser_desc_windows: "Recognizes Google Meet, Zoom web and Teams web tabs, so Browser calls can use Always. Reads the address of the tab in front of each browser window, on this computer only.",
+    // Windows: no permission; Talaan reads each browser window's address bar and its tab titles.
+    browser_desc_windows: "Recognizes Google Meet, Zoom web and Teams web tabs, so Browser calls can use Always. Reads the address and the tab names of a browser that is using your microphone, on this computer only.",
     // Windows calendar: its private iCal address.
     ics_desc: "Uses the event at recording time for the meeting title, attendees and speaker names. Paste your calendar’s private address in iCal format: Talaan checks your calendar through it when a recording starts (at most every 15 minutes), never changes it, and sends nothing.",
     ics_connected_desc: "Connected through your calendar’s iCal address. Talaan checks it when a recording starts (at most every 15 minutes), never changes your calendar, and sends nothing.",
@@ -472,7 +472,7 @@ export const settings = area({
     allow_in: "Autoriser dans {app}",
     browser_title: "Détection des appels dans le navigateur",
     browser_desc: "Reconnaît les onglets Google Meet, Zoom web et Teams web, pour que les appels passés dans un navigateur puissent utiliser « Toujours ». Votre système vous le demande une fois par navigateur.",
-    browser_desc_windows: "Reconnaît les onglets Google Meet, Zoom web et Teams web, pour que les appels passés dans un navigateur puissent utiliser « Toujours ». Lit l’adresse de l’onglet au premier plan de chaque fenêtre de navigateur, sur cet ordinateur seulement.",
+    browser_desc_windows: "Reconnaît les onglets Google Meet, Zoom web et Teams web, pour que les appels passés dans un navigateur puissent utiliser « Toujours ». Lit l’adresse et le nom des onglets d’un navigateur qui utilise votre micro, sur cet ordinateur seulement.",
     ics_desc: "Utilise l’événement en cours au début de l’enregistrement pour trouver le titre de la réunion, les participants et les noms des intervenants. Collez l’adresse privée de votre calendrier au format iCal : Talaan consulte votre calendrier par cette adresse quand un enregistrement commence (au plus toutes les 15 minutes), ne le modifie jamais et n’envoie rien.",
     ics_connected_desc: "Connecté par l’adresse iCal de votre calendrier. Talaan la consulte quand un enregistrement commence (au plus toutes les 15 minutes), ne modifie jamais votre calendrier et n’envoie rien.",
     ics_where: "Où trouver cette adresse ?",
@@ -825,7 +825,7 @@ export const settings = area({
     allow_in: "Permitir en {app}",
     browser_title: "Detección de llamadas en el navegador",
     browser_desc: "Reconoce las pestañas de Google Meet, Zoom web y Teams web, para que las llamadas del navegador puedan usar Siempre. Tu sistema pregunta una vez por navegador.",
-    browser_desc_windows: "Reconoce las pestañas de Google Meet, Zoom web y Teams web, para que las llamadas del navegador puedan usar Siempre. Lee la dirección de la pestaña visible en cada ventana del navegador, solo en esta computadora.",
+    browser_desc_windows: "Reconoce las pestañas de Google Meet, Zoom web y Teams web, para que las llamadas del navegador puedan usar Siempre. Lee la dirección y el nombre de las pestañas de un navegador que usa tu micrófono, solo en esta computadora.",
     ics_desc: "Usa el evento del momento de la grabación para el título de la reunión, los asistentes y los nombres de los hablantes. Pega la dirección privada de tu calendario en formato iCal: Talaan consulta tu calendario a través de ella cuando empieza una grabación (como máximo cada 15 minutos), nunca lo modifica y no envía nada.",
     ics_connected_desc: "Conectado a través de la dirección iCal de tu calendario. Talaan la consulta cuando empieza una grabación (como máximo cada 15 minutos), nunca modifica tu calendario y no envía nada.",
     ics_where: "¿Dónde encuentro esta dirección?",

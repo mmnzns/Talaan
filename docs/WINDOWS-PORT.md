@@ -68,10 +68,25 @@ views breadth-first (at most 12 levels and 600 elements, one cached round trip p
 a heavy page doesn't slow it down. Every UI Automation call is capped at 250 ms (`CUIAutomation8` with `IUIAutomation2`
 connection and transaction timeouts), and the budget is checked before each step. Live check (2026-10-15, a new Edge
 window each, closed afterwards): Meet → `Urls` (call seen) in 39 ms, example.com → `Unknown` in 45 ms, a long Wikipedia
-article → `Unknown` in 22 ms. **Limitation:** only the tab in front of each window is
-visible. So a call tab seen means the call (Always works), but no call tab seen means "can't tell" (Ask), never "not a call":
-a Meet call in a background tab still asks. Settings shows installed browsers as "ready" (Windows has no permission for this).
+article → `Unknown` in 22 ms. A call tab seen means the call (Always works), but no call tab seen means "can't tell" (Ask),
+never "not a call". Settings shows installed browsers as "ready" (Windows has no permission for this).
 Firefox stays Ask, as on the Mac.
+
+**Background call tabs (v1.1, C1).** The same walk also reads the tab strip: every tab is a `TabItem` whose name is its
+title, plus Chromium's own notes (Edge: "Example Domain - Memory usage - 22.4 MB"). The walk never enters a tab or the
+address bar, and stops after the level where it has both (they sit at the same depth, about 8 levels down; everything
+deeper is bookmarks, side panels and menus). `calls/tabs.rs` `title_call` knows the call pages' own titles: "Meet -
+abc-defg-hij" / "Meet – <name>", "… | Microsoft Teams", "Zoom Meeting" / "Zoom Webinar", each optionally followed by
+" - <note>". A matching title counts only because the browser is asked only while it's using the mic. The address bar
+still wins (`Urls`); else matching titles give `Tabs::Titles`; else `Unknown`. Live check (2026-10-16, debug build):
+`background_call_tab_live_smoke` starts a separate Edge with a new temp profile (so nothing opens in the user's
+windows), opens a local page titled "Meet - abc-defg-hij", then example.com in front of it: `Titles` 5 times out of 5,
+52-90 ms (first read 90 ms); `tab_urls` over every Edge window 74 ms. `tab_urls_live_smoke` (address bar plus tab
+titles): Meet 69 ms, example.com 60 ms, Wikipedia 34 ms (before the tab strip: 39 / 45 / 22 ms). A full walk without the
+early stop took 91-269 ms, too close to the 300 ms budget. **Limits:** English call-page titles only (Meet and Teams
+keep "Meet" and "Microsoft Teams" in other languages; Zoom's web client may translate "Zoom Meeting"); a Meet tab left
+open after a call, while the browser uses the mic for something else, reads as a call (the same is true of its
+address).
 
 **Known limits of the iCal reader** (rare in Google and Outlook feeds; fix if one shows up):
 
@@ -131,6 +146,7 @@ values; with the box ticked `%APPDATA%\Talaan`, `%LOCALAPPDATA%\com.craftconcept
 | `toast_smoke` (posts one toast under the PowerShell app id, waits 5 s, prints what `show()` returned) | `cargo test toast_smoke -- --ignored --nocapture` |
 | `public_holiday_feed_smoke` (downloads Google's public Canadian holidays calendar and reads it; network) | `cargo test public_holiday_feed_smoke -- --ignored --nocapture` |
 | `tab_urls_live_smoke` (opens a new Edge window on a Meet URL, then example.com, then a long Wikipedia article; expects `Urls`, then `Unknown` twice, with timings; closes only the windows it opened) | `cargo test tab_urls_live_smoke -- --ignored --nocapture --test-threads=1` |
+| `background_call_tab_live_smoke` (a separate Edge with a temp profile: a page titled "Meet - abc-defg-hij" behind example.com; expects `Titles` under 300 ms; closes that Edge and deletes the profile) | `cargo test background_call_tab_live_smoke -- --ignored --nocapture --test-threads=1` |
 | `large_feed_timing` (reads a 21 MB synthetic calendar) | `cargo test --release large_feed_timing -- --ignored --nocapture` |
 | `pipeline_smoke` (real models on a recorded meeting) | `TALAAN_SMOKE_MEETING=<meeting dir> cargo test --release pipeline_smoke -- --ignored --nocapture` |
 
@@ -181,7 +197,7 @@ Mirror each macOS item with the same names, so callers don't change:
 | `power.rs` `SleepWatcher` | Auto-pause on sleep | `WM_POWERBROADCAST` / `RegisterSuspendResumeNotification`. |
 | `notify.rs` | "Summary ready" notification, click opens the meeting | Windows toast (tauri-plugin-notification or WinRT `ToastNotificationManager` with an activation argument). |
 | `calendar.rs` | Calendar events (title, attendees) | The calendar's private iCal address (W4): download, then `calendar/ics.rs` parses and expands recurrences; the pure picker in `calendar/` is shared. WinRT `AppointmentStore` was ruled out by the W4 spike (below). |
-| `browser_tabs.rs` | Tab URLs of a browser using the mic | UI Automation on each Chromium window's address bar (W4; the tab in front only, so no call seen = Unsure). `calls/tabs.rs` classification is shared. |
+| `browser_tabs.rs` | Tab URLs of a browser using the mic | UI Automation on each Chromium window's address bar (W4) and tab titles (v1.1); no call seen = Unsure. `calls/tabs.rs` classification is shared. |
 | `thread.rs` | Background thread priority | `SetThreadPriority(THREAD_PRIORITY_BELOW_NORMAL)` / `THREAD_MODE_BACKGROUND_BEGIN`. |
 
 **W4 spike, AppointmentStore (2026-10-15, Miguel's PC, new Outlook installed, unpackaged debug test):**

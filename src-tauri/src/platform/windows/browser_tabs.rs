@@ -1,9 +1,10 @@
-//! A browser's tab URLs on Windows, read with UI Automation from each window's address bar. Only the tab in
-//! front of each window is visible this way, so "no call tab seen" doesn't mean "no call": the answer is a list
-//! of URLs only when one of them is a call, and otherwise Unknown (the Browser rule, Ask, applies). There's no
-//! permission to ask for on Windows, so never Denied.
+//! A browser's tabs on Windows, read with UI Automation from each window's own views: the address bar (the tab
+//! in front) and the tab strip (every tab's title, so a call in a tab that isn't in front is seen too). The answer
+//! is the URLs when one of them is a call, else the titles when one of them is a call (`title_call`), and
+//! otherwise Unknown (the Browser rule, Ask, applies): "no call tab seen" never means "no call". It's only asked
+//! about a browser that is using the mic. There's no permission to ask for on Windows, so never Denied.
 
-use crate::calls::tabs::{web_call, Family, Tabs};
+use crate::calls::tabs::{title_call, web_call, Family, Tabs};
 use std::time::{Duration, Instant};
 use ::windows::core::{Interface, BOOL, PWSTR};
 use ::windows::Win32::Foundation::{CloseHandle, HWND, LPARAM};
@@ -11,13 +12,19 @@ use ::windows::Win32::System::Com::{CoCreateInstance, CLSCTX_INPROC_SERVER};
 use ::windows::Win32::System::Threading::{OpenProcess, QueryFullProcessImageNameW, PROCESS_NAME_WIN32, PROCESS_QUERY_LIMITED_INFORMATION};
 use ::windows::Win32::UI::Accessibility::{
     CUIAutomation8, IUIAutomation, IUIAutomation2, IUIAutomationElement, IUIAutomationValuePattern, TreeScope_Children, UIA_ClassNamePropertyId,
-    UIA_ControlTypePropertyId, UIA_DocumentControlTypeId, UIA_ValuePatternId,
+    UIA_ControlTypePropertyId, UIA_DocumentControlTypeId, UIA_NamePropertyId, UIA_TabItemControlTypeId, UIA_ValuePatternId,
 };
 use ::windows::Win32::UI::WindowsAndMessaging::{EnumWindows, GetClassNameW, GetWindowThreadProcessId, IsWindowVisible};
 
-/// The answer for the URLs seen: they count only when one is a call (see the module doc).
-pub fn windows_result(urls: Vec<String>) -> Tabs {
-    if urls.iter().any(|u| web_call(u).is_some()) { Tabs::Urls(urls) } else { Tabs::Unknown }
+/// The answer for the addresses and tab titles seen: they count only when one is a call (see the module doc).
+pub fn windows_result(urls: Vec<String>, titles: Vec<String>) -> Tabs {
+    if urls.iter().any(|u| web_call(u).is_some()) {
+        Tabs::Urls(urls)
+    } else if titles.iter().any(|t| title_call(t).is_some()) {
+        Tabs::Titles(titles)
+    } else {
+        Tabs::Unknown
+    }
 }
 
 /// Whether a process image belongs to the browser `app` names: an exe file name (`msedge.exe`), or a packaged
@@ -33,9 +40,10 @@ pub fn is_app(image_path: &str, app: &str) -> bool {
 const BUDGET: Duration = Duration::from_millis(300);
 /// Chromium's address bar (a native view; the class name doesn't change with the UI language).
 const OMNIBOX_CLASS: &str = "OmniboxViewViews";
-/// How deep and how many elements the address-bar search looks at (it sits about 6 levels down).
+/// How deep and how many elements the search looks at (the address bar and the tabs sit 8 to 10 levels down; an
+/// Edge window has about 250 elements outside web content, and each tab adds one).
 const MAX_DEPTH: usize = 12;
-const MAX_NODES: usize = 600;
+const MAX_NODES: usize = 1000;
 /// Cap on any single UI Automation call, so a hung browser can't hold the calls loop.
 const CALL_TIMEOUT_MS: u32 = 250;
 
@@ -43,37 +51,55 @@ const CALL_TIMEOUT_MS: u32 = 250;
 struct Element<N> {
     node: N,
     class: String,
+    /// A tab's accessible name: its title, plus Chromium's notes (" - Memory usage - 22.4 MB"). Empty otherwise.
+    name: String,
     document: bool,
+    tab_item: bool,
 }
 
-/// Breadth-first search for the address bar under a browser window. Web content (documents and Chromium's render
-/// widget host) is never entered, so a page can't slow it down or fake an address bar. Bounded by depth, element
-/// count and `out_of_time`; `children` gives `None` for an element that can't be read.
-fn find_omnibox<N>(root: N, mut children: impl FnMut(&N) -> Option<Vec<Element<N>>>, out_of_time: impl Fn() -> bool) -> Option<N> {
+/// What the search found under one window: the address bar, and the title of every tab in the tab strip.
+struct Found<N> {
+    omnibox: Option<N>,
+    titles: Vec<String>,
+}
+
+/// Breadth-first walk of a browser window's own views for the address bar and the tabs. Web content (documents
+/// and Chromium's render widget host) is never entered, so a page can't slow it down or fake an address bar or a
+/// tab; the address bar and the tabs aren't entered either (their children are buttons). It stops after the level
+/// where it has both the address bar and some tabs, or when bounded by depth,
+/// element count and `out_of_time`, keeping what it found so far; `children` gives `None` for an element that
+/// can't be read.
+fn scan<N>(root: N, mut children: impl FnMut(&N) -> Option<Vec<Element<N>>>, out_of_time: impl Fn() -> bool) -> Found<N> {
+    let mut found = Found { omnibox: None, titles: Vec::new() };
     let mut level = vec![root];
     let mut seen = 0;
     for _ in 0..MAX_DEPTH {
         let mut next = Vec::new();
         for node in &level {
             if out_of_time() || seen >= MAX_NODES {
-                return None;
+                return found;
             }
             for child in children(node).unwrap_or_default() {
                 seen += 1;
                 if child.class == OMNIBOX_CLASS {
-                    return Some(child.node);
-                }
-                if !child.document && child.class != "Chrome_RenderWidgetHostHWND" {
+                    found.omnibox.get_or_insert(child.node);
+                } else if child.tab_item {
+                    if !child.name.trim().is_empty() {
+                        found.titles.push(child.name);
+                    }
+                } else if !child.document && child.class != "Chrome_RenderWidgetHostHWND" {
                     next.push(child.node);
                 }
             }
         }
-        if next.is_empty() {
-            return None;
+        // Both found: the tabs are siblings and this level is done, so nothing deeper is needed (it's most of
+        // the tree, and every element costs a round trip).
+        if next.is_empty() || (found.omnibox.is_some() && !found.titles.is_empty()) {
+            break;
         }
         level = next;
     }
-    None
+    found
 }
 
 /// Chromium's top-level browser frames (not tooltips, menus or the hidden message windows).
@@ -81,7 +107,8 @@ fn is_browser_frame(class: &str) -> bool {
     class == "Chrome_WidgetWin_1"
 }
 
-/// The address of the tab in front of each of `app`'s windows; see the module doc for what the answer means.
+/// The address of the tab in front of each of `app`'s windows and the titles of all their tabs; see the module
+/// doc for what the answer means.
 pub fn tab_urls(app: &str, family: Family) -> Tabs {
     if family != Family::Chromium {
         return Tabs::Unknown;
@@ -92,8 +119,8 @@ pub fn tab_urls(app: &str, family: Family) -> Tabs {
     if windows.is_empty() {
         return Tabs::Unknown;
     }
-    match unsafe { omnibox_urls(&windows, started) } {
-        Ok(urls) => windows_result(urls),
+    match unsafe { read_windows(&windows, started) } {
+        Ok((urls, titles)) => windows_result(urls, titles),
         Err(_) => Tabs::Unknown,
     }
 }
@@ -140,20 +167,22 @@ fn image_path(pid: u32) -> Option<String> {
     }
 }
 
-/// The address bar text of each window, within the time budget. Every UI Automation call is capped at 250 ms
-/// (`IUIAutomation2` timeouts), and the budget is checked before each window and each step of the search.
-unsafe fn omnibox_urls(windows: &[HWND], started: Instant) -> ::windows::core::Result<Vec<String>> {
+/// The address bar text and the tab titles of each window, within the time budget. Every UI Automation call is
+/// capped at 250 ms (`IUIAutomation2` timeouts), and the budget is checked before each window and each step of
+/// the search.
+unsafe fn read_windows(windows: &[HWND], started: Instant) -> ::windows::core::Result<(Vec<String>, Vec<String>)> {
     let uia: IUIAutomation = unsafe { CoCreateInstance(&CUIAutomation8, None, CLSCTX_INPROC_SERVER)? };
     if let Ok(uia2) = uia.cast::<IUIAutomation2>() {
         let _ = unsafe { uia2.SetConnectionTimeout(CALL_TIMEOUT_MS) };
         let _ = unsafe { uia2.SetTransactionTimeout(CALL_TIMEOUT_MS) };
     }
     let all = unsafe { uia.CreateTrueCondition()? };
-    // One round trip per element: its children, with their class name and control type.
+    // One round trip per element: its children, with their class name, control type and name.
     let cache = unsafe { uia.CreateCacheRequest()? };
     unsafe {
         cache.AddProperty(UIA_ClassNamePropertyId)?;
         cache.AddProperty(UIA_ControlTypePropertyId)?;
+        cache.AddProperty(UIA_NamePropertyId)?;
     }
     let out_of_time = || started.elapsed() > BUDGET;
     let children = |e: &IUIAutomationElement| -> Option<Vec<Element<IUIAutomationElement>>> {
@@ -162,21 +191,30 @@ unsafe fn omnibox_urls(windows: &[HWND], started: Instant) -> ::windows::core::R
         Some(
             (0..n)
                 .filter_map(|i| unsafe { list.GetElement(i) }.ok())
-                .map(|c| Element {
-                    class: unsafe { c.CachedClassName() }.map(|b| b.to_string()).unwrap_or_default(),
-                    document: unsafe { c.CachedControlType() }.is_ok_and(|t| t == UIA_DocumentControlTypeId),
-                    node: c,
+                .map(|c| {
+                    let kind = unsafe { c.CachedControlType() }.ok();
+                    let tab_item = kind == Some(UIA_TabItemControlTypeId);
+                    Element {
+                        class: unsafe { c.CachedClassName() }.map(|b| b.to_string()).unwrap_or_default(),
+                        // Only a tab's name is kept; the other names stay in the cache.
+                        name: if tab_item { unsafe { c.CachedName() }.map(|b| b.to_string()).unwrap_or_default() } else { String::new() },
+                        document: kind == Some(UIA_DocumentControlTypeId),
+                        tab_item,
+                        node: c,
+                    }
                 })
                 .collect(),
         )
     };
-    let mut urls = Vec::new();
+    let (mut urls, mut titles) = (Vec::new(), Vec::new());
     for &hwnd in windows {
         if out_of_time() {
             break;
         }
         let Ok(window) = (unsafe { uia.ElementFromHandle(hwnd) }) else { continue };
-        let Some(omnibox) = find_omnibox(window, children, out_of_time) else { continue };
+        let found = scan(window, children, out_of_time);
+        titles.extend(found.titles);
+        let Some(omnibox) = found.omnibox else { continue };
         let Ok(value) = (unsafe { omnibox.GetCurrentPatternAs::<IUIAutomationValuePattern>(UIA_ValuePatternId) }) else { continue };
         if let Ok(text) = unsafe { value.CurrentValue() } {
             let text = text.to_string().trim().to_string();
@@ -185,7 +223,7 @@ unsafe fn omnibox_urls(windows: &[HWND], started: Instant) -> ::windows::core::R
             }
         }
     }
-    Ok(urls)
+    Ok((urls, titles))
 }
 
 #[cfg(test)]
@@ -199,9 +237,18 @@ mod tests {
     #[test]
     fn urls_count_only_when_one_is_a_call() {
         let seen = urls(&["github.com/talaan", "meet.google.com/abc-defg-hij", "youtube.com/watch?v=1"]);
-        assert_eq!(windows_result(seen.clone()), Tabs::Urls(seen));
-        assert_eq!(windows_result(urls(&["youtube.com/watch?v=1", "meet.google.com"])), Tabs::Unknown);
-        assert_eq!(windows_result(vec![]), Tabs::Unknown);
+        assert_eq!(windows_result(seen.clone(), vec![]), Tabs::Urls(seen.clone()));
+        assert_eq!(windows_result(urls(&["youtube.com/watch?v=1", "meet.google.com"]), vec![]), Tabs::Unknown);
+        assert_eq!(windows_result(vec![], vec![]), Tabs::Unknown);
+        // The address in front wins over the titles.
+        assert_eq!(windows_result(seen.clone(), urls(&["Zoom Meeting"])), Tabs::Urls(seen));
+    }
+
+    #[test]
+    fn titles_count_only_when_one_is_a_call() {
+        let titles = urls(&["Example Domain - Memory usage - 22.4 MB", "Meet - abc-defg-hij"]);
+        assert_eq!(windows_result(urls(&["https://example.com/"]), titles.clone()), Tabs::Titles(titles));
+        assert_eq!(windows_result(urls(&["https://example.com/"]), urls(&["Google Meet", "Inbox"])), Tabs::Unknown);
     }
 
     #[test]
@@ -215,60 +262,107 @@ mod tests {
         assert!(!is_app("", "msedge.exe"));
     }
 
-    /// A small fake element tree: (id, class, document?, children).
-    fn tree() -> Vec<(u32, &'static str, bool, Vec<u32>)> {
+    /// A small fake element tree: (id, class, name, document?, tab item?, children).
+    type Node = (u32, &'static str, &'static str, bool, bool, Vec<u32>);
+    fn tree() -> Vec<Node> {
         vec![
-            (0, "Chrome_WidgetWin_1", false, vec![1, 2]),
-            (1, "Chrome_RenderWidgetHostHWND", false, vec![10]), // web content host: never entered
-            (10, "", true, vec![11]),
-            (11, OMNIBOX_CLASS, false, vec![]), // a page can't fake the address bar
-            (2, "BrowserView", false, vec![3, 4]),
-            (3, "", true, vec![12]), // a document elsewhere: not entered either
-            (12, OMNIBOX_CLASS, false, vec![]),
-            (4, "TopContainerView", false, vec![5]),
-            (5, "ToolbarView", false, vec![6]),
-            (6, "LocationBarView", false, vec![7]),
-            (7, OMNIBOX_CLASS, false, vec![]),
+            (0, "Chrome_WidgetWin_1", "", false, false, vec![1, 2]),
+            (1, "Chrome_RenderWidgetHostHWND", "", false, false, vec![10]), // web content host: never entered
+            (10, "", "", true, false, vec![11, 13]),
+            (11, OMNIBOX_CLASS, "", false, false, vec![]), // a page can't fake the address bar
+            (13, "", "Meet - fake-page-tab", false, true, vec![]), // or a tab
+            (2, "BrowserView", "", false, false, vec![3, 4, 20, 30]),
+            (3, "", "", true, false, vec![12]), // a document elsewhere: not entered either
+            (12, OMNIBOX_CLASS, "", false, false, vec![]),
+            (4, "TopContainerView", "", false, false, vec![5]),
+            (5, "ToolbarView", "", false, false, vec![6]),
+            (6, "LocationBarView", "", false, false, vec![7]),
+            (7, OMNIBOX_CLASS, "", false, false, vec![8]),
+            (8, "", "", false, false, vec![]), // inside the address bar: not entered
+            (20, "EdgeTabStripRegionView", "Tab bar", false, false, vec![21]),
+            (21, "EdgeTabStrip", "", false, false, vec![22, 23, 24]),
+            (22, "EdgeTab", "Example Domain - Memory usage - 22.4 MB", false, true, vec![25]),
+            (23, "EdgeTab", "Meet - abc-defg-hij", false, true, vec![]),
+            (24, "EdgeTab", "  ", false, true, vec![]),
+            (25, "AlertIndicatorButton", "Mute tab", false, false, vec![]), // inside a tab: not entered
+            // A deep branch (bookmarks, side panels): below the level where both were found, never read.
+            (30, "SidePanel", "", false, false, vec![31]),
+            (31, "", "", false, false, vec![32]),
+            (32, "", "", false, false, vec![33]),
+            (33, "", "", false, false, vec![34]),
+            (34, "", "", false, false, vec![35]),
+            (35, "", "", false, false, vec![]),
         ]
     }
 
-    fn kids(t: &[(u32, &'static str, bool, Vec<u32>)], visited: &std::cell::RefCell<Vec<u32>>) -> impl FnMut(&u32) -> Option<Vec<Element<u32>>> {
+    fn kids<'a>(t: &'a [Node], visited: &'a std::cell::RefCell<Vec<u32>>) -> impl FnMut(&u32) -> Option<Vec<Element<u32>>> + 'a {
         move |n| {
             visited.borrow_mut().push(*n);
-            let (_, _, _, children) = t.iter().find(|(id, ..)| id == n)?;
-            Some(children.iter().map(|c| t.iter().find(|(id, ..)| id == c).unwrap()).map(|(id, class, doc, _)| Element { node: *id, class: class.to_string(), document: *doc }).collect())
+            let (.., children) = t.iter().find(|(id, ..)| id == n)?;
+            Some(
+                children
+                    .iter()
+                    .map(|c| t.iter().find(|(id, ..)| id == c).unwrap())
+                    .map(|(id, class, name, doc, tab, _)| Element { node: *id, class: class.to_string(), name: name.to_string(), document: *doc, tab_item: *tab })
+                    .collect(),
+            )
         }
     }
 
+    fn plain(node: u32, class: &str) -> Element<u32> {
+        Element { node, class: class.into(), name: String::new(), document: false, tab_item: false }
+    }
+
     #[test]
-    fn the_omnibox_is_found_without_entering_web_content() {
+    fn the_address_bar_and_tabs_are_found_without_entering_web_content() {
         let t = tree();
         let visited = std::cell::RefCell::new(vec![]);
-        assert_eq!(find_omnibox(0, kids(&t, &visited), || false), Some(7));
+        let found = scan(0, kids(&t, &visited), || false);
+        assert_eq!(found.omnibox, Some(7));
+        assert_eq!(found.titles, urls(&["Example Domain - Memory usage - 22.4 MB", "Meet - abc-defg-hij"]));
         let v = visited.borrow();
-        assert!(!v.contains(&1) && !v.contains(&10) && !v.contains(&3), "{v:?}");
+        assert!(v.contains(&32));
+        for never in [1, 10, 3, 7, 22, 23, 33] {
+            assert!(!v.contains(&never), "entered {never}: {v:?}");
+        }
     }
 
     #[test]
     fn the_search_stops_at_the_deadline_and_on_unreadable_elements() {
         let t = tree();
         let visited = std::cell::RefCell::new(vec![]);
-        assert_eq!(find_omnibox(0, kids(&t, &visited), || true), None);
-        assert_eq!(find_omnibox(0u32, |_| None, || false), None);
+        let found = scan(0, kids(&t, &visited), || true);
+        assert!(found.omnibox.is_none() && found.titles.is_empty());
+        let found = scan(0u32, |_| None, || false);
+        assert!(found.omnibox.is_none() && found.titles.is_empty());
+    }
+
+    #[test]
+    fn the_search_keeps_what_it_found_when_time_runs_out() {
+        let t = tree();
+        let visited = std::cell::RefCell::new(vec![]);
+        // Time runs out after a few elements: the tab strip (shallower) is read, the address bar isn't reached.
+        let steps = std::cell::Cell::new(0);
+        let found = scan(0, kids(&t, &visited), || {
+            steps.set(steps.get() + 1);
+            steps.get() > 7
+        });
+        assert_eq!(found.omnibox, None);
+        assert_eq!(found.titles.len(), 2);
     }
 
     #[test]
     fn the_search_is_bounded_in_depth_and_size() {
         // A chain deeper than MAX_DEPTH with the omnibox at the bottom.
-        let deep = |n: &u32| Some(vec![Element { node: n + 1, class: if *n as usize == MAX_DEPTH + 5 { OMNIBOX_CLASS.into() } else { String::new() }, document: false }]);
-        assert_eq!(find_omnibox(0u32, deep, || false), None);
+        let deep = |n: &u32| Some(vec![plain(n + 1, if *n as usize == MAX_DEPTH + 5 { OMNIBOX_CLASS } else { "" })]);
+        assert_eq!(scan(0u32, deep, || false).omnibox, None);
         // A huge flat toolbar: gives up after MAX_NODES elements.
         let mut calls = 0;
         let wide = |n: &u32| {
             calls += 1;
-            Some((0..50).map(|i| Element { node: n * 50 + i + 1, class: String::new(), document: false }).collect())
+            Some((0..50).map(|i| plain(n * 50 + i + 1, "")).collect())
         };
-        assert_eq!(find_omnibox(0u32, wide, || false), None);
+        assert_eq!(scan(0u32, wide, || false).omnibox, None);
         assert!(calls * 50 <= MAX_NODES + 50, "{calls}");
     }
 
@@ -306,16 +400,71 @@ mod tests {
         // The heavy page shows the search never walks web content (its timing should match example.com).
         for url in ["https://meet.google.com/abc-defg-hij", "https://example.com", "https://en.wikipedia.org/wiki/United_States"] {
             let mine = open(url);
-            let seen = unsafe { omnibox_urls(&mine, Instant::now()) };
+            let t = Instant::now();
+            let seen = unsafe { read_windows(&mine, Instant::now()) }.map(|(u, titles)| (u, titles.len()));
+            let own = t.elapsed();
             let t = Instant::now();
             let result = tab_urls("msedge.exe", Family::Chromium);
             let took = t.elapsed();
-            let summary = match &result {
-                Tabs::Urls(u) => format!("Urls({} addresses, Meet tab among them: {})", u.len(), u.iter().any(|u| u.contains("meet.google.com/abc-defg-hij"))),
-                other => format!("{other:?}"),
-            };
-            println!("{url}: new windows {}, their address bar {:?}; tab_urls -> {summary} in {took:?}", mine.len(), seen);
+            println!("{url}: new windows {}, their address bar and tab count {seen:?} in {own:?}; tab_urls -> {} in {took:?}", mine.len(), summary(&result));
             close(&mine);
         }
+    }
+
+    fn summary(result: &Tabs) -> String {
+        match result {
+            Tabs::Urls(u) => format!("Urls({} addresses, Meet among them: {})", u.len(), u.iter().any(|u| u.contains("meet.google.com/abc-defg-hij"))),
+            Tabs::Titles(t) => format!("Titles({} tabs, the test call among them: {})", t.len(), t.iter().any(|t| t.starts_with("Meet - abc-defg-hij"))),
+            other => format!("{other:?}"),
+        }
+    }
+
+    /// Live check of a call tab that isn't in front. Starts a separate Edge with its own new profile in a temp
+    /// folder (so no tab ever opens in the user's windows), opens a local page titled like a Meet call, then
+    /// example.com in front of it, and expects `Titles`. Closes that Edge and deletes its folder afterwards. Run with
+    /// `cargo test background_call_tab_live_smoke -- --ignored --nocapture --test-threads=1`.
+    #[test]
+    #[ignore]
+    fn background_call_tab_live_smoke() {
+        use ::windows::Win32::Foundation::WPARAM;
+        use ::windows::Win32::UI::WindowsAndMessaging::{PostMessageW, WM_CLOSE};
+
+        super::super::com::init();
+        let dir = std::env::temp_dir().join(format!("talaan-tab-smoke-{}", std::process::id()));
+        let profile = dir.join("profile");
+        std::fs::create_dir_all(&profile).unwrap();
+        let page = dir.join("call.html");
+        std::fs::write(&page, "<!doctype html><title>Meet - abc-defg-hij</title><p>Pretend call</p>").unwrap();
+        let profile_arg = format!("--user-data-dir={}", profile.display());
+        let edge = |args: &[&str]| {
+            std::process::Command::new("cmd").args(["/C", "start", "", "msedge", &profile_arg, "--no-first-run", "--no-default-browser-check"]).args(args).status().expect("start Edge");
+        };
+        let before = browser_windows("msedge.exe");
+        edge(&["--new-window", &format!("file:///{}", page.display().to_string().replace('\\', "/"))]);
+        std::thread::sleep(Duration::from_secs(5));
+        edge(&["https://example.com"]); // a new tab in front, in this profile's window
+        std::thread::sleep(Duration::from_secs(4));
+        let mine: Vec<HWND> = browser_windows("msedge.exe").into_iter().filter(|h| !before.contains(h)).collect();
+
+        let mut runs = Vec::new();
+        for _ in 0..5 {
+            let t = Instant::now();
+            let r = unsafe { read_windows(&mine, Instant::now()) }.map(|(u, titles)| windows_result(u, titles));
+            runs.push((t.elapsed(), r.map(|r| summary(&r))));
+        }
+        let t = Instant::now();
+        let all = tab_urls("msedge.exe", Family::Chromium);
+        println!("new windows {}; own windows: {runs:?}; tab_urls over every Edge window -> {} in {:?}", mine.len(), summary(&all), t.elapsed());
+
+        for &h in &mine {
+            let _ = unsafe { PostMessageW(Some(h), WM_CLOSE, WPARAM(0), LPARAM(0)) };
+        }
+        std::thread::sleep(Duration::from_secs(3));
+        // Edge may keep that profile's processes alive in the background: stop only the ones using our folder.
+        let script = format!("Get-CimInstance Win32_Process -Filter \"name='msedge.exe'\" | Where-Object {{ $_.CommandLine -like '*{}*' }} | ForEach-Object {{ Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }}", profile.display());
+        let _ = std::process::Command::new("powershell").args(["-NoProfile", "-Command", &script]).status();
+        std::thread::sleep(Duration::from_secs(2));
+        let _ = std::fs::remove_dir_all(&dir);
+        assert!(runs.iter().all(|(took, r)| *took < BUDGET && r.as_ref().is_ok_and(|s| s.starts_with("Titles") && s.ends_with("true)"))), "{runs:?}");
     }
 }

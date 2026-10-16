@@ -85,8 +85,9 @@ quit the dev app first: one Talaan at a time.
 **Calls**
 - [ ] A real Microsoft Teams call (app) on Always: recording starts with the banner; leave → Call ended → stops.
 - [ ] A real Zoom call: same.
-- [ ] Google Meet in Edge or Chrome, tab in front, Browser calls on Always: starts by itself. Meet in a
-  background tab: asks instead.
+- [ ] Google Meet in Edge or Chrome, tab in front, Browser calls on Always: starts by itself. Join with the Meet
+  tab in front, then switch to another tab before the call is noticed (or join from a background tab): it still
+  starts by itself (the tab is titled "Meet - abc-defg-hij" or "Meet – <name>"). Same with Teams web.
 - [ ] Both sides in the transcript, Me/Them right, no echo lines (headphones). Summary written offline.
 - [ ] Calendar: paste the Google "Secret address in iCal format", Test and connect shows events; a recording
   during an event takes its title and attendees.
