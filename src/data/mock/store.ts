@@ -161,6 +161,43 @@ export class MockMeetingStore implements MeetingStore {
     this.originals.set(m.id, { summary: undefined, lines: new Map(m.transcript.map((l) => [l.id, l.text])) });
   };
 
+  /** The browser preview's stand-in for a finished recording (the guided test): a new meeting that is
+   *  transcribed like a real one would be. Returns its id. */
+  addRecording(title: string, durationMs: number, tags: string[] = []): MeetingId {
+    const id = `m-rec-${Date.now().toString(36)}`;
+    const m: Meeting = {
+      id,
+      title,
+      app: "other",
+      appLabel: "Talaan",
+      startedAt: new Date(Date.now() - durationMs).toISOString(),
+      durationMs,
+      status: "transcribing",
+      progress: 0,
+      tags: [...tags],
+      peopleCount: 1,
+      pinned: false,
+      language: "en",
+      hasAudio: true,
+      speakers: { me: "Me" },
+      transcript: [],
+      marks: [],
+      pauses: [],
+    };
+    this.meetings.set(id, m);
+    this.originals.set(id, { summary: undefined, lines: new Map() });
+    this.simulate(id, "transcribing", (done) => {
+      done.status = "ready";
+      done.transcript = [
+        { id: `${id}-0`, at: 0, end: 6_000, speaker: "me", text: "This is a test of Talaan. Today I want to finish the slides and call the client.", edited: false },
+        { id: `${id}-1`, at: 6_500, end: Math.max(12_000, Math.min(durationMs, 14_000)), speaker: "me", text: "If this shows up as text, it works.", edited: false },
+      ];
+      done.summaryError = { code: "too_short", message: "Too little speech to summarize." };
+      this.originals.set(id, { summary: undefined, lines: new Map(done.transcript.map((l) => [l.id, l.text])) });
+    });
+    return id;
+  }
+
   async recoverMeeting(id: MeetingId) {
     this.simulate(id, "transcribing", this.finishTranscription);
   }

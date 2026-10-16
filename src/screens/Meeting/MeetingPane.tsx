@@ -13,6 +13,7 @@ import { SummaryCard } from "./SummaryCard";
 import { TranscriptCard } from "./TranscriptCard";
 import { SunCorner } from "../../brand/SunCorner";
 import { useT } from "../../lib/i18n/I18nProvider";
+import { TestMeetingBanner, TestRecordingCard } from "../Onboarding/TestRecording";
 
 export function MeetingPane({ id, jumpTo }: { id?: string; jumpTo?: Ms }) {
   const { meeting, loading } = useMeeting(id);
@@ -42,7 +43,12 @@ function EmptyPane() {
   return (
     <div className="relative grid flex-1 place-items-center overflow-hidden p-8 text-center">
       <SunCorner className="absolute right-0 top-0" />
-      <div className="relative flex max-w-sm flex-col items-center gap-2">
+      <div className="relative flex max-w-[420px] flex-col items-center gap-2">
+        {first && (
+          <div className="mb-5 flex w-full justify-center">
+            <TestRecordingCard />
+          </div>
+        )}
         <span className="font-display text-xl font-bold tracking-[-0.02em]">{first ? t("meeting.emptyFirstTitle") : t("meeting.emptyTitle")}</span>
         <p className="m-0 text-[13px] text-subtle">
           {first ? t("meeting.emptyFirstBody") : t("meeting.emptyBody")}
@@ -104,6 +110,7 @@ function MeetingView({ meeting, jumpTo }: { meeting: Meeting; jumpTo?: Ms }) {
         copied={copied}
       />
       <StatusBanner meeting={meeting} />
+      <TestMeetingBanner meeting={meeting} />
       <div className="relative grid flex-1 grid-cols-1 items-start gap-7 px-11 pb-11 min-[1000px]:min-h-0 min-[1000px]:grid-cols-2 min-[1000px]:items-stretch">
         <SummaryCard meeting={meeting} activeAt={activeAt} editing={editing} onJump={jump} />
         <TranscriptCard

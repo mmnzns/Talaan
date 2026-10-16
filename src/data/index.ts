@@ -17,8 +17,9 @@ const empty = typeof location !== "undefined" && location.search.includes("mock=
 
 const mockSettings = real ? undefined : new MockSettingsStore();
 export const settingsStore: SettingsStore = mockSettings ?? new TauriSettingsStore();
-export const meetingStore: MeetingStore = mockSettings
-  ? new MockMeetingStore(new Date(), { empty, yourName: () => mockSettings.current().yourName })
-  : new TauriMeetingStore();
+const mockMeetings = mockSettings ? new MockMeetingStore(new Date(), { empty, yourName: () => mockSettings.current().yourName }) : undefined;
+export const meetingStore: MeetingStore = mockMeetings ?? new TauriMeetingStore();
+/** Browser preview only: the mock recorder saves no meeting, so the guided test recording asks for a simulated one. */
+export const simulateRecording = mockMeetings ? (title: string, durationMs: number, tags: string[]) => mockMeetings.addRecording(title, durationMs, tags) : undefined;
 export const recorderClient: RecorderClient = real ? new TauriRecorderClient() : new MockRecorderClient();
 export const usingRealStorage = real;
