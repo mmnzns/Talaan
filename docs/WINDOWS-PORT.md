@@ -138,6 +138,27 @@ values; with the box ticked `%APPDATA%\Talaan`, `%LOCALAPPDATA%\com.craftconcept
 
 **CPU baseline (release builds, v1.0.3).** whisper.cpp defaults to `GGML_NATIVE=ON`, so whisper-rs-sys compiled ggml for the CPU of the machine building it: the PC's cache showed `GGML_NATIVE:BOOL=ON` with AVX-512 detected. A release built on a runner with AVX-512 would crash with "illegal instruction" on most Intel PCs the first time Whisper runs. `scripts/cpu-baseline.ps1` (dot-sourced by `release-windows.ps1` and `build-llm-helper.ps1`) sets `GGML_NATIVE=OFF`, AVX/AVX2/FMA/F16C/BMI2/SSE4.2 on and every AVX-512 option off (x86-64-v3); whisper-rs-sys and llama-cpp-sys-2 forward `GGML_*` env vars as CMake defines (llama-cpp-sys-2 already forced NATIVE off). The release script cleans the two -sys crates when their cache doesn't match, and fails if a cache has NATIVE or any AVX-512 option ON, or AVX2 not ON. It is Windows only (not `.cargo/config.toml`, which can't be scoped to a target): the Mac keeps its native Apple-silicon build. Local `cargo test` / `tauri dev` on the PC still build natively unless the script's env is set.
 
+**GPU (Vulkan) with automatic CPU fallback (G1, branch `gpu-windows`; plan: docs/plans/G1-windows-gpu.md).**
+`talaan.exe` stays free of Vulkan (ggml registers its Vulkan backend even with the GPU off, and a missing
+`vulkan-1.dll` would stop it from starting). GPU work runs in two helpers next to it: `talaan-llm-vulkan.exe` (the
+summary helper built with `--features vulkan`) and `talaan-stt-vulkan.exe` (new crate `src-tauri/stt`, whose lib is
+also the in-process Whisper code, so both transcribe a chunk the same way). `gpu.rs` uses a helper only when Use the
+GPU is on, `vulkan-1.dll` loads from System32, the helper is installed, and `gpu.json` (data folder) holds no failure
+for this app version and display driver (adapter names and versions from the registry). Helpers start with
+`VK_LOADER_LAYERS_DISABLE=~implicit~` (overlays). They pick the discrete GPU with the most memory, never an iGPU,
+never a split (llama.cpp: one device, split mode none, `fit_params` for partial offload with a 1 GB margin; Whisper:
+`gpu_device`), and say `cpu` when there is none. Fallback: a GPU start failure, crash, 5-minute stall (summary) or
+per-chunk timeout (Whisper), or an error is redone on the processor (`LocalAi::with_gpu`, `transcriber/fallback.rs`);
+the failure is written to `gpu.json` only when the processor then succeeds. Check setup › Graphics chip shows the GPU
+or why not (Try again clears `gpu.json`). Embeddings and Parakeet stay on the processor. `TALAAN_GPU=fail` makes the
+GPU builds abort on their first job, to test the fallback. Build: `build-llm-helper.ps1` builds the GPU helpers when
+`VULKAN_SDK` is set (required with `TALAAN_GPU=1`) into their own target folder (`TALAAN_GPU_TARGET_DIR`, absolute;
+CI uses `C:\tg` for path length), with the x86-64-v3 baseline; `release-windows.ps1` bundles them
+(`bundle.resources`), checks `GGML_VULKAN` on/off per cache and fails if `talaan.exe` or `talaan-llm.exe` imports
+`vulkan-1.dll` (dumpbin). CI: `.github/actions/vulkan-sdk` (LunarG 1.4.363.0, cached); Release › Run workflow uploads
+the installer and the bare helpers; CI › Run workflow adds `windows-gpu`. **Not verified locally:** the Vulkan builds
+themselves (no Vulkan SDK on the PC by decision); CI builds them. Hand checks: docs/TESTING.md, "GPU on Windows (G1)".
+
 ## What's already shared
 
 Everything outside `src-tauri/src/platform/macos/` is cross-platform by design: storage, the transcriber

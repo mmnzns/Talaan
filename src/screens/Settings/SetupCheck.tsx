@@ -26,10 +26,10 @@ export function SetupCheck() {
   const [busy, setBusy] = useState(false);
 
   const run = useCallback(
-    async (testSystemAudio = false) => {
+    async (testSystemAudio = false, retryGpu = false) => {
       setBusy(true);
       try {
-        setResults(checkSetup(await probeSetup(store, recorderClient, testSystemAudio)));
+        setResults(checkSetup(await probeSetup(store, recorderClient, testSystemAudio, retryGpu)));
       } catch (e) {
         toast(describeError(e));
       } finally {
@@ -53,7 +53,7 @@ export function SetupCheck() {
       if (action === "summaryAI") return navigate(routes.settings("ai"));
       if (action === "connections") return navigate(routes.settings("connections"));
       if (action === "openData") return await store.revealData();
-      await run(action === "testSystemAudio");
+      await run(action === "testSystemAudio", action === "retryGpu");
     } catch (e) {
       toast(describeError(e));
     }

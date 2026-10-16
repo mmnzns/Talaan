@@ -62,6 +62,31 @@ describe("checkSetup", () => {
     expect(checkSetup(probe({ calendar: "allowed" })).map((r) => r.id).slice(-2)).toEqual(["calendar", "data"]);
   });
 
+  it("shows the graphics chip after speakers, and never as a failure", () => {
+    expect(checkSetup(probe()).some((r) => r.id === "gpu")).toBe(false);
+    const ids = checkSetup(probe({ gpu: { state: "metal" } })).map((r) => r.id);
+    expect(ids.slice(ids.indexOf("speakers"), ids.indexOf("speakers") + 3)).toEqual(["speakers", "gpu", "summary"]);
+    expect(find(probe({ gpu: { state: "metal" } }), "gpu")).toMatchObject({ status: "ok", detail: "Apple GPU (Metal)." });
+    expect(find(probe({ gpu: { state: "off" } }), "gpu")).toMatchObject({ status: "ok" });
+    expect(find(probe({ gpu: { state: "off" } }), "gpu").fix).toBeUndefined();
+    expect(find(probe({ gpu: { state: "off" } }), "gpu").detail).toContain("processor");
+    const rtx = find(probe({ gpu: { state: "in_use", device: "NVIDIA GeForce RTX 5070 Ti", vramMb: 16303 } }), "gpu");
+    expect(rtx.status).toBe("ok");
+    expect(rtx.fix).toBeUndefined();
+    expect(rtx.detail).toContain("NVIDIA GeForce RTX 5070 Ti (16 GB)");
+    expect(find(probe({ gpu: { state: "unavailable", reason: "no_gpu" } }), "gpu").status).toBe("ok");
+    for (const s of checkSetup(probe({ gpu: { state: "failed", detail: "speech GPU helper stopped: exit code 5" } }))) expect(s.status).not.toBe("fail");
+  });
+
+  it("says why the graphics chip isn't used, with Try again where trying again can help", () => {
+    const failed = find(probe({ gpu: { state: "failed", detail: "speech GPU helper stopped: exit code 5" } }), "gpu");
+    expect(failed).toMatchObject({ status: "warn", fix: { action: "retryGpu" } });
+    expect(failed.detail).toContain("exit code 5");
+    expect(find(probe({ gpu: { state: "unavailable", reason: "no_vulkan" } }), "gpu")).toMatchObject({ status: "warn", fix: { action: "retryGpu" } });
+    expect(find(probe({ gpu: { state: "unavailable", reason: "no_start", detail: "0xC0000135" } }), "gpu").detail).toContain("0xC0000135");
+    expect(find(probe({ gpu: { state: "unavailable", reason: "no_helper" } }), "gpu")).toMatchObject({ status: "warn", fix: undefined });
+  });
+
   it("reports a data folder it can't read", () => {
     expect(find(probe({ data: { error: "permission denied" } }), "data")).toMatchObject({ status: "fail" });
   });

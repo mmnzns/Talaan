@@ -2,6 +2,8 @@ mod ask;
 mod calendar;
 mod calls;
 mod commands;
+mod gpu;
+mod helper;
 mod i18n;
 mod importer;
 mod keys;
@@ -146,6 +148,8 @@ pub fn run() {
             commands::transcriber::models_cancel,
             commands::transcriber::models_delete,
             commands::summarizer::meetings_generate_summary,
+            commands::gpu::gpu_status,
+            commands::gpu::gpu_retry,
             commands::ask::meetings_ask,
             commands::calendar::calendar_access,
             commands::calendar::calendar_request,

@@ -41,6 +41,7 @@ Talaan uses the following libraries, fonts and models. Each is used under its ow
 | tiny_http (tests only) | MIT / Apache-2.0 | https://github.com/tiny-http/tiny-http |
 | llama.cpp (via llama-cpp-2, in the talaan-llm helper) | MIT | https://github.com/ggml-org/llama.cpp |
 | llama-cpp-2 | MIT / Apache-2.0 | https://github.com/utilityai/llama-cpp-rs |
+| Vulkan-Headers and Vulkan-Hpp (compiled into the Windows GPU helpers through ggml-vulkan) | Apache-2.0 / MIT | https://github.com/KhronosGroup/Vulkan-Headers, https://github.com/KhronosGroup/Vulkan-Hpp |
 | keyring (Keychain) | MIT / Apache-2.0 | https://github.com/hwchen/keyring-rs |
 | objc2-user-notifications | Zlib / Apache-2.0 / MIT | https://github.com/madsmtm/objc2 |
 | Symphonia (audio import) | MPL-2.0 | https://github.com/pdeljanov/Symphonia |

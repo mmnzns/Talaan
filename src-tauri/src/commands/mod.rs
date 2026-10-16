@@ -4,6 +4,7 @@ pub mod ask;
 pub mod calendar;
 pub mod calls;
 pub mod dev;
+pub mod gpu;
 pub mod import;
 pub mod meetings;
 pub mod notion;

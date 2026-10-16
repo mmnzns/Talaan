@@ -10,6 +10,8 @@ name: Release
 # check that latest.json has four keys (the script checks it too). latest-json.mjs reads its upload back and retries,
 # but two uploads at once can still race.
 # Publish the draft by hand after the release gate (docs/TESTING.md).
+# Windows builds carry the GPU helpers (talaan-llm-vulkan.exe, talaan-stt-vulkan.exe; docs/plans/G1-windows-gpu.md),
+# so both Windows jobs install the Vulkan SDK first (.github/actions/vulkan-sdk, pinned and cached).
 #
 # Secrets:
 #   TAURI_SIGNING_PRIVATE_KEY / _PASSWORD   Talaan's updater key (minisign), used by both platforms
@@ -22,8 +24,9 @@ name: Release
 on:
   push:
     tags: ["v*"]
-  # Test build: Actions › Release › Run workflow. Builds the signed Windows installer exactly like a release and
-  # keeps it as a workflow artifact; no tag, no release, no latest.json.
+  # Test build: Actions › Release › Run workflow (pick the branch). Builds the signed Windows installer exactly like
+  # a release and keeps it as a workflow artifact, with the bare GPU helpers as a second artifact; no tag, no
+  # release, no latest.json.
   workflow_dispatch:
 
 permissions:
@@ -35,6 +38,10 @@ jobs:
     runs-on: windows-latest
     env:
       LIBCLANG_PATH: C:\Program Files\LLVM\bin
+      # GPU helpers (docs/plans/G1-windows-gpu.md): required, built in a short folder (whisper.cpp's Vulkan
+      # shaders hit Windows' path-length limit under the checkout).
+      TALAAN_GPU: "1"
+      TALAAN_GPU_TARGET_DIR: C:\tg
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -46,6 +53,8 @@ jobs:
         with:
           workspaces: src-tauri
           key: release-windows
+          cache-directories: C:\tg
+      - uses: ./.github/actions/vulkan-sdk
       - run: npm ci
       - name: Build the installer
         shell: pwsh
@@ -53,12 +62,24 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: ./scripts/release-windows.ps1
+      # The runner has the Vulkan loader (from the SDK) but no GPU: both helpers must start and say "cpu".
+      - name: GPU helpers start
+        shell: pwsh
+        run: ./scripts/gpu-helper-smoke.ps1 -Dir src-tauri/binaries
       - uses: actions/upload-artifact@v4
         with:
           name: talaan-windows-installer
           path: |
             src-tauri/target/release/bundle/nsis/*_x64-setup.exe
             src-tauri/target/release/bundle/nsis/*_x64-setup.exe.sig
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        with:
+          name: talaan-gpu-helpers
+          path: |
+            src-tauri/binaries/talaan-llm-vulkan.exe
+            src-tauri/binaries/talaan-stt-vulkan.exe
+            scripts/gpu-helper-smoke.ps1
           if-no-files-found: error
 
   draft:
@@ -85,6 +106,10 @@ jobs:
     runs-on: windows-latest
     env:
       LIBCLANG_PATH: C:\Program Files\LLVM\bin
+      # GPU helpers (docs/plans/G1-windows-gpu.md): required, built in a short folder (whisper.cpp's Vulkan
+      # shaders hit Windows' path-length limit under the checkout).
+      TALAAN_GPU: "1"
+      TALAAN_GPU_TARGET_DIR: C:\tg
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -96,9 +121,11 @@ jobs:
         with:
           workspaces: src-tauri
           key: release-windows
+          cache-directories: C:\tg
+      - uses: ./.github/actions/vulkan-sdk
       - run: npm ci
-      # Builds the helper (beforeBuildCommand), the installer and its updater signature; fails if whisper.cpp or
-      # llama.cpp weren't built with -O2 (.cargo/config.toml).
+      # Builds the helpers (CPU and GPU), the installer and its updater signature; fails if whisper.cpp or
+      # llama.cpp weren't built with -O2 for x86-64-v3, or if talaan.exe imports vulkan-1.dll.
       - name: Build the installer
         shell: pwsh
         env:

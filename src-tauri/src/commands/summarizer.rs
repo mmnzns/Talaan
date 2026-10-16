@@ -6,7 +6,8 @@ use crate::storage::model::MeetingStatus;
 use crate::i18n::{tr, tr_with};
 use crate::storage::StorageError;
 use crate::summarizer::engines::{compatible_base, default_base, list_models, recommended_model, HttpEngine, LocalEngine, Provider, CLOUD_CONTEXT, LOCAL_CONTEXT};
-use crate::summarizer::local::{helper_path, LocalAi};
+use crate::gpu::{Gpu, Kind, Plan};
+use crate::summarizer::local::{helper_path, GpuHelper, LocalAi, GPU_STALL};
 use crate::summarizer::models::{local_model, LLM_CATALOG};
 use crate::summarizer::summarize::{EngineError, SummaryEngine};
 use crate::summarizer::worker::{Config, Deps, Worker, NO_ENGINE};
@@ -75,9 +76,21 @@ pub fn make_engine(cfg: &Config, data_dir: &Path) -> Result<Box<dyn SummaryEngin
                 let size = crate::i18n::decimal(model.size() as f64 / 1e9);
                 return Err(EngineError::Unavailable(tr_with("ai.download_local", &[("name", model.name), ("size", &size)])));
             };
-            Ok(Box::new(LocalEngine { ai: LocalAi::new(&helper_path()), model_path: dir.join(model.files[0].name), model_name: model.name.into() }))
+            Ok(Box::new(LocalEngine { ai: local_ai(data_dir, s["useGpu"].as_bool().unwrap_or(true)), model_path: dir.join(model.files[0].name), model_name: model.name.into() }))
         }
     }
+}
+
+/// The local AI helper for a summary: on Windows the GPU build first when it should be used (`gpu.rs`), with the
+/// processor helper behind it; elsewhere the one helper (Metal on the Mac).
+fn local_ai(data_dir: &Path, use_gpu: bool) -> LocalAi {
+    if cfg!(windows) {
+        let gpu = Gpu::shared(data_dir);
+        if let Plan::Gpu { exe, env } = gpu.plan(Kind::Llm, use_gpu) {
+            return LocalAi::with_gpu(&helper_path(), GpuHelper { exe, env, on_failure: gpu.recorder(Kind::Llm), stall: GPU_STALL });
+        }
+    }
+    LocalAi::new(&helper_path())
 }
 
 pub fn setup(app: &AppHandle, data_dir: PathBuf) {

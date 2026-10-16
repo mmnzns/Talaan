@@ -3,6 +3,7 @@ import { useSettingsStore } from "../../data/StoreProvider";
 import type { SpeechModel } from "../../data/settings";
 import { useLang, useT } from "../../lib/i18n/I18nProvider";
 import { messageOr, type MessageKey } from "../../lib/i18n";
+import { onWindows } from "../../lib/platform";
 import { Button, Chip, Radio, Select, Switch, cn, useToast } from "../../ui";
 import { Dots, Group, Row, SectionIntro } from "./parts";
 import type { TabProps } from "./tabProps";
@@ -125,7 +126,7 @@ export function ModelsTab({ settings: s, update }: TabProps) {
             <option value="pt">{t("settings.lang_pt")}</option>
           </Select>
         </Row>
-        <Row title={t("settings.gpu_title")} desc={t("settings.gpu_desc")}>
+        <Row title={t("settings.gpu_title")} desc={t(onWindows ? "settings.gpu_desc_windows" : "settings.gpu_desc")}>
           <Switch aria-label={t("settings.gpu_title")} checked={s.useGpu} onChange={(v) => update({ useGpu: v })} />
         </Row>
       </Group>

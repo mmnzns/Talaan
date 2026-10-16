@@ -1,5 +1,5 @@
 import { defaultSettings, withDefaults } from "../defaultSettings";
-import type { BrowserState, ByokProvider, CalendarAccess, LocalModel, NotionDestination, Settings, SettingsStore, SpeechModel } from "../settings";
+import type { BrowserState, ByokProvider, CalendarAccess, GpuStatus, LocalModel, NotionDestination, Settings, SettingsStore, SpeechModel } from "../settings";
 import { call, onEvent } from "./invoke";
 
 
@@ -169,6 +169,14 @@ export class TauriSettingsStore implements SettingsStore {
   async disconnectCalendar(): Promise<void> {
     await call<void>("calendar_disconnect");
     await this.update({ calendarConnected: false });
+  }
+
+  gpuStatus(): Promise<GpuStatus> {
+    return call<GpuStatus>("gpu_status");
+  }
+
+  retryGpu(): Promise<GpuStatus> {
+    return call<GpuStatus>("gpu_retry");
   }
 
   dataInfo(): Promise<{ path: string; bytes: number }> {

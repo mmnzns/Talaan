@@ -35,29 +35,13 @@ pub fn load(model: &ModelInfo, dir: &Path, use_gpu: bool) -> Result<Box<dyn Engi
     }
 }
 
+/// Speech threads (three quarters of the cores on Windows, all on the Mac; `talaan_stt::thread_count`).
 fn threads() -> usize {
-    thread_count(std::thread::available_parallelism().map(|n| n.get()).unwrap_or(4), cfg!(windows))
-}
-
-/// Mac: all cores, 2..=8 (the original formula). Windows: three quarters of the logical cores, 2..=12. Measured on a
-/// 16-thread Ryzen: 12 threads is fastest and 16 is 2-3x slower (same finding as Parlato).
-fn thread_count(logical: usize, windows: bool) -> usize {
-    if windows {
-        (logical * 3 / 4).clamp(2, 12)
-    } else {
-        logical.clamp(2, 8)
-    }
+    talaan_stt::threads()
 }
 
 /// Text that engines produce for non-speech ("[BLANK_AUDIO]", "(music)", "*laughs*") or nothing at all.
-pub fn is_noise(text: &str) -> bool {
-    let t = text.trim();
-    if t.is_empty() {
-        return true;
-    }
-    let wrapped = |o: char, c: char| t.starts_with(o) && t.ends_with(c);
-    wrapped('[', ']') || wrapped('(', ')') || wrapped('*', '*') || t.chars().all(|c| !c.is_alphanumeric())
-}
+pub use talaan_stt::is_noise;
 
 /// The NVIDIA models: Parakeet TDT (v2, v3, Ultra), Parakeet Unified and Nemotron. Same chunking, same
 /// timestamps; they differ only in how they load and decode.
@@ -175,10 +159,8 @@ pub struct WhisperEngine {
 
 impl WhisperEngine {
     pub fn load(file: &Path, label: &str, use_gpu: bool) -> Result<Self, String> {
-        let mut p = whisper_rs::WhisperContextParameters::default();
-        p.use_gpu(use_gpu);
         // Flash attention only pays off on Metal; on CPU it costs 10-15%.
-        p.flash_attn(cfg!(target_os = "macos") && use_gpu);
+        let p = talaan_stt::context_params(use_gpu.then_some(0), cfg!(target_os = "macos") && use_gpu);
         let ctx = whisper_rs::WhisperContext::new_with_params(file, p).map_err(|e| format!("couldn't load the speech model: {e}"))?;
         let state = ctx.create_state().map_err(|e| format!("couldn't load the speech model: {e}"))?;
         Ok(WhisperEngine { state, _ctx: ctx, label: label.into() })
@@ -186,39 +168,10 @@ impl WhisperEngine {
 }
 
 impl Engine for WhisperEngine {
+    /// The same chunk transcription as the Windows GPU helper (`talaan_stt::transcribe`).
     fn transcribe(&mut self, samples: &[f32], language: Option<&str>) -> Result<ChunkResult, String> {
-        let state = &mut self.state;
-        let mut params = whisper_rs::FullParams::new(whisper_rs::SamplingStrategy::Greedy { best_of: 1 });
-        params.set_n_threads(threads() as i32);
-        params.set_language(Some(language.unwrap_or("auto")));
-        // Each chunk stands alone: carrying text between chunks is how Whisper starts repeating itself.
-        params.set_no_context(true);
-        params.set_suppress_blank(true);
-        params.set_suppress_nst(true);
-        params.set_print_special(false);
-        params.set_print_progress(false);
-        params.set_print_realtime(false);
-        params.set_print_timestamps(false);
-        // Whisper needs at least 1 s; pad short chunks with silence.
-        let mut audio = samples.to_vec();
-        if audio.len() < 16_000 + 1_600 {
-            audio.resize(16_000 + 1_600, 0.0);
-        }
-        state.full(params, &audio).map_err(|e| format!("transcription failed: {e}"))?;
-        let language = whisper_rs::get_lang_str(state.full_lang_id_from_state()).map(str::to_string);
-        let mut pieces = vec![];
-        for i in 0..state.full_n_segments() {
-            let Some(seg) = state.get_segment(i) else { continue };
-            let text = seg.to_str_lossy().map(|t| t.trim().to_string()).unwrap_or_default();
-            if is_noise(&text) || seg.no_speech_probability() > 0.8 {
-                continue;
-            }
-            // Centiseconds.
-            let start_ms = (seg.start_timestamp().max(0) * 10) as u64;
-            let end_ms = ((seg.end_timestamp().max(0) * 10) as u64).min(samples.len() as u64 * 1000 / 16_000).max(start_ms);
-            pieces.push(Piece { start_ms, end_ms, text });
-        }
-        Ok(ChunkResult { pieces, language })
+        let (pieces, language) = talaan_stt::transcribe(&mut self.state, samples, language, threads())?;
+        Ok(ChunkResult { pieces: pieces.into_iter().map(|p| Piece { start_ms: p.start_ms, end_ms: p.end_ms, text: p.text }).collect(), language })
     }
 
     fn label(&self) -> &str {
@@ -234,29 +187,7 @@ impl Engine for WhisperEngine {
 mod tests {
     use super::*;
 
-    #[test]
-    fn windows_thread_count_is_three_quarters_clamped() {
-        for (logical, want) in [(16, 12), (8, 6), (4, 3), (2, 2), (1, 2), (32, 12)] {
-            assert_eq!(thread_count(logical, true), want, "{logical} cores");
-        }
-    }
-
-    #[test]
-    fn mac_thread_count_is_all_cores_clamped() {
-        for (logical, want) in [(16, 8), (10, 8), (8, 8), (4, 4), (2, 2), (1, 2)] {
-            assert_eq!(thread_count(logical, false), want, "{logical} cores");
-        }
-    }
-
-    #[test]
-    fn noise_markers_are_not_speech() {
-        for t in ["", "  ", "[BLANK_AUDIO]", "(music)", "*laughs*", "...", "♪"] {
-            assert!(is_noise(t), "{t:?}");
-        }
-        for t in ["Okay.", "Sounds good", "(inaudible) let's go"] {
-            assert!(!is_noise(t), "{t:?}");
-        }
-    }
+    // Thread count and noise markers: tested in talaan-stt (stt/src/lib.rs).
 
     /// Real-time factor of each downloaded model on 60 s of a real meeting.
     /// `TALAAN_SMOKE_MEETING=<meeting dir> cargo test --release engine_smoke -- --ignored --nocapture`

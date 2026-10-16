@@ -132,3 +132,41 @@ quit the dev app first: one Talaan at a time.
 - [ ] If the first tag shows that `gh release upload/download <tag>` can't find the draft (never tried on a test
   repo), look the draft up with `gh api repos/mmnzns/Talaan/releases --jq '.[] | select(.tag_name=="vX") | .id'`
   and upload through `gh api` instead (scripts/latest-json.mjs, scripts/upload-mac-release.sh, release.yml).
+
+## GPU on Windows (G1)
+
+Builds: Actions › **Release** › Run workflow on `gpu-windows` makes two artifacts, `talaan-windows-installer`
+(the setup .exe with the GPU helpers) and `talaan-gpu-helpers` (`talaan-llm-vulkan.exe`, `talaan-stt-vulkan.exe`
+and `scripts/gpu-helper-smoke.ps1`). Unzip the helpers into a new temp folder. Use temp copies of data
+(`TALAAN_DATA_DIR`) for anything that writes; the helpers only read model files. The baseline to beat (1.0.2, CPU,
+one-hour meeting): summary 10.5 min, Whisper Large Turbo 3.3x real time, Parakeet 159 s.
+
+**The helpers on their own** (from the temp folder; nothing is installed)
+- [ ] `powershell -File gpu-helper-smoke.ps1 -Dir .`: both say `"backend":"vulkan"` and the RTX 5070 Ti; the
+  devices list has the AMD Radeon iGPU too, and `chosen` is the RTX's index, not the iGPU's.
+- [ ] `... -LlmModel "$env:APPDATA\Talaan\models\qwen3.5-4b\Qwen3.5-4B-Q4_K_M.gguf"`: a JSON reply, in a few
+  seconds; Task Manager's GPU graph for the RTX moves, the Radeon's doesn't.
+- [ ] With a Whisper model downloaded (Speech models, any Whisper) and a meeting's `them.wav` copied to the temp
+  folder: `... -WhisperModel <ggml-*.bin> -Wav them.wav` returns pieces of text.
+- [ ] `$env:GGML_VK_VISIBLE_DEVICES='99'` then the plain smoke run: the helpers fail to start or say `cpu`
+  (Vulkan can't start); remove the variable afterwards.
+
+**Installed build** (quit the installed 1.0.2 first; the installer replaces it, data is kept)
+- [ ] Settings › General › Check setup › Graphics chip: "NVIDIA GeForce RTX 5070 Ti (16 GB), for transcription and
+  summaries".
+- [ ] Re-transcribe the one-hour meeting with Whisper Large Turbo, then Generate summary: note both times against
+  the baseline. Task Manager shows the RTX busy. Compare the transcript with the CPU one (same words, near
+  enough).
+- [ ] Parakeet: unchanged (CPU), still about 159 s.
+- [ ] Settings › Speech models › Use the GPU off: Check setup says "Off, so Talaan uses the processor"; a summary
+  and a Whisper transcript run on the processor (RTX idle). Turn it back on.
+- [ ] Forced crash: quit Talaan, start it from PowerShell with `$env:TALAAN_GPU='fail'; & "$env:LOCALAPPDATA\Talaan\talaan.exe"`.
+  Generate a summary and transcribe with Whisper: both finish (on the processor), and `%APPDATA%\Talaan\gpu.json`
+  lists `llm` and `stt`. Check setup says the graphics chip failed, with Try again. Quit, start Talaan normally,
+  click Try again: gpu.json is gone and the row names the RTX again.
+- [ ] Overlays: with Steam (overlay on) running, the summary still runs on the GPU (implicit layers are off for
+  the helpers).
+- [ ] Update and uninstall while a helper runs (start a summary, then run the installer again, then uninstall):
+  no "file in use" error; `talaan-llm-vulkan.exe` and `talaan-stt-vulkan.exe` are gone after uninstall.
+- [ ] Windows Sandbox, if enabled (no Vulkan driver): Talaan starts, Check setup says no Vulkan driver, a summary
+  and a transcript work on the processor.

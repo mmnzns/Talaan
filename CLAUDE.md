@@ -90,6 +90,7 @@ src-tauri/src/
     models.rs download.rs  catalog (pinned revisions, sizes, sha256), reuse "On this Mac", resumable verified downloads
     vad.rs              read tracks, Silero VAD, chunk shaping per engine (pad, join, split at quiet points, pack)
     engine.rs           Engine trait; Parakeet (silence padding, resume when it stops early) and Whisper (Metal)
+    remote.rs fallback.rs  Windows: Whisper in the GPU helper, with the processor taking over on any failure
     pipeline.rs         tracks -> chunks -> engine -> retry skipped speech -> echo -> merge -> language
     echo.rs merge.rs    drop Me lines the mic heard from the speakers; interleave and join into lines
     diarize.rs          named speakers: Nemotron 3 Diarization (parakeet-rs sortformer) on the Them track, warm-up pass, Speaker 1, 2, 3
@@ -114,7 +115,10 @@ src-tauri/src/
   notion.rs             Notion export: page blocks, client (search, pages, append); commands/notion.rs
   commands/calls.rs     1 Hz loop: mic users -> rules -> recordings and the prompt window (nudge, banner, call ended)
   commands/tray.rs      menu bar icon + timer, popover window, window_fit, main window hides on close
-  llm/ llm-protocol/    the talaan-llm helper (own llama.cpp + Metal) and its stdin/stdout protocol
+  llm/ llm-protocol/    the talaan-llm helper (own llama.cpp + Metal) and its stdin/stdout protocol (also the Whisper
+                        helper's, and the GPU device policy); Windows also builds talaan-llm-vulkan (docs/plans/G1)
+  stt/                  Whisper chunk transcription shared by the app and the Windows GPU helper talaan-stt-vulkan
+  gpu.rs  helper.rs     Windows GPU: when to use a Vulkan helper, gpu.json failures; JSON-lines helper processes
   platform/mod.rs       picks the OS module
   platform/macos/       Mac-only code
     system_tap.rs       Core Audio global process tap (excludes Talaan) + private aggregate device + IOProc
