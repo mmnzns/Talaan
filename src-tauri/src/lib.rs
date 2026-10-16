@@ -22,6 +22,23 @@ fn platform_name() -> &'static str {
     platform::NAME
 }
 
+/// How long Quit waits for a clean exit before ending the process anyway.
+const EXIT_GRACE: Duration = Duration::from_secs(5);
+
+/// Quit always quits. A clean exit has to get back out of the event loop, and if the main thread is stuck (in
+/// v1.0.2 on Windows, a webview built inside a synchronous command waited forever) Quit did nothing. The
+/// recording is saved by `stop_on_exit` well within the grace period, and audio is flushed every 2 s anyway.
+fn exit_watchdog() {
+    static STARTED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+    if STARTED.swap(true, std::sync::atomic::Ordering::SeqCst) {
+        return;
+    }
+    let _ = std::thread::Builder::new().name("talaan-exit-watchdog".into()).spawn(|| {
+        std::thread::sleep(EXIT_GRACE);
+        std::process::exit(0);
+    });
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let builder = tauri::Builder::default();
@@ -157,7 +174,13 @@ pub fn run() {
         .expect("error while building Talaan")
         .run(|app, event| {
             match event {
-                tauri::RunEvent::ExitRequested { .. } => rec_cmd::stop_on_exit(app),
+                tauri::RunEvent::ExitRequested { code, .. } => {
+                    // An update's relaunch exits through here too; leave that to Tauri.
+                    if code != Some(tauri::RESTART_EXIT_CODE) {
+                        exit_watchdog();
+                    }
+                    rec_cmd::stop_on_exit(app)
+                }
                 // Dock icon clicked while the main window is hidden.
                 #[cfg(target_os = "macos")]
                 tauri::RunEvent::Reopen { .. } => commands::tray::show_main(app),

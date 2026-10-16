@@ -85,6 +85,18 @@ describe("TauriMeetingStore", () => {
     await Promise.resolve();
     expect(unlisten).toHaveBeenCalled();
   });
+
+  it("also refreshes when a recording starts or stops, not on every timer tick", async () => {
+    const s = new TauriMeetingStore();
+    const fn = vi.fn();
+    s.subscribe(fn);
+    await Promise.resolve();
+    fire("recorder-state", { state: "recording" });
+    fire("recorder-state", { state: "recording" });
+    expect(fn).not.toHaveBeenCalled();
+    fire("recorder-state", { state: "idle" });
+    expect(fn).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe("TauriSettingsStore", () => {

@@ -13,14 +13,16 @@ pub struct FilterArg {
     query: Option<String>,
 }
 
-#[tauri::command]
+/// The reads the screens repeat on every change are `async`, so they wait for the storage lock (busy while the
+/// transcriber or summarizer saves) on a worker thread, never on the main thread that runs the windows.
+#[tauri::command(async)]
 pub fn meetings_list(state: State<AppState>, filter: Option<FilterArg>) -> CmdResult<Vec<MeetingListItem>> {
     let f = filter.unwrap_or_default();
     state.lock().list_meetings(&Filter { folder_id: f.folder_id, tag: f.tag, query: f.query })
 }
 
 /// `None` (null in JS) when the meeting doesn't exist, so the UI can show "not found".
-#[tauri::command]
+#[tauri::command(async)]
 pub fn meetings_get(state: State<AppState>, id: String) -> CmdResult<Option<Meeting>> {
     match state.lock().get_meeting(&id) {
         Ok(m) => Ok(Some(m)),
@@ -98,7 +100,7 @@ pub fn folders_delete(app: AppHandle, state: State<AppState>, id: String) -> Cmd
     changed(&app, state.lock().delete_folder(&id))
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn folders_list(state: State<AppState>) -> CmdResult<Vec<Folder>> {
     state.lock().list_folders()
 }
@@ -108,13 +110,14 @@ pub fn folders_create(app: AppHandle, state: State<AppState>, name: String) -> C
     changed(&app, state.lock().create_folder(&name))
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn tags_list(state: State<AppState>) -> CmdResult<Vec<String>> {
     state.lock().list_tags()
 }
 
 /// The file to play for a meeting (both tracks mixed, made on first use), or None when the audio is gone.
-#[tauri::command]
+/// `async`: mixing an hour-long call takes a while.
+#[tauri::command(async)]
 pub fn meetings_playback(state: State<AppState>, id: String) -> CmdResult<Option<String>> {
     let dir = state.lock().dir(&id)?;
     Ok(crate::recorder::playback::ensure(&dir)?.map(|p| p.to_string_lossy().into_owned()))

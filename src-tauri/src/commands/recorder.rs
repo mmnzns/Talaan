@@ -94,7 +94,8 @@ fn system_source() -> Box<dyn crate::recorder::source::AudioSource> {
     Box::new(platform::system_tap::SystemTap::default())
 }
 
-#[tauri::command]
+/// `async` (off the main thread): it opens the audio devices, as an auto-start from the calls loop already does.
+#[tauri::command(async)]
 pub fn recorder_start(app: AppHandle, app_id: Option<String>, app_label: Option<String>) -> CmdResult<StatePayload> {
     start_recording(&app, app_id.as_deref().unwrap_or("other"), app_label.as_deref().unwrap_or("Call"))
 }
@@ -167,7 +168,8 @@ pub fn recorder_mark(app: AppHandle, rec: State<RecorderState>, note: Option<Str
     Ok(())
 }
 
-#[tauri::command]
+/// `async` (off the main thread): stopping joins the audio threads and closes the files.
+#[tauri::command(async)]
 pub fn recorder_stop(app: AppHandle) -> CmdResult<String> {
     stop_recording(&app)
 }
@@ -206,7 +208,7 @@ pub fn recorder_discard(app: AppHandle, state: State<AppState>, rec: State<Recor
     Ok(())
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn recorder_status(rec: State<RecorderState>) -> StatePayload {
     let on_speakers = speakers();
     payload(&rec.lock(), on_speakers)

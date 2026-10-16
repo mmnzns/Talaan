@@ -258,7 +258,11 @@ pub fn place_under_icon(window: &tauri::WebviewWindow, width: f64) {
     let _ = window.set_position(tauri::LogicalPosition::new(x.clamp(8.0, (screen_w - width - 8.0).max(8.0)), y));
 }
 
-#[tauri::command]
+/// `async`: off the main thread. Opening the popover the first time builds its webview, and on Windows building a
+/// webview inside a synchronous command waits forever (WebView2 can't finish creating it while its own request
+/// handler, the command, is still running). Talaan v1.0.2 froze that way: every window's commands stopped
+/// answering and Quit did nothing. Never build a window from a synchronous command or anything it calls.
+#[tauri::command(async)]
 pub fn tray_toggle(app: AppHandle) {
     toggle_popover(&app, None);
 }

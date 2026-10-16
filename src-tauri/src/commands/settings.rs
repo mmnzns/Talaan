@@ -2,7 +2,7 @@ use super::{notify, AppState, CmdResult, MEETINGS_CHANGED, SETTINGS_CHANGED};
 use serde_json::Value;
 use tauri::{AppHandle, State};
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn settings_get(state: State<AppState>) -> CmdResult<Option<Value>> {
     state.lock().settings_get()
 }
