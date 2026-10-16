@@ -306,7 +306,9 @@ pub fn calls_prompt(state: State<CallsState>) -> Option<Prompt> {
 }
 
 /// Nudge → Record: start recording this call and show the banner.
-#[tauri::command]
+/// `async` (off the main thread): it may build the prompt window, which a synchronous command must never do on
+/// Windows (see `tray_toggle`), and starting a recording opens audio devices.
+#[tauri::command(async)]
 pub fn calls_accept(app: AppHandle, state: State<CallsState>, app_id: String) -> CmdResult<()> {
     state.detector.lock().unwrap_or_else(|e| e.into_inner()).accepted(&app_id);
     let label = label_of(&app_id);
@@ -330,7 +332,8 @@ pub fn calls_keep(app: AppHandle, state: State<CallsState>) {
 }
 
 /// Banner or Call ended → Stop.
-#[tauri::command]
+/// `async`: stopping joins the audio threads and closes the files; keep that off the main thread.
+#[tauri::command(async)]
 pub fn calls_stop(app: AppHandle) -> CmdResult<String> {
     hide_prompt(&app);
     stop_recording(&app)

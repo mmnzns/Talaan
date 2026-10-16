@@ -157,6 +157,10 @@ pub struct ProcessingError {
     /// `no_model` (re-queued when a model finishes downloading) or `failed`.
     pub code: String,
     pub message: String,
+    /// For debugging, not shown: what the engine reported when it failed (the local AI's exit status and error
+    /// lines). Never transcript text.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub detail: Option<String>,
 }
 
 /// How the transcript was made, for the record and for comparing engines.

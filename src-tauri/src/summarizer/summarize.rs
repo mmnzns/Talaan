@@ -26,6 +26,10 @@ pub trait SummaryEngine: Send {
     fn context_tokens(&self) -> usize;
     /// Shown under the summary ("Local AI · Qwen3.5 4B", "Claude").
     fn label(&self) -> String;
+    /// After a failed `complete`: what the engine knows about why, for debugging (kept beside the message).
+    fn failure_detail(&mut self) -> Option<String> {
+        None
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]

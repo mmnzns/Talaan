@@ -251,9 +251,15 @@ const TABLE: &[(&str, &str, &str, &str)] = &[
     ("local_ai.too_slow", "The local AI took too long.", "L’IA locale a mis trop de temps.", "La IA local tardó demasiado."),
     (
         "local_ai.crashed",
-        "The local AI stopped unexpectedly, probably out of memory. Try the smaller model, or close other apps.",
-        "L’IA locale s’est arrêtée de façon inattendue, probablement par manque de mémoire. Essayez le modèle plus petit ou fermez d’autres applications.",
-        "La IA local se detuvo de forma inesperada, probablemente por falta de memoria. Prueba el modelo más pequeño o cierra otras apps.",
+        "The local AI stopped unexpectedly. Try again.",
+        "L’IA locale s’est arrêtée de façon inattendue. Réessayez.",
+        "La IA local se detuvo de forma inesperada. Vuelve a intentarlo.",
+    ),
+    (
+        "local_ai.out_of_memory",
+        "The local AI ran out of memory. Try the smaller model, or close other apps.",
+        "L’IA locale a manqué de mémoire. Essayez le modèle plus petit ou fermez d’autres applications.",
+        "La IA local se quedó sin memoria. Prueba el modelo más pequeño o cierra otras apps.",
     ),
     // Ask
     ("ask.stopped", "Ask stopped unexpectedly: {error}", "Demander s’est arrêté de façon inattendue : {error}", "Preguntar se detuvo de forma inesperada: {error}"),

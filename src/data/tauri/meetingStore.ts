@@ -112,7 +112,16 @@ export class TauriMeetingStore implements MeetingStore {
     return call<AskAnswer>("meetings_ask", { question, scope });
   }
 
+  /** Changes to meetings, plus each recorder start, pause or stop (a recording's card changes then too). */
   subscribe(listener: () => void): () => void {
-    return onEvent("meetings-changed", listener);
+    let last: string | undefined;
+    const offs = [
+      onEvent("meetings-changed", listener),
+      onEvent<{ state: string }>("recorder-state", ({ state }) => {
+        if (last !== undefined && state !== last) listener();
+        last = state;
+      }),
+    ];
+    return () => offs.forEach((off) => off());
   }
 }

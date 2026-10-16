@@ -135,6 +135,9 @@ impl SummaryEngine for LocalEngine {
     fn label(&self) -> String {
         format!("Local AI · {}", self.model_name)
     }
+    fn failure_detail(&mut self) -> Option<String> {
+        self.ai.take_detail()
+    }
 }
 
 // ---------- HTTP engines ----------

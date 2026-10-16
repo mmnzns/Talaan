@@ -93,7 +93,7 @@ export interface Meeting extends MeetingListItem {
    * Why there is no summary (status "ready", transcript only). `no_engine`: no summary AI set up; `failed`: it failed;
    * `too_short`: too little speech to summarize; `waiting`: transcript only until the user asks (Generate summary).
    */
-  summaryError?: { code: string; message: string };
+  summaryError?: { code: string; message: string; detail?: string };
   /** This meeting waits for Generate summary instead of being summarized by itself. */
   transcriptOnly?: boolean;
   /** How the transcript was made. `model` is a speech model id (see Settings › Speech models). */

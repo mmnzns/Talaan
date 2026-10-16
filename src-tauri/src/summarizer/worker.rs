@@ -130,10 +130,14 @@ fn lock(storage: &Mutex<Storage>) -> std::sync::MutexGuard<'_, Storage> {
 
 /// Leaves the meeting transcript-only, saying why.
 fn without_summary(deps: &Deps, id: &str, code: &str, message: String) {
+    without_summary_detail(deps, id, code, message, None)
+}
+
+fn without_summary_detail(deps: &Deps, id: &str, code: &str, message: String, detail: Option<String>) {
     let _ = lock(&deps.storage).update_meeting_file(id, |f| {
         f.status = MeetingStatus::Ready;
         f.progress = None;
-        f.summary_error = Some(ProcessingError { code: code.into(), message });
+        f.summary_error = Some(ProcessingError { code: code.into(), message, detail });
     });
 }
 
@@ -195,7 +199,7 @@ fn process(deps: &Deps, id: &str, cancel: &AtomicBool) {
         Err(SummarizeError::Engine(EngineError::Cancelled)) => {}
         Err(e @ SummarizeError::TooShort) => without_summary(deps, id, TOO_SHORT, e.message()),
         Err(SummarizeError::Engine(EngineError::Unavailable(m))) => without_summary(deps, id, NO_ENGINE, m),
-        Err(e) => without_summary(deps, id, FAILED, e.message()),
+        Err(e) => without_summary_detail(deps, id, FAILED, e.message(), engine.failure_detail()),
     }
 }
 
@@ -265,6 +269,34 @@ mod tests {
         assert!(m.summary.is_none());
         assert_eq!(m.summary_error.unwrap().code, NO_ENGINE);
         assert!(done.lock().unwrap().is_empty());
+    }
+
+    /// An engine that fails the way the local AI does when its helper dies.
+    struct Dies;
+    impl SummaryEngine for Dies {
+        fn complete(&mut self, _p: &crate::summarizer::prompt::Prompt, _s: &str, _m: u32, _c: &AtomicBool) -> Result<String, EngineError> {
+            Err(EngineError::Failed("The local AI stopped unexpectedly. Try again.".into()))
+        }
+        fn context_tokens(&self) -> usize {
+            16_384
+        }
+        fn label(&self) -> String {
+            "Dies".into()
+        }
+        fn failure_detail(&mut self) -> Option<String> {
+            Some("local AI helper stopped: exit code -1073741510 (0xC000013A)".into())
+        }
+    }
+
+    #[test]
+    fn a_failure_keeps_the_engines_detail_beside_the_message() {
+        let (_d, storage, id, w, _) = setup(Box::new(|_| Ok(Box::new(Dies))));
+        w.enqueue(&id);
+        wait(&w);
+        let e = storage.lock().unwrap().get_meeting(&id).unwrap().summary_error.unwrap();
+        assert_eq!(e.code, FAILED);
+        assert_eq!(e.message, "The local AI stopped unexpectedly. Try again.");
+        assert!(e.detail.unwrap().contains("0xC000013A"));
     }
 
     #[test]

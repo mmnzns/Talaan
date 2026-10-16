@@ -6,6 +6,10 @@ Set-Location (Join-Path $PSScriptRoot '..')
 $version = node -p "require('./src-tauri/tauri.conf.json').version"
 if ($env:GITHUB_REF_TYPE -eq 'tag' -and $env:GITHUB_REF_NAME -ne "v$version") { throw "Tag $env:GITHUB_REF_NAME but tauri.conf.json says $version" }
 
+# whisper.cpp and llama.cpp for a fixed CPU baseline, not this machine's (scripts/cpu-baseline.ps1).
+. (Join-Path $PSScriptRoot 'cpu-baseline.ps1')
+Reset-StaleGgml 'src-tauri/Cargo.toml' 'src-tauri/target'
+
 # ONNX Runtime (Parakeet, diarization) is linked statically but imports DirectML.dll. ort-sys's build script
 # drops it next to the binaries (as a link into its cache); copy the real file where the bundle can take it.
 cargo build --release --manifest-path src-tauri/Cargo.toml -p ort-sys
@@ -31,6 +35,12 @@ foreach ($c in $caches) {
   foreach ($l in $lines) { if ($l.Matches[0].Groups[2].Value -notmatch '-O2') { throw "Not optimized: $c ($($l.Line))" } }
 }
 Write-Host "whisper.cpp and llama.cpp built with -O2"
+# ...and for the baseline CPU: an AVX-512 or native build crashes on most Intel PCs.
+foreach ($c in $caches) {
+  $bad = @(Test-GgmlBaseline $c)
+  if ($bad.Count -gt 0) { throw "Not built for the x86-64-v3 baseline: $c ($($bad -join '; '))" }
+}
+Write-Host "whisper.cpp and llama.cpp built for x86-64-v3 (AVX2, no AVX-512, not native)"
 
 $out = 'src-tauri\target\release\bundle\nsis'
 $exe = Get-ChildItem $out -Filter '*_x64-setup.exe' | Sort-Object LastWriteTime | Select-Object -Last 1

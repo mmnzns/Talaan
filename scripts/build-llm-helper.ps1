@@ -2,6 +2,8 @@
 # it where Tauri's externalBin expects it: src-tauri/binaries/talaan-llm-<target triple>.exe. Always optimized:
 # llama.cpp is unusably slow in a debug build. Also copied next to the dev binaries so `tauri dev` finds it.
 $ErrorActionPreference = 'Stop'
+# llama.cpp for a fixed CPU baseline, not this machine's (scripts/cpu-baseline.ps1).
+. (Join-Path $PSScriptRoot 'cpu-baseline.ps1')
 Set-Location (Join-Path $PSScriptRoot '..\src-tauri')
 $triple = ((rustc -vV) | Where-Object { $_ -like 'host: *' }).Substring(6)
 cargo build --release -p talaan-llm

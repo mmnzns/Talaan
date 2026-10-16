@@ -2,12 +2,23 @@
 //! presses Play. Streamed in chunks, so a 2-hour call takes constant memory.
 
 use crate::storage::paths::{ME_WAV, PLAYBACK_WAV, THEM_WAV};
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Arc, Mutex, OnceLock};
 
 const CHUNK: usize = 16_000;
 
 fn modified(p: &Path) -> Option<std::time::SystemTime> {
     std::fs::metadata(p).and_then(|m| m.modified()).ok()
+}
+
+/// One lock per meeting folder, so two Plays at once mix it once: the second waits, then finds the mix fresh.
+fn folder_lock(dir: &Path) -> Arc<Mutex<()>> {
+    static LOCKS: OnceLock<Mutex<HashMap<PathBuf, Arc<Mutex<()>>>>> = OnceLock::new();
+    let mut locks = LOCKS.get_or_init(Default::default).lock().unwrap_or_else(|e| e.into_inner());
+    locks.retain(|_, l| Arc::strong_count(l) > 1); // folders nobody is mixing
+    locks.entry(dir.to_path_buf()).or_default().clone()
 }
 
 /// The playback file for a meeting folder, made (or remade, if a track is newer) when needed.
@@ -17,6 +28,8 @@ pub fn ensure(dir: &Path) -> std::io::Result<Option<PathBuf>> {
     if tracks.is_empty() {
         return Ok(None);
     }
+    let lock = folder_lock(dir);
+    let _mixing = lock.lock().unwrap_or_else(|e| e.into_inner());
     let out = dir.join(PLAYBACK_WAV);
     let fresh = modified(&out).is_some_and(|t| tracks.iter().all(|tr| modified(tr).is_some_and(|m| m <= t)));
     if !fresh {
@@ -27,12 +40,24 @@ pub fn ensure(dir: &Path) -> std::io::Result<Option<PathBuf>> {
 
 /// Sums the tracks sample by sample (the shorter ones end in silence) with soft clipping, so two people
 /// talking over each other never crackle.
+/// The mix is written to a temp file of its own (named per process and call, so mixes running at once never
+/// share one) and renamed into place when complete; a failed mix removes its temp file.
 pub fn mix(tracks: &[PathBuf], out: &Path) -> std::io::Result<()> {
+    static NEXT: AtomicU64 = AtomicU64::new(0);
+    let n = NEXT.fetch_add(1, Ordering::Relaxed);
+    let tmp = out.with_extension(format!("wav.{}-{n}.tmp", std::process::id()));
+    let made = write_mix(tracks, &tmp).and_then(|()| std::fs::rename(&tmp, out));
+    if made.is_err() {
+        let _ = std::fs::remove_file(&tmp);
+    }
+    made
+}
+
+fn write_mix(tracks: &[PathBuf], tmp: &Path) -> std::io::Result<()> {
     let to_io = |e: hound::Error| std::io::Error::other(e.to_string());
     let mut readers = tracks.iter().map(|t| hound::WavReader::open(t).map_err(to_io)).collect::<Result<Vec<_>, _>>()?;
     let spec = hound::WavSpec { channels: 1, sample_rate: 16_000, bits_per_sample: 16, sample_format: hound::SampleFormat::Int };
-    let tmp = out.with_extension("wav.tmp");
-    let mut w = hound::WavWriter::create(&tmp, spec).map_err(to_io)?;
+    let mut w = hound::WavWriter::create(tmp, spec).map_err(to_io)?;
     let mut iters: Vec<_> = readers.iter_mut().map(|r| r.samples::<i16>()).collect();
     let mut buf = vec![0f32; CHUNK];
     loop {
@@ -60,8 +85,7 @@ pub fn mix(tracks: &[PathBuf], out: &Path) -> std::io::Result<()> {
             w.write_sample((y * 32767.0) as i16).map_err(to_io)?;
         }
     }
-    w.finalize().map_err(to_io)?;
-    std::fs::rename(&tmp, out)
+    w.finalize().map_err(to_io)
 }
 
 #[cfg(test)]
@@ -108,6 +132,46 @@ mod tests {
         assert_eq!(ensure(d.path()).unwrap(), None);
         wav(&d.path().join(THEM_WAV), &[5; 1600]);
         assert_eq!(read(&ensure(d.path()).unwrap().unwrap()).len(), 1600);
+    }
+
+    /// Play pressed twice (or from two windows): both get the mix, and no temp file is left behind.
+    #[test]
+    fn plays_at_the_same_time_never_break_each_other() {
+        let d = tempfile::tempdir().unwrap();
+        wav(&d.path().join(ME_WAV), &[1000; 40_000]);
+        wav(&d.path().join(THEM_WAV), &[2000; 40_000]);
+        let runs: Vec<_> = (0..6)
+            .map(|_| {
+                let dir = d.path().to_path_buf();
+                std::thread::spawn(move || ensure(&dir))
+            })
+            .collect();
+        for r in runs {
+            let out = r.join().unwrap().unwrap().unwrap();
+            assert_eq!(read(&out).len(), 40_000);
+        }
+        let left: Vec<_> = std::fs::read_dir(d.path()).unwrap().map(|e| e.unwrap().file_name()).filter(|n| n.to_string_lossy().ends_with(".tmp")).collect();
+        assert!(left.is_empty(), "{left:?}");
+    }
+
+    #[test]
+    fn mixes_running_at_once_use_their_own_temp_files() {
+        let d = tempfile::tempdir().unwrap();
+        wav(&d.path().join(ME_WAV), &[1000; 40_000]);
+        let tracks = vec![d.path().join(ME_WAV)];
+        let runs: Vec<_> = (0..4)
+            .map(|_| {
+                let (tracks, out) = (tracks.clone(), d.path().join(PLAYBACK_WAV));
+                std::thread::spawn(move || mix(&tracks, &out).map(|()| out))
+            })
+            .collect();
+        for r in runs {
+            // Renaming over the finished file can race on Windows; what matters is that no mix corrupts another.
+            if let Ok(out) = r.join().unwrap() {
+                assert_eq!(read(&out).len(), 40_000);
+            }
+        }
+        assert_eq!(read(&d.path().join(PLAYBACK_WAV)).len(), 40_000);
     }
 
     #[test]
