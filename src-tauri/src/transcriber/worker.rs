@@ -165,7 +165,7 @@ fn fail(deps: &Deps, id: &str, code: &str, message: String) {
     let _ = lock(&deps.storage).update_meeting_file(id, |f| {
         f.status = MeetingStatus::Failed;
         f.progress = None;
-        f.error = Some(ProcessingError { code: code.into(), message });
+        f.error = Some(ProcessingError { code: code.into(), message, detail: None });
     });
 }
 
@@ -248,6 +248,7 @@ fn process(deps: &Deps, id: &str, loaded: &mut Option<Loaded>, cancel: &AtomicBo
                     f.summary_error = Some(ProcessingError {
                         code: WAITING.into(),
                         message: "This call is transcript only. Generate a summary when you want one.".into(),
+                        detail: None,
                     });
                 }
                 f.error = None;
