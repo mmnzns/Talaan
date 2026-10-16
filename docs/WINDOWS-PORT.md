@@ -44,9 +44,28 @@ is macOS only), Ctrl+, opens Settings, and the native window theme follows the a
 - the title bar follows dark mode;
 - Ctrl+, opens Settings;
 - clicking the tray icon again closes the popover;
-- a toast clicked from Action Center (after the banner is gone) opens the meeting (W5: if that click fails, the shortcut
-  needs a ToastActivatorCLSID);
+- a toast clicked from Action Center (after the banner is gone) opens the meeting (v1.1 W1, below);
 - Dark, then System, with Windows set to Light switches the app to light.
+
+**Toast clicks from Action Center (v1.1, W1).** A toast's foreground activation reaches only a running process while
+its banner is up; from Action Center an unpackaged app needs a COM activator (a `ToastActivatorCLSID` on the shortcut
+plus a registered COM server). Talaan uses protocol activation instead: the installer (`installer-hooks.nsh`,
+`NSIS_HOOK_POSTINSTALL`) registers `talaan://` under `HKCU\Software\Classes\talaan` pointing at `$INSTDIR\talaan.exe
+"%1"` (removed on uninstall, kept on update), and `notify.rs` posts `<toast activationType="protocol"
+launch="talaan://meeting/<id>">` whenever that key opens the running exe (else the old in-process toast, as in dev
+builds). A click makes Windows start `talaan.exe "talaan://meeting/<id>"`; the single-instance plugin hands the
+argument to the running Talaan (`deeplink::meeting_in_args` → `open_meeting`), or, when Talaan wasn't running, the new
+instance keeps it until the window asks (`meetings_launch_link`). Only `[A-Za-z0-9_-]` ids are accepted (any web
+page can open `talaan://`). Checked on the PC (2026-10-16, a test handler under `HKCU\Software\Classes\talaan`
+that logs its argument, removed afterwards): the protocol toast reaches Action Center; clicking it there (real mouse
+click) removes it and Windows launches the link, under PowerShell's app id and under Talaan's; `ShellExecute` and
+`Launcher.LaunchUriAsync` of the link run the handler directly. **But** the toast click, like `explorer.exe
+talaan://…`, went through Windows' app picker (`OpenWith.exe -Embedding`) instead of the handler: on this Windows 11
+Insider build (26300) a shell-launched custom link seems to need a user choice first (the PC's other link handlers,
+claude:// and codex://, have a protected `UrlAssociations` entry; adding `Application\AppUserModelID` or
+`RegisteredApplications` capabilities didn't change it). The picker window didn't paint while automated, so its
+choice wasn't made (that would write a protected per-user default). Hand check with the installed build:
+docs/TESTING.md. If the picker shows every time, the fallback is a COM activator.
 
 **Dev note:** the single-instance guard is Windows only. On Windows, `npm run tauri dev` exits immediately if the installed
 Talaan is running; quit it first.
@@ -144,6 +163,7 @@ values; with the box ticked `%APPDATA%\Talaan`, `%LOCALAPPDATA%\com.craftconcept
 | `mic_users_live_smoke` (prints this exe's consent-store entry while recording and after) | `cargo test mic_users_live_smoke -- --ignored --nocapture` |
 | `capture_sessions_live_smoke` (our pid is an active capture session while recording, is kept out of `mic_users()`, and is gone 1.5 s after stopping) | `cargo test capture_sessions_live_smoke -- --ignored --nocapture` |
 | `toast_smoke` (posts one toast under the PowerShell app id, waits 5 s, prints what `show()` returned) | `cargo test toast_smoke -- --ignored --nocapture` |
+| `protocol_toast_smoke` (posts one protocol toast, `talaan://meeting/<TALAAN_TOAST_MEETING or smoke>`, under the PowerShell app id) | `cargo test protocol_toast_smoke -- --ignored --nocapture` |
 | `public_holiday_feed_smoke` (downloads Google's public Canadian holidays calendar and reads it; network) | `cargo test public_holiday_feed_smoke -- --ignored --nocapture` |
 | `tab_urls_live_smoke` (opens a new Edge window on a Meet URL, then example.com, then a long Wikipedia article; expects `Urls`, then `Unknown` twice, with timings; closes only the windows it opened) | `cargo test tab_urls_live_smoke -- --ignored --nocapture --test-threads=1` |
 | `background_call_tab_live_smoke` (a separate Edge with a temp profile: a page titled "Meet - abc-defg-hij" behind example.com; expects `Titles` under 300 ms; closes that Edge and deletes the profile) | `cargo test background_call_tab_live_smoke -- --ignored --nocapture --test-threads=1` |

@@ -22,6 +22,16 @@
   !insertmacro TalaanCloseHelpers
 !macroend
 
+; talaan:// links (src-tauri/src/deeplink.rs). A "Summary ready" toast opens talaan://meeting/<id>, so a click
+; reaches Talaan from Action Center too (no COM activator needed). Per user, like the install. Rewritten by every
+; install and update, so it always points at this install's exe.
+!macro NSIS_HOOK_POSTINSTALL
+  WriteRegStr HKCU "Software\Classes\talaan" "" "URL:Talaan"
+  WriteRegStr HKCU "Software\Classes\talaan" "URL Protocol" ""
+  WriteRegStr HKCU "Software\Classes\talaan\DefaultIcon" "" "$\"$INSTDIR\${MAINBINARYNAME}.exe$\",0"
+  WriteRegStr HKCU "Software\Classes\talaan\shell\open\command" "" "$\"$INSTDIR\${MAINBINARYNAME}.exe$\" $\"%1$\""
+!macroend
+
 !macro NSIS_HOOK_PREUNINSTALL
   !insertmacro TalaanCloseHelpers
 !macroend
@@ -30,6 +40,8 @@
   ${If} $UpdateMode <> 1
     ; Tauri removes the Run value; auto-launch also wrote this one under the same name.
     DeleteRegValue HKCU "Software\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\Run" "Talaan"
+    ; The talaan:// links would point at a removed exe (an update keeps them; its install rewrites them).
+    DeleteRegKey HKCU "Software\Classes\talaan"
     ${If} $DeleteAppDataCheckboxState = 1
       SetShellVarContext current
       RmDir /r "$APPDATA\Talaan"

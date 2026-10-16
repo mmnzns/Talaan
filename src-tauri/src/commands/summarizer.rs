@@ -132,6 +132,22 @@ pub fn open_meeting(app: &AppHandle, id: &str) {
     let _ = app.emit(OPEN_MEETING, id);
 }
 
+/// A meeting Talaan was started to open (a toast clicked while it wasn't running, Windows). The window can't hear
+/// an event before it has loaded, so it asks with `meetings_launch_link` when it does.
+static LAUNCH_MEETING: std::sync::Mutex<Option<String>> = std::sync::Mutex::new(None);
+
+#[cfg_attr(not(target_os = "windows"), allow(dead_code))]
+pub fn open_meeting_at_launch(app: &AppHandle, id: String) {
+    *LAUNCH_MEETING.lock().unwrap_or_else(|e| e.into_inner()) = Some(id);
+    super::tray::show_main(app);
+}
+
+/// The meeting to open at launch, once (see `open_meeting_at_launch`).
+#[tauri::command]
+pub fn meetings_launch_link() -> Option<String> {
+    LAUNCH_MEETING.lock().unwrap_or_else(|e| e.into_inner()).take()
+}
+
 /// Re-queues meetings that are waiting for a summary engine (after the local model finishes downloading).
 pub fn requeue_waiting(app: &AppHandle) {
     let state = app.state::<AppState>();

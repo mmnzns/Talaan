@@ -2,6 +2,7 @@ mod ask;
 mod calendar;
 mod calls;
 mod commands;
+mod deeplink;
 mod gpu;
 mod helper;
 mod i18n;
@@ -48,7 +49,12 @@ pub fn run() {
     // Talaan instead. (On the Mac the OS already does this, and the plugin's socket would make `tauri dev` exit
     // while the installed app runs.)
     #[cfg(target_os = "windows")]
-    let builder = builder.plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| commands::tray::show_main(app)));
+    // A second launch with a `talaan://meeting/<id>` link (a toast clicked, also from Action Center) opens it.
+    #[cfg(target_os = "windows")]
+    let builder = builder.plugin(tauri_plugin_single_instance::init(|app, args, _cwd| match deeplink::meeting_in_args(&args) {
+        Some(id) => commands::summarizer::open_meeting(app, &id),
+        None => commands::tray::show_main(app),
+    }));
     builder
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
@@ -75,6 +81,11 @@ pub fn run() {
             commands::updates::apply_login_item(app.handle());
             commands::updates::check_at_launch(app.handle());
             commands::tray::setup(app.handle())?;
+            // Started by a toast click while Talaan wasn't running: open that meeting once the window loads.
+            #[cfg(target_os = "windows")]
+            if let Some(id) = deeplink::meeting_in_args(&std::env::args().collect::<Vec<_>>()) {
+                commands::summarizer::open_meeting_at_launch(app.handle(), id);
+            }
 
             let handle = app.handle().clone();
             std::thread::spawn(move || loop {
@@ -148,6 +159,7 @@ pub fn run() {
             commands::transcriber::models_cancel,
             commands::transcriber::models_delete,
             commands::summarizer::meetings_generate_summary,
+            commands::summarizer::meetings_launch_link,
             commands::gpu::gpu_status,
             commands::gpu::gpu_retry,
             commands::ask::meetings_ask,

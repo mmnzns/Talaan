@@ -3,7 +3,7 @@ import { onWindows } from "../../lib/platform";
 import type { Route } from "../../lib/router";
 import { navigate, routes } from "../../lib/router";
 import { inTauri, openSettings } from "../../lib/windows";
-import { onEvent } from "../../data/tauri/invoke";
+import { call, onEvent } from "../../data/tauri/invoke";
 import { AskScreen } from "../Ask/AskScreen";
 import { ImportSheet } from "../Shell/ImportSheet";
 import { MeetingList } from "../MeetingList/MeetingList";
@@ -38,6 +38,14 @@ export function MainWindow({ route }: { route: Route }) {
     ];
     return () => offs.forEach((off) => off());
   }, [recording.start]);
+
+  // Started by a notification click while Talaan wasn't running (Windows): open that meeting.
+  useEffect(() => {
+    if (!inTauri()) return;
+    void call<string | null>("meetings_launch_link")
+      .then((id) => id && navigate(routes.meeting(id)))
+      .catch(() => {});
+  }, []);
 
   // Drop an audio file anywhere on the window to import it.
   useEffect(() => {

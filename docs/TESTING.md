@@ -95,7 +95,10 @@ quit the dev app first: one Talaan at a time.
 **Shell**
 - [ ] Tray icon visible on light and dark taskbars; popover opens above the tray; hover shows the timer.
 - [ ] "Summary ready" toast appears and opens the meeting; a click from Action Center after the banner is
-  gone also opens it (if not: note it; the shortcut needs a ToastActivatorCLSID, a v1.0.1 follow-up).
+  gone also opens it (it's a `talaan://meeting/<id>` link the installer registers). The first click may show
+  Windows' "Select an app to open this talaan link" picker: choose Talaan and "Always". Note whether it appeared.
+  Then quit Talaan from the tray, click another "Summary ready" from Action Center: Talaan starts on that meeting.
+- [ ] After uninstalling, `HKCU\Software\Classes\talaan` is gone.
 - [ ] Second launch focuses the first window. Ctrl+, opens Settings. Title bar follows dark mode.
 - [ ] Open at login: sign out and in, the tray icon is back.
 - [ ] Sleep mid-recording for 30 s: a pause gap, recording continues.
