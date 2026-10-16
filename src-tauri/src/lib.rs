@@ -2,6 +2,7 @@ mod ask;
 mod calendar;
 mod calls;
 mod commands;
+mod helper;
 mod i18n;
 mod importer;
 mod keys;

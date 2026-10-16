@@ -19,7 +19,7 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2", features = [] }
 
 [workspace]
-members = [".", "llm", "llm-protocol"]
+members = [".", "llm", "llm-protocol", "stt"]
 
 [dependencies]
 tauri = { version = "2", features = ["tray-icon", "image-png", "macos-private-api", "protocol-asset"] }
@@ -45,6 +45,8 @@ strsim = "0.11.1"
 whatlang = "0.18.0"
 symphonia = { version = "0.5.5", features = ["aac", "isomp4", "mp3", "aiff", "alac", "caf"] }
 talaan-llm-protocol = { path = "llm-protocol" }
+# Whisper chunk transcription shared with the Windows GPU helper (processor build here; never its vulkan feature).
+talaan-stt = { path = "stt" }
 keyring = "3.6.3"
 rrule = "0.14.0"
 chrono-tz = "0.10.4"
