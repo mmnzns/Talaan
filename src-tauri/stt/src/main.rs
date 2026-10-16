@@ -53,7 +53,8 @@ fn main() {
     let mut on_gpu = false;
     for line in std::io::stdin().lock().lines() {
         let Ok(line) = line else { break };
-        match serde_json::from_str::<SttRequest>(&line) {
+        // A UTF-8 byte order mark (a file piped in by hand) isn't part of the request.
+        match serde_json::from_str::<SttRequest>(line.trim_start_matches('\u{feff}')) {
             Ok(SttRequest::Ping) => send(&SttEvent::Ready { backend: backend(gpu.map(|(d, _)| d)) }),
             Ok(SttRequest::Devices) => send(&SttEvent::Devices { devices: all.clone(), chosen: chosen.as_ref().map(|d| d.index) }),
             Ok(SttRequest::Load { model_path, gpu: want }) => {

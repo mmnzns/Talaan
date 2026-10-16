@@ -106,7 +106,8 @@ fn main() {
             Ok(l) => l,
             Err(_) => break, // idle or stdin closed: free everything by exiting
         };
-        match serde_json::from_str::<Request>(&line) {
+        // A UTF-8 byte order mark (a file piped in by hand) isn't part of the request.
+        match serde_json::from_str::<Request>(line.trim_start_matches('\u{feff}')) {
             Ok(Request::Ping) => send(&Event::Ready { backend: backend(gpu.as_ref()) }),
             Ok(Request::Devices) => send(&Event::Devices { devices: all.clone(), chosen: gpu.as_ref().map(|d| d.index) }),
             Ok(Request::Complete(c)) => {
