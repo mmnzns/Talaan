@@ -38,9 +38,14 @@ describe("startLive", () => {
   });
 
   it("keeps the last good value when a request fails, and asks again on refresh", async () => {
-    const answers = [Promise.resolve("a"), Promise.reject(new Error("ipc")), Promise.resolve("b")];
+    // Built lazily: an eagerly created rejected promise is an unhandled rejection to Vitest.
+    const answers: (() => Promise<string>)[] = [
+      () => Promise.resolve("a"),
+      () => Promise.reject(new Error("ipc")),
+      () => Promise.resolve("b"),
+    ];
     const seen: string[] = [];
-    const live = startLive(() => answers.shift()!, () => () => {}, (v) => seen.push(v));
+    const live = startLive(() => answers.shift()!(), () => () => {}, (v) => seen.push(v));
     await flush();
     live.refresh();
     await flush();
