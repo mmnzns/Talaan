@@ -128,6 +128,9 @@ impl<E: DeserializeOwned + Send + 'static> Process<E> {
 pub struct StderrTail {
     lines: VecDeque<String>,
     bytes: usize,
+    /// After a panic header, the panic's message (which can quote any text) until Rust's own `note:` /
+    /// `stack backtrace:` line or the next panic. Release builds abort on panic, so nothing useful is lost.
+    in_panic_message: bool,
 }
 
 pub const TAIL_BYTES: usize = 2048;
@@ -136,9 +139,21 @@ pub const LINE_BYTES: usize = 200;
 impl StderrTail {
     pub fn push(&mut self, line: &str) {
         let line = line.trim();
-        if !is_error_line(line) {
+        let header = panic_header(line);
+        if self.in_panic_message && header.is_none() {
+            if line.starts_with("note: ") || line.starts_with("stack backtrace:") {
+                self.in_panic_message = false;
+            }
             return;
         }
+        let line = match header {
+            Some(h) => {
+                self.in_panic_message = true;
+                h
+            }
+            None if is_error_line(line) => line,
+            None => return,
+        };
         let mut cut = line.len().min(LINE_BYTES);
         while !line.is_char_boundary(cut) {
             cut -= 1;
@@ -159,19 +174,49 @@ impl StderrTail {
     }
 }
 
-/// Lines worth keeping: a Rust panic header (it names only the source location), an allocation failure, or a
-/// ggml / llama.cpp / whisper.cpp diagnostic.
+/// A Rust panic header, cut to `thread '<name>' panicked at <location>`: the message (on the next line since Rust
+/// 1.73, quoted in the header before that) is never kept.
+fn panic_header(line: &str) -> Option<&str> {
+    if !line.starts_with("thread '") {
+        return None;
+    }
+    let at = line.find("' panicked at")? + "' panicked at".len();
+    let rest = &line[at..];
+    let location = rest.trim_start();
+    if location.starts_with('\'') || location.starts_with('"') {
+        return Some(&line[..at]); // old format: the message comes first
+    }
+    let end = location.find(char::is_whitespace).unwrap_or(location.len());
+    Some(&line[..at + (rest.len() - location.len()) + end])
+}
+
+/// Lines worth keeping (besides a panic header): a ggml / llama.cpp / whisper.cpp diagnostic (ggml-vulkan's start
+/// with `ggml_vulkan:`), Rust's allocation failure, or the C++ runtime's uncaught `std::bad_alloc`. Each starts with
+/// text of their own, never anything user-supplied first.
 fn is_error_line(line: &str) -> bool {
-    let lower = line.to_ascii_lowercase();
-    (line.starts_with("thread '") && line.contains("panicked at"))
-        || line.starts_with("ggml_")
+    has_known_prefix(line) || line.contains("GGML_ASSERT") || line.contains("GGML_ABORT")
+}
+
+fn has_known_prefix(line: &str) -> bool {
+    line.starts_with("ggml_")
         || line.starts_with("llama_")
         || line.starts_with("whisper_")
         || line.starts_with("GGML_")
-        || line.contains("GGML_ASSERT")
-        || line.contains("GGML_ABORT")
-        || line.contains("vk::")
-        || MEMORY_MARKERS.iter().any(|m| lower.contains(m))
+        || line.starts_with("memory allocation of")
+        || line.starts_with(BAD_ALLOC)
+}
+
+const BAD_ALLOC: &str = "terminate called after throwing an instance of 'std::bad_alloc'";
+
+/// Memory markers count only on a line with a known prefix, so text that merely mentions memory (a panic message
+/// quoting the transcript, say) can neither be kept nor blamed on memory.
+fn says_out_of_memory(line: &str) -> bool {
+    let line = line.trim();
+    if !has_known_prefix(line) {
+        return false;
+    }
+    let lower = line.to_ascii_lowercase();
+    MEMORY_MARKERS.iter().any(|m| lower.contains(m))
 }
 
 const MEMORY_MARKERS: &[&str] = &["memory allocation of", "out of memory", "failed to allocate", "bad_alloc", "cannot allocate", "unable to allocate", "insufficient memory", "erroroutofdevicememory"];
@@ -184,8 +229,7 @@ const STATUS_NO_MEMORY: u32 = 0xC000_0017;
 /// before aborting, ggml's "failed to allocate"), Windows ended it with STATUS_NO_MEMORY, or on macOS/Linux it was
 /// killed with SIGKILL (what the system does to a process using too much memory; Talaan's own stop comes later).
 pub fn ran_out_of_memory(status: Option<ExitStatus>, stderr: &str) -> bool {
-    let lower = stderr.to_ascii_lowercase();
-    if MEMORY_MARKERS.iter().any(|m| lower.contains(m)) {
+    if stderr.lines().any(says_out_of_memory) {
         return true;
     }
     let Some(status) = status else { return false };
@@ -344,6 +388,38 @@ mod tests {
         w.push("whisper_init_with_params_no_state: failed to load model");
         w.push(" Bonjour tout le monde");
         assert_eq!(w.text(), "whisper_init_with_params_no_state: failed to load model");
+    }
+
+    /// A panic's message can quote anything (the transcript, the prompt): the header's location is kept, the
+    /// message never is, even when it looks like a ggml line or mentions memory.
+    #[test]
+    fn a_panic_message_is_never_kept_and_never_blamed_on_memory() {
+        let mut t = StderrTail::default();
+        t.push("thread 'main' panicked at llm/src/main.rs:10:5:");
+        t.push("Sam: we ran out of memory on the old laptops, failed to allocate budget");
+        t.push("ggml_ fake line quoting the transcript: out of memory");
+        t.push("note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace");
+        t.push("ggml_backend_cpu_buffer_type_alloc_buffer: allocated buffer");
+        let text = t.text();
+        assert_eq!(text, "thread 'main' panicked at llm/src/main.rs:10:5:\nggml_backend_cpu_buffer_type_alloc_buffer: allocated buffer");
+        assert!(!ran_out_of_memory(None, &text));
+
+        // Before Rust 1.73 the message was quoted in the header itself.
+        let mut t = StderrTail::default();
+        t.push("thread 'main' panicked at 'Agreed, pricing waits until Q1', llm/src/main.rs:10:5");
+        assert_eq!(t.text(), "thread 'main' panicked at");
+    }
+
+    #[test]
+    fn memory_markers_count_only_on_known_lines() {
+        let mut t = StderrTail::default();
+        t.push("Me: the server said out of memory again");
+        t.push("We cannot allocate more people to this");
+        assert_eq!(t.text(), "");
+        assert!(!ran_out_of_memory(None, "Me: the server said out of memory again"));
+        assert!(!ran_out_of_memory(None, "C:/src/ggml.c:12: GGML_ASSERT(ok) failed: out of memory in the meeting"));
+        assert!(ran_out_of_memory(None, "llama_kv_cache_init: failed to allocate buffer for kv cache"));
+        assert!(ran_out_of_memory(None, "thread 'main' panicked at x.rs:1:1:\nmemory allocation of 1024 bytes failed"));
     }
 
     #[test]

@@ -116,11 +116,12 @@ pub fn tags_list(state: State<AppState>) -> CmdResult<Vec<String>> {
 }
 
 /// The file to play for a meeting (both tracks mixed, made on first use), or None when the audio is gone.
-/// `async`: mixing an hour-long call takes a while.
-#[tauri::command(async)]
-pub fn meetings_playback(state: State<AppState>, id: String) -> CmdResult<Option<String>> {
+/// Mixing an hour-long call takes a while, so it runs on a blocking thread, never on the async runtime's workers.
+#[tauri::command]
+pub async fn meetings_playback(state: State<'_, AppState>, id: String) -> CmdResult<Option<String>> {
     let dir = state.lock().dir(&id)?;
-    Ok(crate::recorder::playback::ensure(&dir)?.map(|p| p.to_string_lossy().into_owned()))
+    let made = tauri::async_runtime::spawn_blocking(move || crate::recorder::playback::ensure(&dir)).await.map_err(std::io::Error::other)??;
+    Ok(made.map(|p| p.to_string_lossy().into_owned()))
 }
 
 /// Delete audio now: the transcript and summary stay.
