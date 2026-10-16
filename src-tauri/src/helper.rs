@@ -253,18 +253,19 @@ pub mod fake {
     }
 
     /// Writes a script (`.cmd` on Windows, `sh` elsewhere) named `name` that answers each request in turn, then
-    /// (if no step exited) waits for stdin to close. JSON lines must not contain `'` (sh) or `%` / `^` (cmd).
+    /// (if no step exited) waits for stdin to close. Lines must not contain `%`, `^`, `<`, `>`, `&` or `|` (cmd).
     pub fn script(dir: &Path, name: &str, steps: &[Step]) -> PathBuf {
         #[cfg(unix)]
         {
             let mut body = String::from("#!/bin/sh\n");
             for s in steps {
                 body.push_str("read line\n");
+                // Single-quoted for sh, with any ' written as '\'' (a panic header has quotes).
                 for l in s.stdout {
-                    body.push_str(&format!("echo '{l}'\n"));
+                    body.push_str(&format!("echo '{}'\n", l.replace('\'', r"'\''")));
                 }
                 for l in s.stderr {
-                    body.push_str(&format!("echo '{l}' 1>&2\n"));
+                    body.push_str(&format!("echo '{}' 1>&2\n", l.replace('\'', r"'\''")));
                 }
                 if let Some(c) = s.exit {
                     body.push_str(&format!("exit {c}\n"));
