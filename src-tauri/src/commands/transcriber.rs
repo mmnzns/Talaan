@@ -4,10 +4,10 @@ use super::{notify, AppState, CmdResult, MEETINGS_CHANGED};
 use crate::storage::model::MeetingStatus;
 use crate::storage::StorageError;
 use crate::transcriber::download::{download_model, DownloadError};
-use crate::transcriber::models::{find, EngineKind, Location, ModelStore, CATALOG, VAD};
+use crate::transcriber::models::{find, EngineKind, Location, ModelInfo, ModelStore, CATALOG, VAD};
 use crate::transcriber::pipeline::Detector;
 use crate::transcriber::vad::Vad;
-use crate::transcriber::worker::{Config, Deps, Worker, NO_MODEL};
+use crate::transcriber::worker::{stamp_estimate, Config, Deps, OnGpu, Worker, NO_MODEL};
 use serde::Serialize;
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -21,6 +21,7 @@ pub const MODELS_CHANGED: &str = "models-changed";
 pub struct TranscriberState {
     pub worker: Worker,
     data_dir: PathBuf,
+    on_gpu: Arc<OnGpu>,
     /// Model id → (cancel flag, progress 0..1).
     downloads: Mutex<HashMap<String, (Arc<AtomicBool>, f32)>>,
 }
@@ -28,6 +29,10 @@ pub struct TranscriberState {
 impl TranscriberState {
     pub fn enqueue(&self, id: &str) {
         self.worker.enqueue(id);
+    }
+    /// A first time estimate on a meeting that was just handed over (Stop says how long it will take).
+    pub fn stamp_estimate(&self, storage: &crate::storage::Storage, id: &str) {
+        stamp_estimate(storage, id, self.on_gpu.as_ref());
     }
     pub fn data_dir(&self) -> &std::path::Path {
         &self.data_dir
@@ -46,10 +51,26 @@ fn err(message: String) -> StorageError {
     StorageError::Refused(message)
 }
 
+/// Whether a speech model runs on the graphics chip: Whisper with "use the GPU" on, through Metal on the Mac and
+/// the Vulkan helper on Windows when `gpu.rs` says it should be used. Parakeet and Nemotron use the processor.
+fn stt_on_gpu(model: &ModelInfo, use_gpu: bool, gpu: &crate::gpu::Gpu) -> bool {
+    if model.engine != EngineKind::Whisper || !use_gpu {
+        return false;
+    }
+    if cfg!(target_os = "macos") {
+        return true;
+    }
+    cfg!(windows) && matches!(gpu.plan(crate::gpu::Kind::Stt, true), crate::gpu::Plan::Gpu { .. })
+}
+
 /// Starts the worker and queues every meeting left `transcribing` (a crash or quit mid-way).
 pub fn setup(app: &AppHandle, data_dir: PathBuf) {
     let state = app.state::<AppState>();
     let changed_app = app.clone();
+    let on_gpu: Arc<OnGpu> = {
+        let gpu = crate::gpu::Gpu::shared(&data_dir);
+        Arc::new(move |m: &ModelInfo, use_gpu: bool| stt_on_gpu(m, use_gpu, &gpu))
+    };
     let worker = Worker::start(Deps {
         storage: state.shared(),
         data_dir: data_dir.clone(),
@@ -66,12 +87,17 @@ pub fn setup(app: &AppHandle, data_dir: PathBuf) {
             let app = app.clone();
             Arc::new(move |id: &str| app.state::<super::summarizer::SummarizerState>().enqueue(id))
         },
+        transcript_ready: {
+            let app = app.clone();
+            Arc::new(move |id: &str, title: &str| super::summarizer::notify_done(&app, id, "notify.transcript_ready", title))
+        },
+        on_gpu: on_gpu.clone(),
     });
     let waiting = state.lock().ids_with_status(MeetingStatus::Transcribing).unwrap_or_default();
     for id in &waiting {
         worker.enqueue(id);
     }
-    app.manage(TranscriberState { worker, data_dir, downloads: Mutex::default() });
+    app.manage(TranscriberState { worker, data_dir, on_gpu, downloads: Mutex::default() });
 }
 
 /// Queues meetings that failed only because no model was there.

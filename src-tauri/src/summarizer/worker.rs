@@ -2,7 +2,9 @@
 //! A meeting enters `summarizing` and leaves `ready`, with a summary or with `summary_error` saying why not.
 
 use super::summarize::{summarize, too_short, EngineError, SummarizeError, SummaryEngine};
+use crate::eta::{self, Device, Profile};
 use crate::storage::model::{MeetingStatus, ProcessingError};
+use crate::storage::speed::set_eta;
 use crate::storage::Storage;
 use serde_json::Value;
 use std::collections::VecDeque;
@@ -51,6 +53,11 @@ pub struct Deps {
     pub make_engine: Box<EngineFactory>,
     /// Called with a meeting id when its summary is ready (for the notification).
     pub summarized: Arc<dyn Fn(&str, &str) + Send + Sync>,
+    /// Called with a meeting id and title when it ends without a summary (no engine, too short, the AI failed):
+    /// the transcript is all there is, so the "Transcript ready" notification says the work is done.
+    pub unsummarized: Arc<dyn Fn(&str, &str) + Send + Sync>,
+    /// How a summary with these settings is timed on this computer (`eta::summary_profile`).
+    pub profile: Box<dyn Fn(&Config) -> Profile + Send + Sync>,
 }
 
 #[derive(Default)]
@@ -134,28 +141,46 @@ fn without_summary(deps: &Deps, id: &str, code: &str, message: String) {
 }
 
 fn without_summary_detail(deps: &Deps, id: &str, code: &str, message: String, detail: Option<String>) {
-    let _ = lock(&deps.storage).update_meeting_file(id, |f| {
+    let mut title = String::new();
+    let saved = lock(&deps.storage).update_meeting_file(id, |f| {
         f.status = MeetingStatus::Ready;
         f.progress = None;
+        f.eta = None;
         f.summary_error = Some(ProcessingError { code: code.into(), message, detail });
+        title = f.title.clone();
     });
+    if saved.is_ok() {
+        (deps.unsummarized)(id, &title);
+    }
 }
 
 fn process(deps: &Deps, id: &str, cancel: &AtomicBool) {
-    let (meeting, config) = {
+    let (meeting, config, speech) = {
         let s = lock(&deps.storage);
         let Ok(file) = s.read_meeting_file(id) else { return };
         if file.status != MeetingStatus::Summarizing {
             return;
         }
         let Ok(meeting) = s.get_meeting(id) else { return };
-        (meeting, Config::from_settings(s.settings_get().ok().flatten().as_ref()))
+        // The summary's work grows with what was said; a meeting from before speech was measured uses its length.
+        let speech = file.transcription.as_ref().map(|t| t.speech_ms).filter(|ms| *ms > 0).unwrap_or(file.duration_ms) as f64 / 1000.0;
+        (meeting, Config::from_settings(s.settings_get().ok().flatten().as_ref()), speech)
     };
 
     // Checked before the engine, so a test call doesn't wait on (or fail for) a model it never needed.
     if too_short(&meeting.transcript) {
         return without_summary(deps, id, TOO_SHORT, SummarizeError::TooShort.message());
     }
+    let profile = (deps.profile)(&config);
+    let on_cpu = profile.device == Device::Cpu;
+    let job = std::time::Instant::now();
+    let estimate = {
+        let s = lock(&deps.storage);
+        let total = profile.total(s.speed_rate(&profile.key), speech);
+        let _ = s.update_meeting_file(id, |f| set_eta(f, total, on_cpu));
+        total
+    };
+    (deps.changed)();
     let mut engine = match (deps.make_engine)(&config) {
         Ok(e) => e,
         Err(EngineError::Unavailable(m)) => return without_summary(deps, id, NO_ENGINE, m),
@@ -165,10 +190,16 @@ fn process(deps: &Deps, id: &str, cancel: &AtomicBool) {
 
     let language = config.language_for(&meeting.language);
     let mut last_report = Instant::now() - Duration::from_secs(10);
+    let mut first_report: Option<Instant> = None;
     let mut report = |p: f32| {
+        let running = first_report.get_or_insert_with(Instant::now).elapsed().as_secs_f64();
         if last_report.elapsed() >= Duration::from_secs(1) || p >= 1.0 {
             last_report = Instant::now();
-            let _ = lock(&deps.storage).update_meeting_file(id, |f| f.progress = Some(p as f64));
+            let left = eta::remaining(estimate, job.elapsed().as_secs_f64(), p as f64, running);
+            let _ = lock(&deps.storage).update_meeting_file(id, |f| {
+                f.progress = Some(p as f64);
+                set_eta(f, left, on_cpu);
+            });
             (deps.changed)();
         }
     };
@@ -180,10 +211,13 @@ fn process(deps: &Deps, id: &str, cancel: &AtomicBool) {
                 drop(s);
                 return without_summary(deps, id, FAILED, crate::i18n::tr("error.save_summary"));
             }
+            // The start-up cost is part of the estimate, not of the pace.
+            s.learn_speed(&profile.key, (job.elapsed().as_secs_f64() - profile.overhead).max(0.0), speech);
             let mut title = String::new();
             let _ = s.update_meeting_file(id, |f| {
                 f.status = MeetingStatus::Ready;
                 f.progress = None;
+                f.eta = None;
                 f.summary_error = None;
                 if let Some(t) = out.title.as_ref().filter(|_| f.title_is_placeholder) {
                     f.title = t.clone();
@@ -221,7 +255,16 @@ mod tests {
         let storage = Arc::new(Mutex::new(storage));
         let done = Arc::new(Mutex::new(vec![]));
         let d2 = done.clone();
-        let worker = Worker::start(Deps { storage: storage.clone(), changed: Arc::new(|| {}), make_engine: make, summarized: Arc::new(move |_, t| d2.lock().unwrap().push(t.to_string())) });
+        let d3 = done.clone();
+        let worker = Worker::start(Deps {
+            storage: storage.clone(),
+            changed: Arc::new(|| {}),
+            make_engine: make,
+            summarized: Arc::new(move |_, t| d2.lock().unwrap().push(t.to_string())),
+            // "Transcript ready" is told apart from "Summary ready" by a prefix.
+            unsummarized: Arc::new(move |_, t| d3.lock().unwrap().push(format!("transcript: {t}"))),
+            profile: Box::new(|c| eta::summary_profile(&c.engine, "test", false)),
+        });
         (dir, storage, f.id, worker, done)
     }
 
@@ -245,6 +288,49 @@ mod tests {
         assert_eq!(m.item.title, "Onboarding plan");
         assert_eq!(m.summary_error, None);
         assert_eq!(*done.lock().unwrap(), vec!["Onboarding plan".to_string()]);
+        let f = storage.lock().unwrap().read_meeting_file(&id).unwrap();
+        assert_eq!(f.eta, None, "the estimate goes once the summary is there");
+    }
+
+    #[test]
+    fn a_running_summary_has_an_estimate_from_the_profile() {
+        // An engine that waits until the test has looked at the estimate.
+        struct Slow(Arc<Mutex<bool>>);
+        impl SummaryEngine for Slow {
+            fn complete(&mut self, _p: &crate::summarizer::prompt::Prompt, _s: &str, _m: u32, _c: &AtomicBool) -> Result<String, EngineError> {
+                while !*self.0.lock().unwrap() {
+                    std::thread::sleep(Duration::from_millis(5));
+                }
+                Ok(reply("Plan", "R."))
+            }
+            fn context_tokens(&self) -> usize {
+                16_384
+            }
+            fn label(&self) -> String {
+                "Slow".into()
+            }
+        }
+        let go = Arc::new(Mutex::new(false));
+        let g2 = go.clone();
+        let (_d, storage, id, w, _) = setup(Box::new(move |_| Ok(Box::new(Slow(g2.clone())))));
+        storage.lock().unwrap().settings_set(json!({ "summaryEngine": "local", "localModel": "recommended" })).unwrap();
+        w.enqueue(&id);
+        let t = Instant::now();
+        let eta = loop {
+            if let Some(e) = storage.lock().unwrap().list_meetings(&Default::default()).unwrap()[0].eta.clone() {
+                break e;
+            }
+            assert!(t.elapsed() < Duration::from_secs(5));
+            std::thread::sleep(Duration::from_millis(5));
+        };
+        // The test profile runs on the processor; the estimate is the start-up cost plus a little speech.
+        assert!(eta.on_cpu);
+        let finish = chrono::DateTime::parse_from_rfc3339(&eta.finish_at).unwrap();
+        let left = (finish.with_timezone(&chrono::Local) - chrono::Local::now()).num_seconds();
+        assert!((5..=60).contains(&left), "{left}");
+        *go.lock().unwrap() = true;
+        wait(&w);
+        assert_eq!(storage.lock().unwrap().read_meeting_file(&id).unwrap().eta, None);
     }
 
     #[test]
@@ -268,7 +354,11 @@ mod tests {
         assert_eq!(m.item.status, MeetingStatus::Ready);
         assert!(m.summary.is_none());
         assert_eq!(m.summary_error.unwrap().code, NO_ENGINE);
-        assert!(done.lock().unwrap().is_empty());
+        assert!(m.item.eta.is_none());
+        // No summary, but the work is done: "Transcript ready".
+        let done = done.lock().unwrap();
+        assert_eq!(done.len(), 1);
+        assert!(done[0].starts_with("transcript: Call, Zoom"), "{done:?}");
     }
 
     /// An engine that fails the way the local AI does when its helper dies.
@@ -322,7 +412,7 @@ mod tests {
         assert!(m.summary.is_none());
         assert_eq!(m.summary_error.unwrap().code, TOO_SHORT);
         assert!(m.item.title.starts_with("Call, Zoom"));
-        assert!(done.lock().unwrap().is_empty());
+        assert!(done.lock().unwrap().iter().all(|d| d.starts_with("transcript: ")));
     }
 
     #[test]

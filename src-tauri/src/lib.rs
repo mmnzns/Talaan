@@ -2,6 +2,7 @@ mod ask;
 mod calendar;
 mod calls;
 mod commands;
+mod eta;
 mod gpu;
 mod helper;
 mod i18n;
