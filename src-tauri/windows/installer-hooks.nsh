@@ -9,13 +9,21 @@
   System::Call 'advapi32::CredDeleteW(w "${ACCOUNT}.Talaan", i 1, i 0) i .r0'
 !macroend
 
-; The summary helper can outlive Talaan for a few seconds; close it so its exe isn't locked.
-!macro NSIS_HOOK_PREINSTALL
+; The helpers can outlive Talaan for a few seconds; close them so their exes aren't locked. The GPU helpers
+; (talaan-llm-vulkan.exe, talaan-stt-vulkan.exe) are only in installers built with the Vulkan SDK; checking for
+; one that isn't running is a no-op.
+!macro TalaanCloseHelpers
   !insertmacro CheckIfAppIsRunning "$INSTDIR\talaan-llm.exe" "${PRODUCTNAME}"
+  !insertmacro CheckIfAppIsRunning "$INSTDIR\talaan-llm-vulkan.exe" "${PRODUCTNAME}"
+  !insertmacro CheckIfAppIsRunning "$INSTDIR\talaan-stt-vulkan.exe" "${PRODUCTNAME}"
+!macroend
+
+!macro NSIS_HOOK_PREINSTALL
+  !insertmacro TalaanCloseHelpers
 !macroend
 
 !macro NSIS_HOOK_PREUNINSTALL
-  !insertmacro CheckIfAppIsRunning "$INSTDIR\talaan-llm.exe" "${PRODUCTNAME}"
+  !insertmacro TalaanCloseHelpers
 !macroend
 
 !macro NSIS_HOOK_POSTUNINSTALL

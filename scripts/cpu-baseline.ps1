@@ -32,7 +32,7 @@ function Reset-StaleGgml([string]$manifest, [string]$target) {
   $stale = @(Get-GgmlCaches $target | Where-Object { @(Test-GgmlBaseline $_).Count -gt 0 })
   if ($stale.Count -gt 0) {
     Write-Host "Rebuilding whisper.cpp and llama.cpp for the x86-64-v3 baseline"
-    cargo clean --manifest-path $manifest --release -p whisper-rs-sys -p llama-cpp-sys-2
+    cargo clean --manifest-path $manifest --target-dir $target --release -p whisper-rs-sys -p llama-cpp-sys-2
     if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
   }
 }
