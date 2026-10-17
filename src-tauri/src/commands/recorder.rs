@@ -351,6 +351,8 @@ pub fn setup(app: &AppHandle) {
         let mut warned = false;
         // A blocked tap delivers zeros from the first sample. Once any sound came through, it isn't blocked.
         let mut heard_them = false;
+        #[cfg(target_os = "windows")]
+        let mut call_sound = SoundLatch::default();
         // System audio gave up mid-recording (it reconnects on its own first). Said once per recording.
         let mut warned_lost = false;
         loop {
@@ -361,6 +363,10 @@ pub fn setup(app: &AppHandle) {
                 silent_since = None;
                 warned = false;
                 heard_them = false;
+                #[cfg(target_os = "windows")]
+                {
+                    call_sound = SoundLatch::default();
+                }
                 warned_lost = false;
                 continue;
             }
@@ -383,13 +389,14 @@ pub fn setup(app: &AppHandle) {
             // Digital silence (exact zeros, not just quiet) from the tap since the start, while there should be
             // call audio = Talaan can't hear the call. (Apps keep output streams running while quiet, so silence
             // after real sound means nothing.) macOS: something else is playing (the tap is blocked by a
-            // permission), 10 s. Windows: loopback can't be blocked, so the sign is a call app on the mic and
-            // nothing at all from the call for 60 s.
+            // permission), 10 s. Windows: loopback can't be blocked, so the sign is the call app on the mic
+            // actually playing sound (its own audio session's meter) while Talaan gets nothing, for 60 s. A lobby,
+            // a webinar not started yet, hold, or a browser just holding the mic play nothing, so they never count.
             if !heard_them {
                 #[cfg(not(target_os = "windows"))]
                 let (expected, after) = (platform::devices::others_playing(), Duration::from_secs(10));
                 #[cfg(target_os = "windows")]
-                let (expected, after) = (super::calls::call_app_on_mic(), Duration::from_secs(60));
+                let (expected, after) = (call_sound.playing(Instant::now(), || platform::devices::apps_playing(&super::calls::call_app_exes())), Duration::from_secs(60));
                 if silence_watch(&mut silent_since, Instant::now(), them == 0.0 && expected && !paused, after) && !warned {
                     warned = true;
                     notice(&app, crate::i18n::tr(NO_CALL_AUDIO), "warning", NO_CALL_AUDIO_PANE);
@@ -408,6 +415,28 @@ pub fn setup(app: &AppHandle) {
             }
         }
     });
+}
+
+/// Whether the call app is playing sound (Windows, R9). Read at most once a second (it walks every output's
+/// sessions), and true for 8 s after it was last heard, so the gaps between sentences don't reset the timer.
+#[derive(Default)]
+#[cfg_attr(not(target_os = "windows"), allow(dead_code))]
+struct SoundLatch {
+    checked: Option<Instant>,
+    heard: Option<Instant>,
+}
+
+#[cfg_attr(not(target_os = "windows"), allow(dead_code))]
+impl SoundLatch {
+    fn playing(&mut self, now: Instant, probe: impl FnOnce() -> bool) -> bool {
+        if self.checked.is_none_or(|t| now.duration_since(t) >= Duration::from_secs(1)) {
+            self.checked = Some(now);
+            if probe() {
+                self.heard = Some(now);
+            }
+        }
+        self.heard.is_some_and(|t| now.duration_since(t) < Duration::from_secs(8))
+    }
 }
 
 /// The "can't hear the call" timer: true once `silent` has held without a break for `after` (`since` holds when
@@ -443,9 +472,23 @@ pub fn discard_for_wipe(app: &AppHandle) {
 
 #[cfg(test)]
 mod tests {
-    use super::{auto_tag, silence_watch};
+    use super::{auto_tag, silence_watch, SoundLatch};
     use serde_json::json;
     use std::time::{Duration, Instant};
+
+    #[test]
+    fn the_call_app_counts_as_playing_for_a_few_seconds_and_is_read_once_a_second() {
+        let t0 = Instant::now();
+        let at = |ms: u64| t0 + Duration::from_millis(ms);
+        let mut l = SoundLatch::default();
+        let mut probes = 0;
+        assert!(!l.playing(at(0), || { probes += 1; false }));
+        assert!(!l.playing(at(500), || { probes += 1; true }), "not read again within the second");
+        assert!(l.playing(at(1000), || { probes += 1; true }));
+        assert!(l.playing(at(8900), || { probes += 1; false }), "a pause in the talk");
+        assert!(!l.playing(at(9100), || { probes += 1; false }), "8 s without sound");
+        assert_eq!(probes, 3);
+    }
 
     #[test]
     fn the_call_audio_warning_needs_unbroken_silence() {

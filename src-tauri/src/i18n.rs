@@ -83,9 +83,9 @@ const TABLE: &[(&str, &str, &str, &str)] = &[
     ),
     (
         "notice.no_call_audio_windows",
-        "Talaan hasn’t heard any sound from the call for a minute. If the other people are talking, stop and start the recording. If it happens again, run Test call audio in Check setup.",
-        "Talaan n’a entendu aucun son de l’appel depuis une minute. Si les autres personnes parlent, arrêtez l’enregistrement et relancez-le. Si cela se reproduit, lancez « Tester l’audio » dans « Vérifier la configuration ».",
-        "Talaan no ha oído ningún sonido de la llamada en un minuto. Si las demás personas están hablando, detén la grabación y vuelve a empezarla. Si vuelve a pasar, usa Probar el audio en Verificar la configuración.",
+        "Talaan can’t hear the call, although the call app is playing sound. Keep recording. After the call, run Test call audio in Check setup.",
+        "Talaan n’entend pas l’appel, même si l’application d’appel joue du son. Continuez l’enregistrement. Après l’appel, lancez « Tester l’audio » dans « Vérifier la configuration ».",
+        "Talaan no oye la llamada, aunque la aplicación de llamadas está reproduciendo sonido. Sigue grabando. Después de la llamada, usa Probar el audio en Verificar la configuración.",
     ),
     (
         "notice.call_audio_lost",

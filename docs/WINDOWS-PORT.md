@@ -35,10 +35,15 @@ while it's in use. The capture itself is unchanged. On the PC it reads `Some("Fx
 `loopback_follows_the_app_not_the_device` plays a tone from the test process on a non-default output (Realtek Digital
 Output, default FxSound) and a loopback of only that process hears it at full strength (2026-10-16: 440 Hz 0.209 for a 0.3
 tone). So INSTALL's old advice (set the call app's speaker to the Windows default) was wrong and is gone. The recorder's
-watch now also runs on Windows: when "Them" has been exact zeros (not just quiet) since the start for 60 s while a call
-app (or a browser that may be in a call) is on the mic (`calls::call_app_on_mic`, from the calls loop), it shows
-`notice.no_call_audio_windows` once, without a settings button (there's nothing to switch on). macOS keeps its rule
-(something else playing, 10 s). The timer is `recorder::silence_watch` (unit-tested).
+watch now also runs on Windows: when "Them" has been exact zeros (not just quiet) since the start for 60 s while the
+call app on the mic is itself playing sound, it shows `notice.no_call_audio_windows` once, without a settings button
+(there's nothing to switch on). "Playing" is the peak meter of that app's own audio sessions on any output
+(`devices::apps_playing`, matched by exe name from `calls::call_app_exes`; read once a second and held 8 s across
+pauses, `recorder::SoundLatch`), so a lobby, a webinar that hasn't started, hold music muted, or a browser or Discord
+just holding the mic never count. The notice says to keep recording and run Test call audio afterwards (restarting
+would split the meeting). Apps whose sound comes from another process (WebView2-based ones) aren't matched, so they
+never warn. `apps_playing_smoke` (a PowerShell process playing a Windows sound reads as playing, another exe doesn't)
+passed on the PC. macOS keeps its rule (something else playing, 10 s). The timer is `recorder::silence_watch`.
 
 **W3 done.** One Talaan at a time (`tauri-plugin-single-instance`: a second launch focuses the first window). The tray uses
 the coloured `32x32.png` icon on Windows and shows the timer in the tooltip ("Talaan · Recording 12:04"); the popover and call
@@ -194,6 +199,7 @@ values; with the box ticked `%APPDATA%\Talaan`, `%LOCALAPPDATA%\com.craftconcept
 | `system_smoke` (5 s of system audio plus mic; play something while it runs) | `cargo test system_smoke -- --ignored --nocapture` |
 | `system_excludes_own_audio` (our tone must not reach "Them"; set `TALAAN_TONE_DEVICE` to a real output's name if the default is a relay app) | `TALAAN_TONE_DEVICE=<output name> cargo test system_excludes_own_audio -- --ignored --nocapture` |
 | `system_silence_keeps_packets_flowing` (30 s of silence still delivers 30 s of samples) | `cargo test system_silence_keeps_packets_flowing -- --ignored --nocapture` |
+| `apps_playing_smoke` (a PowerShell process plays a Windows sound; its session meter reads as playing) | `cargo test apps_playing_smoke -- --ignored --nocapture` |
 | `loopback_follows_the_app_not_the_device` (our tone on a non-default output is still in a loopback of our process) | `TALAAN_TONE_DEVICE=<non-default output> cargo test loopback_follows_the_app_not_the_device -- --ignored --nocapture` |
 | `mic_clock_smoke` (mic stamps are on the host clock) | `cargo test mic_clock_smoke -- --ignored --nocapture` |
 | `tracks_line_up_smoke` (mic and loopback stamp-vs-now lag under 200 ms; a PowerShell process plays a Windows sound) | `cargo test tracks_line_up_smoke -- --ignored --nocapture` |

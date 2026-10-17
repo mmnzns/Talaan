@@ -253,7 +253,7 @@ Sound "enhancers" and mixers such as **FxSound**, **Voicemeeter**, **SteelSeries
 
 ### Windows: the other people are missing
 
-Talaan hears every app's sound except its own, whichever speakers or headset the app plays to, so you don't need to change the call app's speaker. If "Them" stays empty while the others talk, Talaan says so after a minute: stop and start the recording, and if it happens again run **Test call audio** in **Check setup**.
+Talaan hears every app's sound except its own, whichever speakers or headset the app plays to, so you don't need to change the call app's speaker. If "Them" stays empty for a minute while the call app is playing sound, Talaan says so. Keep recording, and after the call run **Test call audio** in **Check setup**.
 
 ### Mac: the other people are missing
 
