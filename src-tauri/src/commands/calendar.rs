@@ -142,6 +142,7 @@ pub fn wants_link(f: &crate::storage::model::MeetingFile) -> bool {
 }
 
 #[derive(Debug, PartialEq)]
+#[cfg_attr(not(target_os = "windows"), allow(dead_code))] // `offline` is only read on Windows
 enum Outcome {
     Linked,
     /// Nothing to do: already linked, or the meeting can't be read.
