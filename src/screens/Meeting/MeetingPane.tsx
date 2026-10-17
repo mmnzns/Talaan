@@ -4,8 +4,9 @@ import { copyText, toEmail, toShareText } from "../../lib/share";
 import { useStore } from "../../data/StoreProvider";
 import type { Meeting, Ms } from "../../data/types";
 import { usePlayer } from "./usePlayer";
-import { ExportSheet } from "./ExportSheet";
-import { Button } from "../../ui";
+import { ExportSheet, emailSummary } from "./ExportSheet";
+import { Button, useToast } from "../../ui";
+import { describeError } from "../../data/errors";
 import { useStartRecording } from "../Shell/RecordingPanel";
 import { MeetingHeader } from "./MeetingHeader";
 import { StatusBanner } from "./StatusBanner";
@@ -74,7 +75,17 @@ function MeetingView({ meeting, jumpTo }: { meeting: Meeting; jumpTo?: Ms }) {
   const [jumpSeq, setJumpSeq] = useState(0);
   const player = usePlayer(meeting, (at) => setActiveAt(at));
   const [copied, setCopied] = useState<"text" | "email">();
-  const [exporting, setExporting] = useState(false);
+  const [exporting, setExporting] = useState<false | "sheet" | "email-too-long">(false);
+  const toast = useToast();
+  // "Email this summary" from the meeting menu: straight to the mail app, or the sheet when the link is too long.
+  const email = async () => {
+    try {
+      const { truncated } = await emailSummary(meeting);
+      if (truncated) setExporting("email-too-long");
+    } catch (e) {
+      toast(describeError(e));
+    }
+  };
 
   // Clicking a time jumps the transcript there and plays from it while the audio is kept.
   const jump = (at: Ms) => {
@@ -108,7 +119,8 @@ function MeetingView({ meeting, jumpTo }: { meeting: Meeting; jumpTo?: Ms }) {
         onToggleEdit={() => setEditing((e) => !e)}
         onRevert={() => store.revertEdits(meeting.id)}
         onCopy={copy}
-        onExport={() => setExporting(true)}
+        onExport={() => setExporting("sheet")}
+        onEmail={() => void email()}
         copied={copied}
       />
       <StatusBanner meeting={meeting} />
@@ -125,7 +137,13 @@ function MeetingView({ meeting, jumpTo }: { meeting: Meeting; jumpTo?: Ms }) {
           onJump={jump}
         />
       </div>
-      <ExportSheet open={exporting} meeting={meeting} onClose={() => setExporting(false)} />
+      <ExportSheet
+        open={exporting !== false}
+        meeting={meeting}
+        initialFormat={exporting === "email-too-long" ? "email" : undefined}
+        startTooLong={exporting === "email-too-long"}
+        onClose={() => setExporting(false)}
+      />
     </div>
   );
 }

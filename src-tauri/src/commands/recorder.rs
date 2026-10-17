@@ -133,19 +133,27 @@ fn system_source() -> Box<dyn crate::recorder::source::AudioSource> {
 }
 
 /// `async` (off the main thread): it opens the audio devices, as an auto-start from the calls loop already does.
+/// `event`: started from the menu bar's next meeting, whose title and attendees the recording takes.
 #[tauri::command(async)]
-pub fn recorder_start(app: AppHandle, app_id: Option<String>, app_label: Option<String>, test: Option<TestOptions>) -> CmdResult<StatePayload> {
-    start_with(&app, app_id.as_deref().unwrap_or("other"), app_label.as_deref().unwrap_or("Call"), test.map(|t| t.max_ms))
+pub fn recorder_start(
+    app: AppHandle,
+    app_id: Option<String>,
+    app_label: Option<String>,
+    test: Option<TestOptions>,
+    event: Option<crate::storage::model::CalendarEvent>,
+) -> CmdResult<StatePayload> {
+    start_with(&app, app_id.as_deref().unwrap_or("other"), app_label.as_deref().unwrap_or("Call"), test.map(|t| t.max_ms), event)
 }
 
 /// Starts a recording (Record button, an accepted nudge, or an app on Always).
 pub fn start_recording(app: &AppHandle, app_id: &str, app_label: &str) -> CmdResult<StatePayload> {
-    start_with(app, app_id, app_label, None)
+    start_with(app, app_id, app_label, None, None)
 }
 
 /// `test_max_ms`: the guided test recording. It is titled and tagged as a test from the start, records the
-/// microphone only, isn't linked to a calendar event, and stops itself after that long.
-fn start_with(app: &AppHandle, app_id: &str, app_label: &str, test_max_ms: Option<u64>) -> CmdResult<StatePayload> {
+/// microphone only, isn't linked to a calendar event, and stops itself after that long. `event`: started from the
+/// menu bar's next meeting (never with a test).
+fn start_with(app: &AppHandle, app_id: &str, app_label: &str, test_max_ms: Option<u64>, event: Option<crate::storage::model::CalendarEvent>) -> CmdResult<StatePayload> {
     let state = app.state::<AppState>();
     let rec = app.state::<RecorderState>();
     let on_speakers = speakers();
@@ -173,7 +181,10 @@ fn start_with(app: &AppHandle, app_id: &str, app_label: &str, test_max_ms: Optio
     };
     if test_max_ms.is_none() {
         if let Some(id) = &st.meeting_id {
-            super::calendar::link_soon(app, id);
+            match event {
+                Some(e) => super::calendar::link_now(app, id, e),
+                None => super::calendar::link_soon(app, id),
+            }
         }
         if !st.system_audio {
             notice(app, crate::i18n::tr(NO_SYSTEM_AUDIO), "warning", Some("system-audio"));

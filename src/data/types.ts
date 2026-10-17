@@ -100,7 +100,8 @@ export interface Meeting extends MeetingListItem {
   language: string; // BCP-47, e.g. "en"
   hasAudio: boolean; // audio files exist on disk
   audioKeptUntil?: string; // ISO; undefined = pinned, retention is "forever", or no audio
-  /** `emails`: the invitees' addresses, when the calendar gives them (for the follow-up email). */
+  /** The calendar event the recording belonged to. `emails`: the attendees' addresses, when the calendar has them
+   *  (Email this summary and the follow-up email). */
   calendarEvent?: { title: string; attendees: string[]; emails?: string[] };
   speakers: Partial<Record<Speaker, string>>; // display names: { me: "Me", "them:1": "Dana Reyes" }
   summary?: Summary; // undefined = transcript-only ("Generate summary")
