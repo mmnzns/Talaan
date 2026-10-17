@@ -187,6 +187,12 @@ pub struct LlmRow {
     state: &'static str,
     #[serde(skip_serializing_if = "Option::is_none")]
     progress: Option<f32>,
+    /// What an interrupted download left on disk (0..1); Download resumes from it.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    partial: Option<f32>,
+    /// Why the last download failed, until the next try.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    error: Option<String>,
 }
 
 #[tauri::command]
@@ -201,7 +207,8 @@ pub fn llm_models_list(t: State<super::transcriber::TranscriberState>) -> CmdRes
                 (None, Location::Missing) => ("not_downloaded", None),
                 (None, _) => ("downloaded", None),
             };
-            LlmRow { id: m.id, choice, name: m.name, note: m.note, size_mb: m.size().div_ceil(1_000_000), state, progress }
+            let partial = if state == "not_downloaded" { crate::transcriber::download::partial_fraction(m, &store.own_dir(m)) } else { None };
+            LlmRow { id: m.id, choice, name: m.name, note: m.note, size_mb: m.size().div_ceil(1_000_000), state, progress, partial, error: t.download_error(m.id) }
         })
         .collect())
 }

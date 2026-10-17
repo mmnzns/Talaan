@@ -3,7 +3,7 @@
 use super::{notify, AppState, CmdResult, MEETINGS_CHANGED};
 use crate::storage::model::MeetingStatus;
 use crate::storage::StorageError;
-use crate::transcriber::download::{download_model, DownloadError};
+use crate::transcriber::download::{download_model, partial_fraction, DownloadError};
 use crate::transcriber::models::{find, EngineKind, Location, ModelStore, CATALOG, VAD};
 use crate::transcriber::pipeline::Detector;
 use crate::transcriber::vad::Vad;
@@ -23,6 +23,8 @@ pub struct TranscriberState {
     data_dir: PathBuf,
     /// Model id → (cancel flag, progress 0..1).
     downloads: Mutex<HashMap<String, (Arc<AtomicBool>, f32)>>,
+    /// Model id → why its last download failed (shown until the next try).
+    failed: Mutex<HashMap<String, String>>,
 }
 
 impl TranscriberState {
@@ -34,6 +36,10 @@ impl TranscriberState {
     }
     pub fn download_progress(&self, id: &str) -> Option<f32> {
         self.downloads.lock().unwrap_or_else(|e| e.into_inner()).get(id).map(|d| d.1)
+    }
+    /// Why the model's last download failed, if it did.
+    pub fn download_error(&self, id: &str) -> Option<String> {
+        self.failed.lock().unwrap_or_else(|e| e.into_inner()).get(id).cloned()
     }
 }
 
@@ -71,7 +77,7 @@ pub fn setup(app: &AppHandle, data_dir: PathBuf) {
     for id in &waiting {
         worker.enqueue(id);
     }
-    app.manage(TranscriberState { worker, data_dir, downloads: Mutex::default() });
+    app.manage(TranscriberState { worker, data_dir, downloads: Mutex::default(), failed: Mutex::default() });
 }
 
 /// Queues meetings that failed only because no model was there.
@@ -149,6 +155,12 @@ pub struct ModelRow {
     state: &'static str,
     #[serde(skip_serializing_if = "Option::is_none")]
     progress: Option<f32>,
+    /// How much an interrupted download left on disk (0..1), while not downloading. Download resumes from it.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    partial: Option<f32>,
+    /// Why the last download failed, until the next try.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    error: Option<String>,
 }
 
 /// The catalog with what is on disk right now.
@@ -157,6 +169,7 @@ pub fn models_list(state: State<AppState>, t: State<TranscriberState>) -> CmdRes
     let config = Config::from_settings(state.lock().settings_get()?.as_ref());
     let store = ModelStore::new(&t.data_dir, config.reuse);
     let downloads = t.downloads.lock().unwrap_or_else(|e| e.into_inner());
+    let failed = t.failed.lock().unwrap_or_else(|e| e.into_inner());
     Ok(CATALOG
         .iter()
         .chain([&crate::transcriber::models::DIARIZATION, &crate::transcriber::models::SEARCH])
@@ -185,9 +198,21 @@ pub fn models_list(state: State<AppState>, t: State<TranscriberState>) -> CmdRes
                 languages: m.languages,
                 state,
                 progress,
+                partial: if state == "not_downloaded" { partial_fraction(m, &store.own_dir(m)) } else { None },
+                error: failed.get(m.id).cloned(),
             }
         })
         .collect())
+}
+
+/// A model download failed (not cancelled): `{ id, message }`. The reason also stays in models_list until the
+/// next try, so a screen opened later still shows it.
+pub const DOWNLOAD_FAILED: &str = "model-download-failed";
+
+#[derive(Serialize, Clone)]
+struct DownloadFailed {
+    id: String,
+    message: String,
 }
 
 #[derive(Serialize, Clone)]
@@ -209,6 +234,7 @@ pub fn models_download(app: AppHandle, t: State<TranscriberState>, id: String) -
         }
         d.insert(id.clone(), (cancel.clone(), 0.0));
     }
+    t.failed.lock().unwrap_or_else(|e| e.into_inner()).remove(&id);
     let _ = app.emit(MODELS_CHANGED, ());
     let data_dir = t.data_dir.clone();
     std::thread::spawn(move || {
@@ -233,7 +259,13 @@ pub fn models_download(app: AppHandle, t: State<TranscriberState>, id: String) -
         if result.is_ok() {
             result = download_model(model, &store.own_dir(model), &cancel, &mut report);
         }
-        app.state::<TranscriberState>().downloads.lock().unwrap_or_else(|e| e.into_inner()).remove(&id);
+        let t = app.state::<TranscriberState>();
+        t.downloads.lock().unwrap_or_else(|e| e.into_inner()).remove(&id);
+        if let Err(e) = &result {
+            if *e != DownloadError::Cancelled {
+                t.failed.lock().unwrap_or_else(|e| e.into_inner()).insert(id.clone(), e.user_message());
+            }
+        }
         let _ = app.emit(MODELS_CHANGED, ());
         match result {
             Ok(()) if is_llm => super::summarizer::requeue_waiting(&app),
@@ -242,22 +274,11 @@ pub fn models_download(app: AppHandle, t: State<TranscriberState>, id: String) -
             Ok(()) => {}
             Err(DownloadError::Cancelled) => {}
             Err(e) => {
-                let _ = app.emit("recorder-notice", serde_json::json!({ "text": e.user_message(), "kind": "warning" }));
+                let _ = app.emit(DOWNLOAD_FAILED, DownloadFailed { id: id.clone(), message: e.user_message() });
             }
         }
     });
     Ok(())
-}
-
-/// The download speed in bytes per second, from reading up to 4 MB of the recommended speech model (nothing is
-/// saved). Onboarding uses it for "about N min". None when the network can't be reached.
-#[tauri::command]
-pub async fn models_speed_test() -> Option<u64> {
-    let url = find(crate::transcriber::models::DEFAULT_MODEL)?.files.first()?.url;
-    tauri::async_runtime::spawn_blocking(move || crate::transcriber::download::measure_speed(url, 4_000_000, Duration::from_secs(4)).ok())
-        .await
-        .ok()
-        .flatten()
 }
 
 #[tauri::command]
