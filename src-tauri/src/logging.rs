@@ -496,7 +496,7 @@ fn cut_urls(s: &str) -> String {
 const KEY_PREFIXES: &[&str] = &["sk-", "sk_", "gsk_", "ntn_", "secret_", "aiza", "xai-", "csk-", "pplx-", "sk-or-"];
 
 fn token_char(c: char) -> bool {
-    c.is_ascii_alphanumeric() || matches!(c, '_' | '-' | '.' | '+' | '@' | '%' | '/' | '=')
+    c.is_alphanumeric() || matches!(c, '_' | '-' | '.' | '+' | '@' | '%' | '/' | '=')
 }
 
 fn is_email(t: &str) -> bool {
@@ -513,6 +513,12 @@ fn is_secret(t: &str) -> bool {
     // Long random-looking tokens, 32 characters or more with no dots (a Windows package name like
     // `Microsoft.SkypeApp_kzf8qxf38zg5c` has them; keys don't), and not a path (one `/` per dozen characters at most):
     // hex in any case, base64, or upper, lower and digits mixed. Long model names with many `-` stay.
+    // A JWT: three base64url parts joined by dots.
+    let parts: Vec<&str> = t.split('.').collect();
+    let base64url = |p: &str| p.len() >= 8 && p.chars().all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-');
+    if parts.len() == 3 && t.len() >= 40 && parts.iter().all(|p| base64url(p)) {
+        return true;
+    }
     let t = t.trim_end_matches('=');
     if t.len() < 32 || t.contains('.') || t.matches('/').count() * 12 > t.len() {
         return false;
@@ -680,6 +686,10 @@ mod tests {
         assert_eq!(redact_with("to ana@example.com, bob@example.org; done", None), "to [email], [email]; done");
         assert_eq!(redact_with("q=ana%40example.com&x", None), "q=[email]&x");
         assert_eq!(redact_with("q=ANA%40EXAMPLE.COM.", None), "q=[email].");
+        // Non-ASCII addresses.
+        assert_eq!(redact_with("invite josé.núñez@correo.mx sent", None), "invite [email] sent");
+        assert_eq!(redact_with("to 李雷@例子.中国, ok", None), "to [email], ok");
+        assert_eq!(redact_with("Micrófono listo", None), "Micrófono listo");
         for key in ["sk-ant-api03-AbCdEfGhIjKlMnOpQrStUvWx", "sk-proj-abcdefghijklmnop1234", "gsk_0123456789abcdefABCD", "ntn_123456789012ABCDEFGHIJ", "secret_abcdefghijklmnop", "AIzaSyA1b2C3d4E5f6G7h8I9j0"] {
             let out = redact_with(&format!("key {key} refused"), None);
             assert_eq!(out, "key [secret] refused", "{key}");
@@ -751,6 +761,10 @@ mod tests {
         assert_eq!(redact_with("token abcdefghij0123456789abcdefghij0123/xyz+ab ok", None), "token [secret] ok");
         assert_eq!(redact_with("Authorization: Bearer short-1 and Basic YWxhZGRpbjpvcGVu", None), "Authorization: Bearer [secret] and Basic [secret]");
         assert_eq!(redact_with("bearer x", None), "bearer [secret]");
+        // JWTs.
+        let jwt = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkFuYSJ9.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c";
+        assert_eq!(redact_with(&format!("token {jwt} expired"), None), "token [secret] expired");
+        assert_eq!(redact_with("app com.microsoft.teams2.modulehost ok", None), "app com.microsoft.teams2.modulehost ok");
     }
 
     #[test]
