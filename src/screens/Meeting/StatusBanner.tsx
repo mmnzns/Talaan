@@ -37,10 +37,16 @@ export function StatusBanner({ meeting }: { meeting: Meeting }) {
     );
   }
   if (meeting.status === "failed") {
+    // Only the transcriber fails a meeting (a summary that fails leaves the transcript). The audio is promised safe,
+    // and Try again offered, only while it's still there.
+    const message = meeting.error?.message;
+    const text = meeting.hasAudio
+      ? message ? t("meeting.failedTextWith", { message }) : t("meeting.failedText")
+      : message ? t("meeting.failedNoAudioTextWith", { message }) : t("meeting.failedNoAudioText");
     return (
-      <Banner title={t("meeting.failedTitle")} text={meeting.error ? t("meeting.failedTextWith", { message: meeting.error.message }) : t("meeting.failedText")}>
-        <Button variant="primary" onClick={() => run(store.retryProcessing(meeting.id))}>{t("meeting.tryAgain")}</Button>
-        <Button onClick={leave}>{t("meeting.delete")}</Button>
+      <Banner title={t("meeting.failedTitle")} text={text}>
+        {meeting.hasAudio && <Button variant="primary" onClick={() => run(store.retryProcessing(meeting.id))}>{t("meeting.tryAgain")}</Button>}
+        <Button variant={meeting.hasAudio ? "default" : "primary"} onClick={leave}>{t("meeting.delete")}</Button>
       </Banner>
     );
   }

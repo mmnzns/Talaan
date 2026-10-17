@@ -1,10 +1,11 @@
 import { invoke } from "@tauri-apps/api/core";
 import { emit } from "@tauri-apps/api/event";
-import { useRef } from "react";
+import { useEffect, useRef, useState } from "react";
+import { onEvent } from "../../data/tauri/invoke";
 import { recorderClient } from "../../data";
 import { describeError } from "../../data/errors";
 import { useRecorder } from "../../data/useRecorder";
-import { useFitWindow, useTransparentPage } from "../../lib/floatingWindow";
+import { FIT_PAD, useFitWindow, useTransparentPage } from "../../lib/floatingWindow";
 import { useToast } from "../../ui";
 import { MenuBarPopover } from "../Recording/MenuBarPopover";
 import { RecordingPopover } from "../Recording/RecordingPopover";
@@ -26,6 +27,13 @@ export function TrayWindow() {
   const toast = useToast();
   const active = rec.state.state !== "idle";
   useFitWindow(ref, active);
+  // The height between the tray icon and the far screen edge (Windows; None on the Mac), so the recording
+  // popover scrolls instead of reaching behind the taskbar. Rust sends it again each time the popover opens.
+  const [room, setRoom] = useState<number | null>(null);
+  useEffect(() => {
+    void invoke<number | null>("tray_room").then(setRoom).catch(() => {});
+    return onEvent<number>("tray-room", setRoom);
+  }, []);
 
   const start = async () => {
     const perm = await recorderClient.microphonePermission().catch(() => "unknown" as const);
@@ -44,6 +52,7 @@ export function TrayWindow() {
       {active ? (
         <RecordingPopover
           state={rec.state}
+          maxHeight={room ? `${Math.floor(room - FIT_PAD)}px` : undefined}
           levels={rec.levels}
           notice={rec.notice}
           onPause={() => recorderClient.pause()}
@@ -52,7 +61,7 @@ export function TrayWindow() {
           onStop={async () => {
             try {
               const id = await recorderClient.stop();
-              if (id) await inMain("open-meeting", id);
+              if (id) await inMain("recording-saved", id);
             } catch (e) {
               toast(describeError(e));
             }

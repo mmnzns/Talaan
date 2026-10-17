@@ -129,6 +129,9 @@ pub struct MeetingFile {
     /// 0..1 while transcribing or summarizing.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub progress: Option<f64>,
+    /// When the current step (transcribing or summarizing) should be done (`crate::eta`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub eta: Option<Eta>,
     /// Why processing failed (status `failed`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub error: Option<ProcessingError>,
@@ -163,6 +166,17 @@ pub struct ProcessingError {
     pub detail: Option<String>,
 }
 
+/// When the step that's running should be done.
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct Eta {
+    /// RFC 3339; the screens count down to it.
+    pub finish_at: String,
+    /// The work runs on this computer's processor (slow enough to say so).
+    #[serde(default)]
+    pub on_cpu: bool,
+}
+
 /// How the transcript was made, for the record and for comparing engines.
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 #[serde(rename_all = "camelCase")]
@@ -187,6 +201,9 @@ pub struct MeetingListItem {
     pub status: MeetingStatus,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub progress: Option<f64>,
+    /// While transcribing or summarizing: when that step should be done.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub eta: Option<Eta>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub folder_id: Option<String>,
     pub tags: Vec<String>,

@@ -2,6 +2,7 @@ mod ask;
 mod calendar;
 mod calls;
 mod commands;
+mod eta;
 mod gpu;
 mod helper;
 mod i18n;
@@ -92,6 +93,8 @@ pub fn run() {
             commands::tray::i18n_set_language,
             commands::tray::tray_toggle,
             commands::tray::window_fit,
+            commands::tray::tray_room,
+            commands::summarizer::notifications_allowed,
             commands::tray::tray_hide,
             commands::tray::app_show_main,
             commands::tray::app_quit,

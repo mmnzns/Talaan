@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useState } from "react";
 import { recorderClient } from "../../data";
 import { describeError } from "../../data/errors";
 import { useRecorder } from "../../data/useRecorder";
@@ -9,6 +9,8 @@ import { Button, Sheet, useToast } from "../../ui";
 import { RecordingPopover } from "../Recording/RecordingPopover";
 import { usePlatform } from "../../lib/platform";
 import { useT } from "../../lib/i18n/I18nProvider";
+import { useStore } from "../../data/StoreProvider";
+import { savedText } from "../../lib/eta";
 
 /** Lets screens inside the main window start a recording (e.g. the empty state's "Record a call"). */
 export const RecordingContext = createContext<{ start: () => void } | null>(null);
@@ -22,6 +24,7 @@ export function useRecording() {
   const rec = useRecorder(recorderClient);
   const toast = useToast();
   const t = useT();
+  const store = useStore();
   const platform = usePlatform();
   const [open, setOpen] = useState(false);
   const [micDenied, setMicDenied] = useState(false);
@@ -31,19 +34,20 @@ export function useRecording() {
     if (rec.notice && !open && active) toast(rec.notice.text);
   }, [rec.notice]);
 
-  // In the app the recording controls live in the menu bar popover; in a browser, a floating panel.
-  const showControls = () => (inTauri() ? void invoke("tray_toggle") : setOpen(true));
+  // In the app the recording controls live in the menu bar popover; in a browser, a floating panel (`begin`).
 
-  const begin = async () => {
+  const begin = useCallback(async () => {
     try {
       await recorderClient.start();
-      showControls();
+      if (inTauri()) void invoke("tray_toggle");
+      else setOpen(true);
     } catch (e) {
       toast(describeError(e));
     }
-  };
+  }, [toast]);
 
-  const start = async () => {
+  // Stable between renders (the main window subscribes its event listeners with these).
+  const start = useCallback(async () => {
     if (active) {
       if (inTauri()) void invoke("tray_toggle");
       else setOpen((o) => !o);
@@ -57,14 +61,23 @@ export function useRecording() {
       return setMicDenied(true);
     }
     await begin();
-  };
+  }, [active, begin]);
+
+  /** After Stop: say the recording is safe and how long the transcript will take, then open the meeting. */
+  const announceSaved = useCallback(
+    async (id?: string) => {
+      const meeting = id ? await store.getMeeting(id).catch(() => undefined) : undefined;
+      toast(savedText(t, meeting?.eta));
+      if (id) navigate(routes.meeting(id));
+    },
+    [store, t, toast],
+  );
 
   const stop = async () => {
     try {
       const id = await recorderClient.stop();
       setOpen(false);
-      toast(t("shell.saved"));
-      if (id) navigate(routes.meeting(id));
+      await announceSaved(id || undefined);
     } catch (e) {
       toast(describeError(e));
     }
@@ -99,9 +112,7 @@ export function useRecording() {
             {t("shell.micOffBody", { path: platform.micSettingsPath })}
           </p>
           <div className="flex flex-wrap justify-end gap-2">
-            <Button onClick={() => recorderClient.openSettings("microphone")}>{platform.openSettings}</Button>
             <Button
-              variant="primary"
               onClick={async () => {
                 setMicDenied(false);
                 await begin();
@@ -109,11 +120,15 @@ export function useRecording() {
             >
               {t("shell.recordCallOnly")}
             </Button>
+            {/* Fixing the permission is what most people want, so it's the main button. */}
+            <Button variant="primary" onClick={() => recorderClient.openSettings("microphone")}>
+              {platform.openSettings}
+            </Button>
           </div>
         </div>
       </Sheet>
     </>
   );
 
-  return { state: rec.state, active, open, start, panel };
+  return { state: rec.state, active, open, start, announceSaved, panel };
 }
