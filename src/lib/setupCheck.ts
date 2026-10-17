@@ -9,7 +9,7 @@ export type CheckStatus = "ok" | "warn" | "fail" | "unknown";
 export type FixAction = "allowMic" | "micSettings" | "testSystemAudio" | "systemAudioSettings" | "speechModels" | "summaryAI" | "connections" | "openData" | "retryGpu";
 
 export interface CheckResult {
-  id: "mic" | "device" | "systemAudio" | "speech" | "speakers" | "gpu" | "summary" | "calendar" | "data";
+  id: "mic" | "device" | "systemAudio" | "relay" | "speech" | "speakers" | "gpu" | "summary" | "calendar" | "data";
   title: string;
   status: CheckStatus;
   detail: string;
@@ -33,6 +33,8 @@ export interface Probe {
   calendar?: CalendarAccess;
   /** Whether the GPU is used. Undefined (couldn't be asked) = no row. */
   gpu?: GpuStatus;
+  /** Windows: the sound enhancer the default output goes through ("FxSound"). None = no row. */
+  soundRelay?: string | null;
 }
 
 const READY = new Set(["downloaded", "on_this_mac"]);
@@ -42,7 +44,13 @@ const pct = (p?: number) => Math.round((p ?? 0) * 100);
 /** One line per thing a call needs, in the order a call uses them, each with what to do about it. */
 export function checkSetup(p: Probe): CheckResult[] {
   const s = p.settings;
-  return [mic(p), device(p), systemAudio(p), speech(s), speakers(s), ...gpu(p), summary(p), ...calendar(p), data(p)];
+  return [mic(p), device(p), systemAudio(p), ...relay(p), speech(s), speakers(s), ...gpu(p), summary(p), ...calendar(p), data(p)];
+}
+
+/** Windows: a sound enhancer or mixer replays everything, Talaan's own sounds included, under its own program. */
+function relay(p: Probe): CheckResult[] {
+  if (!p.soundRelay) return [];
+  return [{ id: "relay", title: t("settings.setup_relay"), status: "warn", detail: t("settings.setup_relay_found", { name: p.soundRelay }) }];
 }
 
 /** Windows only (the Mac's calendar is a system permission, asked in Connections): the saved iCal address. */
@@ -185,5 +193,6 @@ export async function probeSetup(store: SettingsStore, recorder: RecorderClient,
   const systemAudio = testSystemAudio ? await recorder.requestSystemAudio().catch(() => false) : undefined;
   const calendar = onWindows && settings.calendarConnected ? await store.calendarAccess().catch(() => undefined) : undefined;
   const gpu = await (retryGpu ? store.retryGpu() : store.gpuStatus()).catch(() => undefined);
-  return { settings, mic, inputs, data, localServer, systemAudio, systemAudioNeedsPermission: os === "mac", calendar, gpu };
+  const soundRelay = await recorder.soundRelay().catch(() => null);
+  return { settings, mic, inputs, data, localServer, systemAudio, systemAudioNeedsPermission: os === "mac", calendar, gpu, soundRelay };
 }

@@ -99,6 +99,10 @@ quit the dev app first: one Talaan at a time.
   Windows' "Select an app to open this talaan link" picker: choose Talaan and "Always". Note whether it appeared.
   Then quit Talaan from the tray, click another "Summary ready" from Action Center: Talaan starts on that meeting.
 - [ ] After uninstalling, `HKCU\Software\Classes\talaan` is gone.
+- [ ] With FxSound (or Voicemeeter, Sonar) as the default output: the recording window shows "Your sound goes through
+  FxSound…" once (OK hides it for good), and Check setup has a "Sound enhancer" row.
+- [ ] Join a call, mute the call app in Volume mixer for over a minute while recording: the "hasn't heard any sound from
+  the call" notice appears once. (Tells whether a muted app reads as digital silence to loopback.)
 - [ ] Second launch focuses the first window. Ctrl+, opens Settings. Title bar follows dark mode.
 - [ ] Open at login: sign out and in, the tray icon is back.
 - [ ] Sleep mid-recording for 30 s: a pause gap, recording continues.

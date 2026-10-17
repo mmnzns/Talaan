@@ -164,6 +164,7 @@ pub fn run() {
             rec_cmd::recorder_stop,
             rec_cmd::recorder_discard,
             rec_cmd::recorder_status,
+            rec_cmd::audio_sound_relay,
             rec_cmd::permissions_status,
             rec_cmd::permissions_request_mic,
             rec_cmd::permissions_open_settings,

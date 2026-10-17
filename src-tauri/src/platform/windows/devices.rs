@@ -1,6 +1,6 @@
 //! Default device changes (headphones in or out) and whether sound is coming out of the computer's own speakers.
 
-use ::windows::Win32::Devices::FunctionDiscovery::PKEY_Device_EnumeratorName;
+use ::windows::Win32::Devices::FunctionDiscovery::{PKEY_Device_EnumeratorName, PKEY_Device_FriendlyName};
 use ::windows::Win32::Foundation::PROPERTYKEY;
 use ::windows::core::{implement, PCWSTR};
 use ::windows::Win32::Media::Audio::{
@@ -91,9 +91,30 @@ fn peak(device: &IMMDevice) -> f32 {
     unsafe { device.Activate::<IAudioMeterInformation>(CLSCTX_ALL, None).and_then(|m| m.GetPeakValue()) }.unwrap_or(0.0)
 }
 
-/// Windows loopback can't be blocked by a permission, so the Mac's "no call audio" watch doesn't run here.
-pub fn others_playing() -> bool {
-    false
+/// Sound enhancers and mixers that put a virtual output in front of the real one and replay everything under their
+/// own program (so process loopback can't leave Talaan's own sounds out). Matched, ignoring case, against the default
+/// output's name ("FxSound Speakers (FxSound Audio Enhancer)"); the second value is the name the notice shows.
+const RELAYS: &[(&str, &str)] = &[
+    ("fxsound", "FxSound"),
+    ("voicemeeter", "Voicemeeter"),
+    ("steelseries sonar", "SteelSeries Sonar"),
+    ("nvidia broadcast", "NVIDIA Broadcast"),
+    ("boom 3d", "Boom 3D"),
+    ("krisp", "Krisp"),
+    ("wave link", "Elgato Wave Link"),
+];
+
+/// The relay app an output belongs to, by the output's name.
+pub fn relay_name(output_name: &str) -> Option<&'static str> {
+    let name = output_name.to_lowercase();
+    RELAYS.iter().find(|(key, _)| name.contains(key)).map(|(_, shown)| *shown)
+}
+
+/// The sound enhancer or mixer the default output goes through, if it's a known one (R1). The capture itself is
+/// unchanged; this only feeds a notice.
+pub fn sound_relay() -> Option<&'static str> {
+    let device = default_output().ok()?;
+    relay_name(&device_string(&device, &PKEY_Device_FriendlyName).ok()?)
 }
 
 fn enumerator() -> ::windows::core::Result<IMMDeviceEnumerator> {
@@ -209,8 +230,18 @@ impl Drop for DeviceWatcher {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ::windows::Win32::Devices::FunctionDiscovery::PKEY_Device_FriendlyName;
     use ::windows::Win32::Media::Audio::{eCommunications, eMultimedia};
+
+    #[test]
+    fn sound_enhancers_are_known_by_their_output_name() {
+        assert_eq!(relay_name("FxSound Speakers (FxSound Audio Enhancer)"), Some("FxSound"));
+        assert_eq!(relay_name("VoiceMeeter Input (VB-Audio VoiceMeeter VAIO)"), Some("Voicemeeter"));
+        assert_eq!(relay_name("SteelSeries Sonar - Gaming (SteelSeries Sonar Virtual Audio Device)"), Some("SteelSeries Sonar"));
+        assert_eq!(relay_name("Speakers (NVIDIA Broadcast)"), Some("NVIDIA Broadcast"));
+        assert_eq!(relay_name("Speakers (Realtek(R) Audio)"), None);
+        assert_eq!(relay_name("Headphones (USB-C to 3.5mm Headphone Jack Adapter)"), None);
+        assert_eq!(relay_name(""), None);
+    }
 
     #[test]
     fn a_watcher_can_be_added_and_removed() {
@@ -289,7 +320,7 @@ mod tests {
     #[test]
     fn device_queries_do_not_fail() {
         eprintln!("on built-in speakers: {}", on_builtin_speakers());
-        let _ = others_playing();
+        eprintln!("sound relay: {:?}", sound_relay());
         if let Ok(d) = default_output() {
             eprintln!("default output: {}", describe(&d));
         }

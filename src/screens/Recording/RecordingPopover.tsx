@@ -75,7 +75,7 @@ export function RecordingPopover({ state, levels, notice, app, onPause, onResume
   const t = useT();
   const platform = usePlatform();
   const appName = app ?? t("recording.appDefault");
-  const { settings } = useSettings();
+  const { settings, update } = useSettings();
   const [copied, setCopied] = useState(false);
   const [note, setNote] = useState("");
   const [confirmDiscard, setConfirmDiscard] = useState(false);
@@ -126,6 +126,20 @@ export function RecordingPopover({ state, levels, notice, app, onPause, onResume
           <div role="note" className="flex items-start gap-2.5 rounded-[10px] bg-warn-bg px-3 py-2.5 text-warn-fg">
             <AlertTriangle size={16} aria-hidden="true" className="mt-px flex-none" />
             <span className="text-xs leading-[17px]">{t("recording.speakersWarning")}</span>
+          </div>
+        )}
+
+        {state.soundRelay && settings && settings.soundRelayNoticeSeen !== state.soundRelay && (
+          <div role="note" className="flex flex-col gap-2 rounded-[10px] bg-warn-bg px-3 py-2.5 text-warn-fg">
+            <span className="flex items-start gap-2.5">
+              <AlertTriangle size={16} aria-hidden="true" className="mt-px flex-none" />
+              <span className="text-xs leading-[17px]">{t("recording.relayNotice", { name: state.soundRelay })}</span>
+            </span>
+            <span className="flex">
+              <Button variant="ghost" className="h-7" onClick={() => void update({ soundRelayNoticeSeen: state.soundRelay ?? undefined })}>
+                {t("recording.ok")}
+              </Button>
+            </span>
           </div>
         )}
 

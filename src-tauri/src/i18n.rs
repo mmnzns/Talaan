@@ -82,9 +82,9 @@ const TABLE: &[(&str, &str, &str, &str)] = &[
     ),
     (
         "notice.no_call_audio_windows",
-        "No call audio is coming through. If the other people are talking, check which speakers or headset the call app uses in Windows Settings › System › Sound.",
-        "Aucun audio d’appel n’est reçu. Si les autres personnes parlent, vérifiez quels haut-parleurs ou quel casque l’application d’appel utilise dans Paramètres Windows › Système › Son.",
-        "No llega audio de la llamada. Si las demás personas están hablando, revisa qué altavoces o audífonos usa la aplicación de llamadas en Configuración de Windows › Sistema › Sonido.",
+        "Talaan hasn’t heard any sound from the call for a minute. If the other people are talking, stop and start the recording. If it happens again, run Test call audio in Check setup.",
+        "Talaan n’a entendu aucun son de l’appel depuis une minute. Si les autres personnes parlent, arrêtez l’enregistrement et relancez-le. Si cela se reproduit, lancez « Tester l’audio » dans « Vérifier la configuration ».",
+        "Talaan no ha oído ningún sonido de la llamada en un minuto. Si las demás personas están hablando, detén la grabación y vuelve a empezarla. Si vuelve a pasar, usa Probar el audio en Verificar la configuración.",
     ),
     (
         "notice.call_audio_lost",

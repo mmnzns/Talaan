@@ -365,6 +365,9 @@ export const settings = area({
     // Windows only: the calendar's iCal address, when the calendar is on.
     setup_calendar_ok: "Connected through your calendar’s iCal address.",
     setup_calendar_missing: "The calendar is on, but its address is missing. Connect it again in Connections.",
+    // Windows: the default output is a sound enhancer or mixer (FxSound, Voicemeeter…).
+    setup_relay: "Sound enhancer",
+    setup_relay_found: "Your sound goes through {name}, so Talaan may hear its own sounds. If the transcript repeats lines, record with {name} off.",
   },
   fr: {
     nav_label: "Paramètres",
@@ -718,6 +721,8 @@ export const settings = area({
     setup_data_fail: "Talaan ne peut pas lire son dossier : {error}",
     setup_calendar_ok: "Connecté par l’adresse iCal de votre calendrier.",
     setup_calendar_missing: "Le calendrier est activé, mais son adresse est introuvable. Connectez-le de nouveau dans Connexions.",
+    setup_relay: "Amélioration du son",
+    setup_relay_found: "Votre son passe par {name}, alors Talaan pourrait entendre ses propres sons. Si la transcription répète des lignes, enregistrez avec {name} désactivé.",
   },
   es: {
     nav_label: "Ajustes",
@@ -1071,5 +1076,7 @@ export const settings = area({
     setup_data_fail: "Talaan no puede leer su carpeta: {error}",
     setup_calendar_ok: "Conectado a través de la dirección iCal de tu calendario.",
     setup_calendar_missing: "El calendario está activado, pero falta su dirección. Vuelve a conectarlo en Conexiones.",
+    setup_relay: "Mejora de sonido",
+    setup_relay_found: "Tu sonido pasa por {name}, así que Talaan podría oír sus propios sonidos. Si la transcripción repite líneas, graba con {name} desactivado.",
   },
 });

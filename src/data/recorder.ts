@@ -10,6 +10,8 @@ export interface RecorderState {
   micName: string;
   systemAudio: boolean;
   onBuiltInSpeakers: boolean;
+  /** Windows: the sound enhancer or mixer the default output goes through ("FxSound"), if a known one. */
+  soundRelay?: string | null;
 }
 
 export interface RecorderLevels {
@@ -41,6 +43,8 @@ export interface RecorderClient {
   /** Shows the system-audio prompt (opens the capture for a moment). True when capture could start. */
   requestSystemAudio(): Promise<boolean>;
   openSettings(pane: "microphone" | "system-audio" | "calendar" | "automation"): Promise<void>;
+  /** The sound enhancer the default output goes through (Windows), for Check setup. */
+  soundRelay(): Promise<string | null>;
   onState(cb: (s: RecorderState) => void): () => void;
   onLevels(cb: (l: RecorderLevels) => void): () => void;
   onNotice(cb: (n: RecorderNotice) => void): () => void;
@@ -87,6 +91,9 @@ export class TauriRecorderClient implements RecorderClient {
   openSettings(pane: "microphone" | "system-audio" | "calendar" | "automation") {
     return call<void>("permissions_open_settings", { pane });
   }
+  soundRelay() {
+    return call<string | null>("audio_sound_relay");
+  }
   onState(cb: (s: RecorderState) => void) {
     return listenPayload<RecorderState>("recorder-state", cb);
   }
@@ -106,7 +113,7 @@ export class MockRecorderClient implements RecorderClient {
   private noticeCbs = new Set<(n: RecorderNotice) => void>();
   private timers: ReturnType<typeof setInterval>[] = [];
 
-  constructor(private opts: { startAtMs?: number; speakers?: boolean } = {}) {}
+  constructor(private opts: { startAtMs?: number; speakers?: boolean; relay?: string } = {}) {}
 
   private emit() {
     const snapshot = { ...this.s };
@@ -124,7 +131,7 @@ export class MockRecorderClient implements RecorderClient {
 
   async start() {
     this.clear();
-    this.s = { state: "recording", meetingId: "", elapsedMs: this.opts.startAtMs ?? 0, marks: 0, notes: 0, micName: "AirPods Pro", systemAudio: true, onBuiltInSpeakers: this.opts.speakers ?? true };
+    this.s = { state: "recording", meetingId: "", elapsedMs: this.opts.startAtMs ?? 0, marks: 0, notes: 0, micName: "AirPods Pro", systemAudio: true, onBuiltInSpeakers: this.opts.speakers ?? true, soundRelay: this.opts.relay ?? null };
     this.timers.push(
       setInterval(() => {
         if (this.s.state === "recording") {
@@ -184,6 +191,10 @@ export class MockRecorderClient implements RecorderClient {
 
   async openSettings() {}
 
+  async soundRelay() {
+    return this.s.soundRelay ?? this.opts.relay ?? null;
+  }
+
   /** Stage helper: shows a notice as if it came from the backend. */
   notice(n: RecorderNotice) {
     for (const cb of this.noticeCbs) cb(n);
@@ -191,6 +202,12 @@ export class MockRecorderClient implements RecorderClient {
 
   setSpeakers(on: boolean) {
     this.s.onBuiltInSpeakers = on;
+    this.emit();
+  }
+
+  /** Stage helper: the default output goes through a sound enhancer. */
+  setRelay(name: string | null) {
+    this.s.soundRelay = name;
     this.emit();
   }
 

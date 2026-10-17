@@ -103,6 +103,15 @@ fn resolve_browsers(users: &[crate::platform::mic_users::MicUser], apps: &mut Ve
     }
 }
 
+/// Whether a call app (or a browser that may be in a call) was using the mic at the last tick of the calls loop.
+static CALL_ON_MIC: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// For the recorder's "can't hear the call" watch on Windows.
+#[cfg_attr(not(target_os = "windows"), allow(dead_code))]
+pub fn call_app_on_mic() -> bool {
+    CALL_ON_MIC.load(std::sync::atomic::Ordering::Relaxed)
+}
+
 fn epoch_ms() -> u64 {
     std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis() as u64).unwrap_or(0)
 }
@@ -206,6 +215,7 @@ pub fn setup(app: &AppHandle) {
                     if settings["tabDetection"].as_bool().unwrap_or(false) {
                         resolve_browsers(&users, &mut apps, &mut tab_cache);
                     }
+                    CALL_ON_MIC.store(!apps.is_empty(), std::sync::atomic::Ordering::Relaxed);
                     // A verified browser call follows the Browser calls rule, Always included.
                     let rule = |a: &str| {
                         let a = if a == BROWSER_CALL { "browser" } else { a };

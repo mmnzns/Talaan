@@ -249,11 +249,11 @@ Then click **Check again** in Check setup.
 
 ### Windows: Talaan's own sounds, or the call, are recorded twice
 
-Sound "enhancers" and mixers such as **FxSound**, **Voicemeeter** and **SteelSeries Sonar** replay all your computer's sound through their own program. Talaan can then pick up its own sounds as "Them", or capture the call twice. If transcripts show doubled lines or odd echoes, turn the enhancer off during calls, or set your call app's speaker straight to your headphones or speakers.
+Sound "enhancers" and mixers such as **FxSound**, **Voicemeeter**, **SteelSeries Sonar** and **NVIDIA Broadcast** replay all your computer's sound through their own program. Talaan can then pick up its own sounds as "Them", or capture the call twice. When your sound goes through one of them, the recording window and **Check setup** say so. If transcripts show doubled lines or odd echoes, turn the enhancer off during calls.
 
 ### Windows: the other people are missing
 
-If "Them" is empty, check the call app's audio settings. When the call app sends sound to a device other than the Windows default (a headset, a virtual device), set its speaker to the same device Windows uses, or to your default device, then run **Test call audio** again.
+Talaan hears every app's sound except its own, whichever speakers or headset the app plays to, so you don't need to change the call app's speaker. If "Them" stays empty while the others talk, Talaan says so after a minute: stop and start the recording, and if it happens again run **Test call audio** in **Check setup**.
 
 ### Mac: the other people are missing
 
