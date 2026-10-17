@@ -191,12 +191,14 @@ pub fn stop_recording(app: &AppHandle) -> CmdResult<String> {
     let storage = state.lock();
     let elapsed = engine.status(platform::host_now_ns()).elapsed_ms;
     let id = engine.stop(&storage, platform::host_now_ns()).map_err(err)?;
-    drop(storage);
     drop(engine);
+    let transcriber = app.state::<super::transcriber::TranscriberState>();
+    transcriber.stamp_estimate(&storage, &id);
+    drop(storage);
     log::info!("recording stopped: meeting {id}, {}s recorded", elapsed / 1000);
     // A call started before its event was on the calendar (or a few minutes early) gets a second chance.
     super::calendar::link_soon(app, &id);
-    app.state::<super::transcriber::TranscriberState>().enqueue(&id);
+    transcriber.enqueue(&id);
     notify(app, MEETINGS_CHANGED);
     emit_state(app);
     Ok(id)

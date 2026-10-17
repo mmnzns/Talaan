@@ -10,6 +10,8 @@ use tauri::{AppHandle, Manager, Rect, WebviewUrl, WebviewWindowBuilder, WindowEv
 
 pub const TRAY_ID: &str = "talaan";
 pub const POPOVER: &str = "tray";
+/// Sent to the popover with the height it may use (logical px), between the tray icon and the far screen edge.
+pub const TRAY_ROOM: &str = "tray-room";
 const POPOVER_SIZE: (f64, f64) = (356.0, 470.0);
 
 fn build_menu(app: &AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
@@ -126,7 +128,14 @@ pub fn toggle_popover(app: &AppHandle, icon: Option<Rect>) {
         }
     }
     #[cfg(not(target_os = "macos"))]
-    place_near_icon_window(&w, POPOVER_SIZE, rect);
+    {
+        // The recording popover sizes itself to its content (window_fit) but never taller than this, so its Stop
+        // footer can't end up behind the taskbar.
+        if let Some(room) = room_for_window(&w, rect) {
+            let _ = tauri::Emitter::emit(app, TRAY_ROOM, room);
+        }
+        place_near_icon_window(&w, POPOVER_SIZE, rect);
+    }
     let _ = w.show();
     let _ = w.set_focus();
 }
@@ -170,13 +179,38 @@ fn clock(ms: u64) -> String {
 }
 
 /// A floating window sizes itself to its content. The call prompt also places itself next to Talaan's tray
-/// icon (away from the corner where the OS shows its own notifications); the popover keeps its place.
+/// icon (away from the corner where the OS shows its own notifications). On the Mac the popover keeps its place
+/// under the menu bar; elsewhere it grows upward from the taskbar, so it is placed again for its new size.
 #[tauri::command]
 pub fn window_fit(window: tauri::WebviewWindow, width: f64, height: f64) {
     let _ = window.set_size(tauri::LogicalSize::new(width, height));
-    if window.label() == super::calls::PROMPT_WINDOW {
+    let replace = window.label() == super::calls::PROMPT_WINDOW || (cfg!(not(target_os = "macos")) && window.label() == POPOVER);
+    if replace {
         place_near_icon_window(&window, (width, height), None);
     }
+}
+
+/// The height the popover window may use (logical px), or None when there's no tray icon to measure from or on
+/// the Mac (where the popover keeps its own limit).
+#[tauri::command]
+pub fn tray_room(window: tauri::WebviewWindow) -> Option<f64> {
+    #[cfg(target_os = "macos")]
+    {
+        let _ = window;
+        None
+    }
+    #[cfg(not(target_os = "macos"))]
+    room_for_window(&window, None)
+}
+
+/// Room for a window next to the tray icon: from the icon to the far edge of the screen, less the gaps
+/// `place_near_icon` keeps (8 px from the icon above a taskbar, 4 px below a top bar, 8 px from the edge).
+#[cfg_attr(target_os = "macos", allow(dead_code))]
+fn room_near_icon(icon: (f64, f64, f64, f64), screen: (f64, f64, f64, f64)) -> f64 {
+    let (_, sy, _, sh) = screen;
+    let (_, iy, _, ih) = icon;
+    let room = if iy + ih / 2.0 > sy + sh / 2.0 { iy - 8.0 - (sy + 8.0) } else { sy + sh - 8.0 - (iy + ih + 4.0) };
+    room.max(240.0)
 }
 
 /// Where a floating window of size `win` goes, in logical pixels. `icon` is the tray icon (x, y, w, h) and
@@ -221,22 +255,45 @@ pub fn place_near_icon_window(window: &tauri::WebviewWindow, win: (f64, f64), _i
     place_under_icon(window, win.0);
 }
 
-/// Windows: on the icon's monitor, above the taskbar.
+/// The tray icon (physical x, y, w, h) and its monitor (physical position, size, scale factor).
 #[cfg(not(target_os = "macos"))]
-pub fn place_near_icon_window(window: &tauri::WebviewWindow, win: (f64, f64), icon: Option<Rect>) {
+type IconOnMonitor = (Option<(f64, f64, f64, f64)>, (f64, f64), (f64, f64), f64);
+
+#[cfg(not(target_os = "macos"))]
+fn icon_on_monitor(window: &tauri::WebviewWindow, icon: Option<Rect>) -> Option<IconOnMonitor> {
     let app = window.app_handle();
     let icon = icon.or_else(|| app.tray_by_id(TRAY_ID).and_then(|t| t.rect().ok().flatten()));
     let physical = icon.map(|r| (r.position.to_physical::<f64>(1.0), r.size.to_physical::<f64>(1.0)));
     let monitor = physical
         .and_then(|(p, _)| app.monitor_from_point(p.x, p.y).ok().flatten())
         .or_else(|| window.current_monitor().ok().flatten())
-        .or_else(|| window.primary_monitor().ok().flatten());
-    let Some(m) = monitor else { return };
+        .or_else(|| window.primary_monitor().ok().flatten())?;
     let icon = physical.map(|(p, s)| (p.x, p.y, s.width, s.height));
-    let mon_pos = (m.position().x as f64, m.position().y as f64);
-    let mon_size = (m.size().width as f64, m.size().height as f64);
-    let (x, y) = place_on_monitor(icon, win, mon_pos, mon_size, m.scale_factor());
+    let mon_pos = (monitor.position().x as f64, monitor.position().y as f64);
+    let mon_size = (monitor.size().width as f64, monitor.size().height as f64);
+    Some((icon, mon_pos, mon_size, monitor.scale_factor()))
+}
+
+/// Windows: on the icon's monitor, above the taskbar.
+#[cfg(not(target_os = "macos"))]
+pub fn place_near_icon_window(window: &tauri::WebviewWindow, win: (f64, f64), icon: Option<Rect>) {
+    let Some((icon, mon_pos, mon_size, scale)) = icon_on_monitor(window, icon) else { return };
+    let (x, y) = place_on_monitor(icon, win, mon_pos, mon_size, scale);
     let _ = window.set_position(tauri::PhysicalPosition::new(x.round() as i32, y.round() as i32));
+}
+
+/// Windows: the popover's room on the icon's monitor, in that monitor's logical px.
+#[cfg(not(target_os = "macos"))]
+fn room_for_window(window: &tauri::WebviewWindow, icon: Option<Rect>) -> Option<f64> {
+    let (icon, mon_pos, mon_size, scale) = icon_on_monitor(window, icon)?;
+    Some(room_on_monitor(icon?, mon_pos, mon_size, scale))
+}
+
+#[cfg_attr(target_os = "macos", allow(dead_code))]
+fn room_on_monitor(icon_phys: (f64, f64, f64, f64), mon_pos: (f64, f64), mon_size: (f64, f64), scale: f64) -> f64 {
+    let (x, y, w, h) = icon_phys;
+    let icon = ((x - mon_pos.0) / scale, (y - mon_pos.1) / scale, w / scale, h / scale);
+    room_near_icon(icon, (0.0, 0.0, mon_size.0 / scale, mon_size.1 / scale))
 }
 
 /// macOS (unchanged from before W3): centers a window under the menu bar icon, kept on screen. Falls back to
@@ -318,6 +375,20 @@ mod tests {
     fn without_an_icon_windows_use_the_platform_corner() {
         let (_, y) = super::place_near_icon(None, (380.0, 148.0), (0.0, 0.0, 1920.0, 1080.0));
         if cfg!(target_os = "windows") { assert_eq!(y, 1080.0 - 148.0 - 56.0) } else { assert_eq!(y, 34.0) }
+    }
+
+    #[test]
+    fn the_popover_may_use_the_height_between_the_icon_and_the_far_edge() {
+        // 1366x768 laptop, taskbar 48 px at the bottom: icon at y 728. Room from 16 px below the top to 8 px above it.
+        assert_eq!(super::room_near_icon((1300.0, 728.0, 24.0, 24.0), (0.0, 0.0, 1366.0, 768.0)), 728.0 - 16.0);
+        // A top menu bar or taskbar: from 4 px under the icon to 8 px above the bottom.
+        assert_eq!(super::room_near_icon((1000.0, 0.0, 30.0, 24.0), (0.0, 0.0, 1366.0, 768.0)), 768.0 - 8.0 - 28.0);
+        // A popover as tall as the room, placed above the icon, stays on screen.
+        let room = super::room_near_icon((1300.0, 728.0, 24.0, 24.0), (0.0, 0.0, 1366.0, 768.0));
+        let (_, y) = super::place_near_icon(Some((1300.0, 728.0, 24.0, 24.0)), (356.0, room), (0.0, 0.0, 1366.0, 768.0));
+        assert_eq!(y, 8.0);
+        // On a 150% monitor the room is in its logical px.
+        assert_eq!(super::room_on_monitor((1950.0, 1092.0, 36.0, 36.0), (0.0, 0.0), (2049.0, 1152.0), 1.5), 728.0 - 16.0);
     }
 
     #[test]

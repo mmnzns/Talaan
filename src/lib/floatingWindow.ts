@@ -2,7 +2,8 @@ import { useEffect, type RefObject } from "react";
 import { inTauri } from "./windows";
 
 /** Room around the content for the hard offset shadow. */
-const PAD = 8;
+export const FIT_PAD = 8;
+const PAD = FIT_PAD;
 
 /**
  * Sizes the current (frameless, transparent) window to its content. Rust places it: the call prompt top right

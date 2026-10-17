@@ -5,7 +5,10 @@ use super::engine::Engine;
 use super::diarize::SpeakerSplitter;
 use super::models::{find, ModelInfo, ModelStore, DEFAULT_MODEL, DIARIZATION, VAD};
 use super::pipeline::{run, Detector, PipelineError};
-use crate::storage::model::{MeetingStatus, ProcessingError, TranscriptionInfo};
+use crate::eta::{self, Device};
+use crate::storage::model::{MeetingFile, MeetingStatus, ProcessingError, TranscriptionInfo};
+use crate::storage::paths::{ME_WAV, THEM_WAV};
+use crate::storage::speed::set_eta;
 use crate::storage::Storage;
 use serde_json::Value;
 use std::collections::VecDeque;
@@ -19,6 +22,8 @@ pub const NO_MODEL: &str = "no_model";
 /// summaries turned off), so a sensitive call never goes to a summary engine by itself.
 pub const WAITING: &str = "waiting";
 const IDLE_UNLOAD: Duration = Duration::from_secs(300);
+/// Less speech than this says little about this computer's pace (start-up dominates), so it isn't learned.
+const MIN_LEARN_SPEECH_MS: u64 = 60_000;
 
 /// What the worker reads from `settings.json` for each meeting.
 #[derive(Debug, Clone)]
@@ -53,6 +58,8 @@ impl Config {
 pub type EngineLoader = dyn Fn(&ModelInfo, &Path, bool) -> Result<Box<dyn Engine>, String> + Send + Sync;
 pub type DetectorLoader = dyn Fn(&Path) -> Result<Box<dyn Detector + Send>, String> + Send + Sync;
 pub type SplitterLoader = dyn Fn(&Path) -> Result<Box<dyn SpeakerSplitter>, String> + Send + Sync;
+/// Whether a model will run on the graphics chip, given the "use the GPU" setting (for the time estimate).
+pub type OnGpu = dyn Fn(&ModelInfo, bool) -> bool + Send + Sync;
 
 pub struct Deps {
     pub storage: Arc<Mutex<Storage>>,
@@ -66,6 +73,10 @@ pub struct Deps {
     pub reuse_roots: Option<Vec<PathBuf>>,
     /// Called with a meeting id once its transcript is saved and it is `summarizing` (not when it waits).
     pub transcribed: Arc<dyn Fn(&str) + Send + Sync>,
+    /// Called with a meeting id and title once its transcript is saved and nothing else will run on it by itself
+    /// (transcript only, or automatic summaries off): the "Transcript ready" notification.
+    pub transcript_ready: Arc<dyn Fn(&str, &str) + Send + Sync>,
+    pub on_gpu: Arc<OnGpu>,
 }
 
 #[derive(Default)]
@@ -166,24 +177,62 @@ fn fail(deps: &Deps, id: &str, code: &str, message: String) {
     let _ = lock(&deps.storage).update_meeting_file(id, |f| {
         f.status = MeetingStatus::Failed;
         f.progress = None;
+        f.eta = None;
         f.error = Some(ProcessingError { code: code.into(), message, detail: None });
     });
 }
 
+/// The settings for one meeting: "Transcribe again" with another model applies to this meeting only.
+fn config_for(s: &Storage, file: &MeetingFile) -> Config {
+    let mut config = Config::from_settings(s.settings_get().ok().flatten().as_ref());
+    if let Some(m) = file.retranscribe_model.as_deref().and_then(find).filter(|m| m.id != VAD.id) {
+        config.model = m;
+    }
+    config
+}
+
+/// Seconds of recording: the meeting's length, or for one without it (an older import) the longer track.
+fn audio_secs(dir: &Path, file: &MeetingFile) -> f64 {
+    if file.duration_ms > 0 {
+        return file.duration_ms as f64 / 1000.0;
+    }
+    [ME_WAV, THEM_WAV].iter().filter_map(|n| crate::recorder::wav::wav_duration_ms(&dir.join(n))).max().unwrap_or(0) as f64 / 1000.0
+}
+
+/// Puts a first estimate on a meeting that is about to be transcribed, so Stop can say how long it will take.
+/// Meetings already waiting or being transcribed go first: this one starts when the last of them should be done.
+pub fn stamp_estimate(s: &Storage, id: &str, on_gpu: &OnGpu) {
+    let (Ok(file), Ok(dir)) = (s.read_meeting_file(id), s.dir(id)) else { return };
+    if file.status != MeetingStatus::Transcribing {
+        return;
+    }
+    let config = config_for(s, &file);
+    let profile = eta::stt_profile(config.model, on_gpu(config.model, config.use_gpu));
+    let total = profile.total(s.speed_rate(&profile.key), audio_secs(&dir, &file));
+    let now = chrono::Local::now();
+    let ahead = s
+        .ids_with_status(MeetingStatus::Transcribing)
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|other| other != id)
+        .filter_map(|other| s.read_meeting_file(&other).ok()?.eta)
+        .filter_map(|e| chrono::DateTime::parse_from_rfc3339(&e.finish_at).ok())
+        .map(|finish| (finish.with_timezone(&chrono::Local) - now).num_milliseconds() as f64 / 1000.0)
+        .fold(0.0_f64, f64::max);
+    let _ = s.update_meeting_file(id, |f| set_eta(f, ahead + total, profile.device == Device::Cpu));
+}
+
 fn process(deps: &Deps, id: &str, loaded: &mut Option<Loaded>, cancel: &AtomicBool) {
-    let (dir, config, transcript_only) = {
+    let (dir, config, transcript_only, audio) = {
         let s = lock(&deps.storage);
         let Ok(file) = s.read_meeting_file(id) else { return };
         if file.status != MeetingStatus::Transcribing {
             return;
         }
         let Ok(dir) = s.dir(id) else { return };
-        let mut config = Config::from_settings(s.settings_get().ok().flatten().as_ref());
-        // Transcribe again with another model: this meeting only.
-        if let Some(m) = file.retranscribe_model.as_deref().and_then(find).filter(|m| m.id != VAD.id) {
-            config.model = m;
-        }
-        (dir, config, file.transcript_only)
+        let config = config_for(&s, &file);
+        let audio = audio_secs(&dir, &file);
+        (dir, config, file.transcript_only, audio)
     };
     let summarize = config.summarize && !transcript_only;
     log::info!(
@@ -204,6 +253,17 @@ fn process(deps: &Deps, id: &str, loaded: &mut Option<Loaded>, cancel: &AtomicBo
     };
 
     let fresh = !matches!(loaded, Some(l) if l.model_id == config.model.id && l.use_gpu == config.use_gpu);
+    // The time estimate: loading the model (when it isn't loaded yet), then the audio at this computer's pace.
+    let profile = eta::stt_profile(config.model, (deps.on_gpu)(config.model, config.use_gpu));
+    let on_cpu = profile.device == Device::Cpu;
+    let estimate = {
+        let s = lock(&deps.storage);
+        let total = profile.total(s.speed_rate(&profile.key), audio) - if fresh { 0.0 } else { profile.overhead };
+        let _ = s.update_meeting_file(id, |f| set_eta(f, total, on_cpu));
+        total
+    };
+    (deps.changed)();
+    let job = Instant::now();
     if fresh {
         *loaded = None;
         let load = Instant::now();
@@ -232,10 +292,19 @@ fn process(deps: &Deps, id: &str, loaded: &mut Option<Loaded>, cancel: &AtomicBo
 
     let started = Instant::now();
     let mut last_report = Instant::now() - Duration::from_secs(10);
+    let mut first_report: Option<Instant> = None;
     let mut report = |p: f32| {
+        if cancel.load(Ordering::Relaxed) {
+            return;
+        }
+        let running = first_report.get_or_insert_with(Instant::now).elapsed().as_secs_f64();
         if last_report.elapsed() >= Duration::from_secs(1) || p >= 1.0 {
             last_report = Instant::now();
-            let _ = lock(&deps.storage).update_meeting_file(id, |f| f.progress = Some(p as f64));
+            let left = eta::remaining(estimate, job.elapsed().as_secs_f64(), p as f64, running);
+            let _ = lock(&deps.storage).update_meeting_file(id, |f| {
+                f.progress = Some(p as f64);
+                set_eta(f, left, on_cpu);
+            });
             (deps.changed)();
         }
     };
@@ -258,7 +327,16 @@ fn process(deps: &Deps, id: &str, loaded: &mut Option<Loaded>, cancel: &AtomicBo
                 drop(s);
                 return fail(deps, id, "failed", crate::i18n::tr("error.save_transcript"));
             }
+            // A Whisper meeting that fell back to the processor midway has already moved the GPU plan (gpu.json), so
+            // the profile worked out again differs: that run's time belongs to neither device, and isn't learned.
+            let same_device = eta::stt_profile(config.model, (deps.on_gpu)(config.model, config.use_gpu)).key == profile.key;
+            if same_device && out.speech_ms >= MIN_LEARN_SPEECH_MS {
+                s.learn_speed(&profile.key, started.elapsed().as_secs_f64(), audio);
+            }
+            let mut title = String::new();
             let _ = s.update_meeting_file(id, |f| {
+                f.eta = None;
+                title = f.title.clone();
                 if summarize {
                     f.status = MeetingStatus::Summarizing;
                     f.progress = Some(0.0);
@@ -291,6 +369,8 @@ fn process(deps: &Deps, id: &str, loaded: &mut Option<Loaded>, cancel: &AtomicBo
             drop(s);
             if summarize {
                 (deps.transcribed)(id);
+            } else {
+                (deps.transcript_ready)(id, &title);
             }
         }
         // Cancelled means the meeting is being deleted; leave it alone.
@@ -336,13 +416,26 @@ mod tests {
 
     /// Storage with one meeting waiting for transcription (a second of tone on the Them track).
     fn setup(with_models: bool, text: &'static str) -> (tempfile::TempDir, Arc<Mutex<Storage>>, String, Worker) {
+        let (d, s, id, w, _) = setup_with(with_models, text);
+        (d, s, id, w)
+    }
+
+    /// Also returns the titles "Transcript ready" was posted for.
+    fn setup_with(with_models: bool, text: &'static str) -> (tempfile::TempDir, Arc<Mutex<Storage>>, String, Worker, Arc<Mutex<Vec<String>>>) {
+        setup_full(with_models, 1, Box::new(move |_, _, _| Ok(Box::new(Echoes(text)))), Arc::new(|_, _| false))
+    }
+
+    /// `secs` of tone on the Them track, the given engine and graphics-chip answer.
+    fn setup_full(with_models: bool, secs: usize, load_engine: Box<EngineLoader>, on_gpu: Arc<OnGpu>) -> (tempfile::TempDir, Arc<Mutex<Storage>>, String, Worker, Arc<Mutex<Vec<String>>>) {
+        let ready = Arc::new(Mutex::new(vec![]));
+        let r2 = ready.clone();
         let dir = tempfile::tempdir().unwrap();
         let mut storage = Storage::new(dir.path().to_path_buf()).unwrap();
         let f = storage.create_meeting("zoom", "Zoom", chrono::DateTime::parse_from_rfc3339("2026-10-14T14:30:00-07:00").unwrap()).unwrap();
         let mdir = storage.dir(&f.id).unwrap();
         let spec = hound::WavSpec { channels: 1, sample_rate: 16000, bits_per_sample: 16, sample_format: hound::SampleFormat::Int };
         let mut w = hound::WavWriter::create(mdir.join("them.wav"), spec).unwrap();
-        for _ in 0..16000 {
+        for _ in 0..16000 * secs {
             w.write_sample(8000i16).unwrap();
         }
         w.finalize().unwrap();
@@ -360,13 +453,15 @@ mod tests {
             storage: storage.clone(),
             data_dir: dir.path().to_path_buf(),
             changed: Arc::new(|| {}),
-            load_engine: Box::new(move |_, _, _| Ok(Box::new(Echoes(text)))),
+            load_engine,
             load_detector: Box::new(|_| Ok(Box::new(WholeTrack))),
             load_splitter: Box::new(|_| Err("no model".into())),
             reuse_roots: Some(vec![]),
             transcribed: Arc::new(|_| {}),
+            transcript_ready: Arc::new(move |_, t| r2.lock().unwrap().push(t.to_string())),
+            on_gpu,
         });
-        (dir, storage, f.id, worker)
+        (dir, storage, f.id, worker, ready)
     }
 
     fn wait(worker: &Worker) {
@@ -393,6 +488,118 @@ mod tests {
         assert_eq!(f.engine.as_deref(), Some("Echoes"));
         assert_eq!(f.transcription.unwrap().model, "whisper-small");
         assert_eq!(f.language, "en");
+    }
+
+    #[test]
+    fn stop_gets_a_first_estimate_and_the_finished_transcript_drops_it() {
+        let (_d, storage, id, worker, ready) = setup_full(true, 61, Box::new(|_, _, _| Ok(Box::new(Echoes("Hello.")))), Arc::new(|_, _| false));
+        {
+            let s = storage.lock().unwrap();
+            s.update_meeting_file(&id, |f| f.duration_ms = 3_600_000).unwrap();
+            stamp_estimate(&s, &id, &|_, _| false);
+            let item = &s.list_meetings(&Default::default()).unwrap()[0];
+            let eta = item.eta.clone().expect("an estimate");
+            assert!(eta.on_cpu);
+            // An hour of Whisper Small on the processor: about 11 min by default.
+            let finish = chrono::DateTime::parse_from_rfc3339(&eta.finish_at).unwrap();
+            let mins = (finish.with_timezone(&chrono::Local) - chrono::Local::now()).num_minutes();
+            assert!((8..=15).contains(&mins), "{mins}");
+        }
+        worker.enqueue(&id);
+        wait(&worker);
+        let s = storage.lock().unwrap();
+        assert_eq!(s.read_meeting_file(&id).unwrap().eta, None);
+        // It goes on to the summary, so no "Transcript ready".
+        assert!(ready.lock().unwrap().is_empty());
+        // This computer's pace is kept for the next estimate (the fake engine is instant).
+        assert!(s.speed_rate("stt:whisper-small:cpu").is_some_and(|r| r < 0.01));
+    }
+
+    #[test]
+    fn a_short_call_teaches_nothing() {
+        let (_d, storage, id, worker, _) = setup_with(true, "Hello.");
+        storage.lock().unwrap().update_meeting_file(&id, |f| f.duration_ms = 3_600_000).unwrap();
+        worker.enqueue(&id);
+        wait(&worker);
+        // An hour-long meeting with one second of speech says nothing about the pace.
+        assert_eq!(storage.lock().unwrap().speed_rate("stt:whisper-small:cpu"), None);
+    }
+
+    /// Says it runs on the graphics chip until its first chunk, then "falls back" (as the GPU helper does when it
+    /// fails: gpu.json then says to use the processor).
+    struct FallsBack(Arc<AtomicBool>);
+    impl Engine for FallsBack {
+        fn transcribe(&mut self, s: &[f32], _l: Option<&str>) -> Result<ChunkResult, String> {
+            self.0.store(false, Ordering::Relaxed);
+            Ok(ChunkResult { pieces: vec![Piece { start_ms: 0, end_ms: s.len() as u64 / 16, text: "Hello.".into() }], language: None })
+        }
+        fn label(&self) -> &str {
+            "FallsBack"
+        }
+        fn chunking(&self) -> Shape {
+            Shape { pad: 0, ..Shape::default() }
+        }
+    }
+
+    #[test]
+    fn a_fallback_to_the_processor_mid_job_teaches_neither_speed() {
+        let gpu = Arc::new(AtomicBool::new(true));
+        let (g1, g2) = (gpu.clone(), gpu.clone());
+        let (_d, storage, id, worker, _) = setup_full(
+            true,
+            61,
+            Box::new(move |_, _, _| Ok(Box::new(FallsBack(g1.clone())))),
+            Arc::new(move |m, use_gpu| use_gpu && m.engine == crate::transcriber::models::EngineKind::Whisper && g2.load(Ordering::Relaxed)),
+        );
+        worker.enqueue(&id);
+        wait(&worker);
+        let s = storage.lock().unwrap();
+        assert_eq!(s.read_meeting_file(&id).unwrap().status, MeetingStatus::Summarizing);
+        assert_eq!(s.speed_rate("stt:whisper-small:gpu"), None, "processor time under the graphics chip's name");
+        assert_eq!(s.speed_rate("stt:whisper-small:cpu"), None);
+    }
+
+    #[test]
+    fn a_meeting_behind_others_waits_for_them_in_its_estimate() {
+        let (_d, storage, first, _worker) = setup(true, "x");
+        let s = storage.lock().unwrap();
+        let second = s.create_meeting("zoom", "Zoom", chrono::DateTime::parse_from_rfc3339("2026-10-14T15:30:00-07:00").unwrap()).unwrap().id;
+        let minutes_left = |id: &str| {
+            let eta = s.read_meeting_file(id).unwrap().eta.unwrap();
+            let finish = chrono::DateTime::parse_from_rfc3339(&eta.finish_at).unwrap();
+            (finish.with_timezone(&chrono::Local) - chrono::Local::now()).num_seconds() as f64 / 60.0
+        };
+        for id in [&first, &second] {
+            s.update_meeting_file(id, |f| {
+                f.status = MeetingStatus::Transcribing;
+                f.duration_ms = 3_600_000;
+            })
+            .unwrap();
+        }
+        stamp_estimate(&s, &first, &|_, _| false);
+        stamp_estimate(&s, &second, &|_, _| false);
+        let (a, b) = (minutes_left(&first), minutes_left(&second));
+        // Each is about 11 min of work; the second starts when the first is done.
+        assert!((b - 2.0 * a).abs() < 0.5, "{a} then {b}");
+    }
+
+    #[test]
+    fn a_finished_meeting_has_no_estimate_in_the_list() {
+        let (_d, storage, id, _worker) = setup(true, "x");
+        let s = storage.lock().unwrap();
+        stamp_estimate(&s, &id, &|_, _| true);
+        s.update_meeting_file(&id, |f| f.status = MeetingStatus::Ready).unwrap();
+        assert!(s.list_meetings(&Default::default()).unwrap()[0].eta.is_none());
+    }
+
+    #[test]
+    fn a_transcript_only_meeting_says_transcript_ready() {
+        let (_d, storage, id, worker, ready) = setup_with(true, "Salary numbers for next year.");
+        storage.lock().unwrap().update_meeting_file(&id, |f| f.transcript_only = true).unwrap();
+        worker.enqueue(&id);
+        wait(&worker);
+        assert_eq!(ready.lock().unwrap().len(), 1);
+        assert!(ready.lock().unwrap()[0].starts_with("Call, Zoom"));
     }
 
     #[test]

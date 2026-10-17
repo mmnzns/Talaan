@@ -12,7 +12,8 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   const show = useCallback((m: string) => {
     setMessage(m);
     clearTimeout(timer.current);
-    timer.current = setTimeout(() => setMessage(undefined), 2800);
+    // Longer messages stay a little longer, so there's time to read them.
+    timer.current = setTimeout(() => setMessage(undefined), Math.max(2800, m.length * 55));
   }, []);
 
   return (

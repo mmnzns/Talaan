@@ -14,6 +14,7 @@ pub mod paths;
 pub mod recovery;
 pub mod retention;
 pub mod settings;
+pub mod speed;
 pub mod store;
 
 pub use store::{Filter, Storage};
