@@ -57,7 +57,7 @@ const head16 = (s: string, n: number) => (/[\uD800-\uDBFF]/.test(s.charAt(n - 1)
 /**
  * A `mailto:` link for the summary: the attendees (when the calendar had their addresses), the title as the
  * subject and the summary as the body. A body too long for `limit` is cut at a word and ends with a line saying
- * the full notes come separately (`truncated`: offer Copy summary instead).
+ * the full notes are in Talaan (`truncated`: offer Copy summary instead).
  */
 export function toMailto(m: Meeting, limit = MAILTO_LIMIT): { url: string; truncated: boolean } {
   const to = (m.calendarEvent?.emails ?? []).filter((a) => /^[^\s@,?&]+@[^\s@,?&]+\.[^\s@,?&]+$/.test(a)).map((a) => encodeURIComponent(a).replace(/%40/g, "@"));

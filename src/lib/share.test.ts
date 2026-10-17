@@ -77,12 +77,12 @@ describe("toMailto", () => {
     expect(toMailto({ ...q4, calendarEvent: undefined }).url.startsWith("mailto:?subject=")).toBe(true);
   });
 
-  it("shortens a long body to fit and says the full notes come separately", () => {
+  it("shortens a long body to fit and says where the full notes are", () => {
     const long = { ...withEmails, summary: { ...q4.summary!, recap: "Long recap with an emoji 🙂 here. ".repeat(120) } };
     const { url, truncated } = toMailto(long);
     expect(truncated).toBe(true);
     expect(url.length).toBeLessThanOrEqual(MAILTO_LIMIT);
     expect(url.length).toBeGreaterThan(MAILTO_LIMIT - 200);
-    expect(decodeURIComponent(url.split("&body=")[1])).toMatch(/…\r\n\r\nFull notes attached separately\.$/);
+    expect(decodeURIComponent(url.split("&body=")[1])).toMatch(/…\r\n\r\nThe full notes are in Talaan.$/);
   });
 });

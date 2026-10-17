@@ -35,7 +35,6 @@ export function SpeakersBar({ meeting }: { meeting: Meeting }) {
         <button
           type="button"
           onClick={() => store.renameSpeaker(meeting.id, probably.speaker, probably.name)}
-          aria-label={t("meeting.probablyAria", { speaker: speakerName(meeting, probably.speaker), name: probably.name })}
           className="inline-flex cursor-pointer items-center gap-1 rounded-full border border-dashed border-edge bg-gold-soft px-2 py-[3px] font-mono text-[11px] leading-[14px] text-gold-ink hover:border-gold"
         >
           <Sparkles size={10} aria-hidden="true" />
