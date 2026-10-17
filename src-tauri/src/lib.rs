@@ -67,7 +67,7 @@ pub fn run() {
                 store.apply_retention(chrono::Utc::now())?;
                 Ok(store)
             };
-            let store = started().inspect_err(|e| log::error!("couldn't open the data folder: {e}"))?;
+            let store = started().inspect_err(|e| log::error!("couldn't open the data folder: {}", e.for_log()))?;
             app.manage(AppState::new(store));
             // Off the main thread: on the Mac it asks sw_vers and sysctl.
             let handle = app.handle().clone();
@@ -190,7 +190,7 @@ pub fn run() {
         .run(|app, event| {
             match event {
                 tauri::RunEvent::ExitRequested { code, .. } => {
-                    log::info!("quitting (code {code:?})");
+                    log::info!("quitting (exit code {})", code.map(|c| c.to_string()).unwrap_or_else(|| "none".into()));
                     // An update's relaunch exits through here too; leave that to Tauri.
                     if code != Some(tauri::RESTART_EXIT_CODE) {
                         exit_watchdog();

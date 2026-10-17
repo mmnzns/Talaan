@@ -299,7 +299,7 @@ fn capture(
             },
         };
         let Some((mut cause, why)) = lost else { continue };
-        log::warn!("call audio (loopback) lost: {why}");
+        log::warn!("call audio (loopback) lost: {}", crate::logging::text(&why));
         stream.close();
         // Reconnect: the new stream's stamps start fresh.
         pump.stamps = Stamps::default();
@@ -319,7 +319,7 @@ fn capture(
                     break s;
                 }
                 Err(e) => {
-                    log::warn!("call audio (loopback): reconnect failed: {e}");
+                    log::warn!("call audio (loopback): reconnect failed: {}", crate::logging::text(&e));
                     cause = Loss::Error;
                 }
             }

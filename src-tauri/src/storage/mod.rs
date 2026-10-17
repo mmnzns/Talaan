@@ -40,6 +40,16 @@ pub enum StorageError {
 }
 
 impl StorageError {
+    /// What the log may say about this error. A refusal is a message for the user that can quote a provider, Notion
+    /// or a model, so only its i18n key is kept (or nothing, for text that isn't one of the app's messages); local
+    /// errors (files, JSON, ids) are redacted.
+    pub fn for_log(&self) -> String {
+        match self {
+            Self::Refused(m) | Self::NotYetAvailable(m) => crate::i18n::key_for(m).map(|k| format!("[{k}]")).unwrap_or_else(|| "(message not logged)".into()),
+            other => crate::logging::redact(&other.to_string()),
+        }
+    }
+
     pub fn code(&self) -> &'static str {
         match self {
             Self::NotFound(_) | Self::InvalidId(_) => "not_found",
@@ -55,7 +65,7 @@ impl StorageError {
 /// it is logged here: every error the app shows passes through.
 impl Serialize for StorageError {
     fn serialize<S: serde::Serializer>(&self, s: S) -> std::result::Result<S::Ok, S::Error> {
-        log::warn!("error for the app ({}): {self}", self.code());
+        log::warn!("error for the app ({}): {}", self.code(), self.for_log());
         use serde::ser::SerializeStruct;
         let mut st = s.serialize_struct("StorageError", 2)?;
         st.serialize_field("code", self.code())?;

@@ -190,7 +190,7 @@ fn run(app: &AppHandle, action: Action) {
             let label = label_of(&id);
             match start_recording(app, &id, &label) {
                 Ok(_) => show_prompt(app, Prompt { kind: "banner", app: id, label, deadline: None }),
-                Err(e) => log::warn!("couldn't start recording {id} automatically: {e}"),
+                Err(e) => log::warn!("couldn't start recording {id} automatically: {}", e.for_log()),
             }
         }
         Action::CallEnded { app: id } => show_prompt(app, Prompt { kind: "ended", label: label_of(&id), app: id, deadline: Some(epoch_ms() + COUNTDOWN_MS) }),

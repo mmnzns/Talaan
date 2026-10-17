@@ -188,12 +188,31 @@ pub fn init(dir: &Path) {
     std::panic::set_hook(Box::new(move |info| {
         let at = info.location().map(|l| format!("{}:{}", l.file(), l.line())).unwrap_or_default();
         let msg = info.payload().downcast_ref::<&str>().map(|s| s.to_string()).or_else(|| info.payload().downcast_ref::<String>().cloned()).unwrap_or_default();
-        log::error!("panic at {at}: {msg}");
+        log::error!("panic at {at}: {}", text(&msg));
         previous(info);
     }));
 }
 
 // ---- Redaction ----
+
+/// A non-literal value for a log call, made safe: one of the app's own messages becomes its key (`[ai.http_error]`;
+/// its placeholders can hold what a provider, Notion or a model said, so none of them is kept), anything else is
+/// redacted. Every error or other free text in a `log::` call goes through this (a test checks).
+pub fn text(m: impl std::fmt::Display) -> Text {
+    let s = m.to_string();
+    Text(match crate::i18n::key_for(&s) {
+        Some(key) => format!("[{key}]"),
+        None => redact(&s),
+    })
+}
+
+pub struct Text(String);
+
+impl std::fmt::Display for Text {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.0)
+    }
+}
 
 /// Removes what must never be in the log from a line: URLs keep only their host, emails and key-shaped tokens are
 /// replaced, anything in double quotes or backticks is dropped (error messages quote the text they choked on), and
@@ -203,7 +222,8 @@ pub fn redact(s: &str) -> String {
 }
 
 pub fn redact_with(s: &str, home: Option<&str>) -> String {
-    let mut s = s.to_string();
+    // One line per record.
+    let mut s = s.replace("\r\n", " | ").replace(['\n', '\r'], " | ");
     if let Some(h) = home.filter(|h| !h.is_empty()) {
         s = s.replace(h, "~");
         if h.contains('\\') {
@@ -227,24 +247,48 @@ fn cut(s: &str, max: usize) -> String {
     format!("{}…", &s[..end])
 }
 
-/// `"anything"` → `"…"`, `` `anything` `` → `` `…` ``. An unclosed quote drops the rest of the line.
+/// The closing mark for a quote that opens with `c`.
+fn closing(c: char) -> Option<char> {
+    Some(match c {
+        '"' => '"',
+        '`' => '`',
+        '\'' => '\'',
+        '“' => '”',
+        '‘' => '’',
+        '«' => '»',
+        '„' => '“',
+        _ => return None,
+    })
+}
+
+/// Drops whatever is quoted: `"anything"` → `"…"`, also `` `…` ``, `'…'`, `“…”`, `‘…’`, `«…»`. Escapes inside a
+/// quote (`\"`, as `{:?}` writes them) don't close it, and an unclosed quote drops the rest of the line. A single
+/// quote or ’ only opens after a space or bracket and only closes before one, so apostrophes ("couldn't",
+/// "l’audio") stay.
 fn drop_quoted(s: &str) -> String {
+    let chars: Vec<char> = s.chars().collect();
+    let boundary = |i: Option<usize>| i.and_then(|i| chars.get(i)).is_none_or(|c| !c.is_alphanumeric());
     let mut out = String::with_capacity(s.len());
     let mut open: Option<char> = None;
-    for c in s.chars() {
+    let mut i = 0;
+    while i < chars.len() {
+        let c = chars[i];
         match open {
-            Some(q) if c == q => {
+            Some(_) if c == '\\' => i += 1, // the escaped character can't close the quote
+            Some(close) if c == close && (!matches!(c, '\'' | '’') || boundary(Some(i + 1))) => {
                 out.push('…');
                 out.push(c);
                 open = None;
             }
             Some(_) => {}
-            None if c == '"' || c == '`' => {
+            None => {
+                let after_space = i.checked_sub(1).is_none_or(|j| chars[j].is_whitespace() || "([{=:,".contains(chars[j]));
+                let opens = closing(c).filter(|_| c != '\'' || after_space);
                 out.push(c);
-                open = Some(c);
+                open = opens;
             }
-            None => out.push(c),
         }
+        i += 1;
     }
     if open.is_some() {
         out.push('…');
@@ -396,6 +440,46 @@ mod tests {
         assert_eq!(redact_with("byte index 3 is not a char boundary of `Salary numbers for Ana`", None), "byte index 3 is not a char boundary of `…`");
         assert_eq!(redact_with("unclosed \"secret plans", None), "unclosed \"…");
         assert_eq!(redact_with("Couldn't start: it's busy", None), "Couldn't start: it's busy");
+    }
+
+    #[test]
+    fn escaped_and_typographic_quotes_dont_leak() {
+        // serde's errors and `{:?}` escape inner quotes.
+        assert_eq!(redact_with(r#"invalid type: string "We agreed \"Ana Cruz is fired\" today", expected a map"#, None), r#"invalid type: string "…", expected a map"#);
+        assert_eq!(redact_with(r#"Err("say \"hi\" to \\ Ana")"#, None), r#"Err("…")"#);
+        assert_eq!(redact_with("the reply said “Ana Cruz is fired” and stopped", None), "the reply said “…” and stopped");
+        assert_eq!(redact_with("it quoted ‘the budget’s fine’ back", None), "it quoted ‘…’ back");
+        assert_eq!(redact_with("it quoted 'Ana is fired' back", None), "it quoted '…' back");
+        assert_eq!(redact_with("Notion said «page Ana» no", None), "Notion said «…» no");
+        // Apostrophes are not quotes.
+        assert_eq!(redact_with("couldn't start: l’audio isn't there", None), "couldn't start: l’audio isn't there");
+        assert_eq!(redact_with("microphone switched to …'s AirPods", None), "microphone switched to …'s AirPods");
+    }
+
+    #[test]
+    fn app_messages_are_logged_by_key_and_never_with_their_details() {
+        let leaked = crate::i18n::tr_err("error.summary_bad_output", "invalid type: string \"Ana Cruz is fired\"");
+        assert_eq!(text(&leaked).to_string(), "[error.summary_bad_output]");
+        let provider = crate::i18n::tr_with("ai.http_error", &[("provider", "Claude"), ("status", "400"), ("detail", "prompt mentions Ana Cruz")]);
+        assert_eq!(text(&provider).to_string(), "[ai.http_error]");
+        let notion = crate::i18n::tr_with("notion.said", &[("message", "Page Board meeting with Ana not found")]);
+        assert_eq!(text(&notion).to_string(), "[notion.said]");
+        for lang in [crate::i18n::Lang::Fr, crate::i18n::Lang::Es] {
+            let m = crate::i18n::tr_in(lang, "ai.http_error", &[("provider", "Claude"), ("status", "500"), ("detail", "Ana")]);
+            assert_eq!(text(&m).to_string(), "[ai.http_error]", "{m}");
+        }
+        // Not one of the app's messages: redacted.
+        assert_eq!(text("The system cannot find the file specified. (os error 2)").to_string(), "The system cannot find the file specified. (os error 2)");
+        // A refusal that isn't an app message (an Ask parse error) isn't logged at all.
+        let ask = crate::storage::StorageError::Refused("the reply wasn't valid JSON (invalid type: string \"Ana\")".into());
+        assert_eq!(ask.for_log(), "(message not logged)");
+        assert_eq!(crate::storage::StorageError::Refused(crate::i18n::tr("error.no_log")).for_log(), "[error.no_log]");
+        assert_eq!(crate::storage::StorageError::NotFound("2026-10-16_1430_ab12".into()).for_log(), "not found: 2026-10-16_1430_ab12");
+    }
+
+    #[test]
+    fn multi_line_messages_become_one_line() {
+        assert_eq!(redact_with("helper stopped: exit code 5\nggml_vulkan: Device lost\r\nnext", None), "helper stopped: exit code 5 | ggml_vulkan: Device lost | next");
     }
 
     #[test]
@@ -551,6 +635,7 @@ mod tests {
 
     /// The identifiers a call uses: words outside string literals, plus `{name}` / `{x.name}` placeholders.
     fn identifiers(call: &str) -> Vec<String> {
+        let call = &without_sanitized(call);
         let mut code = String::new();
         let mut in_str = false;
         let mut prev = ' ';
@@ -612,8 +697,48 @@ mod tests {
         assert!(bad.is_empty(), "eprintln! in app code (use log::warn! / log::error!):\n{}", bad.join("\n"));
     }
 
+    /// The call without the values that go through a sanitizer: `text(…)` spans and `x.for_log()`.
+    fn without_sanitized(call: &str) -> String {
+        let mut out = String::new();
+        let mut rest = call;
+        while let Some(i) = rest.find("text(") {
+            let starts_word = i == 0 || !rest[..i].ends_with(|c: char| c.is_alphanumeric() || c == '_');
+            if !starts_word {
+                out.push_str(&rest[..i + 5]);
+                rest = &rest[i + 5..];
+                continue;
+            }
+            out.push_str(&rest[..i]);
+            let mut depth = 0;
+            let mut end = rest.len();
+            for (j, c) in rest[i..].char_indices() {
+                match c {
+                    '(' => depth += 1,
+                    ')' => {
+                        depth -= 1;
+                        if depth == 0 {
+                            end = i + j + 1;
+                            break;
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            out.push_str(" sanitized ");
+            rest = &rest[end..];
+        }
+        out.push_str(rest);
+        while let Some(i) = out.find(".for_log()") {
+            let start = out[..i].rfind(|c: char| !(c.is_alphanumeric() || c == '_')).map(|s| s + 1).unwrap_or(0);
+            out.replace_range(start..i + ".for_log()".len(), " sanitized ");
+        }
+        out
+    }
+
     #[test]
     fn identifiers_skip_literal_text_but_read_placeholders() {
+        assert_eq!(identifiers(r#""failed: {}", crate::logging::text(&e)"#), ["crate", "logging", "sanitized"]);
+        assert_eq!(identifiers(r#""failed: {}", e.for_log()"#), ["sanitized"]);
         assert_eq!(identifiers(r#""summary for {id} took {secs:.1}s", engine.label()"#), ["id", "secs", "engine", "label"]);
         assert_eq!(identifiers(r#""meeting {m.title}""#), ["m", "title"]);
     }

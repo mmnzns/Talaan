@@ -24,8 +24,8 @@ pub struct Available {
 #[tauri::command]
 pub async fn updates_check(app: AppHandle) -> CmdResult<Option<Available>> {
     let current = app.package_info().version.to_string();
-    let updater = app.updater().inspect_err(|e| log::warn!("update check failed: {e}")).map_err(|e| refused(tr_err("update.check_failed", e)))?;
-    let update = updater.check().await.inspect_err(|e| log::warn!("update check failed (offline?): {e}")).map_err(|e| refused(tr_err("update.offline", e)))?;
+    let updater = app.updater().inspect_err(|e| log::warn!("update check failed: {}", crate::logging::text(e))).map_err(|e| refused(tr_err("update.check_failed", e)))?;
+    let update = updater.check().await.inspect_err(|e| log::warn!("update check failed (offline?): {}", crate::logging::text(e))).map_err(|e| refused(tr_err("update.offline", e)))?;
     match &update {
         Some(u) => log::info!("update check: {} is available (this is {current})", u.version),
         None => log::info!("update check: {current} is the newest"),
@@ -44,7 +44,7 @@ pub async fn updates_install(app: AppHandle) -> CmdResult<()> {
         return Err(refused(tr("update.up_to_date")));
     };
     log::info!("installing update {}", update.version);
-    update.download_and_install(|_, _| {}, || {}).await.inspect_err(|e| log::error!("update install failed: {e}")).map_err(|e| refused(tr_err("update.install_failed", e)))?;
+    update.download_and_install(|_, _| {}, || {}).await.inspect_err(|e| log::error!("update install failed: {}", crate::logging::text(e))).map_err(|e| refused(tr_err("update.install_failed", e)))?;
     log::info!("update installed, restarting");
     app.restart()
 }

@@ -40,7 +40,7 @@ fn open(feed: &SharedFeed, preferred: Option<&str>) -> Result<(Stream, String), 
     let config = supported.config();
     let rate = config.sample_rate;
     let channels = config.channels;
-    let err = |e: cpal::Error| log::warn!("mic stream error: {e}");
+    let err = |e: cpal::Error| log::warn!("mic stream error: {}", crate::logging::text(e));
 
     macro_rules! build {
         ($t:ty, $conv:expr) => {{

@@ -235,7 +235,7 @@ pub fn keys_save(provider: String, key: String, base_url: Option<String>) -> Cmd
             Ok(KeyTest { ok: true, message, model })
         }
         Err(EngineError::Unavailable(m)) | Err(EngineError::Failed(m)) => {
-            log::warn!("{provider} connection test failed: {m}");
+            log::warn!("{provider} connection test failed: {}", crate::logging::text(&m));
             Ok(KeyTest { ok: false, message: m, model: None })
         }
         Err(EngineError::Cancelled) => Ok(KeyTest { ok: false, message: tr("error.cancelled"), model: None }),

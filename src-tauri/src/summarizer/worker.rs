@@ -135,9 +135,9 @@ fn without_summary(deps: &Deps, id: &str, code: &str, message: String) {
 
 fn without_summary_detail(deps: &Deps, id: &str, code: &str, message: String, detail: Option<String>) {
     match &detail {
-        Some(d) => log::warn!("no summary for meeting {id} ({code}): {message} | {}", d.replace('\n', " | ")),
+        Some(d) => log::warn!("no summary for meeting {id} ({code}): {} | helper: {}", crate::logging::text(&message), crate::logging::text(d)),
         None if code == TOO_SHORT => log::info!("no summary for meeting {id}: too little speech"),
-        None => log::warn!("no summary for meeting {id} ({code}): {message}"),
+        None => log::warn!("no summary for meeting {id} ({code}): {}", crate::logging::text(&message)),
     }
     let _ = lock(&deps.storage).update_meeting_file(id, |f| {
         f.status = MeetingStatus::Ready;

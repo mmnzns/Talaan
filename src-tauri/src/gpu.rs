@@ -159,7 +159,7 @@ impl Gpu {
 
     /// Remembers that the GPU failed for this kind of job (the processor then did it).
     pub fn record(&self, kind: Kind, reason: &str) {
-        log::warn!("the GPU failed for {kind:?} jobs; the processor is used until Try again or a driver update: {}", reason.replace('\n', " | "));
+        log::warn!("the GPU failed for {} jobs; the processor is used until Try again or a driver update: {}", kind.helper(), crate::logging::text(reason));
         let _g = WRITE.lock().unwrap_or_else(|e| e.into_inner());
         let mut m = self.marker().unwrap_or_else(|| Marker { app_version: self.app_version.clone(), driver: self.driver.clone(), failures: BTreeMap::new() });
         let mut cut = reason.len().min(REASON_BYTES);

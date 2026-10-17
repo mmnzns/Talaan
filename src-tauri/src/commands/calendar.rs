@@ -37,7 +37,7 @@ pub fn remove_legacy_address(store: &mut crate::storage::Storage) {
     #[cfg(not(target_os = "windows"))]
     let keep = |_: &str| true;
     if let Err(e) = store.remove_legacy_calendar_address(keep) {
-        log::warn!("couldn't remove the old calendar address from settings: {e}");
+        log::warn!("couldn't remove the old calendar address from settings: {}", e.for_log());
     }
 }
 
@@ -53,7 +53,7 @@ pub fn sync_source(_app: &AppHandle) {
 #[cfg(target_os = "windows")]
 #[tauri::command]
 pub async fn calendar_connect(url: String) -> Result<usize, String> {
-    let n = connect(url).await.inspect_err(|e| log::warn!("calendar connect failed: {e}"))?;
+    let n = connect(url).await.inspect_err(|e| log::warn!("calendar connect failed: {}", crate::logging::text(e)))?;
     log::info!("calendar connected ({n} entries in the next 7 days)");
     Ok(n)
 }

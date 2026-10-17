@@ -162,7 +162,7 @@ fn lock(storage: &Mutex<Storage>) -> std::sync::MutexGuard<'_, Storage> {
 }
 
 fn fail(deps: &Deps, id: &str, code: &str, message: String) {
-    log::warn!("transcription failed: meeting {id} ({code}): {message}");
+    log::warn!("transcription failed: meeting {id} ({code}): {}", crate::logging::text(&message));
     let _ = lock(&deps.storage).update_meeting_file(id, |f| {
         f.status = MeetingStatus::Failed;
         f.progress = None;
@@ -222,7 +222,7 @@ fn process(deps: &Deps, id: &str, loaded: &mut Option<Loaded>, cancel: &AtomicBo
     if config.separate_speakers && l.splitter.is_none() {
         if let Some(dir) = store.locate(&DIARIZATION).dir() {
             // A broken speaker model shouldn't cost the transcript: carry on without it.
-            l.splitter = (deps.load_splitter)(&dir.join(DIARIZATION.files[0].name)).inspect_err(|e| log::warn!("speaker separation unavailable: {e}")).ok();
+            l.splitter = (deps.load_splitter)(&dir.join(DIARIZATION.files[0].name)).inspect_err(|e| log::warn!("speaker separation unavailable: {}", crate::logging::text(e))).ok();
         }
     }
     let splitter: Option<&mut dyn SpeakerSplitter> = match (&mut l.splitter, config.separate_speakers) {

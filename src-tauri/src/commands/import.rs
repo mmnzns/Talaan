@@ -33,7 +33,7 @@ pub fn meetings_import(app: AppHandle, path: String) -> CmdResult<()> {
         let send = |e: ImportEvent| {
             match &e {
                 ImportEvent::Done { id } => log::info!("audio imported as meeting {id}"),
-                ImportEvent::Failed { message } => log::warn!("import failed: {message}"),
+                ImportEvent::Failed { message } => log::warn!("import failed: {}", crate::logging::text(message)),
                 ImportEvent::Progress { .. } => {}
             }
             let _ = app.emit(EVENT, e);

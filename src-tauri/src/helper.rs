@@ -110,7 +110,7 @@ impl<E: DeserializeOwned + Send + 'static> Process<E> {
             detail.push('\n');
             detail.push_str(&tail);
         }
-        log::warn!("{} (out of memory: {out_of_memory})", detail.replace('\n', " | "));
+        log::warn!("{} (out of memory: {out_of_memory})", crate::logging::text(&detail));
         Death { detail, out_of_memory }
     }
 

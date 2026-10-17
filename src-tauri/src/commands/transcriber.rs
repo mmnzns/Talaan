@@ -240,7 +240,7 @@ pub fn models_download(app: AppHandle, t: State<TranscriberState>, id: String) -
         match &result {
             Ok(()) => log::info!("model {id} downloaded in {:.0}s", started.elapsed().as_secs_f32()),
             Err(DownloadError::Cancelled) => log::info!("model {id} download cancelled"),
-            Err(e) => log::warn!("model {id} download failed: {e}"),
+            Err(e) => log::warn!("model {id} download failed: {}", crate::logging::text(e)),
         }
         match result {
             Ok(()) if is_llm => super::summarizer::requeue_waiting(&app),

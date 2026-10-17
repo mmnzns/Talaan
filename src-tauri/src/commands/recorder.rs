@@ -300,7 +300,7 @@ fn restart_later(app: AppHandle, flag: Arc<AtomicBool>, mic: bool) {
         let which = if mic { "microphone" } else { "call audio" };
         match &result {
             Ok(name) => log::info!("{which} switched to {}", crate::logging::device(name)),
-            Err(e) => log::warn!("{which} couldn't follow the device change: {e}"),
+            Err(e) => log::warn!("{which} couldn't follow the device change: {}", crate::logging::text(e)),
         }
         match (mic, result) {
             (true, Ok(name)) => notice(&app, crate::i18n::tr_with("notice.mic_switched", &[("name", name.as_str())]), "info", None),
@@ -312,7 +312,7 @@ fn restart_later(app: AppHandle, flag: Arc<AtomicBool>, mic: bool) {
     });
     if let Err(e) = spawned {
         // No thread, no restart: log it and let the next device change try again.
-        log::error!("couldn't start the device restart thread: {e}");
+        log::error!("couldn't start the device restart thread: {}", crate::logging::text(&e));
         reset.store(false, Ordering::Release);
     }
 }
@@ -352,7 +352,7 @@ pub fn setup(app: &AppHandle) {
     });
     match devices {
         Ok(devices) => *rec.watchers.lock().unwrap() = Some((devices, sleep)),
-        Err(e) => log::warn!("device watcher unavailable: {e}"),
+        Err(e) => log::warn!("device watcher unavailable: {}", crate::logging::text(&e)),
     }
 
     let app = app.clone();
