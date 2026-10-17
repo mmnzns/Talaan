@@ -164,6 +164,54 @@ export class MockMeetingStore implements MeetingStore {
     this.originals.set(m.id, { summary: undefined, lines: new Map(m.transcript.map((l) => [l.id, l.text])) });
   };
 
+  /** The browser preview's recorder, like Rust's: Start creates the meeting ("recording"), so screens see it
+   *  appear at once. The guided test is titled and tagged as one from the start. Returns its id. */
+  startRecording(test: boolean): MeetingId {
+    const id = `m-rec-${Date.now().toString(36)}`;
+    const now = new Date();
+    const m: Meeting = {
+      id,
+      title: test ? "Test recording" : `Call, ${now.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}`,
+      app: "other",
+      appLabel: "Call",
+      startedAt: now.toISOString(),
+      durationMs: 0,
+      status: "recording",
+      tags: test ? ["test"] : [],
+      peopleCount: 1,
+      pinned: false,
+      language: "en",
+      hasAudio: true,
+      speakers: { me: "Me" },
+      transcript: [],
+      marks: [],
+      pauses: [],
+    };
+    this.meetings.set(id, m);
+    this.originals.set(id, { summary: undefined, lines: new Map() });
+    this.emit();
+    return id;
+  }
+
+  /** Stop: the recording is saved and transcribed (a short sample transcript). */
+  finishRecording(id: MeetingId, durationMs: number) {
+    this.mutate(id, (m) => (m.durationMs = durationMs));
+    this.simulate(id, "transcribing", (done) => {
+      done.status = "ready";
+      done.transcript = [
+        { id: `${id}-0`, at: 0, end: 6_000, speaker: "me", text: "This is a test of Talaan. Today I want to finish the slides and call the client.", edited: false },
+        { id: `${id}-1`, at: 6_500, end: Math.max(12_000, Math.min(durationMs, 14_000)), speaker: "me", text: "If this shows up as text, it works.", edited: false },
+      ];
+      done.summaryError = { code: "too_short", message: "Too little speech to summarize." };
+      this.originals.set(id, { summary: undefined, lines: new Map(done.transcript.map((l) => [l.id, l.text])) });
+    });
+  }
+
+  /** Discard: the meeting is gone. */
+  discardRecording(id: MeetingId) {
+    void this.deleteMeeting(id);
+  }
+
   async recoverMeeting(id: MeetingId) {
     this.simulate(id, "transcribing", this.finishTranscription);
   }

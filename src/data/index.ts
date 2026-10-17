@@ -17,8 +17,17 @@ const empty = typeof location !== "undefined" && location.search.includes("mock=
 
 const mockSettings = real ? undefined : new MockSettingsStore();
 export const settingsStore: SettingsStore = mockSettings ?? new TauriSettingsStore();
-export const meetingStore: MeetingStore = mockSettings
-  ? new MockMeetingStore(new Date(), { empty, yourName: () => mockSettings.current().yourName })
-  : new TauriMeetingStore();
-export const recorderClient: RecorderClient = real ? new TauriRecorderClient() : new MockRecorderClient();
+const mockMeetings = mockSettings ? new MockMeetingStore(new Date(), { empty, yourName: () => mockSettings.current().yourName }) : undefined;
+export const meetingStore: MeetingStore = mockMeetings ?? new TauriMeetingStore();
+
+// In the browser preview the recorder creates and saves meetings in the sample store, as the app's does on disk.
+export const recorderClient: RecorderClient = real
+  ? new TauriRecorderClient()
+  : new MockRecorderClient({
+      meetings: mockMeetings && {
+        start: (test) => mockMeetings.startRecording(test),
+        stop: (id, ms) => mockMeetings.finishRecording(id, ms),
+        discard: (id) => mockMeetings.discardRecording(id),
+      },
+    });
 export const usingRealStorage = real;
