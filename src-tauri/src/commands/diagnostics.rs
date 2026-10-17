@@ -313,6 +313,14 @@ mod tests {
     }
 
     #[test]
+    fn summary_instructions_and_meeting_types_stay_out() {
+        let out = settings_for_report(&json!({ "summaryInstructions": "Always mention Ana's salary", "summaryTemplate": "custom-board-review", "retention": "7d" }));
+        let text = serde_json::to_string(&out).unwrap();
+        assert!(!text.contains("salary") && !text.contains("board-review"), "{text}");
+        assert_eq!(out["notShown"], json!(["summaryInstructions", "summaryTemplate"]));
+    }
+
+    #[test]
     fn local_addresses_are_recognised() {
         assert!(is_local("http://localhost:11434"));
         assert!(is_local("http://127.0.0.1:1234/v1"));

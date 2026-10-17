@@ -11,7 +11,8 @@ const FORBIDDEN: &[&str] = &[
     "title", "titles", "text", "texts", "recap", "summary", "decisions", "action_items", "open_questions", "prompt", "prompts", "attendee",
     "attendees", "email", "emails", "key", "api_key", "secret", "url", "address", "body", "note", "notes", "notice", "transcript", "lines",
     "your_name", "yourName", "workspace", "destination", "reply", "answer", "question", "passages", "events", "name", "names", "line",
-    "speaker", "speakers", "path", "token", "password", "recordingNotice", "recording_notice",
+    "speaker", "path", "token", "password", "recordingNotice", "recording_notice", "instruction", "instructions", "section", "sections",
+    "highlight", "highlights", "invitee", "invitees", "draft", "drafts", "follow_up", "followUp",
 ];
 
 /// Names that usually hold an error or other free text: only through a sanitizer.
@@ -178,20 +179,28 @@ pub fn calls(src: &str) -> Vec<Call> {
     out
 }
 
-/// `code` split into what is outside a sanitizer and what is inside one (`text(…)` spans, and `x.for_log()`).
-/// Inside, a generic error name is fine (the sanitizer handles errors), but a forbidden field still isn't:
-/// `text()` only redacts, it can't make a transcript safe.
-fn split_sanitized(code: &str) -> (String, String) {
-    let mut outside = String::new();
-    let mut inside = String::new();
+/// What a call's code holds, by where it sits: outside any sanitizer, inside `text(…)` / `.for_log()` (a generic
+/// error name is fine there, but a forbidden field still isn't: `text()` only redacts, it can't make a transcript
+/// safe), or inside `device(…)` (which removes a person's name, so "name" is fine there, nothing else is).
+#[derive(Default)]
+struct Parts {
+    outside: String,
+    inside: String,
+    device: String,
+}
+
+fn split_sanitized(code: &str) -> Parts {
+    let mut parts = Parts::default();
     let mut rest = code;
-    while let Some(i) = rest.find("text(") {
+    loop {
+        let next = ["text(", "device("].iter().filter_map(|n| rest.find(n).map(|i| (i, *n))).min();
+        let Some((i, needle)) = next else { break };
         if i > 0 && rest[..i].ends_with(|c: char| c.is_alphanumeric() || c == '_') {
-            outside.push_str(&rest[..i + 5]);
-            rest = &rest[i + 5..];
+            parts.outside.push_str(&rest[..i + needle.len()]);
+            rest = &rest[i + needle.len()..];
             continue;
         }
-        outside.push_str(&rest[..i]);
+        parts.outside.push_str(&rest[..i]);
         let mut depth = 0;
         let mut end = rest.len();
         for (j, c) in rest[i..].char_indices() {
@@ -207,19 +216,22 @@ fn split_sanitized(code: &str) -> (String, String) {
                 _ => {}
             }
         }
-        inside.push(' ');
-        inside.push_str(&rest[i + 5..end.saturating_sub(1).max(i + 5)]);
-        outside.push_str(" sanitized ");
+        let body = &rest[i + needle.len()..end.saturating_sub(1).max(i + needle.len())];
+        let bucket = if needle == "device(" { &mut parts.device } else { &mut parts.inside };
+        bucket.push(' ');
+        bucket.push_str(body);
+        parts.outside.push_str(" sanitized ");
         rest = &rest[end..];
     }
-    outside.push_str(rest);
-    while let Some(i) = outside.find(".for_log()") {
-        let start = outside[..i].rfind(|c: char| !(c.is_alphanumeric() || c == '_' || c == '.')).map(|s| s + 1).unwrap_or(0);
-        inside.push(' ');
-        inside.push_str(&outside[start..i].to_string());
-        outside.replace_range(start..i + ".for_log()".len(), " sanitized ");
+    parts.outside.push_str(rest);
+    while let Some(i) = parts.outside.find(".for_log()") {
+        let start = parts.outside[..i].rfind(|c: char| !(c.is_alphanumeric() || c == '_' || c == '.')).map(|s| s + 1).unwrap_or(0);
+        let held = parts.outside[start..i].to_string();
+        parts.inside.push(' ');
+        parts.inside.push_str(&held);
+        parts.outside.replace_range(start..i + ".for_log()".len(), " sanitized ");
     }
-    (outside, inside)
+    parts
 }
 
 /// `{name}`, `{x.y:>6}` → `name`, `x`, `y`; the format spec after `:` is returned separately.
@@ -244,6 +256,34 @@ fn words(s: &str) -> impl Iterator<Item = &str> {
     s.split(|c: char| !(c.is_alphanumeric() || c == '_')).filter(|w| !w.is_empty())
 }
 
+/// An identifier's pieces, lower case: `meeting_title` → meeting, title; `micName` → mic, name.
+pub fn pieces(id: &str) -> Vec<String> {
+    let mut out = vec![];
+    for chunk in id.split('_').filter(|c| !c.is_empty()) {
+        let mut current = String::new();
+        let mut prev_lower = false;
+        for c in chunk.chars() {
+            if c.is_uppercase() && prev_lower && !current.is_empty() {
+                out.push(std::mem::take(&mut current));
+            }
+            prev_lower = c.is_lowercase() || c.is_ascii_digit();
+            current.extend(c.to_lowercase());
+        }
+        if !current.is_empty() {
+            out.push(current);
+        }
+    }
+    out
+}
+
+/// The forbidden name an identifier holds, whole (`yourName`, `action_items`) or as a piece (`f.meeting_title`).
+fn forbidden_in(id: &str, allowed: &[&str]) -> Option<String> {
+    if FORBIDDEN.contains(&id) && !allowed.contains(&id) {
+        return Some(id.to_string());
+    }
+    pieces(id).into_iter().find(|p| FORBIDDEN.contains(&p.as_str()) && !allowed.contains(&p.as_str()))
+}
+
 /// What is wrong with a call, if anything.
 pub fn problems(call: &Call) -> Vec<String> {
     let mut bad = vec![];
@@ -253,8 +293,8 @@ pub fn problems(call: &Call) -> Vec<String> {
     if call.bracket != '(' {
         bad.push(format!("`{}!{}` (use parentheses)", call.name, call.bracket));
     }
-    let (outside, inside) = split_sanitized(&call.code);
-    let mut ids: Vec<String> = words(&outside).map(str::to_string).collect();
+    let parts = split_sanitized(&call.code);
+    let mut ids: Vec<String> = words(&parts.outside).map(str::to_string).collect();
     for s in &call.strings {
         for (name, spec) in placeholders(s) {
             if spec.contains('?') {
@@ -264,22 +304,29 @@ pub fn problems(call: &Call) -> Vec<String> {
         }
     }
     for id in &ids {
-        if FORBIDDEN.contains(&id.as_str()) {
-            bad.push(format!("names `{id}`"));
+        if let Some(f) = forbidden_in(id, &[]) {
+            bad.push(format!("names `{f}` (in `{id}`)"));
         } else if GENERIC.contains(&id.as_str()) {
             bad.push(format!("`{id}` without logging::text(…) or .for_log()"));
         }
     }
-    for id in words(&inside) {
-        if FORBIDDEN.contains(&id) {
-            bad.push(format!("names `{id}` (a sanitizer only redacts; it can't make that safe)"));
+    for id in words(&parts.inside) {
+        if let Some(f) = forbidden_in(id, &[]) {
+            bad.push(format!("names `{f}` (in `{id}`; a sanitizer only redacts, it can't make that safe)"));
         }
     }
-    // Index keys and other literals after the format string: `s["yourName"]`.
+    for id in words(&parts.device) {
+        if let Some(f) = forbidden_in(id, &["name", "names"]) {
+            bad.push(format!("names `{f}` (in `{id}`; device() only removes a person's name)"));
+        }
+    }
+    // Index keys and other literals after the format string: `s["yourName"]`, `v["summaryInstructions"]`.
     for s in call.strings.iter().skip(1) {
         let key = s.trim_matches(|c: char| c == '"' || c == '#' || c.is_whitespace());
-        if FORBIDDEN.iter().any(|f| f.eq_ignore_ascii_case(key)) {
-            bad.push(format!("reads `{key}`"));
+        if key.chars().all(|c| c.is_alphanumeric() || c == '_') {
+            if let Some(f) = forbidden_in(key, &[]) {
+                bad.push(format!("reads `{key}` ({f})"));
+            }
         }
     }
     bad
@@ -426,6 +473,43 @@ fn a_sanitizer_doesnt_make_content_safe() {
         (r#"log::info!("{transcript}");"#, "transcript"),
     ] {
         assert!(problems_in(call).iter().any(|p| p.contains(&format!("`{name}`"))), "{call}");
+    }
+}
+
+#[test]
+fn identifiers_are_read_by_their_pieces() {
+    assert_eq!(pieces("meeting_title"), ["meeting", "title"]);
+    assert_eq!(pieces("micName"), ["mic", "name"]);
+    assert_eq!(pieces("summaryInstructions"), ["summary", "instructions"]);
+    assert_eq!(pieces("HTTPStatus"), ["httpstatus"]);
+    assert!(problems_in(r#"log::info!("{}", f.meeting_title);"#).iter().any(|p| p.contains("`title`")));
+    assert!(problems_in(r#"log::info!("{mic_name}");"#).iter().any(|p| p.contains("`name`")));
+    assert!(problems_in(r#"log::info!("{}", st.micName);"#).iter().any(|p| p.contains("`name`")));
+    assert!(problems_in(r#"log::info!("{}", s["summaryInstructions"].as_str().unwrap_or(""));"#).iter().any(|p| p.contains("reads `summaryInstructions`")));
+    // Counts and ids stay fine.
+    assert!(problems_in(r#"log::info!("{id} {count} {} {}", st.meeting_id.as_deref().unwrap_or("?"), out.echo_removed);"#).is_empty());
+}
+
+#[test]
+fn device_removes_a_name_and_nothing_else() {
+    assert!(problems_in(r#"log::info!("{}", crate::logging::device(&st.mic_name));"#).is_empty());
+    assert!(problems_in(r#"log::info!("{}", crate::logging::device(name));"#).is_empty());
+    assert!(problems_in(r#"log::info!("{}", crate::logging::device(&meeting.title));"#).iter().any(|p| p.contains("`title`")));
+    assert!(problems_in(r#"log::info!("{}", crate::logging::text(&st.mic_name));"#).iter().any(|p| p.contains("`name`")), "text() is no name sanitizer");
+}
+
+#[test]
+fn summary_features_can_never_be_logged() {
+    for (call, name) in [
+        (r#"log::info!("{}", crate::logging::text(&opts.instructions));"#, "instructions"),
+        (r#"log::info!("{}", template.sections.len());"#, "sections"),
+        (r#"log::info!("{highlights:>3}");"#, "highlights"),
+        (r#"log::info!("{}", event.emails.join(","));"#, "emails"),
+        (r#"log::info!("{}", invitees.len());"#, "invitees"),
+        (r#"log::info!("{}", follow_up_draft.len());"#, "draft"),
+        (r#"log::info!("{}", f.notes.len());"#, "notes"),
+    ] {
+        assert!(problems_in(call).iter().any(|p| p.contains(&format!("`{name}`"))), "{call}: {:?}", problems_in(call));
     }
 }
 

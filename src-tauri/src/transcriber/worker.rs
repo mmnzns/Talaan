@@ -312,7 +312,7 @@ fn process(deps: &Deps, id: &str, loaded: &mut Option<Loaded>, cancel: &AtomicBo
 
     match result {
         Ok(out) => {
-            let (count, speaker_count) = (out.lines.len(), out.speakers);
+            let (count, voices) = (out.lines.len(), out.speakers);
             log::info!(
                 "transcribed meeting {id} in {:.1}s: engine {}, {count} lines, {:.0}s of speech, {} echo lines removed, language {}, {} speakers",
                 started.elapsed().as_secs_f32(),
@@ -320,7 +320,7 @@ fn process(deps: &Deps, id: &str, loaded: &mut Option<Loaded>, cancel: &AtomicBo
                 out.speech_ms as f32 / 1000.0,
                 out.echo_removed,
                 out.language.as_deref().unwrap_or("?"),
-                speaker_count
+                voices
             );
             let s = lock(&deps.storage);
             if s.save_transcript(id, &out.lines).is_err() {
