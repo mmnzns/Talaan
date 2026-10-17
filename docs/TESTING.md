@@ -214,13 +214,13 @@ one-hour meeting): summary 10.5 min, Whisper Large Turbo 3.3x real time, Parakee
   (Vulkan can't start); remove the variable afterwards.
 
 **Installed build** (quit the installed 1.0.2 first; the installer replaces it, data is kept)
-- [ ] Settings › General › Check setup › Graphics chip: "NVIDIA GeForce RTX 5070 Ti (16 GB), for transcription and
+- [ ] Settings › Status › Graphics chip: "NVIDIA GeForce RTX 5070 Ti (16 GB), for transcription and
   summaries".
 - [ ] Re-transcribe the one-hour meeting with Whisper Large Turbo, then Generate summary: note both times against
   the baseline. Task Manager shows the RTX busy. Compare the transcript with the CPU one (same words, near
   enough).
 - [ ] Parakeet: unchanged (CPU), still about 159 s.
-- [ ] Settings › Speech models › Use the GPU off: Check setup says "Off, so Talaan uses the processor"; a summary
+- [ ] Settings › Status › Speed up with your graphics card off: Check setup says "Off, so Talaan uses the processor"; a summary
   and a Whisper transcript run on the processor (RTX idle). Turn it back on.
 - [ ] Forced crash: quit Talaan, start it from PowerShell with `$env:TALAAN_GPU='fail'; & "$env:LOCALAPPDATA\Talaan\talaan.exe"`.
   Generate a summary and transcribe with Whisper: both finish (on the processor), and `%APPDATA%\Talaan\gpu.json`

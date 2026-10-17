@@ -41,6 +41,14 @@ export function platformCopy(os: OS, lang: Lang = "en"): PlatformCopy {
   };
 }
 
+/** The Mac's system audio permission as System Settings lists it, shown in bold where `systemAudioDesc` says
+ *  {permission}: "Screen Recording" on macOS 14, "Screen & System Audio Recording" from macOS 15. An unknown
+ *  version gets the newer name. */
+export function systemAudioPermissionName(lang: Lang, macMajor?: number | null): string {
+  const old = typeof macMajor === "number" && macMajor < 15;
+  return messageOr(lang, old ? "platform.mac_systemAudioPermission14" : "platform.mac_systemAudioPermission", "");
+}
+
 /** The browser preview (no Tauri) can show the other platform's words: `?os=mac` or `?os=windows` in the URL. */
 function previewOverride(): OS | undefined {
   if (typeof window === "undefined" || "__TAURI_INTERNALS__" in window) return undefined;

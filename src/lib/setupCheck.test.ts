@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { defaultSettings } from "../data/defaultSettings";
 import type { AutoSaveStatus, Settings } from "../data/settings";
 import { setupLines } from "./diagnostics";
-import { checkSetup, type Probe } from "./setupCheck";
+import { checkSetup, lightChecks, needsFixing, probeLight, regraphics, type Probe } from "./setupCheck";
 
 const settings = (patch: Partial<Settings> = {}): Settings => ({ ...structuredClone(defaultSettings), ...patch });
 const probe = (patch: Partial<Probe> = {}): Probe => ({
@@ -13,6 +13,71 @@ const probe = (patch: Partial<Probe> = {}): Probe => ({
   ...patch,
 });
 const find = (p: Probe, id: string) => checkSetup(p).find((c) => c.id === id)!;
+
+describe("needsFixing (the dot on the Settings button)", () => {
+  it("is empty on a set-up computer, even before call audio is tested", () => {
+    expect(needsFixing(checkSetup(probe()))).toEqual([]);
+  });
+  it("never counts the summary check: transcript only is a choice, and a local server may be off", () => {
+    const noLocal = defaultSettings.localModels.map((m) => ({ ...m, state: "not_downloaded" as const }));
+    const results = checkSetup(probe({ settings: settings({ localModels: noLocal }) }));
+    expect(results.find((r) => r.id === "summary")?.status).toBe("fail");
+    expect(needsFixing(results)).toEqual([]);
+    const ollama = settings({ summaryEngine: "ollama" });
+    expect(needsFixing(checkSetup(probe({ settings: ollama, localServer: { ok: false, message: "Couldn't connect" } })))).toEqual([]);
+    expect(needsFixing(checkSetup(probe({ settings: settings({ summaryEngine: "byok", byokKeys: [] }) })))).toEqual([]);
+  });
+
+  it("counts what stops a call, not notices", () => {
+    expect(needsFixing(checkSetup(probe({ mic: "denied" }))).map((r) => r.id)).toEqual(["mic"]);
+    const noSpeech = defaultSettings.speechModels.map((m) => ({ ...m, state: "not_downloaded" as const }));
+    expect(needsFixing(checkSetup(probe({ settings: settings({ speechModels: noSpeech }) }))).map((r) => r.id)).toEqual(["speech"]);
+    const notices = probe({ soundRelay: "FxSound", mic: "undetermined", gpu: { state: "failed", detail: "lost" } });
+    expect(checkSetup(notices).filter((r) => r.status === "warn").length).toBeGreaterThan(0);
+    expect(needsFixing(checkSetup(notices))).toEqual([]);
+  });
+});
+
+describe("regraphics (after the graphics switch changes)", () => {
+  it("asks only the settings and the graphics card again and keeps every other row", async () => {
+    const before = probe({ systemAudio: true, gpu: { state: "in_use", device: "RTX", vramMb: 16384 } });
+    const store = { get: async () => settings({ useGpu: false }), gpuStatus: async () => ({ state: "off" as const }) };
+    const after = await regraphics(before, store);
+    const row = (p: Probe) => checkSetup(p).find((r) => r.id === "gpu");
+    expect(row(before)?.detail).toContain("RTX");
+    expect(row(after)?.detail).toBe("Off, so Talaan uses the processor.");
+    const others = (p: Probe) => checkSetup(p).filter((r) => r.id !== "gpu");
+    expect(others(after)).toEqual(others(before));
+  });
+});
+
+describe("the light look (the Settings dot)", () => {
+  it("asks only for settings, microphone access and the microphones", async () => {
+    const asked: string[] = [];
+    const store = {
+      get: async () => (asked.push("get"), settings()),
+      audioInputs: async () => (asked.push("audioInputs"), ["Built-in microphone"]),
+    };
+    const recorder = { microphonePermission: async () => (asked.push("mic"), "granted" as const) };
+    const p = await probeLight(store, recorder);
+    expect(asked.sort()).toEqual(["audioInputs", "get", "mic"]);
+    expect(p).toMatchObject({ mic: "granted", inputs: ["Built-in microphone"] });
+  });
+
+  it("judges microphone access, the microphone and the speech model, the same way Status does", async () => {
+    const light = { settings: settings(), mic: "denied" as const, inputs: [] };
+    expect(lightChecks(light).map((r) => r.id)).toEqual(["mic", "device", "speech"]);
+    expect(needsFixing(lightChecks(light)).map((r) => r.id)).toEqual(["mic", "device"]);
+    const full = checkSetup(probe(light));
+    for (const r of lightChecks(light)) expect(full.find((x) => x.id === r.id)).toEqual(r);
+  });
+
+  it("keeps going when the microphones can't be listed", async () => {
+    const p = await probeLight({ get: async () => settings(), audioInputs: () => Promise.reject(new Error("x")) }, { microphonePermission: async () => "granted" as const });
+    expect(p.inputs).toBeUndefined();
+    expect(needsFixing(lightChecks(p))).toEqual([]);
+  });
+});
 
 describe("checkSetup", () => {
   it("is all clear on a set-up computer, except call audio, which needs a test", () => {

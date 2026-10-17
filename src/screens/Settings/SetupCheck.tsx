@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { recorderClient } from "../../data";
 import { describeError } from "../../data/errors";
 import { useSettingsStore, useStore } from "../../data/StoreProvider";
@@ -6,7 +6,7 @@ import { retryPending } from "../../lib/autoSave";
 import type { MessageKey } from "../../lib/i18n";
 import { useLang, useT } from "../../lib/i18n/I18nProvider";
 import { navigate, routes } from "../../lib/router";
-import { checkSetup, probeSetup, type CheckResult, type CheckStatus, type FixAction } from "../../lib/setupCheck";
+import { checkSetup, probeSetup, regraphics, type CheckResult, type CheckStatus, type FixAction, type Probe } from "../../lib/setupCheck";
 import { Button, Label, cn, useToast } from "../../ui";
 import { Diagnostics } from "./Diagnostics";
 import { Group, SectionIntro } from "./parts";
@@ -19,7 +19,9 @@ const STATUS: Record<CheckStatus, { label: MessageKey; className: string }> = {
 };
 
 /** "Check setup": everything a call needs, in one place, each with the button that fixes it. */
-export function SetupCheck() {
+/** `children` sit between the checks and Diagnostics (the Status tab's own settings). When `gpuKey` changes (the
+ *  graphics switch), only the graphics row is asked again. */
+export function SetupCheck({ children, gpuKey }: { children?: ReactNode; gpuKey?: unknown }) {
   const t = useT();
   const lang = useLang();
   const store = useSettingsStore();
@@ -27,12 +29,14 @@ export function SetupCheck() {
   const toast = useToast();
   const [results, setResults] = useState<CheckResult[]>();
   const [busy, setBusy] = useState(false);
+  const last = useRef<Probe>(undefined);
 
   const run = useCallback(
     async (testSystemAudio = false, retryGpu = false) => {
       setBusy(true);
       try {
-        setResults(checkSetup(await probeSetup(store, recorderClient, testSystemAudio, retryGpu)));
+        last.current = await probeSetup(store, recorderClient, testSystemAudio, retryGpu);
+        setResults(checkSetup(last.current));
       } catch (e) {
         toast(describeError(e));
       } finally {
@@ -46,6 +50,25 @@ export function SetupCheck() {
   useEffect(() => {
     void run();
   }, [run, lang]);
+
+  // The graphics switch changed: the graphics row says what is used now.
+  const firstGpuKey = useRef(gpuKey);
+  useEffect(() => {
+    if (gpuKey === firstGpuKey.current || !last.current) return;
+    firstGpuKey.current = gpuKey;
+    let live = true;
+    void regraphics(last.current, store).then(
+      (p) => {
+        if (!live) return;
+        last.current = p;
+        setResults(checkSetup(p));
+      },
+      () => {},
+    );
+    return () => {
+      live = false;
+    };
+  }, [gpuKey, store]);
 
   const fix = async (action: FixAction) => {
     try {
@@ -91,7 +114,8 @@ export function SetupCheck() {
           </div>
         )) ?? <div className="py-4 text-[13px] text-subtle">{t("settings.setup_checking")}</div>}
       </Group>
-      {results && <Label>{problems === 0 ? t("settings.setup_none") : t("settings.setup_problems", { count: problems })}</Label>}
+      {results && <Label className="normal-case">{problems === 0 ? t("settings.setup_none") : t("settings.setup_problems", { count: problems })}</Label>}
+      {children}
       <Diagnostics results={results} />
     </div>
   );

@@ -163,6 +163,7 @@ pub fn run() {
             platform_name,
             commands::diagnostics::diagnostics_report,
             commands::diagnostics::logs_reveal,
+            commands::diagnostics::system_macos_major,
             meetings::meetings_list,
             meetings::meetings_get,
             meetings::meetings_rename,

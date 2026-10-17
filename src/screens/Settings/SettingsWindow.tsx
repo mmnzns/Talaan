@@ -1,7 +1,10 @@
+import { useEffect } from "react";
 import { useSettings } from "../../data/hooks";
+import { onEvent } from "../../data/tauri/invoke";
 import type { MessageKey } from "../../lib/i18n";
 import { useT } from "../../lib/i18n/I18nProvider";
 import { navigate, routes } from "../../lib/router";
+import { inTauri, SETTINGS_TAB_EVENT } from "../../lib/windows";
 import { Label, cn } from "../../ui";
 import { Logo } from "../../brand/Logo";
 import { SunCorner } from "../../brand/SunCorner";
@@ -10,9 +13,12 @@ import { ConnectionsTab } from "./ConnectionsTab";
 import { GeneralTab } from "./GeneralTab";
 import { ModelsTab } from "./ModelsTab";
 import { PrivacyTab } from "./PrivacyTab";
+import { StatusTab } from "./StatusTab";
 import { SummaryAITab } from "./SummaryAITab";
 
+// Status first: where a call that didn't record or summarize starts, and where the Settings button's dot points.
 export const SETTINGS_TABS = [
+  { id: "status", label: "settings.tab_status" },
   { id: "general", label: "settings.tab_general" },
   { id: "apps", label: "settings.tab_apps" },
   { id: "models", label: "settings.tab_models" },
@@ -25,6 +31,8 @@ export function SettingsWindow({ tab }: { tab: string }) {
   const { settings, update } = useSettings();
   const t = useT();
   const current = SETTINGS_TABS.find((x) => x.id === tab) ?? SETTINGS_TABS[0];
+  // Another window asks for a tab while this one is already open (openSettings in lib/windows).
+  useEffect(() => (inTauri() ? onEvent<string>(SETTINGS_TAB_EVENT, (id) => navigate(routes.settings(id))) : undefined), []);
   if (!settings) return null;
 
   const props = { settings, update };
@@ -73,6 +81,7 @@ export function SettingsWindow({ tab }: { tab: string }) {
       <div id="settings-panel" role="tabpanel" aria-labelledby={`tab-${current.id}`} className="relative min-h-0 min-w-0 flex-1 overflow-auto">
         <SunCorner size={200} className="absolute right-0 top-0" />
         <div className="relative mx-auto max-w-[720px] px-11 pb-11 pt-10">
+          {current.id === "status" && <StatusTab {...props} />}
           {current.id === "general" && <GeneralTab {...props} />}
           {current.id === "apps" && <CallAppsTab {...props} />}
           {current.id === "models" && <ModelsTab {...props} />}

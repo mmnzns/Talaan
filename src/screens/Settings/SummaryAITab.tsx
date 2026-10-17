@@ -13,11 +13,37 @@ import { TEMPLATES, isTemplate, templateName } from "../../lib/templates";
 /** The longest custom instructions Rust uses (summarizer/prompt.rs MAX_INSTRUCTIONS). */
 const MAX_INSTRUCTIONS = 1000;
 
-const ENGINES: { id: SummaryEngineKind; name: MessageKey; tag: MessageKey; note: MessageKey }[] = [
+type Engine = { id: SummaryEngineKind; name: MessageKey; tag: MessageKey; note: MessageKey; costs?: boolean };
+
+/** The two choices most people pick between, each saying what's private and what may cost money. */
+const MAIN_ENGINES: Engine[] = [
   { id: "local", name: "settings.engine_local", tag: "settings.engine_local_tag", note: "settings.engine_local_note" },
-  { id: "ollama", name: "settings.engine_ollama", tag: "settings.engine_ollama_tag", note: "settings.engine_ollama_note" },
-  { id: "byok", name: "settings.engine_byok", tag: "settings.engine_byok_tag", note: "settings.engine_byok_note" },
+  { id: "byok", name: "settings.engine_byok", tag: "settings.engine_byok_tag", note: "settings.engine_byok_note", costs: true },
 ];
+/** A local server (Ollama, LM Studio), under Advanced; shown while it's the one in use. */
+const ADVANCED_ENGINE: Engine = { id: "ollama", name: "settings.engine_ollama", tag: "settings.engine_ollama_tag", note: "settings.engine_ollama_note" };
+
+function EngineCard({ engine: e, on, onPick }: { engine: Engine; on: boolean; onPick: () => void }) {
+  const t = useT();
+  return (
+    <button
+      type="button"
+      role="radio"
+      aria-checked={on}
+      onClick={onPick}
+      className={cn(
+        "flex cursor-pointer flex-col gap-1.5 rounded-card border p-3 text-left font-[inherit] text-ink",
+        on ? "border-line bg-surface shadow-[inset_3px_0_0_var(--t-gold),var(--t-shadow)]" : "border-line bg-surface hover:border-edge",
+      )}
+    >
+      <span className="flex flex-wrap items-center gap-2">
+        <span className="font-bold">{t(e.name)}</span>
+        <Chip tone={e.costs ? "default" : "gold"}>{t(e.tag)}</Chip>
+      </span>
+      <span className="text-xs leading-[17px] text-subtle">{t(e.note)}</span>
+    </button>
+  );
+}
 
 const FORMAT: [string, MessageKey, MessageKey][] = [
   ["01", "settings.format_recap", "settings.format_recap_note"],
@@ -28,6 +54,8 @@ const FORMAT: [string, MessageKey, MessageKey][] = [
 
 export function SummaryAITab({ settings: s, update }: TabProps) {
   const t = useT();
+  const [showAdvanced, setAdvanced] = useState(false);
+  const advancedOpen = showAdvanced || s.summaryEngine === ADVANCED_ENGINE.id;
   return (
     <div className="flex flex-col gap-6">
       <div className="flex flex-col gap-3">
@@ -35,30 +63,19 @@ export function SummaryAITab({ settings: s, update }: TabProps) {
           title={t("settings.engine_title")}
           desc={t("settings.engine_desc")}
         />
-        <div className="grid grid-cols-1 gap-2.5 min-[620px]:grid-cols-3" role="radiogroup" aria-label={t("settings.engine_title")}>
-          {ENGINES.map((e) => {
-            const on = s.summaryEngine === e.id;
-            return (
-              <button
-                key={e.id}
-                type="button"
-                role="radio"
-                aria-checked={on}
-                onClick={() => update({ summaryEngine: e.id })}
-                className={cn(
-                  "flex cursor-pointer flex-col gap-1.5 rounded-card border p-3 text-left font-[inherit] text-ink",
-                  on ? "border-line bg-surface shadow-[inset_3px_0_0_var(--t-gold),var(--t-shadow)]" : "border-line bg-surface hover:border-edge",
-                )}
-              >
-                <span className="flex items-center gap-2">
-                  <span className="font-bold">{t(e.name)}</span>
-                  <Chip tone={e.id === "byok" ? "default" : "gold"}>{t(e.tag)}</Chip>
-                </span>
-                <span className="text-xs leading-[17px] text-subtle">{t(e.note)}</span>
-              </button>
-            );
-          })}
+        <div className="flex flex-col gap-2.5" role="radiogroup" aria-label={t("settings.engine_title")}>
+          <div className="grid grid-cols-1 gap-2.5 min-[600px]:grid-cols-2">
+            {MAIN_ENGINES.map((e) => (
+              <EngineCard key={e.id} engine={e} on={s.summaryEngine === e.id} onPick={() => update({ summaryEngine: e.id })} />
+            ))}
+          </div>
+          {advancedOpen && <EngineCard engine={ADVANCED_ENGINE} on={s.summaryEngine === ADVANCED_ENGINE.id} onPick={() => update({ summaryEngine: ADVANCED_ENGINE.id })} />}
         </div>
+        {s.summaryEngine !== ADVANCED_ENGINE.id && (
+          <Button variant="ghost" className="-ml-2 self-start underline underline-offset-2" aria-expanded={advancedOpen} onClick={() => setAdvanced(!advancedOpen)}>
+            {advancedOpen ? t("settings.engine_advanced_hide") : t("settings.engine_advanced")}
+          </Button>
+        )}
 
         {s.summaryEngine === "local" && <LocalPanel {...{ settings: s, update }} />}
         {s.summaryEngine === "ollama" && <OllamaPanel {...{ settings: s, update }} />}
@@ -151,7 +168,7 @@ function LocalPanel({ settings: s, update }: TabProps) {
   return (
     <Group>
       <Row title={t("settings.local_model_title")} desc={t("settings.local_model_desc")}>
-        <Select label={t("settings.local_model_title")} wrapperClassName="w-60" value={s.localModel} onChange={(e) => update({ localModel: e.target.value as "recommended" | "larger" })}>
+        <Select label={t("settings.local_model_title")} wrapperClassName="w-72" value={s.localModel} onChange={(e) => update({ localModel: e.target.value as "recommended" | "larger" })}>
           {s.localModels.map((m) => (
             <option key={m.id} value={m.choice}>
               {t("settings.local_option", { choice: m.choice === "recommended" ? t("settings.local_recommended") : t("settings.local_larger"), name: m.name, size: gb(m.sizeMb) })}

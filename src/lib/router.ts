@@ -27,7 +27,7 @@ export function parseRoute(hash: string): Route {
     case "screens":
       return { name: "screens", which: seg[1] };
     case "settings":
-      return { name: "settings", tab: seg[1] ?? "general" };
+      return { name: "settings", tab: seg[1] ?? "status" };
     case "tray":
       return { name: "tray" };
     case "print":
@@ -45,7 +45,7 @@ export const routes = {
   print: (id: string, withTranscript: boolean) => `#/print/${encodeURIComponent(id)}${withTranscript ? "?transcript=1" : ""}`,
   ask: (meetingId?: string) => `#/ask${meetingId ? `?m=${encodeURIComponent(meetingId)}` : ""}`,
   screens: (which?: string) => `#/screens${which ? `/${which}` : ""}`,
-  settings: (tab = "general") => `#/settings/${tab}`,
+  settings: (tab = "status") => `#/settings/${tab}`,
 };
 
 export function navigate(hash: string) {

@@ -60,8 +60,8 @@ Talaan walks you through seven short steps the first time it opens.
 2. **Audio access** ("Allow two kinds of audio"):
    - **Microphone** records what you say, labeled "Me". Click **Allow**.
    - **System audio** records the other people on the call. On Windows it needs no permission.
-3. **Speech model** ("Choose a speech model"). Pick one, then click **Download** when you're ready (nothing downloads until you do; you can also skip it and download later in Settings). See [Which speech model](#which-speech-model) below. On Windows, **Parakeet** is much faster.
-4. **Summaries** ("How summaries are written"). **On this computer** is the default: built in and offline, a one-time download that starts only when you click **Download**. **Your own key** (Claude, OpenAI, Gemini, Groq, Cerebras, Mistral, OpenRouter or any OpenAI-compatible service) sends transcript text only, and you set it up later in Settings.
+3. **Speech model** ("Choose a speech model"). Pick one, then click **Download** when you're ready (nothing downloads until you do; you can also skip it and download later in Settings). The three choices are **Best for most people** (Whisper Large Turbo), **Fastest** (Parakeet) and **For older computers** (Whisper Small). See [Which speech model](#which-speech-model) below. On a Windows PC without a graphics card, **Fastest** is much quicker.
+4. **Summaries** ("How summaries are written"). **On this computer** (private and free) is the default: built in and offline, a one-time download that starts only when you click **Download**. **Online AI with your own account** (Claude, OpenAI, Gemini, Groq, Cerebras, Mistral, OpenRouter or any OpenAI-compatible service) may cost money, sends transcript text only (never audio), and you set it up later in **Settings › Summary AI**.
 5. **Call apps** ("When should Talaan record?"). By default Talaan asks every time a call app uses your mic. Turn on **Always record** for apps you always want recorded.
 6. **Extras** ("Optional extras"). Calendar, browser call detection and Notion. All are off by default and can be turned on later in Settings. On Windows the calendar is set up in Settings (see [Calendar on Windows](#calendar-on-windows)).
 7. **Done.** Click **Open Talaan**.
@@ -132,8 +132,8 @@ Talaan walks you through seven short steps. macOS asks for permission along the 
 2. **Audio access** ("Allow two kinds of audio"):
    - **Microphone** records what you say, labeled "Me". Click **Allow**, then **Allow** in the macOS prompt.
    - **System audio** records the other people on the call. macOS may call this "Screen & System Audio Recording". Talaan only uses the audio. Click **Allow**. If you say no, Talaan records your side only until you turn it on in **System Settings › Privacy & Security**.
-3. **Speech model** ("Choose a speech model"). **Whisper** is recommended on the Mac. See [Which speech model](#which-speech-model).
-4. **Summaries** ("How summaries are written"). **On this computer** is the default: built in and offline, a one-time download. **Your own key** sends transcript text only, set up later in Settings.
+3. **Speech model** ("Choose a speech model"). **Best for most people** (Whisper Large Turbo) is recommended. See [Which speech model](#which-speech-model).
+4. **Summaries** ("How summaries are written"). **On this computer** (private and free) is the default: built in and offline, a one-time download. **Online AI with your own account** may cost money and sends transcript text only, set up later in **Settings › Summary AI**.
 5. **Call apps** ("When should Talaan record?"). Talaan asks by default. Turn on **Always record** for apps you always want recorded.
 6. **Extras** ("Optional extras"), all off by default:
    - **Calendar**: macOS asks for access to your calendars. Talaan reads the event during a recording to name the meeting and suggest who spoke. It never changes your calendar.
@@ -159,7 +159,7 @@ Same as on Windows: an **update ready** chip in the toolbar, or **Settings › G
 
 Talaan notices when a call app starts using your microphone: Zoom, Microsoft Teams, Slack, Webex, Discord, WhatsApp, FaceTime (Mac) and browser calls. It then shows **Record this call?** with **Record**, **Not now** and **Always for (app)**.
 
-- Set each app to **Ask**, **Always** or **Never** in **Settings › Call apps**. Zoom starts on **Always** and FaceTime (Mac) on **Never**; the others, browser calls included, start on **Ask**. FaceTime and the Mac-only dictation apps aren't listed on Windows.
+- Set each app to **Ask**, **Always** or **Never** in **Settings › Call apps**. FaceTime (Mac) starts on **Never**; every other app, Zoom and browser calls included, starts on **Ask**. (Talaan 1.0 set Zoom to **Always**; an existing install keeps whatever it has.) FaceTime and the Mac-only dictation apps aren't listed on Windows.
 - **Always** still shows a banner, with **Copy notice** (a message to paste in the call chat) and **Stop**.
 - When the call app lets go of the mic, Talaan says **Call ended. Stop recording?** and stops by itself 30 seconds later unless you click **Keep recording**.
 - Dictation and voice apps (Parlato, Wispr Flow, Windows voice typing, NVIDIA Broadcast, Krisp and others) never trigger it. The list is in **Settings › Call apps › Ignored apps**.
@@ -192,7 +192,7 @@ Meetings are plain files (transcript, summary, audio) in Talaan's data folder:
 - **Windows**: `%APPDATA%\Talaan` (for example `C:\Users\you\AppData\Roaming\Talaan`)
 - **Mac**: `~/Library/Application Support/Talaan`
 
-**Settings › Privacy › Meetings folder** shows the path and size, with **Open folder** and **Export all** (every meeting as Markdown, to a folder you choose). Audio is kept 7 days by default (change it in **Settings › Privacy › Keep audio for**); pin a meeting to keep its audio.
+**Settings › Privacy › Meetings folder** shows the path and size, with **Open folder** and **Export all** (every meeting as Markdown, to a folder you choose). Audio is kept 7 days by default (change it in **Settings › Privacy › Keep audio for**); to keep one meeting's audio, choose **Keep audio forever** in its **⋯** menu (**Show files on this computer** in the same menu opens its folder).
 
 ### Models download once
 
@@ -202,11 +202,11 @@ Speech, summary, speaker and search models download only when you click Download
 
 | Model | Best for | Download |
 |---|---|---|
-| **Whisper Large Turbo** | Most accurate, 99 languages including Filipino. Recommended on the Mac. | 575 MB |
-| **Parakeet** | Fastest, 25 European languages. Best choice on most Windows PCs. | 671 MB |
-| **Whisper Small** | Lighter, for older computers. Lower accuracy. | 488 MB |
+| **Best for most people**: Whisper Large Turbo | Most accurate, 99 languages including Filipino. Recommended. | 575 MB |
+| **Fastest**: Parakeet | 25 European languages. Many times faster on a Windows PC without a graphics card. | 671 MB |
+| **For older computers**: Whisper Small | Lighter. Lower accuracy. | 488 MB |
 
-Setup shows these three. **Show all models** (or Settings › Speech models) lists the rest:
+Setup and Settings show these three with plain names and the model name underneath. **Show all models** in setup, or **More models** in Settings › Speech models, lists the rest:
 
 | Model | Best for | Download |
 |---|---|---|
@@ -218,7 +218,7 @@ Setup shows these three. **Show all models** (or Settings › Speech models) lis
 | **Parakeet Unified** | English only, NVIDIA's newer English model. | 664 MB |
 | **Nemotron 3.5** | NVIDIA's newest, 35 languages. | 2.6 GB |
 
-On Windows, speech recognition runs on the processor, and Parakeet is many times faster than Whisper there.
+On Windows, Whisper runs on the graphics card when the PC has one (an NVIDIA or AMD card with an up-to-date driver), and on the processor otherwise. On the processor, Parakeet is many times faster than Whisper. **Settings › Status** shows which one Talaan uses, and **Speed up with your graphics card** (also in Status) turns it off.
 
 ### What's different on Windows
 
@@ -228,14 +228,14 @@ On Windows, speech recognition runs on the processor, and Parakeet is many times
 | System audio permission | Asked once | Not needed |
 | Calendar | Reads the Calendar app | Paste your calendar's iCal address |
 | Browser call detection | All tabs, after allowing each browser | Tab in front by address, other tabs by name; Chrome and Edge |
-| Speech recognition | Uses the graphics chip | Uses the processor (Parakeet recommended) |
+| Speech recognition and local summaries | Use the graphics chip | Use the graphics card when there is one, else the processor |
 | Settings shortcut | Cmd+, | Ctrl+, |
 
 ---
 
 ## Troubleshooting
 
-Start with **Settings › General › Check setup**. It checks everything a call needs (microphone access, the microphone, call audio, the speech model, the summary engine, the meetings folder and, on Windows with the calendar on, its iCal address) and says what to fix. Click **Test call audio** to make sure Talaan can hear the other people.
+Start with **Settings › Status**, the first tab in Settings (a dot on the toolbar's Settings button means something there needs fixing). Its **Check setup** checks everything a call needs (microphone access, the microphone, call audio, the speech model, the summary engine, the meetings folder and, on Windows with the calendar on, its iCal address) and says what to fix. Click **Test call audio** to make sure Talaan can hear the other people.
 
 ### Windows: "Talaan can't use the microphone"
 
@@ -245,19 +245,19 @@ Windows has three microphone switches, and all must be on. Open **Windows Settin
 - **Let apps access your microphone**
 - **Let desktop apps access your microphone**
 
-Then click **Check again** in Check setup.
+Then click **Check again** in **Settings › Status**.
 
 ### Windows: Talaan's own sounds, or the call, are recorded twice
 
-Sound "enhancers" and mixers such as **FxSound**, **Voicemeeter**, **SteelSeries Sonar** and **NVIDIA Broadcast** replay all your computer's sound through their own program. Talaan can then pick up its own sounds as "Them", or capture the call twice. When your sound goes through one of them, the recording window and **Check setup** say so. If transcripts show doubled lines or odd echoes, turn the enhancer off during calls.
+Sound "enhancers" and mixers such as **FxSound**, **Voicemeeter**, **SteelSeries Sonar** and **NVIDIA Broadcast** replay all your computer's sound through their own program. Talaan can then pick up its own sounds as "Them", or capture the call twice. When your sound goes through one of them, the recording window and **Settings › Status** say so. If transcripts show doubled lines or odd echoes, turn the enhancer off during calls.
 
 ### Windows: the other people are missing
 
-Talaan hears every app's sound except its own, whichever speakers or headset the app plays to, so you don't need to change the call app's speaker. If "Them" stays empty for a minute while the call app is playing sound, Talaan says so. Keep recording, and after the call run **Test call audio** in **Check setup**.
+Talaan hears every app's sound except its own, whichever speakers or headset the app plays to, so you don't need to change the call app's speaker. If "Them" stays empty for a minute while the call app is playing sound, Talaan says so. Keep recording, and after the call run **Test call audio** in **Settings › Status**.
 
 ### Mac: the other people are missing
 
-System audio permission is off. Open **System Settings › Privacy & Security › Screen & System Audio Recording**, find Talaan under the system audio section and turn it on. Then restart Talaan.
+System audio permission is off. Open **System Settings › Privacy & Security › Screen & System Audio Recording** (on macOS 14: **Screen Recording**), find Talaan under the system audio section and turn it on. Then restart Talaan.
 
 ### No "Record this call?" when a call starts
 
@@ -269,13 +269,13 @@ System audio permission is off. Open **System Settings › Privacy & Security �
 
 ### Transcription is slow
 
-Open **Settings › Speech models** and choose **Parakeet**. It is the fastest model, especially on Windows. If you need a language Parakeet doesn't know (Filipino, for example), stay on Whisper and expect it to take longer. A long call keeps working in the background; you can keep using your computer.
+On Windows, check **Settings › Status**: if the graphics card row says Talaan uses the processor, open **Settings › Speech models** and choose **Fastest** (Parakeet), which is many times faster there. On a Mac, Whisper already uses the graphics chip. If you need a language Parakeet doesn't know (Filipino, for example), stay on Whisper and expect it to take longer. A long call keeps working in the background; you can keep using your computer.
 
 ### Reporting a problem
 
 If something goes wrong, send the diagnostics:
 
-1. Open **Settings › General › Check setup** and scroll to **Something not working?**
+1. Open **Settings › Status** and scroll to **Something not working?**
 2. Click **Copy diagnostics**. Talaan shows the report first, so you can read it, then **Copy** puts it on the clipboard. It has the app version, your system, the Check setup results, your settings with names, addresses and keys removed, and the last 200 lines of Talaan's log (meeting ids are replaced by short codes, and other apps and private servers aren't named).
 3. Click **Report a problem** (it opens a new issue at https://github.com/mmnzns/Talaan/issues), paste the report, and say what you were doing.
 

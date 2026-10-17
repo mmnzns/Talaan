@@ -116,6 +116,12 @@ impl Gpu {
         SHARED.get_or_init(|| Gpu::detect(data_dir)).clone()
     }
 
+    /// This PC, with the helpers in another folder (live tests: the test exe isn't next to them).
+    #[cfg(test)]
+    pub fn detect_with_helpers(data_dir: &Path, helper_dir: &Path) -> Gpu {
+        Gpu { helper_dir: helper_dir.to_path_buf(), ..(*Gpu::detect(data_dir)).clone() }
+    }
+
     #[cfg(test)]
     pub fn fake(data_dir: &Path, helper_dir: &Path, loader: bool, app_version: &str, driver: &str) -> Gpu {
         Gpu { data_dir: data_dir.into(), app_version: app_version.into(), driver: driver.into(), helper_dir: helper_dir.into(), loader }

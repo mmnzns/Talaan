@@ -15,6 +15,7 @@ import { Clamp } from "./Clamp";
 import { FollowUpSheet } from "./FollowUpSheet";
 import { NotesSection } from "./NotesSection";
 import { useConfirmRewrite } from "./ConfirmRewrite";
+import { StatusButton } from "./StatusBanner";
 
 interface Props {
   meeting: Meeting;
@@ -188,7 +189,7 @@ export function SummaryCard({ meeting, activeAt, editing, onJump }: Props) {
         {summary && notes}
         {summary ? (
           <div className="-mt-3">
-            <Label>{t("meeting.writtenBy", { engine: summary.engine })}</Label>
+            <Label className="normal-case">{t("meeting.writtenBy", { engine: summary.engine })}</Label>
           </div>
         ) : busy ? (
           <Progress label={status === "summarizing" ? t("meeting.writingSummary") : t("meeting.transcribingAudio")} value={meeting.progress} eta={meeting.eta} />
@@ -203,6 +204,7 @@ export function SummaryCard({ meeting, activeAt, editing, onJump }: Props) {
                 </Button>
               )}
               {meeting.summaryError?.code === "no_engine" && <Button onClick={() => void openSettings("ai")}>{t("meeting.openSummaryAi")}</Button>}
+              {meeting.summaryError && !["waiting", "too_short"].includes(meeting.summaryError.code) && <StatusButton />}
             </span>
           </div>
         ) : (

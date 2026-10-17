@@ -9,11 +9,11 @@ interface Props extends SelectHTMLAttributes<HTMLSelectElement> {
 
 export function Select({ label, className, wrapperClassName, children, ...rest }: Props) {
   return (
-    <label className={cn("relative inline-flex", wrapperClassName)}>
+    <label className={cn("relative inline-flex max-w-full", wrapperClassName)}>
       <span className="sr-only">{label}</span>
       <select
         className={cn(
-          "h-8 w-full cursor-pointer appearance-none rounded-control border border-input bg-paper pl-2.5 pr-8 font-[inherit] text-[13px] text-ink outline-none focus:border-edge",
+          "h-8 w-full min-w-0 cursor-pointer appearance-none truncate rounded-control border border-input bg-paper pl-2.5 pr-8 font-[inherit] text-[13px] text-ink outline-none focus:border-edge",
           className,
         )}
         {...rest}
