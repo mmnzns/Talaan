@@ -82,6 +82,20 @@ pub fn passages(m: &Meeting) -> Vec<Passage> {
         for q in &s.open_questions {
             out.push(item(q.at, format!("Open question: {}", q.text.trim())));
         }
+        for sec in &s.sections {
+            for i in &sec.items {
+                out.push(item(i.at, format!("{}: {}", sec.title.trim(), i.text.trim())));
+            }
+        }
+        for h in &s.highlights {
+            out.push(item(h.at, format!("Highlight: {}", h.text.trim())));
+        }
+    }
+    // The user's own notes, found even before there is a summary.
+    for k in &m.marks {
+        if let Some(n) = k.note_text() {
+            out.push(Passage { meeting_id: id.clone(), at: (!k.later).then_some(k.at), text: format!("Your note: {n}"), lines: vec![] });
+        }
     }
     out
 }
@@ -96,6 +110,7 @@ pub(crate) mod tests {
         m.item.id = id.into();
         m.speakers.clear();
         m.summary = None;
+        m.marks.clear();
         m.transcript = lines
             .iter()
             .enumerate()
@@ -125,6 +140,30 @@ pub(crate) mod tests {
         // Every line is in some passage.
         let covered: std::collections::BTreeSet<u64> = p.iter().flat_map(|x| x.lines.iter().map(|l| l.0)).collect();
         assert_eq!(covered.len(), 40);
+    }
+
+    #[test]
+    fn notes_sections_and_highlights_are_found_too() {
+        use crate::storage::model::{Mark, SummarySection};
+        let mut m = meeting("a", &[(0, "me", "Hi.")]);
+        m.marks = vec![Mark { id: "k0".into(), at: 5_000, note: Some("budget is 50k".into()), later: false }, Mark { id: "n0".into(), at: 0, note: Some("call legal".into()), later: true }, Mark { id: "k1".into(), at: 9_000, note: None, later: false }];
+        m.summary = Some(Summary {
+            recap: "R.".into(),
+            decisions: vec![],
+            action_items: vec![],
+            open_questions: vec![],
+            sections: vec![SummarySection { id: "s0".into(), title: "Blockers".into(), items: vec![SummaryItem { id: "s0i0".into(), text: "Sam: legal".into(), at: Some(6_000) }] }],
+            highlights: vec![SummaryItem { id: "h0".into(), text: "Budget agreed.".into(), at: Some(9_000) }],
+            template: Some("standup".into()),
+            engine: "x".into(),
+            edited: false,
+        });
+        let texts: Vec<_> = passages(&m).into_iter().map(|p| (p.at, p.text)).collect();
+        assert!(texts.contains(&(Some(6_000), "Blockers: Sam: legal".into())));
+        assert!(texts.contains(&(Some(9_000), "Highlight: Budget agreed.".into())));
+        assert!(texts.contains(&(Some(5_000), "Your note: budget is 50k".into())));
+        assert!(texts.contains(&(None, "Your note: call legal".into())));
+        assert_eq!(texts.iter().filter(|(_, t)| t.starts_with("Your note")).count(), 2);
     }
 
     #[test]
