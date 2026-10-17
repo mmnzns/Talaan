@@ -4,7 +4,8 @@
 use super::prompt::{around, moments, speaker_name};
 use super::templates::Template;
 use crate::storage::model::{ActionItem, Meeting, Summary, SummaryItem, SummarySection, TranscriptLine};
-use serde::{Deserialize, Serialize};
+use serde::de::DeserializeOwned;
+use serde::{Deserialize, Deserializer, Serialize};
 
 /// The reply as the schema describes it.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
@@ -19,11 +20,12 @@ pub struct Draft {
     pub action_items: Vec<Action>,
     #[serde(default)]
     pub open_questions: Vec<Timed>,
-    /// The meeting type's own parts (only asked for when it has some).
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    /// The meeting type's own parts (only asked for when it has some). Read leniently: a malformed entry is dropped
+    /// rather than costing the whole summary.
+    #[serde(default, skip_serializing_if = "Vec::is_empty", deserialize_with = "lenient")]
     pub sections: Vec<DraftSection>,
-    /// One per marked moment (only asked for when there are some).
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    /// One per marked moment (only asked for when there are some). Lenient like `sections`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty", deserialize_with = "lenient")]
     pub highlights: Vec<Timed>,
 }
 
@@ -53,6 +55,15 @@ pub struct Action {
     pub due: String,
     #[serde(default)]
     pub time: String,
+}
+
+/// A list where each entry that doesn't fit is skipped, and anything that isn't a list reads as empty.
+fn lenient<'de, D: Deserializer<'de>, T: DeserializeOwned>(d: D) -> Result<Vec<T>, D::Error> {
+    let v = serde_json::Value::deserialize(d)?;
+    Ok(match v {
+        serde_json::Value::Array(items) => items.into_iter().filter_map(|x| serde_json::from_value(x).ok()).collect(),
+        _ => vec![],
+    })
 }
 
 /// The JSON object in a reply: code fences and text around it are ignored.
@@ -262,6 +273,16 @@ mod tests {
         let reply = "<THINK>{a}</THINK>{\"recap\":\"One.\"}<think>{b}</think>";
         assert_eq!(parse_draft(reply).unwrap().recap, "One.");
         assert_eq!(strip_reasoning("no tags {\"recap\":\"x\"}"), "no tags {\"recap\":\"x\"}");
+    }
+
+    #[test]
+    fn a_malformed_optional_part_never_costs_the_recap() {
+        let d = parse_draft(r#"{"recap":"We met.","sections":"none","highlights":[{"time":"01:00","text":"Kept."},{"time":5},"junk"]}"#).unwrap();
+        assert_eq!(d.recap, "We met.");
+        assert!(d.sections.is_empty());
+        assert_eq!(d.highlights, vec![Timed { text: "Kept.".into(), time: "01:00".into() }]);
+        let d = parse_draft(r#"{"recap":"R.","sections":[{"title":"Today","items":"x"},{"title":"Blockers","items":[]}]}"#).unwrap();
+        assert_eq!(d.sections.len(), 1, "the entry whose items aren't a list is dropped");
     }
 
     #[test]
