@@ -1,5 +1,5 @@
 import { AlertTriangle, Check, ChevronDown, Pause, Play, Square, Star } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { useMeeting, useSettings } from "../../data/hooks";
 import { useStore } from "../../data/StoreProvider";
 import type { RecorderLevels, RecorderNotice, RecorderState } from "../../data/recorder";
@@ -81,7 +81,10 @@ function TranscriptOnly({ on, onChange }: { on: boolean; onChange: (on: boolean)
 /** Room left above and below the popover: the menu bar or taskbar gap, and the window's shadow. */
 const SCREEN_MARGIN = 24;
 
-/** In the app the popover is its own window sized to fit, so its limit is the screen; in a page, the viewport. */
+/**
+ * In the app the popover is its own window sized to fit, so its limit is the screen (on Windows the tray window
+ * passes the exact room above the taskbar as `maxHeight`); in a page, the viewport.
+ */
 function defaultMaxHeight(): string {
   const avail = typeof window !== "undefined" && inTauri() ? window.screen?.availHeight : undefined;
   return avail ? `${Math.max(320, avail - SCREEN_MARGIN)}px` : "calc(100vh - 76px)";
@@ -103,6 +106,16 @@ export function RecordingPopover({ state, levels, notice, app, maxHeight, onPaus
   const [note, setNote] = useState("");
   const [confirmDiscard, setConfirmDiscard] = useState(false);
   const [transcriptOnly, setTranscriptOnly] = useTranscriptOnly(state.meetingId);
+  const moreId = useId();
+  // Copy notice folds the box away and Show notice opens it: keep the keyboard on the button that's there now.
+  const showNoticeButton = useRef<HTMLButtonElement>(null);
+  const copyButton = useRef<HTMLButtonElement>(null);
+  const moveFocus = useRef(false);
+  useEffect(() => {
+    if (!moveFocus.current) return;
+    moveFocus.current = false;
+    (showNotice ? copyButton : showNoticeButton).current?.focus();
+  }, [showNotice]);
   const paused = state.state === "paused";
   const me = useBars(levels.me, !paused, levels);
   const them = useBars(levels.them, !paused, levels);
@@ -147,7 +160,15 @@ export function RecordingPopover({ state, levels, notice, app, maxHeight, onPaus
           <div className="flex items-center gap-2 rounded-[10px] bg-gold-soft px-3 py-2 text-gold-ink">
             <Check size={14} aria-hidden="true" className="flex-none" />
             <span className="min-w-0 flex-1 text-xs font-semibold leading-[17px]">{t("recording.noticeCopied")}</span>
-            <Button variant="ghost" className="h-7 px-2 text-xs text-gold-ink hover:bg-surface" onClick={() => setShowNotice(true)}>
+            <Button
+              ref={showNoticeButton}
+              variant="ghost"
+              className="h-7 px-2 text-xs text-gold-ink hover:bg-surface"
+              onClick={() => {
+                moveFocus.current = true;
+                setShowNotice(true);
+              }}
+            >
               {t("recording.showNotice")}
             </Button>
           </div>
@@ -156,10 +177,12 @@ export function RecordingPopover({ state, levels, notice, app, maxHeight, onPaus
             <span className="font-bold">{t("recording.letKnow")}</span>
             <div className="rounded-[10px] bg-rail px-3 py-2 text-[13px] leading-[18px]">{text}</div>
             <Button
+              ref={copyButton}
               className={cn("h-[34px]", copied && "bg-gold-soft text-gold-ink")}
               onClick={async () => {
                 await copyText(text);
                 setCopied(true);
+                moveFocus.current = true;
                 setShowNotice(false);
               }}
             >
@@ -250,17 +273,23 @@ export function RecordingPopover({ state, levels, notice, app, maxHeight, onPaus
         </div>
 
         <div className="flex flex-col gap-3">
-          <button
-            type="button"
-            aria-expanded={more}
-            onClick={() => setMore((m) => !m)}
-            className="-mx-1 flex cursor-pointer items-center gap-1.5 self-start rounded-md border-0 bg-transparent px-1 py-0.5 font-[inherit] text-xs font-semibold text-subtle outline-offset-2 hover:text-ink focus-visible:outline-2 focus-visible:outline-ink"
-          >
-            <ChevronDown size={13} aria-hidden="true" className={cn("transition-transform", more && "rotate-180")} />
-            {more ? t("recording.less") : t("recording.more")}
+          <span className="flex items-center gap-2">
+            <button
+              type="button"
+              aria-expanded={more}
+              aria-controls={moreId}
+              onClick={() => setMore((m) => !m)}
+              className="-mx-1 flex cursor-pointer items-center gap-1.5 rounded-md border-0 bg-transparent px-1 py-0.5 font-[inherit] text-xs font-semibold text-subtle outline-offset-2 hover:text-ink focus-visible:outline-2 focus-visible:outline-ink"
+            >
+              <ChevronDown size={13} aria-hidden="true" className={cn("transition-transform", more && "rotate-180")} />
+              {more ? t("recording.less") : t("recording.more")}
+            </button>
+            {/* Says Transcript only is on while it's folded away. */}
             {!more && transcriptOnly && <Chip tone="gold">{t("recording.transcriptOnly")}</Chip>}
-          </button>
-          {more && <TranscriptOnly on={transcriptOnly} onChange={setTranscriptOnly} />}
+          </span>
+          <div id={moreId} hidden={!more}>
+            <TranscriptOnly on={transcriptOnly} onChange={setTranscriptOnly} />
+          </div>
         </div>
       </div>
 
