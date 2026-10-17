@@ -368,6 +368,12 @@ export const settings = area({
     // Windows: the default output is a sound enhancer or mixer (FxSound, Voicemeeter…).
     setup_relay: "Sound enhancer",
     setup_relay_found: "Your sound goes through {name}, so Talaan may hear its own sounds. If the transcript repeats lines, record with {name} off.",
+    // meeting types and custom instructions
+    default_type: "Default meeting type",
+    default_type_desc: "How new recordings are summarized. You can change it while recording, or later with Summarize as…",
+    instructions_title: "Custom instructions",
+    instructions_desc: "Applied to every summary. The AI follows them but never makes up facts.",
+    instructions_placeholder: "For example: Always mention budget numbers.",
   },
   fr: {
     nav_label: "Paramètres",
@@ -723,6 +729,12 @@ export const settings = area({
     setup_calendar_missing: "Le calendrier est activé, mais son adresse est introuvable. Connectez-le de nouveau dans Connexions.",
     setup_relay: "Amélioration du son",
     setup_relay_found: "Votre son passe par {name}, alors Talaan pourrait entendre ses propres sons. Si la transcription répète des lignes, enregistrez avec {name} désactivé.",
+    // meeting types and custom instructions
+    default_type: "Type de réunion par défaut",
+    default_type_desc: "La façon dont les nouveaux enregistrements sont résumés. Vous pouvez le changer pendant l’enregistrement, ou plus tard avec Résumer comme…",
+    instructions_title: "Instructions personnalisées",
+    instructions_desc: "Appliquées à chaque résumé. L’IA les suit, sans jamais inventer de faits.",
+    instructions_placeholder: "Par exemple : mentionnez toujours les montants du budget.",
   },
   es: {
     nav_label: "Ajustes",
@@ -1078,5 +1090,11 @@ export const settings = area({
     setup_calendar_missing: "El calendario está activado, pero falta su dirección. Vuelve a conectarlo en Conexiones.",
     setup_relay: "Mejora de sonido",
     setup_relay_found: "Tu sonido pasa por {name}, así que Talaan podría oír sus propios sonidos. Si la transcripción repite líneas, graba con {name} desactivado.",
+    // meeting types and custom instructions
+    default_type: "Tipo de reunión predeterminado",
+    default_type_desc: "Cómo se resumen las grabaciones nuevas. Puedes cambiarlo mientras grabas o después con Resumir como…",
+    instructions_title: "Instrucciones personalizadas",
+    instructions_desc: "Se aplican a cada resumen. La IA las sigue, pero nunca inventa datos.",
+    instructions_placeholder: "Por ejemplo: menciona siempre las cifras del presupuesto.",
   },
 });

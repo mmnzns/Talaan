@@ -8,6 +8,13 @@ const when = (at?: Ms) => (at === undefined ? "" : ` (${formatTime(at)})`);
 const owner = (o?: string) => (o ? ` — ${o}` : "");
 const due = (d?: string) => (d ? `, ${t("meeting.shDue", { date: d })}` : "");
 
+/** The user's notes (marks with text), in the order they were written. */
+export function meetingNotes(m: Meeting) {
+  return m.marks.filter((k) => k.note?.trim());
+}
+
+const noteWhen = (k: { at: Ms; later?: boolean }) => (k.later ? ` (${t("meeting.shAfterCall")})` : when(k.at));
+
 function heading(m: Meeting) {
   return `${m.title} · ${formatDate(m.startedAt)} · ${formatDuration(m.durationMs)}`;
 }
@@ -17,10 +24,14 @@ export function toShareText(m: Meeting): string {
   const s = m.summary;
   if (!s) return `${heading(m)}\n(no summary yet)`;
   const out = [heading(m), "", s.recap];
+  const notes = meetingNotes(m);
+  if (notes.length) out.push("", t("meeting.shYourNotes"), ...notes.map((k) => `• ${k.note!.trim()}${noteWhen(k)}`));
   if (s.decisions.length) out.push("", t("meeting.shDecisions"), ...s.decisions.map((d) => `• ${d.text}${when(d.at)}`));
   if (s.actionItems.length)
     out.push("", t("meeting.shActionItems"), ...s.actionItems.map((a) => `• ${a.done ? "✅" : "☐"} ${a.text}${owner(a.owner && ownerName(m, a.owner))}${due(a.due)}`));
   if (s.openQuestions.length) out.push("", t("meeting.shOpenQuestions"), ...s.openQuestions.map((q) => `• ${q.text}`));
+  for (const sec of s.sections ?? []) out.push("", sec.title, ...sec.items.map((i) => `• ${i.text}${when(i.at)}`));
+  if (s.highlights?.length) out.push("", t("meeting.shHighlights"), ...s.highlights.map((h) => `• ${h.text}${when(h.at)}`));
   return out.join("\n");
 }
 
@@ -45,10 +56,16 @@ export function toMarkdown(m: Meeting, includeTranscript: boolean): string {
     out.push(`_${t("meeting.shNoSummary")}_`);
   } else {
     out.push(s.recap);
+  }
+  const notes = meetingNotes(m);
+  if (notes.length) out.push("", `### ${t("meeting.shYourNotes")}`, "", ...notes.map((k) => `- ${k.note!.trim()}${noteWhen(k)}`));
+  if (s) {
     if (s.decisions.length) out.push("", `### ${t("meeting.shDecisions")}`, "", ...s.decisions.map((d) => `- ${d.text}${when(d.at)}`));
     if (s.actionItems.length)
       out.push("", `### ${t("meeting.shActionItems")}`, "", ...s.actionItems.map((a) => `- [${a.done ? "x" : " "}] ${a.text}${owner(a.owner && ownerName(m, a.owner))}${due(a.due)}${when(a.at)}`));
     if (s.openQuestions.length) out.push("", `### ${t("meeting.shOpenQuestions")}`, "", ...s.openQuestions.map((q) => `- ${q.text}`));
+    for (const sec of s.sections ?? []) out.push("", `### ${sec.title}`, "", ...sec.items.map((i) => `- ${i.text}${when(i.at)}`));
+    if (s.highlights?.length) out.push("", `### ${t("meeting.shHighlights")}`, "", ...s.highlights.map((h) => `- ${h.text}${when(h.at)}`));
   }
   if (includeTranscript && m.transcript.length) {
     out.push("", `## ${t("meeting.shTranscript")}`, "", ...m.transcript.map((l) => `**${formatTime(l.at)} ${nameOf(m, l.speaker)}:** ${l.text}`));

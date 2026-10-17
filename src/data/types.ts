@@ -33,11 +33,23 @@ export interface ActionItem extends MeetingSummaryItem {
   done: boolean;
 }
 
+export interface SummarySection {
+  id: string;
+  title: string;
+  items: MeetingSummaryItem[];
+}
+
 export interface Summary {
   recap: string;
   decisions: MeetingSummaryItem[];
   actionItems: ActionItem[];
   openQuestions: MeetingSummaryItem[];
+  /** The meeting type's own parts ("Strengths", "Blockers"). Absent for General. */
+  sections?: SummarySection[];
+  /** One per marked moment: its time and what was said around it. */
+  highlights?: MeetingSummaryItem[];
+  /** The meeting type it was written as (see lib/templates). Absent on summaries from before meeting types. */
+  template?: string;
   engine: string; // "Local AI · <model>" | "Claude" | ...
   edited: boolean; // true when the user changed it (original kept in storage)
 }
@@ -51,10 +63,13 @@ export interface TranscriptLine {
   edited: boolean;
 }
 
+/** A mark with a note is one of the user's notes; without one, a marked moment (a summary highlight). */
 export interface Mark {
   id: string;
   at: Ms;
   note?: string;
+  /** A note added after the call, in the meeting view: it has no moment, so `at` means nothing. */
+  later?: boolean;
 }
 
 export interface PauseGap {
@@ -83,7 +98,8 @@ export interface Meeting extends MeetingListItem {
   language: string; // BCP-47, e.g. "en"
   hasAudio: boolean; // audio files exist on disk
   audioKeptUntil?: string; // ISO; undefined = pinned, retention is "forever", or no audio
-  calendarEvent?: { title: string; attendees: string[] };
+  /** `emails`: the invitees' addresses, when the calendar gives them (for the follow-up email). */
+  calendarEvent?: { title: string; attendees: string[]; emails?: string[] };
   speakers: Partial<Record<Speaker, string>>; // display names: { me: "Me", "them:1": "Dana Reyes" }
   summary?: Summary; // undefined = transcript-only ("Generate summary")
   transcript: TranscriptLine[];
@@ -98,6 +114,8 @@ export interface Meeting extends MeetingListItem {
   summaryError?: { code: string; message: string; detail?: string };
   /** This meeting waits for Generate summary instead of being summarized by itself. */
   transcriptOnly?: boolean;
+  /** The meeting type chosen for it (lib/templates); absent = the default from Settings › Summary AI. */
+  template?: string;
   /** How the transcript was made. `model` is a speech model id (see Settings › Speech models). */
   transcription?: { model: string; echoLinesRemoved: number; speechMs: Ms; tookMs: Ms; finishedAt: string };
 }

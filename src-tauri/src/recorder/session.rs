@@ -36,7 +36,7 @@ impl Session {
     /// A mark at the current moment, optionally with a note. Notes are marks with text.
     pub fn mark(&mut self, now_ns: u64, note: Option<String>) -> Mark {
         let note = note.map(|n| n.trim().to_string()).filter(|n| !n.is_empty());
-        let mark = Mark { id: format!("k{}", self.marks.len()), at: self.clock.elapsed_ms(now_ns), note };
+        let mark = Mark { id: format!("k{}", self.marks.len()), at: self.clock.elapsed_ms(now_ns), note, later: false };
         self.marks.push(mark.clone());
         mark
     }

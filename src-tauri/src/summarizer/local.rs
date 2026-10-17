@@ -538,7 +538,7 @@ mod bakeoff {
         m.speakers = serde_json::from_value(fixture["speakers"].clone()).unwrap();
         m.marks = serde_json::from_value(fixture["marks"].clone()).unwrap();
         m.item.duration_ms = fixture["durationMs"].as_u64().unwrap();
-        let prompt = summary_prompt(&m, &lines, "en", None);
+        let prompt = summary_prompt(&m, &lines, "en", None, &Default::default());
         let exe = std::env::current_exe().unwrap().parent().unwrap().parent().unwrap().join(helper_file());
         let dir = std::env::var("TALAAN_LLM_DIR").unwrap();
         let mut models: Vec<_> = std::fs::read_dir(&dir).unwrap().filter_map(|e| e.ok().map(|e| e.path())).filter(|p| p.extension().is_some_and(|x| x == "gguf")).collect();

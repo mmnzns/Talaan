@@ -5,7 +5,8 @@ import { useStore } from "../../data/StoreProvider";
 import type { RecorderLevels, RecorderNotice, RecorderState } from "../../data/recorder";
 import { formatTime } from "../../lib/format";
 import { copyText } from "../../lib/share";
-import { Button, Chip, Label, Switch, cn } from "../../ui";
+import { Button, Chip, Label, Select, Switch, cn } from "../../ui";
+import { TEMPLATES, isTemplate, templateName } from "../../lib/templates";
 import { inTauri } from "../../lib/windows";
 import { SunCorner } from "../../brand/SunCorner";
 import { usePlatform } from "../../lib/platform";
@@ -64,6 +65,26 @@ function useTranscriptOnly(meetingId?: string): [boolean, (on: boolean) => void]
   return [on, (v) => (meetingId ? void store.setTranscriptOnly(meetingId, v) : setPreview(v))];
 }
 
+/** The meeting type for this recording: from the meeting on disk, else the Settings default (the Screens stage keeps its own). */
+function useTemplate(meetingId?: string): [string, (id: string) => void] {
+  const store = useStore();
+  const { meeting } = useMeeting(meetingId || undefined);
+  const { settings } = useSettings();
+  const [preview, setPreview] = useState<string>();
+  const fallback = isTemplate(settings?.summaryTemplate) ? settings!.summaryTemplate : "general";
+  const value = (meetingId ? meeting?.template : preview) ?? fallback;
+  return [isTemplate(value) ? value : "general", (id) => (meetingId ? void store.setTemplate(meetingId, id) : setPreview(id))];
+}
+
+const NOTES_OPEN = "talaan.recording.notesOpen";
+function readNotesOpen(): boolean {
+  try {
+    return localStorage.getItem(NOTES_OPEN) === "1";
+  } catch {
+    return false;
+  }
+}
+
 /** Transcript only: it waits for Generate summary instead of going to the summary engine. */
 function TranscriptOnly({ on, onChange }: { on: boolean; onChange: (on: boolean) => void }) {
   const t = useT();
@@ -104,6 +125,19 @@ export function RecordingPopover({ state, levels, notice, app, maxHeight, onPaus
   const [showNotice, setShowNotice] = useState(true);
   const [more, setMore] = useState(false);
   const [note, setNote] = useState("");
+  const [notesOpen, setNotesOpenState] = useState(readNotesOpen);
+  const setNotesOpen = (open: boolean) => {
+    setNotesOpenState(open);
+    try {
+      localStorage.setItem(NOTES_OPEN, open ? "1" : "0");
+    } catch {
+      // A blocked store only means the section starts closed next time.
+    }
+  };
+  /** Notes typed in this window during this recording, newest last (the saved meeting has them all). */
+  const [typed, setTyped] = useState<{ at: number; text: string }[]>([]);
+  const [template, setTemplate] = useTemplate(state.meetingId);
+  const focusNote = useRef(false);
   const [confirmDiscard, setConfirmDiscard] = useState(false);
   const [transcriptOnly, setTranscriptOnly] = useTranscriptOnly(state.meetingId);
   const moreId = useId();
@@ -124,6 +158,7 @@ export function RecordingPopover({ state, levels, notice, app, maxHeight, onPaus
   useEffect(() => {
     setCopied(false);
     setShowNotice(true);
+    setTyped([]);
   }, [state.meetingId]);
 
   const text = settings?.recordingNotice ?? "";
@@ -263,27 +298,66 @@ export function RecordingPopover({ state, levels, notice, app, maxHeight, onPaus
               <Star size={13} aria-hidden="true" className="fill-gold text-gold" /> {t("recording.markMoment")}
             </Button>
           </div>
-          <form
-            onSubmit={(e) => {
-              e.preventDefault();
-              if (note.trim()) {
-                onMark(note.trim());
-                setNote("");
-              }
-            }}
-          >
-            <label className="flex h-[34px] items-center gap-2 rounded-control border border-input bg-paper px-3 focus-within:border-ink">
-              <span className="sr-only">{t("recording.quickNoteLabel")}</span>
-              <input
-                value={note}
-                onChange={(e) => setNote(e.target.value)}
-                disabled={paused}
-                placeholder={t("recording.quickNotePlaceholder")}
-                className="min-w-0 flex-1 border-0 bg-transparent font-[inherit] text-[13px] text-ink outline-none placeholder:text-faint"
-              />
-            </label>
-          </form>
           <Label>{info}</Label>
+        </div>
+
+        <div className="flex flex-col gap-2">
+          <button
+            type="button"
+            aria-expanded={notesOpen}
+            onClick={() => {
+              // Only opening it by hand puts the cursor in the box; reopening the window leaves focus alone.
+              focusNote.current = !notesOpen;
+              setNotesOpen(!notesOpen);
+            }}
+            className="-mx-1 flex cursor-pointer items-center gap-1.5 self-start rounded-md border-0 bg-transparent px-1 py-0.5 font-[inherit] text-xs font-semibold text-subtle outline-offset-2 hover:text-ink focus-visible:outline-2 focus-visible:outline-ink"
+          >
+            <ChevronDown size={13} aria-hidden="true" className={cn("transition-transform", notesOpen && "rotate-180")} />
+            {t("recording.notesToggle")}
+            {state.notes > 0 && <Chip>{state.notes}</Chip>}
+          </button>
+          {notesOpen && (
+            <>
+              {typed.length > 0 && (
+                <ul className="m-0 flex max-h-[88px] list-none flex-col gap-1 overflow-y-auto p-0">
+                  {typed.slice(-3).map((n, i) => (
+                    <li key={i} className="flex items-baseline gap-2 text-xs leading-[17px]">
+                      <span className="flex-none font-mono text-[11px] text-faint">{formatTime(n.at)}</span>
+                      <span className="min-w-0 break-words">{n.text}</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  if (note.trim()) {
+                    onMark(note.trim());
+                    setTyped((list) => [...list, { at: state.elapsedMs, text: note.trim() }]);
+                    setNote("");
+                  }
+                }}
+              >
+                <label className="flex h-[34px] items-center gap-2 rounded-control border border-input bg-paper px-3 focus-within:border-ink">
+                  <span className="sr-only">{t("recording.quickNoteLabel")}</span>
+                  <input
+                    ref={(el) => {
+                      if (el && focusNote.current) {
+                        focusNote.current = false;
+                        el.focus();
+                      }
+                    }}
+                    value={note}
+                    onChange={(e) => setNote(e.target.value)}
+                    disabled={paused}
+                    placeholder={t("recording.quickNotePlaceholder")}
+                    className="min-w-0 flex-1 border-0 bg-transparent font-[inherit] text-[13px] text-ink outline-none placeholder:text-faint"
+                  />
+                </label>
+              </form>
+              <span className="text-xs leading-[17px] text-subtle">{t("recording.notesHint")}</span>
+            </>
+          )}
         </div>
 
         <div className="flex flex-col gap-3">
@@ -300,8 +374,22 @@ export function RecordingPopover({ state, levels, notice, app, maxHeight, onPaus
             </button>
             {/* Says Transcript only is on while it's folded away. */}
             {!more && transcriptOnly && <Chip tone="gold">{t("recording.transcriptOnly")}</Chip>}
+            {!more && template !== "general" && <Chip>{t(templateName(template))}</Chip>}
           </span>
-          <div id={moreId} hidden={!more}>
+          <div id={moreId} hidden={!more} className="flex flex-col gap-3">
+            <div className="flex items-start gap-3">
+              <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+                <span className="text-[13px] font-bold">{t("common.meetingType")}</span>
+                <span className="text-xs leading-[17px] text-subtle">{t("recording.meetingTypeDesc")}</span>
+              </span>
+              <Select label={t("common.meetingType")} wrapperClassName="w-[148px] flex-none" value={template} onChange={(e) => setTemplate(e.target.value)}>
+                {TEMPLATES.map((id) => (
+                  <option key={id} value={id}>
+                    {t(templateName(id))}
+                  </option>
+                ))}
+              </Select>
+            </div>
             <TranscriptOnly on={transcriptOnly} onChange={setTranscriptOnly} />
           </div>
         </div>

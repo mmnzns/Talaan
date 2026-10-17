@@ -1,8 +1,9 @@
-import type { MeetingFilter, MeetingStore } from "../store";
+import type { FollowUpDraft, MeetingFilter, MeetingStore } from "../store";
 import type {
   AskAnswer,
   AskScope,
   Folder,
+  Mark,
   Meeting,
   MeetingId,
   MeetingListItem,
@@ -11,7 +12,7 @@ import type {
 } from "../types";
 import { withYourName } from "../../lib/transcript";
 import { mockAsk } from "./askAnswers";
-import { sampleSummary, sampleTranscript, seedFolders, seedMeetings } from "./seed";
+import { sampleFollowUp, sampleSummary, sampleTranscript, seedFolders, seedMeetings } from "./seed";
 
 const clone = <T>(v: T): T => structuredClone(v);
 
@@ -40,13 +41,18 @@ export class MockMeetingStore implements MeetingStore {
   private folders = seedFolders.map((f) => ({ ...f }));
   private listeners = new Set<() => void>();
   private askDelayMs: number;
+  private followUpDelayMs: number;
+  private followUpCancelled = new Set<string>();
+  /** Simulated summaries in progress: a follow-up waits for them, like the local AI does. */
+  private running = 0;
   private yourName: () => string | undefined;
 
   constructor(
     private now: Date = new Date(),
-    options: { empty?: boolean; askDelayMs?: number; yourName?: () => string | undefined } = {},
+    options: { empty?: boolean; askDelayMs?: number; followUpDelayMs?: number; yourName?: () => string | undefined } = {},
   ) {
     this.askDelayMs = options.askDelayMs ?? 700;
+    this.followUpDelayMs = options.followUpDelayMs ?? 2500;
     this.yourName = options.yourName ?? (() => undefined);
     for (const m of options.empty ? [] : seedMeetings(now)) {
       this.meetings.set(m.id, m);
@@ -142,10 +148,12 @@ export class MockMeetingStore implements MeetingStore {
       m.eta = { finishAt: new Date(Date.now() + 2400).toISOString(), onCpu: true };
     });
     let p = 0;
+    if (status === "summarizing") this.running++;
     const timer = setInterval(() => {
       p += 0.25;
       if (p >= 1 || !this.meetings.has(id)) {
         clearInterval(timer);
+        if (status === "summarizing") this.running--;
         this.mutate(id, (m) => {
           done(m);
           m.progress = undefined;
@@ -249,9 +257,44 @@ export class MockMeetingStore implements MeetingStore {
   async generateSummary(id: MeetingId) {
     this.simulate(id, "summarizing", (m) => {
       m.status = "ready";
-      m.summary = sampleSummary();
+      m.summary = sampleSummary(m.template ?? "general", m.marks);
       this.originals.get(id)!.summary = clone(m.summary);
     });
+  }
+
+  async setTemplate(id: MeetingId, template?: string) {
+    this.mutate(id, (m) => (m.template = template));
+  }
+
+  async summarizeAs(id: MeetingId, template: string) {
+    this.mutate(id, (m) => (m.template = template));
+    await this.generateSummary(id);
+  }
+
+  async setNotes(id: MeetingId, notes: Mark[]) {
+    this.mutate(id, (m) => {
+      const kept = notes.filter((n) => n.note?.trim()).map((n, i) => ({ id: n.id || `n${Date.now()}-${i}`, at: n.later ? 0 : n.at, note: n.note!.trim(), ...(n.later ? { later: true } : {}) }));
+      m.marks = [...m.marks.filter((k) => !k.note?.trim()), ...kept].sort((a, b) => Number(!!a.later) - Number(!!b.later) || a.at - b.at);
+    });
+  }
+
+  async followUpEta(_id: MeetingId) {
+    const waiting = this.running > 0;
+    return { finishAt: new Date(Date.now() + this.followUpDelayMs * (waiting ? 2 : 1)).toISOString(), onCpu: true, waiting };
+  }
+
+  async draftFollowUp(id: MeetingId, request: string): Promise<FollowUpDraft> {
+    while (this.running > 0 && !this.followUpCancelled.has(request)) await new Promise((r) => setTimeout(r, 200));
+    await new Promise((r) => setTimeout(r, this.followUpDelayMs));
+    const cancelled = this.followUpCancelled.delete(request);
+    if (cancelled) throw new Error("Cancelled.");
+    const m = this.meetings.get(id);
+    if (!m?.summary) throw new Error("Write the summary first, then draft the follow-up.");
+    return sampleFollowUp(m);
+  }
+
+  async cancelFollowUp(request: string) {
+    this.followUpCancelled.add(request);
   }
 
   async renameSpeaker(id: MeetingId, speaker: Speaker, name: string) {

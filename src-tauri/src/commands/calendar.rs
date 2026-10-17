@@ -247,9 +247,9 @@ fn link(app: &AppHandle, id: &str) -> Outcome {
     #[cfg(not(target_os = "windows"))]
     let offline = false;
     let Some(e) = pick(&events, at) else { return Outcome::NotFound { offline } };
-    let (title, attendees) = (e.title.trim().to_string(), e.attendees.clone());
+    let (title, attendees, emails) = (e.title.trim().to_string(), e.attendees.clone(), e.emails.clone());
     let saved = storage.lock().update_meeting_file(id, |f| {
-        f.calendar_event = Some(CalendarEvent { title: title.clone(), attendees: attendees.clone() });
+        f.calendar_event = Some(CalendarEvent { title: title.clone(), attendees: attendees.clone(), emails: emails.clone() });
         if f.title_is_placeholder {
             f.title = title.clone();
             f.title_is_placeholder = false;
@@ -320,7 +320,7 @@ mod tests {
         f.title_is_placeholder = false; // the summary (or the user) gave it a title
         assert!(!wants_link(&f));
         f.title_is_placeholder = true;
-        f.calendar_event = Some(CalendarEvent { title: "Standup".into(), attendees: vec![] });
+        f.calendar_event = Some(CalendarEvent { title: "Standup".into(), attendees: vec![], emails: vec![] });
         assert!(!wants_link(&f));
     }
 }

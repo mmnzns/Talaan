@@ -65,6 +65,7 @@ pub fn events(from_ms: i64, to_ms: i64) -> Vec<Event> {
                     .attendees()
                     .map(|list| list.iter().filter(|p| !p.isCurrentUser()).filter_map(|p| p.name().map(|n| n.to_string())).filter(|n| !n.trim().is_empty()).collect())
                     .unwrap_or_default(),
+                emails: vec![],
             })
             .collect()
     }

@@ -1,6 +1,6 @@
 //! Simple edits to a meeting's metadata, and deletion.
 
-use super::model::MeetingStatus;
+use super::model::{Mark, MeetingStatus};
 use super::io::{read_json_opt, write_json_atomic};
 use super::model::Summary;
 use super::paths::{is_valid_id, ME_WAV, PLAYBACK_WAV, SUMMARY, SUMMARY_EDITED, THEM_WAV};
@@ -56,6 +56,38 @@ impl Storage {
     /// Transcript only: this meeting waits for Generate summary instead of being summarized by itself.
     pub fn set_transcript_only(&self, id: &str, on: bool) -> Result<()> {
         self.update_meeting_file(id, |f| f.transcript_only = on)
+    }
+
+    /// The meeting type to summarize it as (`summarizer::templates` id), or none for the Settings default.
+    pub fn set_template(&self, id: &str, template: Option<&str>) -> Result<()> {
+        if template.is_some_and(|t| !crate::summarizer::templates::exists(t)) {
+            return Err(StorageError::Refused(crate::i18n::tr("error.unknown_template")));
+        }
+        self.update_meeting_file(id, |f| f.template = template.map(str::to_string))
+    }
+
+    /// The user's notes, edited in the meeting view: they replace every mark with text, and marked moments stay.
+    /// Blank notes are dropped, a note without a (unique) id gets one, and timed notes come first, in time order.
+    /// Refused while recording: the recorder owns the marks until Stop.
+    pub fn set_notes(&self, id: &str, notes: &[Mark]) -> Result<()> {
+        let file = self.read_meeting_file(id)?;
+        if file.status == MeetingStatus::Recording {
+            return Err(StorageError::Refused(crate::i18n::tr("error.notes_while_recording")));
+        }
+        let mut marks: Vec<Mark> = file.marks.iter().filter(|m| m.note_text().is_none()).cloned().collect();
+        let mut kept: Vec<Mark> = vec![];
+        for n in notes {
+            let Some(text) = n.note_text().map(|t| t.chars().take(2_000).collect::<String>()) else { continue };
+            let taken = |x: &str| marks.iter().chain(kept.iter()).any(|m| m.id == x);
+            let id = if n.id.trim().is_empty() || taken(&n.id) { (0..).map(|i| format!("n{i}")).find(|c| !taken(c)).expect("a free id") } else { n.id.clone() };
+            let at = if n.later { 0 } else { n.at };
+            kept.push(Mark { id, at, note: Some(text), later: n.later });
+        }
+        kept.sort_by_key(|m| (m.later, m.at));
+        marks.extend(kept);
+        marks.sort_by_key(|m| (m.later, m.at));
+        self.update_meeting_file(id, |f| f.marks = marks)?;
+        self.regenerate_markdown(id)
     }
 
     pub fn rename_speaker(&self, id: &str, speaker: &str, name: &str) -> Result<()> {
@@ -155,6 +187,37 @@ mod tests {
         assert!(s.get_meeting(&id).unwrap().item.pinned);
         s.set_pinned(&id, false).unwrap();
         assert!(!s.get_meeting(&id).unwrap().item.pinned);
+    }
+
+    #[test]
+    fn notes_replace_the_old_notes_and_keep_marked_moments() {
+        let (_d, s) = storage();
+        let id = make(&s);
+        let mark = |id: &str, at: u64, note: Option<&str>, later: bool| Mark { id: id.into(), at, note: note.map(String::from), later };
+        s.update_meeting_file(&id, |f| {
+            f.status = MeetingStatus::Ready;
+            f.marks = vec![mark("k0", 5_000, None, false), mark("k1", 9_000, Some("old note"), false)];
+        })
+        .unwrap();
+        s.set_notes(&id, &[mark("k1", 9_000, Some(" edited note "), false), mark("", 0, Some("after the call"), true), mark("k0", 1_000, Some("clashing id"), false), mark("x", 0, Some("  "), false)]).unwrap();
+        let marks = s.get_meeting(&id).unwrap().marks;
+        assert_eq!(
+            marks.iter().map(|m| (m.id.as_str(), m.at, m.note.as_deref(), m.later)).collect::<Vec<_>>(),
+            vec![("n1", 1_000, Some("clashing id"), false), ("k0", 5_000, None, false), ("k1", 9_000, Some("edited note"), false), ("n0", 0, Some("after the call"), true)]
+        );
+        s.set_status(&id, MeetingStatus::Recording).unwrap();
+        assert!(matches!(s.set_notes(&id, &[]), Err(StorageError::Refused(_))));
+    }
+
+    #[test]
+    fn a_meeting_type_is_set_and_checked() {
+        let (_d, s) = storage();
+        let id = make(&s);
+        s.set_template(&id, Some("interview")).unwrap();
+        assert_eq!(s.get_meeting(&id).unwrap().template.as_deref(), Some("interview"));
+        assert!(s.set_template(&id, Some("nope")).is_err());
+        s.set_template(&id, None).unwrap();
+        assert_eq!(s.get_meeting(&id).unwrap().template, None);
     }
 
     #[test]

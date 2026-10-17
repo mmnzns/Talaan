@@ -10,17 +10,24 @@ use crate::gpu::{Gpu, Kind, Plan};
 use crate::summarizer::local::{helper_path, GpuHelper, LocalAi, GPU_STALL};
 use crate::summarizer::models::{local_model, LLM_CATALOG};
 use crate::summarizer::summarize::{EngineError, SummaryEngine};
+use crate::summarizer::followup::{self, FollowUpError};
+use crate::summarizer::templates;
 use crate::summarizer::worker::{Config, Deps, Worker, NO_ENGINE};
+use std::sync::atomic::{AtomicBool, Ordering};
 use crate::transcriber::models::{Location, ModelStore};
 use serde::Serialize;
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use tauri::{AppHandle, Emitter, Manager, State};
 
 pub const SUMMARY_READY: &str = "summary-ready";
 
 pub struct SummarizerState {
     worker: Worker,
+    data_dir: PathBuf,
+    /// Follow-up drafts in progress, by the request id the screen gave, with the flag its Cancel sets.
+    followups: Mutex<HashMap<String, Arc<AtomicBool>>>,
 }
 
 impl SummarizerState {
@@ -42,6 +49,12 @@ fn refused(message: impl Into<String>) -> StorageError {
 
 /// Turns settings into an engine, or says (in words for the user) why there isn't one.
 pub fn make_engine(cfg: &Config, data_dir: &Path) -> Result<Box<dyn SummaryEngine>, EngineError> {
+    engine_for(cfg, data_dir, false)
+}
+
+/// `followup`: for a follow-up draft, whose GPU failures are remembered only when they are the GPU's own fault
+/// (`gpu_fault`), so a short draft that ran out of memory never moves every later summary to the processor.
+fn engine_for(cfg: &Config, data_dir: &Path, followup: bool) -> Result<Box<dyn SummaryEngine>, EngineError> {
     let s = &cfg.settings;
     match cfg.engine.as_str() {
         "ollama" => {
@@ -80,21 +93,29 @@ pub fn make_engine(cfg: &Config, data_dir: &Path) -> Result<Box<dyn SummaryEngin
                 let size = crate::i18n::decimal(model.size() as f64 / 1e9);
                 return Err(EngineError::Unavailable(tr_with("ai.download_local", &[("name", model.name), ("size", &size)])));
             };
-            Ok(Box::new(LocalEngine { ai: local_ai(data_dir, s["useGpu"].as_bool().unwrap_or(true)), model_path: dir.join(model.files[0].name), model_name: model.name.into() }))
+            Ok(Box::new(LocalEngine { ai: local_ai(data_dir, s["useGpu"].as_bool().unwrap_or(true), followup), model_path: dir.join(model.files[0].name), model_name: model.name.into() }))
         }
     }
 }
 
 /// The local AI helper for a summary: on Windows the GPU build first when it should be used (`gpu.rs`), with the
 /// processor helper behind it; elsewhere the one helper (Metal on the Mac).
-fn local_ai(data_dir: &Path, use_gpu: bool) -> LocalAi {
+fn local_ai(data_dir: &Path, use_gpu: bool, followup: bool) -> LocalAi {
     if cfg!(windows) {
         let gpu = Gpu::shared(data_dir);
         if let Plan::Gpu { exe, env } = gpu.plan(Kind::Llm, use_gpu) {
-            return LocalAi::with_gpu(&helper_path(), GpuHelper { exe, env, on_failure: gpu.recorder(Kind::Llm), stall: GPU_STALL });
+            let record = gpu.recorder(Kind::Llm);
+            let on_failure: Arc<dyn Fn(&str) + Send + Sync> = if followup { Arc::new(move |reason: &str| if gpu_fault(reason) { record(reason) }) } else { record };
+            return LocalAi::with_gpu(&helper_path(), GpuHelper { exe, env, on_failure, stall: GPU_STALL });
         }
     }
     LocalAi::new(&helper_path())
+}
+
+/// A GPU failure that says something about the graphics chip itself (it crashed, was lost, the driver can't run
+/// it), not about memory that something else was using at the time.
+pub fn gpu_fault(reason: &str) -> bool {
+    !reason.to_lowercase().contains("memory")
 }
 
 /// How a summary with these settings is timed: the local model on the graphics chip (Metal on the Mac; on Windows
@@ -119,6 +140,7 @@ pub fn setup(app: &AppHandle, data_dir: PathBuf) {
     let ready_app = app.clone();
     let done_app = app.clone();
     let gpu = Gpu::shared(&data_dir);
+    let state_dir = data_dir.clone();
     let worker = Worker::start(Deps {
         storage: state.shared(),
         changed: Arc::new(move || notify(&changed_app, MEETINGS_CHANGED)),
@@ -137,7 +159,7 @@ pub fn setup(app: &AppHandle, data_dir: PathBuf) {
         worker.enqueue(&id);
     }
     drop(storage);
-    app.manage(SummarizerState { worker });
+    app.manage(SummarizerState { worker, data_dir: state_dir, followups: Mutex::default() });
 }
 
 pub const OPEN_MEETING: &str = "open-meeting";
@@ -208,6 +230,28 @@ pub fn requeue_waiting(app: &AppHandle) {
 /// Generate summary (also: regenerate). Needs a transcript.
 #[tauri::command]
 pub fn meetings_generate_summary(app: AppHandle, state: State<AppState>, s: State<SummarizerState>, id: String) -> CmdResult<()> {
+    start_summary(&app, &state, &s, &id, None)
+}
+
+/// The meeting type to summarize a meeting as (from the recording window); none for the Settings default.
+#[tauri::command]
+pub fn meetings_set_template(app: AppHandle, state: State<AppState>, id: String, template: Option<String>) -> CmdResult<()> {
+    state.lock().set_template(&id, template.as_deref())?;
+    notify(&app, MEETINGS_CHANGED);
+    Ok(())
+}
+
+/// The meeting's ⋯ menu › Summarize as…: remembers the type and writes the summary again.
+#[tauri::command]
+pub fn meetings_summarize_as(app: AppHandle, state: State<AppState>, s: State<SummarizerState>, id: String, template: String) -> CmdResult<()> {
+    if !templates::exists(&template) {
+        return Err(refused(tr("error.unknown_template")));
+    }
+    start_summary(&app, &state, &s, &id, Some(&template))
+}
+
+fn start_summary(app: &AppHandle, state: &State<AppState>, s: &State<SummarizerState>, id: &str, template: Option<&str>) -> CmdResult<()> {
+    let id = id.to_string();
     let storage = state.lock();
     let meeting = storage.get_meeting(&id)?;
     if meeting.transcript.is_empty() {
@@ -220,11 +264,110 @@ pub fn meetings_generate_summary(app: AppHandle, state: State<AppState>, s: Stat
         f.status = MeetingStatus::Summarizing;
         f.progress = Some(0.0);
         f.summary_error = None;
+        if let Some(t) = template {
+            f.template = Some(t.to_string());
+        }
     })?;
     drop(storage);
     s.enqueue(&id);
-    notify(&app, MEETINGS_CHANGED);
+    notify(app, MEETINGS_CHANGED);
     Ok(())
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FollowUpDraft {
+    subject: String,
+    body: String,
+    /// The invitees' addresses from the calendar event, when it had them.
+    to: Vec<String>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FollowUpEta {
+    finish_at: String,
+    on_cpu: bool,
+    /// The local AI is busy with a summary; the draft starts when it's done.
+    waiting: bool,
+}
+
+/// When a follow-up draft for this meeting should be done (the screen asks again while it waits). With the local AI
+/// it waits for a summary in progress, so that summary's time left comes first.
+#[tauri::command(async)]
+pub fn meetings_followup_eta(state: State<AppState>, s: State<SummarizerState>, id: String) -> CmdResult<FollowUpEta> {
+    let storage = state.lock();
+    let summary = storage.get_meeting(&id)?.summary.ok_or_else(|| refused(tr("error.no_summary_for_followup")))?;
+    let cfg = Config::from_settings(storage.settings_get().ok().flatten().as_ref());
+    let profile = summary_profile(&cfg, &Gpu::shared(&s.data_dir));
+    let mut secs = followup::estimate(&profile, storage.speed_rate(&profile.key), &summary);
+    let busy = if cfg.engine == "local" { s.worker.current() } else { None };
+    if let Some(other) = &busy {
+        let left = storage
+            .read_meeting_file(other)
+            .ok()
+            .and_then(|f| f.eta)
+            .and_then(|e| chrono::DateTime::parse_from_rfc3339(&e.finish_at).ok())
+            .map(|t| (t.with_timezone(&chrono::Local) - chrono::Local::now()).num_seconds().max(0) as f64)
+            .unwrap_or(0.0);
+        secs += left;
+    }
+    let eta = crate::storage::speed::eta_in(secs, profile.device == crate::eta::Device::Cpu);
+    Ok(FollowUpEta { finish_at: eta.finish_at, on_cpu: eta.on_cpu, waiting: busy.is_some() })
+}
+
+fn followup_error(e: FollowUpError) -> StorageError {
+    match e {
+        FollowUpError::Engine(EngineError::Unavailable(m)) | FollowUpError::Engine(EngineError::Failed(m)) => refused(m),
+        FollowUpError::Engine(EngineError::Cancelled) => refused(tr("error.cancelled")),
+        FollowUpError::BadOutput => refused(tr("error.followup_bad_output")),
+    }
+}
+
+/// One draft, start to finish: the engine, then the request. Checks Cancel first (it may have waited in the queue).
+fn run_followup(cfg: &Config, data_dir: &Path, meeting: &crate::storage::model::Meeting, summary: &crate::storage::model::Summary, cancel: &AtomicBool) -> Result<followup::FollowUp, FollowUpError> {
+    if cancel.load(Ordering::Relaxed) {
+        return Err(FollowUpError::Engine(EngineError::Cancelled));
+    }
+    let mut engine = engine_for(cfg, data_dir, true).map_err(FollowUpError::Engine)?;
+    followup::draft(meeting, summary, engine.as_mut(), &cfg.language_for(&meeting.language), cancel)
+}
+
+/// Draft follow-up email: a short request over the summary the user sees (with their edits), in the summary
+/// language. The local AI runs it on the summarizer's thread, after a summary in progress, so only one model is
+/// ever loaded; a cloud service or local server answers straight away. `request`: the screen's id for Cancel.
+#[tauri::command(async)]
+pub fn meetings_draft_followup(state: State<AppState>, s: State<SummarizerState>, id: String, request: String) -> CmdResult<FollowUpDraft> {
+    let (meeting, cfg) = {
+        let storage = state.lock();
+        (storage.get_meeting(&id)?, Config::from_settings(storage.settings_get().ok().flatten().as_ref()))
+    };
+    let summary = meeting.summary.clone().ok_or_else(|| refused(tr("error.no_summary_for_followup")))?;
+    let cancel = Arc::new(AtomicBool::new(false));
+    s.followups.lock().unwrap_or_else(|e| e.into_inner()).insert(request.clone(), cancel.clone());
+    let to = meeting.calendar_event.as_ref().map(|e| e.emails.clone()).unwrap_or_default();
+    let result = if cfg.engine == "local" {
+        let (tx, rx) = std::sync::mpsc::channel();
+        let data_dir = s.data_dir.clone();
+        let flag = cancel.clone();
+        s.worker.run_between(Box::new(move || {
+            let _ = tx.send(run_followup(&cfg, &data_dir, &meeting, &summary, &flag));
+        }));
+        rx.recv().unwrap_or(Err(FollowUpError::Engine(EngineError::Cancelled)))
+    } else {
+        run_followup(&cfg, &s.data_dir, &meeting, &summary, &cancel)
+    };
+    s.followups.lock().unwrap_or_else(|e| e.into_inner()).remove(&request);
+    let f = result.map_err(followup_error)?;
+    Ok(FollowUpDraft { subject: f.subject, body: f.body, to })
+}
+
+/// Cancel on a follow-up draft: stops that request (waiting or running), not anyone else's.
+#[tauri::command]
+pub fn meetings_cancel_followup(s: State<SummarizerState>, request: String) {
+    if let Some(flag) = s.followups.lock().unwrap_or_else(|e| e.into_inner()).get(&request) {
+        flag.store(true, Ordering::Relaxed);
+    }
 }
 
 #[derive(Serialize)]
@@ -323,4 +466,14 @@ pub fn local_server_models(address: String) -> CmdResult<Vec<String>> {
         EngineError::Unavailable(m) | EngineError::Failed(m) => refused(m),
         EngineError::Cancelled => refused(tr("error.cancelled")),
     })
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn only_a_real_gpu_fault_counts_against_the_gpu_after_a_follow_up() {
+        assert!(super::gpu_fault("the GPU helper stopped answering"));
+        assert!(super::gpu_fault("ErrorDeviceLost"));
+        assert!(!super::gpu_fault("not enough memory for the AI model: ErrorOutOfDeviceMemory"));
+    }
 }
