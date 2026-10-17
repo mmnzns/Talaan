@@ -155,6 +155,7 @@ pub(crate) mod tests {
             sections: vec![SummarySection { id: "s0".into(), title: "Blockers".into(), items: vec![SummaryItem { id: "s0i0".into(), text: "Sam: legal".into(), at: Some(6_000) }] }],
             highlights: vec![SummaryItem { id: "h0".into(), text: "Budget agreed.".into(), at: Some(9_000) }],
             template: Some("standup".into()),
+            sections_missing: false,
             engine: "x".into(),
             edited: false,
         });
@@ -177,6 +178,7 @@ pub(crate) mod tests {
             sections: vec![],
             highlights: vec![],
             template: None,
+            sections_missing: false,
             engine: "x".into(),
             edited: false,
         });

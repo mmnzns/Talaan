@@ -85,7 +85,7 @@ pub fn summarize(meeting: &Meeting, engine: &mut dyn SummaryEngine, language: &s
     };
     let sections = !opts.template().is_general();
     let marked = moments(meeting).len();
-    let out = Reply { schema: schema(sections, marked), tokens: output_tokens(sections, marked) };
+    let out = Reply { schema: schema(sections, marked), tokens: output_tokens(sections, marked), plain: AtomicBool::new(false) };
     let budget = (engine.context_tokens() * 9 / 10).saturating_sub(overhead + out.tokens as usize).max(500);
     let parts = split(lines, budget);
     let n = parts.len();
@@ -95,7 +95,7 @@ pub fn summarize(meeting: &Meeting, engine: &mut dyn SummaryEngine, language: &s
     if n == 1 {
         let draft = ask(engine, &summary_prompt(meeting, lines, language, None, opts), schema, cancel)?;
         progress(1.0);
-        return Ok(finish(&draft, meeting, engine, 1, opts, language));
+        return Ok(finish(&draft, meeting, engine, 1, opts, language, &out));
     }
 
     let mut drafts = vec![];
@@ -109,7 +109,7 @@ pub fn summarize(meeting: &Meeting, engine: &mut dyn SummaryEngine, language: &s
     let parts_json: Vec<String> = drafts.iter().map(|d| serde_json::to_string(d).expect("drafts serialize")).collect();
     let merged = ask(engine, &merge_prompt(meeting, &parts_json, language, opts), schema, cancel)?;
     progress(1.0);
-    Ok(finish(&merged, meeting, engine, n, opts, language))
+    Ok(finish(&merged, meeting, engine, n, opts, language, &out))
 }
 
 /// Too little to summarize: under 1 s of speech in all, or at most two lines with fewer than 12 words between
@@ -121,12 +121,13 @@ pub fn too_short(lines: &[TranscriptLine]) -> bool {
     speech_ms < 1_000 || (spoken.len() <= 2 && words < 12)
 }
 
-fn finish(draft: &Draft, meeting: &Meeting, engine: &dyn SummaryEngine, parts: usize, opts: &Options, language: &str) -> Outcome {
+fn finish(draft: &Draft, meeting: &Meeting, engine: &dyn SummaryEngine, parts: usize, opts: &Options, language: &str, reply: &Reply) -> Outcome {
     let mut summary = to_summary(draft, &meeting.transcript, &engine.label());
     let template = opts.template();
     summary.sections = to_sections(draft, &meeting.transcript, template, language);
     summary.highlights = to_highlights(draft, meeting);
     summary.template = Some(template.id.to_string());
+    summary.sections_missing = !template.is_general() && summary.sections.is_empty() && reply.plain.load(Ordering::Relaxed);
     Outcome { summary, title: usable_title(&draft.title), parts }
 }
 
@@ -134,6 +135,8 @@ fn finish(draft: &Draft, meeting: &Meeting, engine: &dyn SummaryEngine, parts: u
 struct Reply {
     schema: String,
     tokens: u32,
+    /// Set when a retry had to drop sections and highlights.
+    plain: AtomicBool,
 }
 
 /// One request, with one retry that tells the model what was wrong. When the first reply asked for sections or
@@ -145,6 +148,9 @@ fn ask(engine: &mut dyn SummaryEngine, prompt: &Prompt, reply: &Reply, cancel: &
         Ok(d) => return Ok(d),
         Err(e) => e,
     };
+    if reply.schema != SCHEMA {
+        reply.plain.store(true, Ordering::Relaxed);
+    }
     let extended = reply.schema != SCHEMA;
     let (schema, ask_less) = if extended { (SCHEMA, " Leave out sections and highlights this time.") } else { (SCHEMA, "") };
     let retry = Prompt { system: prompt.system.clone(), user: format!("{}\n\nYour previous reply couldn't be used: {problem}. Reply with only the JSON object.{ask_less}", prompt.user) };
@@ -265,8 +271,9 @@ pub(crate) mod tests {
         assert!(e.0[0].1 > MAX_OUTPUT_TOKENS);
         assert_eq!(e.0[1], (SCHEMA.to_string(), MAX_OUTPUT_TOKENS));
         assert_eq!(out.summary.recap, "Round of updates.");
-        // The marked moments still get highlights, from the transcript.
+        // The marked moments still get highlights, from the transcript, and the card can say the sections are missing.
         assert_eq!(out.summary.highlights.len(), 5);
+        assert!(out.summary.sections_missing);
     }
 
     #[test]

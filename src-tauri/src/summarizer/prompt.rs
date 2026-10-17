@@ -195,7 +195,7 @@ fn render_moments(meeting: &Meeting, moments: &[&Mark], with_context: bool) -> S
         let mut used = 0;
         let mut near = around(&meeting.transcript, m.at);
         near.sort_by_key(|l| l.at.abs_diff(m.at));
-        let mut kept: Vec<String> = vec![];
+        let mut kept: Vec<(u64, String)> = vec![];
         for l in near {
             let row = format!("  [{}] {}: {}", stamp(l.at), speaker_name(meeting, &l.speaker), l.text.trim());
             let room = each.saturating_sub(used);
@@ -204,10 +204,11 @@ fn render_moments(meeting: &Meeting, moments: &[&Mark], with_context: bool) -> S
             }
             let row: String = if row.chars().count() > room { row.chars().take(room - 1).collect::<String>() + "…" } else { row };
             used += row.chars().count();
-            kept.push(row);
+            kept.push((l.at, row));
         }
-        kept.sort_by(|a, b| a.get(..12).cmp(&b.get(..12)));
-        for row in kept {
+        // Back in spoken order, by time (the text "59:59" sorts after "1:00:00").
+        kept.sort_by_key(|(at, _)| *at);
+        for (_, row) in kept {
             out.push_str(&row);
             out.push('\n');
         }
@@ -416,6 +417,17 @@ pub(crate) mod tests {
         assert!(s["required"].as_array().unwrap().contains(&json!("highlights")));
         assert_eq!(s["properties"]["highlights"]["maxItems"], 1);
         assert!(s["properties"].get("sections").is_none());
+    }
+
+    #[test]
+    fn lines_around_a_moment_stay_in_spoken_order_across_the_hour() {
+        let lines = vec![line("l0", 3_590_000, "me", "Just before the hour."), line("l1", 3_605_000, "them:1", "Just after it.")];
+        let mut m = meeting(lines.clone());
+        m.marks = vec![mark("k0", 3_600_000, None)];
+        let p = summary_prompt(&m, &lines, "en", Some((2, 2)), &general());
+        let before = p.user.find("  [59:50] Me: Just before the hour.").unwrap();
+        let after = p.user.find("  [1:00:05] Dana Reyes: Just after it.").unwrap();
+        assert!(before < after);
     }
 
     #[test]

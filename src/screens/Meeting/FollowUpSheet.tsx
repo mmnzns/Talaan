@@ -33,7 +33,7 @@ export function FollowUpSheet({ meeting, open, onClose }: { meeting: Meeting; op
     setState({ kind: "writing", started: Date.now() });
     // While it waits for a summary in progress, ask again now and then: the time left moves when that ends.
     const poll = () =>
-      store.followUpEta(meeting.id).then(
+      store.followUpEta(meeting.id, request.current).then(
         ({ waiting, ...eta }) => {
           if (run.current !== mine) return;
           setState((s) => (s.kind === "writing" ? { ...s, eta, waiting } : s));

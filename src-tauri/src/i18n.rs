@@ -387,6 +387,8 @@ const TABLE: &[(&str, &str, &str, &str)] = &[
     ("error.no_summary_for_followup", "Write the summary first, then draft the follow-up.", "Rédigez d’abord le résumé, puis le courriel de suivi.", "Primero escribe el resumen y luego el correo de seguimiento."),
     ("error.followup_bad_output", "The summary AI's email couldn't be used. Try again.", "Le courriel de l’IA de résumé n’a pas pu être utilisé. Réessayez.", "No se pudo usar el correo de la IA de resumen. Inténtalo de nuevo."),
     ("error.notes_while_recording", "Add notes from the recording window while the call is recorded.", "Pendant l’enregistrement, ajoutez vos notes depuis la fenêtre d’enregistrement.", "Mientras se graba, agrega tus notas desde la ventana de grabación."),
+    ("error.summary_internal", "Talaan hit a problem writing this summary. Try again.", "Talaan a rencontré un problème en rédigeant ce résumé. Réessayez.", "Talaan tuvo un problema al escribir este resumen. Inténtalo de nuevo."),
+    ("error.followup_internal", "Talaan hit a problem writing this email. Try again.", "Talaan a rencontré un problème en rédigeant ce courriel. Réessayez.", "Talaan tuvo un problema al escribir este correo. Inténtalo de nuevo."),
     ("error.unknown_template", "Unknown meeting type.", "Type de réunion inconnu.", "Tipo de reunión desconocido."),
     (
         "download.stalled",

@@ -16,9 +16,8 @@ use crate::summarizer::worker::{Config, Deps, Worker, NO_ENGINE};
 use std::sync::atomic::{AtomicBool, Ordering};
 use crate::transcriber::models::{Location, ModelStore};
 use serde::Serialize;
-use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use tauri::{AppHandle, Emitter, Manager, State};
 
 pub const SUMMARY_READY: &str = "summary-ready";
@@ -27,7 +26,7 @@ pub struct SummarizerState {
     worker: Worker,
     data_dir: PathBuf,
     /// Follow-up drafts in progress, by the request id the screen gave, with the flag its Cancel sets.
-    followups: Mutex<HashMap<String, Arc<AtomicBool>>>,
+    followups: followup::Cancels,
 }
 
 impl SummarizerState {
@@ -159,7 +158,7 @@ pub fn setup(app: &AppHandle, data_dir: PathBuf) {
         worker.enqueue(&id);
     }
     drop(storage);
-    app.manage(SummarizerState { worker, data_dir: state_dir, followups: Mutex::default() });
+    app.manage(SummarizerState { worker, data_dir: state_dir, followups: Default::default() });
 }
 
 pub const OPEN_MEETING: &str = "open-meeting";
@@ -289,21 +288,23 @@ pub struct FollowUpDraft {
 pub struct FollowUpEta {
     finish_at: String,
     on_cpu: bool,
-    /// The local AI is busy with a summary; the draft starts when it's done.
+    /// The local AI is busy with a summary or another draft; this one starts when they're done.
     waiting: bool,
 }
 
 /// When a follow-up draft for this meeting should be done (the screen asks again while it waits). With the local AI
-/// it waits for a summary in progress, so that summary's time left comes first.
+/// it waits for a summary in progress and for drafts ahead of it, so their time comes first. `request`: the draft's id.
 #[tauri::command(async)]
-pub fn meetings_followup_eta(state: State<AppState>, s: State<SummarizerState>, id: String) -> CmdResult<FollowUpEta> {
+pub fn meetings_followup_eta(state: State<AppState>, s: State<SummarizerState>, id: String, request: Option<String>) -> CmdResult<FollowUpEta> {
     let storage = state.lock();
     let summary = storage.get_meeting(&id)?.summary.ok_or_else(|| refused(tr("error.no_summary_for_followup")))?;
     let cfg = Config::from_settings(storage.settings_get().ok().flatten().as_ref());
     let profile = summary_profile(&cfg, &Gpu::shared(&s.data_dir));
-    let mut secs = followup::estimate(&profile, storage.speed_rate(&profile.key), &summary);
-    let busy = if cfg.engine == "local" { s.worker.current() } else { None };
-    if let Some(other) = &busy {
+    let one = followup::estimate(&profile, storage.speed_rate(&profile.key), &summary);
+    let ahead = if cfg.engine == "local" { s.worker.ahead_of(request.as_deref().unwrap_or("")) } else { Default::default() };
+    // Drafts ahead are about as long as this one.
+    let mut secs = one * (1 + ahead.jobs) as f64;
+    if let Some(other) = &ahead.summary {
         let left = storage
             .read_meeting_file(other)
             .ok()
@@ -314,7 +315,7 @@ pub fn meetings_followup_eta(state: State<AppState>, s: State<SummarizerState>, 
         secs += left;
     }
     let eta = crate::storage::speed::eta_in(secs, profile.device == crate::eta::Device::Cpu);
-    Ok(FollowUpEta { finish_at: eta.finish_at, on_cpu: eta.on_cpu, waiting: busy.is_some() })
+    Ok(FollowUpEta { finish_at: eta.finish_at, on_cpu: eta.on_cpu, waiting: ahead.waiting() })
 }
 
 fn followup_error(e: FollowUpError) -> StorageError {
@@ -339,26 +340,39 @@ fn run_followup(cfg: &Config, data_dir: &Path, meeting: &crate::storage::model::
 /// ever loaded; a cloud service or local server answers straight away. `request`: the screen's id for Cancel.
 #[tauri::command(async)]
 pub fn meetings_draft_followup(state: State<AppState>, s: State<SummarizerState>, id: String, request: String) -> CmdResult<FollowUpDraft> {
+    // Registered before anything that can wait (the storage lock), so a quick Cancel finds it.
+    let cancel = s.followups.register(&request);
+    let result = draft_followup(&state, &s, &id, &request, cancel);
+    s.followups.finish(&request);
+    result
+}
+
+fn draft_followup(state: &State<AppState>, s: &State<SummarizerState>, id: &str, request: &str, cancel: Arc<AtomicBool>) -> CmdResult<FollowUpDraft> {
     let (meeting, cfg) = {
         let storage = state.lock();
-        (storage.get_meeting(&id)?, Config::from_settings(storage.settings_get().ok().flatten().as_ref()))
+        (storage.get_meeting(id)?, Config::from_settings(storage.settings_get().ok().flatten().as_ref()))
     };
     let summary = meeting.summary.clone().ok_or_else(|| refused(tr("error.no_summary_for_followup")))?;
-    let cancel = Arc::new(AtomicBool::new(false));
-    s.followups.lock().unwrap_or_else(|e| e.into_inner()).insert(request.clone(), cancel.clone());
     let to = meeting.calendar_event.as_ref().map(|e| e.emails.clone()).unwrap_or_default();
     let result = if cfg.engine == "local" {
         let (tx, rx) = std::sync::mpsc::channel();
         let data_dir = s.data_dir.clone();
         let flag = cancel.clone();
-        s.worker.run_between(Box::new(move || {
+        s.worker.run_between(request, Box::new(move || {
             let _ = tx.send(run_followup(&cfg, &data_dir, &meeting, &summary, &flag));
         }));
-        rx.recv().unwrap_or(Err(FollowUpError::Engine(EngineError::Cancelled)))
+        match followup::wait_for(&rx, &cancel, std::time::Duration::from_millis(150)) {
+            followup::Waited::Done(r) => r,
+            followup::Waited::Cancelled => {
+                // Not started yet: it never will. Already running: it sees the flag and stops.
+                s.worker.drop_job(request);
+                Err(FollowUpError::Engine(EngineError::Cancelled))
+            }
+            followup::Waited::Lost => Err(FollowUpError::Engine(EngineError::Failed(tr("error.followup_internal")))),
+        }
     } else {
         run_followup(&cfg, &s.data_dir, &meeting, &summary, &cancel)
     };
-    s.followups.lock().unwrap_or_else(|e| e.into_inner()).remove(&request);
     let f = result.map_err(followup_error)?;
     Ok(FollowUpDraft { subject: f.subject, body: f.body, to })
 }
@@ -366,9 +380,7 @@ pub fn meetings_draft_followup(state: State<AppState>, s: State<SummarizerState>
 /// Cancel on a follow-up draft: stops that request (waiting or running), not anyone else's.
 #[tauri::command]
 pub fn meetings_cancel_followup(s: State<SummarizerState>, request: String) {
-    if let Some(flag) = s.followups.lock().unwrap_or_else(|e| e.into_inner()).get(&request) {
-        flag.store(true, Ordering::Relaxed);
-    }
+    s.followups.cancel(&request);
 }
 
 #[derive(Serialize)]

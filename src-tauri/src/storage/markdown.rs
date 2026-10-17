@@ -121,6 +121,7 @@ mod tests {
             sections: vec![],
             highlights: vec![],
             template: None,
+            sections_missing: false,
             engine: "Local AI".into(),
             edited: false,
         };
@@ -143,6 +144,7 @@ mod tests {
             sections: vec![SummarySection { id: "s0".into(), title: "Blockers".into(), items: vec![SummaryItem { id: "s0i0".into(), text: "Dana: waiting on legal".into(), at: Some(65_000) }] }],
             highlights: vec![SummaryItem { id: "h0".into(), text: "Budget set at 50k.".into(), at: Some(120_000) }],
             template: Some("standup".into()),
+            sections_missing: false,
             engine: "x".into(),
             edited: false,
         };

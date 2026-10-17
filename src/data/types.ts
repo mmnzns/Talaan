@@ -50,6 +50,8 @@ export interface Summary {
   highlights?: MeetingSummaryItem[];
   /** The meeting type it was written as (see lib/templates). Absent on summaries from before meeting types. */
   template?: string;
+  /** The meeting type's sections couldn't be written this time (the plain summary was written instead). */
+  sectionsMissing?: boolean;
   engine: string; // "Local AI · <model>" | "Claude" | ...
   edited: boolean; // true when the user changed it (original kept in storage)
 }

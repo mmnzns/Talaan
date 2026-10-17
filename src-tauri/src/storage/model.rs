@@ -93,6 +93,10 @@ pub struct Summary {
     /// The meeting type it was written as (`summarizer::templates`); none for summaries from before meeting types.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub template: Option<String>,
+    /// The meeting type's sections couldn't be written this time (the reply was cut off and the plain summary was
+    /// asked for instead); the summary card offers to try again.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub sections_missing: bool,
     pub engine: String,
     /// Computed on read (true when `summary.edited.json` exists). Never trust it from disk.
     #[serde(default)]

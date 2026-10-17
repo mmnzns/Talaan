@@ -116,6 +116,54 @@ pub fn draft(meeting: &Meeting, summary: &Summary, engine: &mut dyn SummaryEngin
     parse(&second).ok_or(FollowUpError::BadOutput)
 }
 
+/// The Cancel flag of each draft, by the request id the screen gave. Cancel may arrive before the draft has
+/// registered (the two calls race): it is remembered, and the draft starts already cancelled.
+#[derive(Default)]
+pub struct Cancels(std::sync::Mutex<std::collections::HashMap<String, std::sync::Arc<AtomicBool>>>);
+
+impl Cancels {
+    fn map(&self) -> std::sync::MutexGuard<'_, std::collections::HashMap<String, std::sync::Arc<AtomicBool>>> {
+        self.0.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
+    /// The flag for a draft that is starting (set already when Cancel came first).
+    pub fn register(&self, request: &str) -> std::sync::Arc<AtomicBool> {
+        self.map().entry(request.to_string()).or_default().clone()
+    }
+
+    pub fn cancel(&self, request: &str) {
+        self.map().entry(request.to_string()).or_default().store(true, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    /// The draft is over (done, failed or cancelled).
+    pub fn finish(&self, request: &str) {
+        self.map().remove(request);
+    }
+}
+
+/// How waiting for a queued draft ended.
+#[derive(Debug, PartialEq)]
+pub enum Waited<T> {
+    Done(T),
+    Cancelled,
+    /// The job ended without an answer (it panicked).
+    Lost,
+}
+
+/// Waits for a queued draft's answer in short steps, giving up as soon as `cancel` is set, so a cancelled draft
+/// behind a long summary doesn't hold its caller until its turn.
+pub fn wait_for<T>(rx: &std::sync::mpsc::Receiver<T>, cancel: &AtomicBool, step: std::time::Duration) -> Waited<T> {
+    use std::sync::mpsc::RecvTimeoutError;
+    loop {
+        match rx.recv_timeout(step) {
+            Ok(v) => return Waited::Done(v),
+            Err(RecvTimeoutError::Disconnected) => return Waited::Lost,
+            Err(RecvTimeoutError::Timeout) if cancel.load(std::sync::atomic::Ordering::Relaxed) => return Waited::Cancelled,
+            Err(RecvTimeoutError::Timeout) => {}
+        }
+    }
+}
+
 /// How long a draft should take, in seconds: the engine's start-up plus its pace on a summary-sized input (the
 /// summary's words read at speaking pace) and the email it writes.
 pub fn estimate(profile: &Profile, measured: Option<f64>, summary: &Summary) -> f64 {
@@ -180,6 +228,35 @@ mod tests {
         assert_eq!(e.prompts.len(), 2);
         let mut bad = Scripted { replies: vec![Ok("no".into()), Ok("{\"subject\":\"x\",\"body\":\" \"}".into())], prompts: vec![], context: 16_384 };
         assert_eq!(draft(&meeting(vec![]), &summary(), &mut bad, "en", &AtomicBool::new(false)), Err(FollowUpError::BadOutput));
+    }
+
+    #[test]
+    fn a_cancel_before_the_draft_registers_is_not_lost() {
+        use std::sync::atomic::Ordering;
+        let c = Cancels::default();
+        c.cancel("early");
+        assert!(c.register("early").load(Ordering::Relaxed));
+        let late = c.register("late");
+        assert!(!late.load(Ordering::Relaxed));
+        c.cancel("late");
+        assert!(late.load(Ordering::Relaxed));
+        c.finish("early");
+        assert!(!c.register("early").load(Ordering::Relaxed), "a finished draft's id starts fresh");
+    }
+
+    #[test]
+    fn waiting_stops_at_cancel_and_says_when_the_job_was_lost() {
+        use std::time::Duration;
+        let step = Duration::from_millis(5);
+        let (tx, rx) = std::sync::mpsc::channel::<u32>();
+        tx.send(7).unwrap();
+        assert_eq!(wait_for(&rx, &AtomicBool::new(false), step), Waited::Done(7));
+        // Nothing comes, and Cancel is pressed: back at once, not when the job gets its turn.
+        let t = std::time::Instant::now();
+        assert_eq!(wait_for(&rx, &AtomicBool::new(true), step), Waited::Cancelled);
+        assert!(t.elapsed() < Duration::from_secs(1));
+        drop(tx);
+        assert_eq!(wait_for(&rx, &AtomicBool::new(false), step), Waited::Lost);
     }
 
     #[test]

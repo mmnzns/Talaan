@@ -54,7 +54,7 @@ export interface MeetingStore {
   /** The user's notes (marks with a note), edited in the meeting view. Marked moments stay. Not while recording. */
   setNotes(id: MeetingId, notes: Mark[]): Promise<void>;
   /** When a follow-up draft for this meeting should be done; `waiting`: the local AI finishes a summary first. */
-  followUpEta(id: MeetingId): Promise<FollowUpEta>;
+  followUpEta(id: MeetingId, request?: string): Promise<FollowUpEta>;
   /** Draft follow-up email from the summary: subject, plain-text body, and the invitees' addresses when known.
    *  `request` names this draft for `cancelFollowUp`. */
   draftFollowUp(id: MeetingId, request: string): Promise<FollowUpDraft>;

@@ -379,6 +379,7 @@ pub(crate) mod tests {
             sections: vec![],
             highlights: vec![],
             template: None,
+            sections_missing: false,
             engine: "Local AI".into(),
             edited: false,
         }
