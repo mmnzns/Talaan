@@ -17,7 +17,7 @@ export function StatusTab({ settings: s, update }: TabProps) {
   const title = t(gpuTitle(onWindows));
   return (
     <div className="flex flex-col gap-6">
-      <SetupCheck>
+      <SetupCheck gpuKey={s.useGpu}>
         <Group>
           <Row title={title} desc={t(onWindows ? "settings.gpu_desc_windows" : "settings.gpu_desc")}>
             <Switch aria-label={title} checked={s.useGpu} onChange={(v) => update({ useGpu: v })} />

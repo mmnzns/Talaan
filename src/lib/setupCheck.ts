@@ -209,6 +209,13 @@ function data(p: Probe): CheckResult {
   return { id: "data", title, status: "ok", detail: `${tildePath(p.data.path)} · ${formatBytes(p.data.bytes)}`, fix: { label: t("settings.folder_open"), action: "openData" } };
 }
 
+/** The last full look with the graphics card asked again (after its switch changes): every other row stays as it
+ *  was, so nothing else is probed. */
+export async function regraphics(p: Probe, store: Pick<SettingsStore, "get" | "gpuStatus">): Promise<Probe> {
+  const [settings, gpu] = await Promise.all([store.get(), store.gpuStatus().catch(() => undefined)]);
+  return { ...p, settings, gpu };
+}
+
 /** What the Settings button's dot looks at: microphone access, the microphones connected and the speech model
  *  from settings. Cheap and quiet on purpose: no helper starts (graphics card), no folder is walked (data size,
  *  auto-save) and nothing goes over the network (a local AI server, the calendar). The full look is `probeSetup`,

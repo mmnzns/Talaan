@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { defaultSettings } from "../data/defaultSettings";
 import type { AutoSaveStatus, Settings } from "../data/settings";
 import { setupLines } from "./diagnostics";
-import { checkSetup, lightChecks, needsFixing, probeLight, type Probe } from "./setupCheck";
+import { checkSetup, lightChecks, needsFixing, probeLight, regraphics, type Probe } from "./setupCheck";
 
 const settings = (patch: Partial<Settings> = {}): Settings => ({ ...structuredClone(defaultSettings), ...patch });
 const probe = (patch: Partial<Probe> = {}): Probe => ({
@@ -35,6 +35,19 @@ describe("needsFixing (the dot on the Settings button)", () => {
     const notices = probe({ soundRelay: "FxSound", mic: "undetermined", gpu: { state: "failed", detail: "lost" } });
     expect(checkSetup(notices).filter((r) => r.status === "warn").length).toBeGreaterThan(0);
     expect(needsFixing(checkSetup(notices))).toEqual([]);
+  });
+});
+
+describe("regraphics (after the graphics switch changes)", () => {
+  it("asks only the settings and the graphics card again and keeps every other row", async () => {
+    const before = probe({ systemAudio: true, gpu: { state: "in_use", device: "RTX", vramMb: 16384 } });
+    const store = { get: async () => settings({ useGpu: false }), gpuStatus: async () => ({ state: "off" as const }) };
+    const after = await regraphics(before, store);
+    const row = (p: Probe) => checkSetup(p).find((r) => r.id === "gpu");
+    expect(row(before)?.detail).toContain("RTX");
+    expect(row(after)?.detail).toBe("Off, so Talaan uses the processor.");
+    const others = (p: Probe) => checkSetup(p).filter((r) => r.id !== "gpu");
+    expect(others(after)).toEqual(others(before));
   });
 });
 
