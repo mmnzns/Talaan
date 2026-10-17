@@ -195,11 +195,13 @@ pub fn stop_recording(app: &AppHandle) -> CmdResult<String> {
     let mut engine = rec.lock();
     let storage = state.lock();
     let id = engine.stop(&storage, platform::host_now_ns()).map_err(err)?;
-    drop(storage);
     drop(engine);
+    let transcriber = app.state::<super::transcriber::TranscriberState>();
+    transcriber.stamp_estimate(&storage, &id);
+    drop(storage);
     // A second chance at the calendar event (and, after an offline start on Windows, a few more).
     super::calendar::link_after_stop(app, &id);
-    app.state::<super::transcriber::TranscriberState>().enqueue(&id);
+    transcriber.enqueue(&id);
     notify(app, MEETINGS_CHANGED);
     emit_state(app);
     Ok(id)

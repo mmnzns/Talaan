@@ -18,6 +18,8 @@ pub const SUMMARY_MD: &str = "summary.md";
 pub const SUMMARY_DONE: &str = "summary.done.json";
 pub const LIBRARY: &str = "library.json";
 pub const SETTINGS: &str = "settings.json";
+/// How fast this computer transcribes and summarizes (`storage/speed.rs`).
+pub const SPEED: &str = "speed.json";
 
 pub fn meetings_dir(root: &Path) -> PathBuf {
     root.join(MEETINGS_DIR)

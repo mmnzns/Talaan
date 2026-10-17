@@ -34,6 +34,15 @@ pub fn setup(on_click: impl Fn(String) + Send + Sync + 'static) {
     let _ = ON_CLICK.set(Box::new(on_click));
 }
 
+/// Whether Windows will show Talaan's toasts: false when they're turned off for Talaan or for every app
+/// (Settings › System › Notifications). None when Windows can't say.
+pub fn allowed() -> Option<bool> {
+    use windows::UI::Notifications::{NotificationSetting, ToastNotificationManager};
+    let exe = std::env::current_exe().unwrap_or_default();
+    let notifier = ToastNotificationManager::CreateToastNotifierWithId(&windows_core::HSTRING::from(app_id(&exe))).ok()?;
+    Some(notifier.Setting().ok()? == NotificationSetting::Enabled)
+}
+
 /// Shows a toast; a click calls the `setup` callback with `id`. Never fails the caller.
 pub fn post(id: &str, title: &str, body: &str) {
     if let Err(e) = show(id, title, body) {

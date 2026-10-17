@@ -27,6 +27,10 @@ impl SummarizerState {
     pub fn enqueue(&self, id: &str) {
         self.worker.enqueue(id);
     }
+    /// Straight from the transcriber: ending without a summary posts "Transcript ready".
+    pub fn enqueue_auto(&self, id: &str) {
+        self.worker.enqueue_auto(id);
+    }
     pub fn cancel_if_running(&self, id: &str) {
         self.worker.cancel_if_running(id);
     }
@@ -93,33 +97,65 @@ fn local_ai(data_dir: &Path, use_gpu: bool) -> LocalAi {
     LocalAi::new(&helper_path())
 }
 
+/// How a summary with these settings is timed: the local model on the graphics chip (Metal on the Mac; on Windows
+/// the Vulkan helper when `gpu.rs` says it should be used) or the processor; a cloud service or local server.
+fn summary_profile(cfg: &Config, gpu: &Gpu) -> crate::eta::Profile {
+    let s = &cfg.settings;
+    match cfg.engine.as_str() {
+        "ollama" => crate::eta::summary_profile("ollama", "server", false),
+        "byok" => crate::eta::summary_profile("byok", s["byokProvider"].as_str().unwrap_or("claude"), false),
+        _ => {
+            let model = local_model(s["localModel"].as_str().unwrap_or("recommended"));
+            let use_gpu = s["useGpu"].as_bool().unwrap_or(true);
+            let on_gpu = if cfg!(windows) { matches!(gpu.plan(Kind::Llm, use_gpu), Plan::Gpu { .. }) } else { cfg!(target_os = "macos") };
+            crate::eta::summary_profile("local", model.id, on_gpu)
+        }
+    }
+}
+
 pub fn setup(app: &AppHandle, data_dir: PathBuf) {
     let state = app.state::<AppState>();
     let changed_app = app.clone();
     let ready_app = app.clone();
+    let done_app = app.clone();
+    let gpu = Gpu::shared(&data_dir);
     let worker = Worker::start(Deps {
         storage: state.shared(),
         changed: Arc::new(move || notify(&changed_app, MEETINGS_CHANGED)),
         make_engine: Box::new(move |cfg| make_engine(cfg, &data_dir)),
         summarized: Arc::new(move |id, title| {
             let _ = ready_app.emit(SUMMARY_READY, serde_json::json!({ "id": id, "title": title }));
-            crate::commands::summarizer::notify_ready(&ready_app, id, title);
+            notify_done(&ready_app, id, "notify.summary_ready", title);
         }),
+        unsummarized: Arc::new(move |id, title| notify_done(&done_app, id, "notify.transcript_ready", title)),
+        profile: Box::new(move |cfg| summary_profile(cfg, &gpu)),
     });
-    for id in state.lock().ids_with_status(MeetingStatus::Summarizing).unwrap_or_default() {
+    let storage = state.lock();
+    for id in storage.ids_with_status(MeetingStatus::Summarizing).unwrap_or_default() {
+        // An estimate from before the restart means nothing now; the worker makes a new one when it starts.
+        let _ = storage.update_meeting_file(&id, |f| f.eta = None);
         worker.enqueue(&id);
     }
+    drop(storage);
     app.manage(SummarizerState { worker });
 }
 
 pub const OPEN_MEETING: &str = "open-meeting";
 
-/// The "Summary ready" notification, unless turned off in Settings › General.
-pub fn notify_ready(app: &AppHandle, id: &str, title: &str) {
+/// The "Summary ready" (or, without a summary, "Transcript ready") notification that says a meeting's work is done,
+/// unless turned off in Settings › General. `heading` is an i18n key.
+pub fn notify_done(app: &AppHandle, id: &str, heading: &str, title: &str) {
     let wanted = app.state::<AppState>().lock().settings_get().ok().flatten().and_then(|s| s["notifySummaryReady"].as_bool()).unwrap_or(true);
     if wanted {
-        crate::platform::notify::post(id, &crate::i18n::tr("notify.summary_ready"), title);
+        crate::platform::notify::post(id, &crate::i18n::tr(heading), title);
     }
+}
+
+/// Whether the OS will show Talaan's notifications (None: it can't say, or hasn't been asked yet), so the screens
+/// only promise one when it will appear.
+#[tauri::command(async)]
+pub fn notifications_allowed() -> Option<bool> {
+    crate::platform::notify::allowed()
 }
 
 /// Clicking a "Summary ready" notification: bring Talaan forward on that meeting.

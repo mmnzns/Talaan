@@ -5,6 +5,7 @@ import { t as tr } from "../../lib/i18n";
 import { useT } from "../../lib/i18n/I18nProvider";
 import { navigate, routes } from "../../lib/router";
 import { cn } from "../../ui";
+import { etaText, PROCESSING_KEYS, useNow } from "../../lib/eta";
 
 export function metaLine(m: MeetingListItem): string {
   const parts = [m.appLabel];
@@ -14,11 +15,11 @@ export function metaLine(m: MeetingListItem): string {
   return parts.join(" · ").toLowerCase();
 }
 
-const PROCESSING = { transcribing: "shell.statusTranscribing", summarizing: "shell.statusSummarizing" } as const;
-
 export function MeetingItem({ meeting, selected }: { meeting: MeetingListItem; selected: boolean }) {
   const t = useT();
+  const now = useNow();
   const processing = meeting.status === "transcribing" || meeting.status === "summarizing";
+  const left = processing ? etaText(t, meeting.eta, now, meeting.progress)?.toLocaleLowerCase() : undefined;
   const go = () => navigate(routes.meeting(meeting.id));
 
   const base = "flex w-full cursor-pointer flex-col gap-1 rounded-xl border-0 px-3.5 py-[11px] text-left font-[inherit] text-ink";
@@ -28,13 +29,12 @@ export function MeetingItem({ meeting, selected }: { meeting: MeetingListItem; s
     return (
       <button type="button" onClick={go} className={cn(base, "gap-1.5", tone)} aria-current={selected ? "page" : undefined}>
         <span className="font-semibold">{meeting.title}</span>
-        <span className="flex items-center gap-2">
-          <span className={cn("h-[3px] flex-1 overflow-hidden rounded-full", "bg-line")}>
-            <span className={cn("block h-full", "bg-gold")} style={{ width: `${Math.round((meeting.progress ?? 0) * 100)}%` }} />
-          </span>
-          <span className={cn("font-mono text-[11px]", "text-faint")}>
-            {t(PROCESSING[meeting.status as keyof typeof PROCESSING])}
-          </span>
+        <span aria-hidden="true" className="h-[3px] overflow-hidden rounded-full bg-line">
+          <span className="block h-full bg-gold" style={{ width: `${Math.round((meeting.progress ?? 0) * 100)}%` }} />
+        </span>
+        <span className="font-mono text-[11px] lowercase text-faint">
+          {t(PROCESSING_KEYS[meeting.status as keyof typeof PROCESSING_KEYS])}
+          {left && ` · ${left}`}
         </span>
       </button>
     );

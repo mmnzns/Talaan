@@ -98,6 +98,7 @@ export function seedMeetings(now: Date = new Date()): Meeting[] {
     durationMs: mmss("38:20"),
     status: "summarizing",
     progress: 0.6,
+    eta: { finishAt: new Date(now.getTime() + 8 * 60_000).toISOString(), onCpu: true },
     folderId: "work",
     tags: ["vendors", "zoom"],
     peopleCount: 2,

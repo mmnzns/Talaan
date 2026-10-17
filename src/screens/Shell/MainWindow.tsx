@@ -33,11 +33,13 @@ export function MainWindow({ route }: { route: Route }) {
     if (!inTauri()) return;
     const offs = [
       onEvent<string>("open-meeting", (id) => navigate(routes.meeting(id))),
+      // Stop in the menu bar: the toast with the time estimate shows here, where the meeting opens.
+      onEvent<string>("recording-saved", (id) => void recording.announceSaved(id)),
       onEvent("record-request", () => recording.start()),
       onEvent("open-settings", () => void openSettings()),
     ];
     return () => offs.forEach((off) => off());
-  }, [recording.start]);
+  }, [recording.start, recording.announceSaved]);
 
   // Started by a notification click while Talaan wasn't running (Windows): open that meeting.
   useEffect(() => {
