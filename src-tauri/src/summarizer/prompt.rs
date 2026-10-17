@@ -147,6 +147,7 @@ pub(crate) mod tests {
                 duration_ms: 1_800_000,
                 status: MeetingStatus::Summarizing,
                 progress: None,
+                eta: None,
                 folder_id: None,
                 tags: vec![],
                 people_count: 0,

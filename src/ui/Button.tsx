@@ -1,15 +1,14 @@
-import type { ButtonHTMLAttributes, Ref } from "react";
+import type { ComponentPropsWithRef } from "react";
 import { cn } from "./cn";
 
 type Variant = "default" | "primary" | "strong" | "danger" | "ghost";
 
-interface Props extends ButtonHTMLAttributes<HTMLButtonElement> {
+/** A plain button's props, `ref` included (React 19 passes it like any prop). */
+interface Props extends ComponentPropsWithRef<"button"> {
   variant?: Variant;
   /** Soft shadow, used for the main action in a group. */
   raised?: boolean;
   size?: "md" | "lg" | "icon";
-  /** React 19 passes refs as props (used to move focus to a button). */
-  ref?: Ref<HTMLButtonElement>;
 }
 
 const variants: Record<Variant, string> = {

@@ -62,23 +62,29 @@ export function TranscriptCard({ meeting, activeAt, jumpSeq, editing, playing, o
       <div className="flex items-center gap-3 border-b border-line px-6 py-4">
         <h2 className="m-0 font-display text-base font-bold tracking-[-0.02em]">{t("meeting.transcript")}</h2>
         <span className="flex-1" />
-        <Button
-          variant="strong"
-          size="icon"
-          className="h-7 w-7 rounded-full"
-          aria-label={playing ? t("meeting.pauseAudio") : t("meeting.playAudio")}
-          disabled={!audio || meeting.transcript.length === 0}
-          title={audio ? undefined : t("meeting.audioGoneTip")}
-          onClick={onTogglePlay}
-        >
-          {playing ? <Pause size={11} fill="currentColor" aria-hidden="true" className="text-gold" /> : <Play size={11} fill="currentColor" aria-hidden="true" className="text-gold" />}
-        </Button>
-        <div aria-hidden="true" className="h-[3px] w-[110px] rounded-full bg-line">
-          <div className="h-full rounded-full bg-gold" style={{ width: `${Math.min(100, ((activeAt ?? 0) / Math.max(1, meeting.durationMs)) * 100)}%` }} />
-        </div>
-        <Label>
-          {formatTime(activeAt ?? 0)} / {formatTime(meeting.durationMs)}
-        </Label>
+        {audio ? (
+          <>
+            <Button
+              variant="strong"
+              size="icon"
+              className="h-7 w-7 rounded-full"
+              aria-label={playing ? t("meeting.pauseAudio") : t("meeting.playAudio")}
+              disabled={meeting.transcript.length === 0}
+              onClick={onTogglePlay}
+            >
+              {playing ? <Pause size={11} fill="currentColor" aria-hidden="true" className="text-gold" /> : <Play size={11} fill="currentColor" aria-hidden="true" className="text-gold" />}
+            </Button>
+            <div aria-hidden="true" className="h-[3px] w-[110px] rounded-full bg-line">
+              <div className="h-full rounded-full bg-gold" style={{ width: `${Math.min(100, ((activeAt ?? 0) / Math.max(1, meeting.durationMs)) * 100)}%` }} />
+            </div>
+            <Label>
+              {formatTime(activeAt ?? 0)} / {formatTime(meeting.durationMs)}
+            </Label>
+          </>
+        ) : (
+          // No audio to play (deleted by the retention setting or by hand): no player, just say so.
+          <Chip title={t("meeting.audioGoneTip")}>{t("meeting.audioDeletedChip")}</Chip>
+        )}
       </div>
 
       {meeting.transcript.length > 0 && !busy && (
@@ -117,7 +123,7 @@ export function TranscriptCard({ meeting, activeAt, jumpSeq, editing, playing, o
       <div ref={scroller} className="flex min-h-0 flex-1 flex-col overflow-auto pb-3.5 pt-2.5">
         {busy ? (
           <div className="px-4">
-            <Progress label={t("meeting.transcribingAudio")} value={meeting.progress} />
+            <Progress label={t("meeting.transcribingAudio")} value={meeting.progress} eta={meeting.eta} />
           </div>
         ) : rows.length === 0 ? (
           <p className="m-0 px-4 py-3 text-[13px] text-subtle">{t("meeting.noTranscript")}</p>

@@ -42,6 +42,7 @@ const TABLE: &[(&str, &str, &str, &str)] = &[
     ("tray.settings", "Settings…", "Paramètres…", "Ajustes…"),
     ("tray.quit", "Quit Talaan", "Quitter Talaan", "Salir de Talaan"),
     ("notify.summary_ready", "Summary ready", "Résumé prêt", "Resumen listo"),
+    ("notify.transcript_ready", "Transcript ready", "Transcription prête", "Transcripción lista"),
     (
         "notice.no_system_audio",
         "Talaan can't hear the call audio, so only your side is recorded. Allow system audio recording in System Settings.",

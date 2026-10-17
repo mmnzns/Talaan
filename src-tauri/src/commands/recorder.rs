@@ -235,15 +235,17 @@ pub fn stop_recording(app: &AppHandle) -> CmdResult<String> {
     let mut engine = rec.lock();
     let storage = state.lock();
     let id = engine.stop(&storage, platform::host_now_ns()).map_err(err)?;
-    drop(storage);
     drop(engine);
+    let transcriber = app.state::<super::transcriber::TranscriberState>();
+    transcriber.stamp_estimate(&storage, &id);
+    drop(storage);
     let was_test = rec.test.lock().unwrap_or_else(|e| e.into_inner()).take().is_some_and(|t| t.meeting_id == id);
     // A call started before its event was on the calendar (or a few minutes early) gets a second chance. The test
     // recording is never a calendar event.
     if !was_test {
         super::calendar::link_soon(app, &id);
     }
-    app.state::<super::transcriber::TranscriberState>().enqueue(&id);
+    transcriber.enqueue(&id);
     notify(app, MEETINGS_CHANGED);
     emit_state(app);
     Ok(id)
