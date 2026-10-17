@@ -365,6 +365,12 @@ export const settings = area({
     // Windows only: the calendar's iCal address, when the calendar is on.
     setup_calendar_ok: "Connected through your calendar’s iCal address.",
     setup_calendar_missing: "The calendar is on, but its address is missing. Connect it again in Connections.",
+    // meeting types and custom instructions
+    default_type: "Default meeting type",
+    default_type_desc: "How new recordings are summarized. You can change it while recording, or later with Summarize as…",
+    instructions_title: "Custom instructions",
+    instructions_desc: "Applied to every summary. The AI follows them but never makes up facts.",
+    instructions_placeholder: "For example: Always mention budget numbers.",
   },
   fr: {
     nav_label: "Paramètres",
@@ -718,6 +724,12 @@ export const settings = area({
     setup_data_fail: "Talaan ne peut pas lire son dossier : {error}",
     setup_calendar_ok: "Connecté par l’adresse iCal de votre calendrier.",
     setup_calendar_missing: "Le calendrier est activé, mais son adresse est introuvable. Connectez-le de nouveau dans Connexions.",
+    // meeting types and custom instructions
+    default_type: "Type de réunion par défaut",
+    default_type_desc: "La façon dont les nouveaux enregistrements sont résumés. Vous pouvez le changer pendant l’enregistrement, ou plus tard avec Résumer comme…",
+    instructions_title: "Instructions personnalisées",
+    instructions_desc: "Appliquées à chaque résumé. L’IA les suit, sans jamais inventer de faits.",
+    instructions_placeholder: "Par exemple : mentionnez toujours les montants du budget.",
   },
   es: {
     nav_label: "Ajustes",
@@ -1071,5 +1083,11 @@ export const settings = area({
     setup_data_fail: "Talaan no puede leer su carpeta: {error}",
     setup_calendar_ok: "Conectado a través de la dirección iCal de tu calendario.",
     setup_calendar_missing: "El calendario está activado, pero falta su dirección. Vuelve a conectarlo en Conexiones.",
+    // meeting types and custom instructions
+    default_type: "Tipo de reunión predeterminado",
+    default_type_desc: "Cómo se resumen las grabaciones nuevas. Puedes cambiarlo mientras grabas o después con Resumir como…",
+    instructions_title: "Instrucciones personalizadas",
+    instructions_desc: "Se aplican a cada resumen. La IA las sigue, pero nunca inventa datos.",
+    instructions_placeholder: "Por ejemplo: menciona siempre las cifras del presupuesto.",
   },
 });

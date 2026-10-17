@@ -101,9 +101,9 @@ pub fn link_soon(app: &AppHandle, meeting_id: &str) {
             events
         };
         let Some(e) = pick(&events, at) else { return };
-        let (title, attendees) = (e.title.trim().to_string(), e.attendees.clone());
+        let (title, attendees, emails) = (e.title.trim().to_string(), e.attendees.clone(), e.emails.clone());
         let saved = storage.lock().update_meeting_file(&id, |f| {
-            f.calendar_event = Some(CalendarEvent { title: title.clone(), attendees: attendees.clone() });
+            f.calendar_event = Some(CalendarEvent { title: title.clone(), attendees: attendees.clone(), emails: emails.clone() });
             if f.title_is_placeholder {
                 f.title = title.clone();
                 f.title_is_placeholder = false;

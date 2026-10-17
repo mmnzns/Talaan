@@ -81,7 +81,7 @@ describe("edits", () => {
 describe("folders", () => {
   it("counts meetings per folder", async () => {
     const folders = await store.listFolders();
-    expect(folders.find((f) => f.id === "work")?.count).toBe(4);
+    expect(folders.find((f) => f.id === "work")?.count).toBe(5);
     expect(folders.find((f) => f.id === "clients")?.count).toBe(1);
   });
 });
@@ -166,5 +166,43 @@ describe("subscribe", () => {
     off();
     await store.renameMeeting("m-q4", "B");
     expect(fn).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("notes, meeting types and the follow-up draft", () => {
+  it("replaces the notes and keeps marked moments", async () => {
+    const before = (await store.getMeeting("m-q4"))!;
+    const notes = before.marks.filter((k) => k.note);
+    await store.setNotes("m-q4", [{ ...notes[0], note: "edited" }, { id: "", at: 0, note: "new one", later: true }, { id: "x", at: 5, note: "  " }]);
+    const marks = (await store.getMeeting("m-q4"))!.marks;
+    expect(marks.filter((k) => !k.note).map((k) => k.id)).toEqual(["q4-k0"]);
+    expect(marks.filter((k) => k.note).map((k) => k.note)).toEqual(["edited", "new one"]);
+  });
+
+  it("summarizes again as another type, with its sections", async () => {
+    vi.useFakeTimers();
+    await store.summarizeAs("m-q4", "interview");
+    expect((await store.getMeeting("m-q4"))?.status).toBe("summarizing");
+    await vi.advanceTimersByTimeAsync(3000);
+    const m = (await store.getMeeting("m-q4"))!;
+    expect(m.template).toBe("interview");
+    expect(m.summary?.template).toBe("interview");
+    expect(m.summary?.sections?.map((x) => x.title)).toEqual(["Strengths", "Concerns", "Next steps"]);
+    expect(m.summary?.highlights?.length).toBe(1);
+  });
+
+  it("drafts a follow-up email to the invitees, and can be cancelled", async () => {
+    const quick = new MockMeetingStore(NOW, { askDelayMs: 0, followUpDelayMs: 0 });
+    const d = await quick.draftFollowUp("m-q4", "r1");
+    expect(d.to).toEqual(["dana.reyes@example.com", "priya.shah@example.com"]);
+    expect(d.body).toContain("- Send onboarding wireframes to design (Me, Fri Oct 17)");
+    const slow = new MockMeetingStore(NOW, { askDelayMs: 0, followUpDelayMs: 50 });
+    const pending = slow.draftFollowUp("m-q4", "r2");
+    const other = slow.draftFollowUp("m-q4", "r3");
+    await slow.cancelFollowUp("r2");
+    await expect(pending).rejects.toThrow("Cancelled.");
+    // Cancel is per draft: the other one still arrives.
+    await expect(other).resolves.toMatchObject({ subject: "Follow-up: Q4 roadmap sync" });
+    await expect(quick.draftFollowUp("m-vendor", "r4")).rejects.toThrow();
   });
 });

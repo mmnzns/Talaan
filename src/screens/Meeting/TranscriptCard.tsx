@@ -25,7 +25,9 @@ const grid = "grid grid-cols-[44px_56px_minmax(0,1fr)] items-start gap-3.5 px-6 
 export function TranscriptCard({ meeting, activeAt, jumpSeq, editing, playing, onTogglePlay, onJump }: Props) {
   const store = useStore();
   const t = useT();
-  const rows = useMemo(() => buildRows(meeting.transcript, meeting.pauses, meeting.marks), [meeting.transcript, meeting.pauses, meeting.marks]);
+  // Notes added after the call have no moment, so they stay out of the transcript.
+  const marks = useMemo(() => meeting.marks.filter((m) => !m.later), [meeting.marks]);
+  const rows = useMemo(() => buildRows(meeting.transcript, meeting.pauses, marks), [meeting.transcript, meeting.pauses, marks]);
   const active = activeAt === undefined ? undefined : lineAt(meeting.transcript, activeAt);
   const scroller = useRef<HTMLDivElement>(null);
   const audio = meeting.hasAudio;

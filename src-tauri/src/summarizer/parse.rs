@@ -1,8 +1,11 @@
 //! Reading a model's reply. Models wrap JSON in prose or code fences, get times slightly wrong and repeat
 //! themselves; this turns whatever came back into a clean `Summary` or says exactly why it can't.
 
-use crate::storage::model::{ActionItem, Summary, SummaryItem, TranscriptLine};
-use serde::{Deserialize, Serialize};
+use super::prompt::{around, moments, speaker_name};
+use super::templates::Template;
+use crate::storage::model::{ActionItem, Meeting, Summary, SummaryItem, SummarySection, TranscriptLine};
+use serde::de::DeserializeOwned;
+use serde::{Deserialize, Deserializer, Serialize};
 
 /// The reply as the schema describes it.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
@@ -17,6 +20,21 @@ pub struct Draft {
     pub action_items: Vec<Action>,
     #[serde(default)]
     pub open_questions: Vec<Timed>,
+    /// The meeting type's own parts (only asked for when it has some). Read leniently: a malformed entry is dropped
+    /// rather than costing the whole summary.
+    #[serde(default, skip_serializing_if = "Vec::is_empty", deserialize_with = "lenient")]
+    pub sections: Vec<DraftSection>,
+    /// One per marked moment (only asked for when there are some). Lenient like `sections`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty", deserialize_with = "lenient")]
+    pub highlights: Vec<Timed>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+pub struct DraftSection {
+    #[serde(default)]
+    pub title: String,
+    #[serde(default)]
+    pub items: Vec<Timed>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
@@ -37,6 +55,15 @@ pub struct Action {
     pub due: String,
     #[serde(default)]
     pub time: String,
+}
+
+/// A list where each entry that doesn't fit is skipped, and anything that isn't a list reads as empty.
+fn lenient<'de, D: Deserializer<'de>, T: DeserializeOwned>(d: D) -> Result<Vec<T>, D::Error> {
+    let v = serde_json::Value::deserialize(d)?;
+    Ok(match v {
+        serde_json::Value::Array(items) => items.into_iter().filter_map(|x| serde_json::from_value(x).ok()).collect(),
+        _ => vec![],
+    })
 }
 
 /// The JSON object in a reply: code fences and text around it are ignored.
@@ -137,7 +164,79 @@ pub fn to_summary(draft: &Draft, lines: &[TranscriptLine], engine: &str) -> Summ
         .enumerate()
         .map(|(i, (text, t))| SummaryItem { id: format!("q{i}"), text, at: time(t) })
         .collect();
-    Summary { recap: clean(&draft.recap), decisions, action_items, open_questions, engine: engine.into(), edited: false }
+    Summary { recap: clean(&draft.recap), decisions, action_items, open_questions, sections: vec![], highlights: vec![], template: None, engine: engine.into(), edited: false }
+}
+
+/// The meeting type's sections: titles in the type's own words, items with snapped times, empty ones dropped.
+pub fn to_sections(draft: &Draft, lines: &[TranscriptLine], template: &Template, language: &str) -> Vec<SummarySection> {
+    if template.is_general() {
+        return vec![];
+    }
+    let mut out: Vec<SummarySection> = vec![];
+    for s in &draft.sections {
+        let title = template.canonical_title(&clean(&s.title), language);
+        let mut items: Vec<SummaryItem> = vec![];
+        for it in &s.items {
+            let text = clean(&it.text);
+            if !text.is_empty() && !items.iter().any(|x| x.text.eq_ignore_ascii_case(&text)) {
+                items.push(SummaryItem { id: String::new(), text, at: parse_time(&it.time).and_then(|ms| snap(ms, lines)) });
+            }
+        }
+        if title.is_empty() || items.is_empty() {
+            continue;
+        }
+        // The same title twice (a merge that didn't merge): one section.
+        match out.iter_mut().find(|o| o.title.to_lowercase() == title.to_lowercase()) {
+            Some(o) => o.items.extend(items.into_iter().filter(|i| !o.items.iter().any(|x| x.text.eq_ignore_ascii_case(&i.text))).collect::<Vec<_>>()),
+            None => out.push(SummarySection { id: String::new(), title, items }),
+        }
+    }
+    for (i, s) in out.iter_mut().enumerate() {
+        s.id = format!("s{i}");
+        for (j, it) in s.items.iter_mut().enumerate() {
+            it.id = format!("s{i}i{j}");
+        }
+    }
+    out
+}
+
+/// What a highlight says when the model left a marked moment out: the line said at that moment.
+fn said_at(meeting: &Meeting, at: u64) -> Option<String> {
+    let near = around(&meeting.transcript, at);
+    let l = near.iter().find(|l| l.at <= at + 999 && at <= l.end).or_else(|| near.iter().min_by_key(|l| l.at.abs_diff(at)))?;
+    let text: String = clean(&l.text).chars().take(200).collect();
+    Some(format!("{}: {text}", speaker_name(meeting, &l.speaker)))
+}
+
+/// One highlight per marked moment, in time order: the model's words for it (the closest highlight within 30 s), or
+/// the line said then when the model skipped it. Times point at the marked moment's line.
+pub fn to_highlights(draft: &Draft, meeting: &Meeting) -> Vec<SummaryItem> {
+    let mut used = vec![false; draft.highlights.len()];
+    let mut marks = moments(meeting);
+    marks.sort_by_key(|m| m.at);
+    let mut out = vec![];
+    for m in marks {
+        let best = draft
+            .highlights
+            .iter()
+            .enumerate()
+            .filter(|(i, h)| !used[*i] && !clean(&h.text).is_empty())
+            .filter_map(|(i, h)| parse_time(&h.time).map(|t| (i, t.abs_diff(m.at))))
+            .filter(|(_, d)| *d <= 30_000)
+            .min_by_key(|(_, d)| *d);
+        let text = match best {
+            Some((i, _)) => {
+                used[i] = true;
+                Some(clean(&draft.highlights[i].text))
+            }
+            None => said_at(meeting, m.at),
+        };
+        if let Some(text) = text {
+            let at = snap(m.at, &meeting.transcript).unwrap_or(m.at);
+            out.push(SummaryItem { id: format!("h{}", out.len()), text, at: Some(at) });
+        }
+    }
+    out
 }
 
 /// A title worth using: short, not a sentence, not just "Meeting".
@@ -177,6 +276,16 @@ mod tests {
     }
 
     #[test]
+    fn a_malformed_optional_part_never_costs_the_recap() {
+        let d = parse_draft(r#"{"recap":"We met.","sections":"none","highlights":[{"time":"01:00","text":"Kept."},{"time":5},"junk"]}"#).unwrap();
+        assert_eq!(d.recap, "We met.");
+        assert!(d.sections.is_empty());
+        assert_eq!(d.highlights, vec![Timed { text: "Kept.".into(), time: "01:00".into() }]);
+        let d = parse_draft(r#"{"recap":"R.","sections":[{"title":"Today","items":"x"},{"title":"Blockers","items":[]}]}"#).unwrap();
+        assert_eq!(d.sections.len(), 1, "the entry whose items aren't a list is dropped");
+    }
+
+    #[test]
     fn bad_replies_say_why() {
         assert_eq!(parse_draft("I can't help with that."), Err("the reply had no JSON object".into()));
         assert!(parse_draft("{\"recap\": \"cut off").unwrap_err().contains("no JSON object") || parse_draft("{\"recap\": \"cut off").is_err());
@@ -212,6 +321,7 @@ mod tests {
             decisions: vec![Timed { text: "Pricing moves to Q1.".into(), time: "01:00".into() }, Timed { text: "pricing moves to q1.".into(), time: "01:02".into() }, Timed { text: " ".into(), time: "".into() }],
             action_items: vec![Action { text: "Send wireframes".into(), owner: "Me".into(), due: "Friday".into(), time: "02:05".into() }, Action { text: "Book a room".into(), owner: "".into(), due: "".into(), time: "9:99".into() }],
             open_questions: vec![Timed { text: "Who owns analytics?".into(), time: "".into() }],
+            ..Default::default()
         };
         let s = to_summary(&d, &lines(), "Local AI · Qwen3.5 4B");
         assert_eq!(s.recap, "We planned Q4.");
@@ -223,6 +333,45 @@ mod tests {
         assert_eq!((s.action_items[1].owner.clone(), s.action_items[1].at), (None, None));
         assert_eq!(s.open_questions[0].id, "q0");
         assert_eq!(s.engine, "Local AI · Qwen3.5 4B");
+    }
+
+    fn timed(text: &str, time: &str) -> Timed {
+        Timed { text: text.into(), time: time.into() }
+    }
+
+    #[test]
+    fn sections_keep_the_types_titles_and_drop_empty_ones() {
+        let t = crate::summarizer::templates::find("interview");
+        let d = Draft {
+            sections: vec![
+                DraftSection { title: "Strengths".into(), items: vec![timed("Led a migration.", "01:00"), timed("led a migration.", "01:01")] },
+                DraftSection { title: "Concerns".into(), items: vec![] },
+                DraftSection { title: "Next steps:".into(), items: vec![timed("Second round Friday.", "")] },
+                DraftSection { title: "strengths".into(), items: vec![timed("Clear speaker.", "02:05")] },
+            ],
+            ..Default::default()
+        };
+        let s = to_sections(&d, &lines(), t, "fr");
+        assert_eq!(s.iter().map(|x| x.title.as_str()).collect::<Vec<_>>(), vec!["Points forts", "Prochaines étapes"]);
+        assert_eq!(s[0].items.iter().map(|i| (i.id.as_str(), i.text.as_str(), i.at)).collect::<Vec<_>>(), vec![("s0i0", "Led a migration.", Some(60_000)), ("s0i1", "Clear speaker.", Some(125_000))]);
+        assert_eq!(s[1].id, "s1");
+        // General has no sections, whatever the model sent.
+        assert!(to_sections(&d, &lines(), crate::summarizer::templates::find("general"), "en").is_empty());
+    }
+
+    #[test]
+    fn every_marked_moment_gets_a_highlight() {
+        use crate::summarizer::prompt::tests::{mark, meeting};
+        let mut m = meeting(lines());
+        m.marks = vec![mark("k1", 126_000, None), mark("k0", 61_000, None), mark("n0", 62_000, Some("a note, not a highlight"))];
+        let d = Draft { highlights: vec![timed("Pricing moved to the first quarter.", "01:01"), timed("Far away.", "9:00")], ..Default::default() };
+        let h = to_highlights(&d, &m);
+        assert_eq!(h.len(), 2);
+        assert_eq!((h[0].id.as_str(), h[0].text.as_str(), h[0].at), ("h0", "Pricing moved to the first quarter.", Some(60_000)));
+        // The model skipped this one: the line said then stands in.
+        assert_eq!((h[1].text.as_str(), h[1].at), ("Me: I'll send wireframes Friday.", Some(125_000)));
+        m.marks.clear();
+        assert!(to_highlights(&d, &m).is_empty());
     }
 
     #[test]
