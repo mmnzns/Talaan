@@ -281,13 +281,22 @@ fn replace_ignore_case(s: &str, from: &str, to: &str) -> String {
     out
 }
 
-fn path_end(c: char) -> bool {
-    matches!(c, '\\' | '/') || c.is_whitespace() || matches!(c, '"' | '\'' | '`' | ')' | ']' | ',' | ';' | ':')
+/// Where a path segment that starts at `start` ends: at the next `\` or `/` when that comes soon and nothing before
+/// it looks like the end of the path (so "Ana Cruz" in `C:\Users\Ana Cruz\x` is one segment), otherwise at the
+/// first space or punctuation.
+fn segment_end(s: &str, start: usize) -> usize {
+    let rest = &s[start..];
+    let hard = rest.find(|c: char| matches!(c, '"' | '\'' | '`' | ')' | ']' | ',' | ';' | ':' | '\n')).unwrap_or(rest.len());
+    if let Some(sep) = rest[..hard].find(['\\', '/']).filter(|sep| *sep <= 64) {
+        return start + sep;
+    }
+    start + rest.find(|c: char| c.is_whitespace() || matches!(c, '"' | '\'' | '`' | ')' | ']' | ',' | ';' | ':' | '\\' | '/')).unwrap_or(rest.len())
 }
 
 /// Any user profile in a path, whoever's it is and however it is written: `C:\Users\<name>` (also with `/`, in any
-/// case, and 8.3 names like `ANACRU~1`), `/Users/<name>` and `/home/<name>` become `~`; a network path
-/// `\\server\share\<folder>` (a redirected profile) becomes `\\…`.
+/// case, with spaces, and 8.3 names like `ANACRU~1`), `/Users/<name>` and `/home/<name>` become `~`; a network
+/// path `\\server\share\<folder>` (a redirected profile) becomes `\\…`. Verbatim paths (`\\?\C:\…`,
+/// `\\?\UNC\server\…`) are read the same way.
 fn scrub_profiles(s: &str) -> String {
     let lower = s.to_ascii_lowercase();
     let bytes = s.as_bytes();
@@ -296,44 +305,50 @@ fn scrub_profiles(s: &str) -> String {
     while i < s.len() {
         let rest = &lower[i..];
         let prev_ok = i == 0 || !(bytes[i - 1] as char).is_ascii_alphanumeric();
+        // \\?\UNC\server\share\folder and \\server\share\folder: server, share and the folder under it.
+        let unc_prefix = if rest.starts_with("\\\\?\\unc\\") {
+            Some(8)
+        } else if rest.starts_with("\\\\") && !rest.starts_with("\\\\?\\") && !rest.starts_with("\\\\.\\") && (i == 0 || bytes[i - 1].is_ascii_whitespace() || b"(\"'`=:,".contains(&bytes[i - 1])) {
+            Some(2)
+        } else {
+            None
+        };
+        if let Some(prefix) = unc_prefix {
+            let mut j = i + prefix;
+            let mut parts = 0;
+            while parts < 3 {
+                let end = segment_end(s, j);
+                if end < s.len() && matches!(bytes[end], b'\\' | b'/') {
+                    j = end + 1;
+                    parts += 1;
+                } else {
+                    j = end;
+                    break;
+                }
+            }
+            out.push_str(&s[i..i + prefix]);
+            out.push('…');
+            i = if parts == 3 { j - 1 } else { j };
+            continue;
+        }
+        // \\?\C:\… and \\.\C:\…: keep the prefix, the drive rule reads the rest.
+        if rest.starts_with("\\\\?\\") || rest.starts_with("\\\\.\\") {
+            out.push_str(&s[i..i + 4]);
+            i += 4;
+            continue;
+        }
         // C:\Users\name or C:/Users/name
         let drive = prev_ok && rest.len() > 9 && bytes[i].is_ascii_alphabetic() && (rest[1..].starts_with(":\\users\\") || rest[1..].starts_with(":/users/"));
         // /Users/name, /home/name
         let unix = prev_ok && (rest.starts_with("/users/") || rest.starts_with("/home/"));
-        // \\server\share\folder
-        let unc = rest.starts_with("\\\\") && (i == 0 || bytes[i - 1].is_ascii_whitespace() || b"(\"'`=:,".contains(&bytes[i - 1]));
         if drive || unix {
             let start = i + if drive { 9 } else if rest.starts_with("/users/") { 7 } else { 6 };
-            let end = s[start..].find(path_end).map(|e| start + e).unwrap_or(s.len());
+            let end = segment_end(s, start);
             if end > start {
                 out.push('~');
                 i = end;
                 continue;
             }
-        }
-        if unc {
-            // Server, share and the folder under it (the profile's name in a redirected profile).
-            let mut j = i + 2;
-            let mut parts = 0;
-            while parts < 3 {
-                match s[j..].find(|c: char| c == '\\' || c == '/' || c.is_whitespace() || matches!(c, '"' | '\'' | '`' | ')' | ',')) {
-                    Some(e) if matches!(s[j + e..].chars().next(), Some('\\' | '/')) => {
-                        j += e + 1;
-                        parts += 1;
-                    }
-                    Some(e) => {
-                        j += e;
-                        break;
-                    }
-                    None => {
-                        j = s.len();
-                        break;
-                    }
-                }
-            }
-            out.push_str("\\\\…");
-            i = if parts == 3 { j - 1 } else { j };
-            continue;
         }
         let c = s[i..].chars().next().unwrap();
         out.push(c);
@@ -756,6 +771,14 @@ mod tests {
         // Redirected profiles on a network share.
         assert_eq!(redact_with(r"read \\fs01\profiles$\ana\Documents\x failed", None), r"read \\…\Documents\x failed");
         assert_eq!(redact_with(r"open \\nas\homes failed", None), r"open \\… failed");
+        // Folder names with spaces are replaced whole; a profile at the end of a sentence stops there.
+        assert_eq!(redact_with(r"open C:\Users\Ana Cruz\Documents\x.wav failed", None), r"open ~\Documents\x.wav failed");
+        assert_eq!(redact_with("open /Users/Ana Cruz/Music/x failed", None), "open ~/Music/x failed");
+        assert_eq!(redact_with(r"in C:\Users\ana failed: see C:\x", None), r"in ~ failed: see C:\x");
+        // Verbatim paths.
+        assert_eq!(redact_with(r"open \\?\C:\Users\Bob\x failed", None), r"open \\?\~\x failed");
+        assert_eq!(redact_with(r"open \\?\UNC\srv\share\ana\x failed", None), r"open \\?\UNC\…\x failed");
+        assert_eq!(redact_with(r"open \\.\C:\Users\Bob Smith\x", None), r"open \\.\~\x");
         // Not profiles.
         assert_eq!(redact_with("GET /v1/users/me ok", None), "GET /v1/users/me ok");
         assert_eq!(redact_with(r"C:\Program Files\Talaan\talaan.exe", None), r"C:\Program Files\Talaan\talaan.exe");
