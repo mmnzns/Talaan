@@ -38,8 +38,9 @@ export function Toolbar({ onImport, onRecord, recording }: Props) {
     >
       <Logo size={28} />
       <span className="font-display text-lg font-bold tracking-[-0.02em]">talaan</span>
-      <Chip>
-        <span className="size-[7px] rounded-full bg-gold shadow-[0_0_0_3px_color-mix(in_srgb,var(--t-gold)_30%,transparent)]" />
+      {/* The privacy promise in plain words; opens the Privacy tab's "what leaves this computer". */}
+      <Chip className="font-sans text-xs normal-case" onClick={() => void openSettings("privacy")} title={t("shell.privacyChipTitle")}>
+        <span aria-hidden="true" className="size-[7px] rounded-full bg-gold shadow-[0_0_0_3px_color-mix(in_srgb,var(--t-gold)_30%,transparent)]" />
         {local ? t("shell.offlineLocal") : t("shell.cloudOn")}
       </Chip>
       {update && (

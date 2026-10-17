@@ -4,8 +4,9 @@ import { area } from "../core";
 export const shell = area({
   en: {
     // Toolbar
-    offlineLocal: "offline · local ai",
-    cloudOn: "cloud summaries on",
+    offlineLocal: "Private: everything stays on this computer",
+    cloudOn: "Summaries use your online AI account",
+    privacyChipTitle: "What leaves this computer (Settings › Privacy)",
     updateReady: "update ready",
     updateReadyTitle: "Talaan {version} is ready",
     ask: "Ask",
@@ -99,8 +100,9 @@ export const shell = area({
     fromCount: "from {from} of {total} meetings · answers only use your meetings",
   },
   fr: {
-    offlineLocal: "hors ligne · ia locale",
-    cloudOn: "résumés infonuagiques activés",
+    offlineLocal: "Privé : tout reste sur cet ordinateur",
+    cloudOn: "Les résumés utilisent votre compte d’IA en ligne",
+    privacyChipTitle: "Ce qui quitte cet ordinateur (Paramètres › Confidentialité)",
     updateReady: "mise à jour prête",
     updateReadyTitle: "Talaan {version} est prêt",
     ask: "Demander",
@@ -188,8 +190,9 @@ export const shell = area({
     fromCount: "d’après {from} des {total} réunions · les réponses n’utilisent que vos réunions",
   },
   es: {
-    offlineLocal: "sin conexión · ia local",
-    cloudOn: "resúmenes en la nube activados",
+    offlineLocal: "Privado: todo se queda en esta computadora",
+    cloudOn: "Los resúmenes usan tu cuenta de IA en línea",
+    privacyChipTitle: "Qué sale de esta computadora (Ajustes › Privacidad)",
     updateReady: "actualización lista",
     updateReadyTitle: "Talaan {version} está listo",
     ask: "Preguntar",
