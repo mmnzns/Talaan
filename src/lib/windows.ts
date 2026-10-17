@@ -1,4 +1,3 @@
-import { emitTo } from "@tauri-apps/api/event";
 import { routes, navigate } from "./router";
 
 export const inTauri = () => typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
@@ -17,7 +16,7 @@ export async function openSettings(tab?: string): Promise<void> {
   const existing = await WebviewWindow.getByLabel("settings");
   if (existing) {
     if (tab) {
-      await emitTo("settings", SETTINGS_TAB_EVENT, tab).catch(() => {});
+      await existing.emitTo("settings", SETTINGS_TAB_EVENT, tab).catch(() => {});
     }
     await existing.setFocus();
     return;
