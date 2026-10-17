@@ -20,21 +20,38 @@ pub struct Event {
     pub emails: Vec<String>,
     /// The Zoom, Google Meet or Microsoft Teams link in the invite, if any.
     pub join_url: Option<String>,
+    /// The event was cancelled (EventKit keeps cancelled events; iCal feeds drop them when read).
+    pub cancelled: bool,
+    /// The user said no to it.
+    pub declined: bool,
 }
 
 /// How far ahead the menu bar shows the next meeting.
 pub const NEXT_MS: i64 = 60 * 60_000;
 
-/// The meeting the menu bar offers to record: the one a recording started now would belong to (`pick`), else the
-/// next one starting within the hour.
-pub fn upcoming(events: &[Event], now_ms: i64) -> Option<&Event> {
-    pick(events, now_ms).or_else(|| {
-        events
-            .iter()
-            .filter(|e| !e.all_day && !e.title.trim().is_empty() && e.end_ms > e.start_ms)
-            .filter(|e| e.start_ms > now_ms && e.start_ms - now_ms <= NEXT_MS)
-            .min_by_key(|e| e.start_ms)
-    })
+/// Longer than this, an event without other people or a call link reads as a block of time (focus, travel), not a
+/// meeting.
+const BLOCK_MS: i64 = 2 * 60 * 60_000;
+
+/// A recording already made: when it started, and the calendar event it was linked to.
+pub struct Recorded<'a> {
+    pub started_ms: i64,
+    pub event_title: &'a str,
+}
+
+/// The meeting the menu bar offers to record: in progress or starting within the hour, not cancelled, not declined,
+/// and not already recorded. A real meeting (other people or a call link, and not hours long) wins over a block of
+/// time even when the block is already under way; among those alike, the one in progress (the shortest) or the
+/// soonest.
+pub fn upcoming<'e>(events: &'e [Event], now_ms: i64, recorded: &[Recorded]) -> Option<&'e Event> {
+    let already = |e: &Event| recorded.iter().any(|r| r.event_title.trim() == e.title.trim() && r.started_ms >= e.start_ms - EARLY_MS && r.started_ms < e.end_ms);
+    let is_block = |e: &Event| (e.attendees.is_empty() && e.join_url.is_none()) || e.end_ms - e.start_ms > BLOCK_MS;
+    events
+        .iter()
+        .filter(|e| !e.all_day && !e.cancelled && !e.declined && !e.title.trim().is_empty() && e.end_ms > e.start_ms)
+        .filter(|e| e.end_ms > now_ms && e.start_ms - now_ms <= NEXT_MS)
+        .filter(|e| !already(e))
+        .min_by_key(|e| (is_block(e), e.start_ms.max(now_ms), e.end_ms - e.start_ms))
 }
 
 /// The call app a meeting link opens: (app id, name) as call detection names them. `None` for any other link.
@@ -90,9 +107,9 @@ pub const EARLY_MS: i64 = 10 * 60_000;
 
 /// The event a recording that started at `at_ms` belongs to: one in progress (the shortest, when several
 /// overlap, so a 30-minute call wins over an afternoon block), else the next one starting within 10 minutes.
-/// All-day events and untitled ones never count.
+/// All-day, untitled, cancelled and declined events never count.
 pub fn pick(events: &[Event], at_ms: i64) -> Option<&Event> {
-    let usable = events.iter().filter(|e| !e.all_day && !e.title.trim().is_empty() && e.end_ms > e.start_ms);
+    let usable = events.iter().filter(|e| !e.all_day && !e.cancelled && !e.declined && !e.title.trim().is_empty() && e.end_ms > e.start_ms);
     let current = usable.clone().filter(|e| e.start_ms <= at_ms && at_ms < e.end_ms).min_by_key(|e| e.end_ms - e.start_ms);
     current.or_else(|| usable.filter(|e| e.start_ms > at_ms && e.start_ms - at_ms <= EARLY_MS).min_by_key(|e| e.start_ms))
 }
@@ -104,20 +121,54 @@ mod tests {
     const MIN: i64 = 60_000;
 
     fn ev(title: &str, start_min: i64, end_min: i64) -> Event {
-        Event { title: title.into(), start_ms: start_min * MIN, end_ms: end_min * MIN, all_day: false, attendees: vec![], emails: vec![], join_url: None }
+        Event { title: title.into(), start_ms: start_min * MIN, end_ms: end_min * MIN, all_day: false, attendees: vec![], emails: vec![], join_url: None, cancelled: false, declined: false }
+    }
+
+    fn meeting(title: &str, start_min: i64, end_min: i64) -> Event {
+        Event { attendees: vec!["Ana Reyes".into()], ..ev(title, start_min, end_min) }
     }
 
     #[test]
     fn the_menu_bar_shows_the_current_meeting_or_the_next_one_within_the_hour() {
-        let e = [ev("Standup", 0, 15), ev("Roadmap", 60, 90), ev("Later", 200, 230)];
-        assert_eq!(upcoming(&e, 5 * MIN).unwrap().title, "Standup");
-        assert_eq!(upcoming(&e, 16 * MIN).unwrap().title, "Roadmap");
-        assert_eq!(upcoming(&e, 75 * MIN).unwrap().title, "Roadmap");
-        assert!(upcoming(&e, 95 * MIN).is_none(), "Later starts in 105 minutes");
-        assert_eq!(upcoming(&e, 141 * MIN).unwrap().title, "Later");
-        let mut all_day = ev("Holiday", 20, 50);
+        let e = [meeting("Standup", 0, 15), meeting("Roadmap", 60, 90), meeting("Later", 200, 230)];
+        assert_eq!(upcoming(&e, 5 * MIN, &[]).unwrap().title, "Standup");
+        assert_eq!(upcoming(&e, 16 * MIN, &[]).unwrap().title, "Roadmap");
+        assert_eq!(upcoming(&e, 75 * MIN, &[]).unwrap().title, "Roadmap");
+        assert!(upcoming(&e, 95 * MIN, &[]).is_none(), "Later starts in 105 minutes");
+        assert_eq!(upcoming(&e, 141 * MIN, &[]).unwrap().title, "Later");
+        let mut all_day = meeting("Holiday", 20, 50);
         all_day.all_day = true;
-        assert!(upcoming(&[all_day, ev("  ", 20, 50)], 0).is_none());
+        assert!(upcoming(&[all_day, meeting("  ", 20, 50)], 0, &[]).is_none());
+    }
+
+    #[test]
+    fn cancelled_and_declined_events_are_never_offered() {
+        let mut cancelled = meeting("Cancelled sync", 10, 40);
+        cancelled.cancelled = true;
+        let mut declined = meeting("Declined review", 10, 40);
+        declined.declined = true;
+        assert!(upcoming(&[cancelled, declined.clone()], 0, &[]).is_none());
+        assert_eq!(upcoming(&[declined, meeting("Kept", 30, 60)], 0, &[]).unwrap().title, "Kept");
+    }
+
+    #[test]
+    fn a_meeting_starting_soon_beats_a_long_block_already_under_way() {
+        let focus = ev("Focus time", 0, 240); // no people, no link, four hours
+        let all_afternoon = meeting("Offsite", 0, 300); // people, but five hours
+        let e = [focus, all_afternoon, meeting("Client call", 70, 100)];
+        assert_eq!(upcoming(&e, 30 * MIN, &[]).unwrap().title, "Client call");
+        // With no real meeting coming, the block is still shown.
+        assert_eq!(upcoming(&[ev("Focus time", 0, 240)], 30 * MIN, &[]).unwrap().title, "Focus time");
+    }
+
+    #[test]
+    fn an_event_already_recorded_is_not_offered_again() {
+        let e = [meeting("Standup", 0, 15), meeting("Roadmap", 30, 60)];
+        let done = [Recorded { started_ms: -2 * MIN, event_title: "Standup" }];
+        assert_eq!(upcoming(&e, 5 * MIN, &done).unwrap().title, "Roadmap");
+        // A recording of yesterday's Standup doesn't hide today's.
+        let yesterday = [Recorded { started_ms: -24 * 60 * MIN, event_title: "Standup" }];
+        assert_eq!(upcoming(&e, 5 * MIN, &yesterday).unwrap().title, "Standup");
     }
 
     #[test]

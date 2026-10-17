@@ -98,10 +98,21 @@ pub async fn calendar_next(app: AppHandle) -> Option<NextMeeting> {
     if !enabled(&app) {
         return None;
     }
-    tauri::async_runtime::spawn_blocking(|| {
+    tauri::async_runtime::spawn_blocking(move || {
         let now = chrono::Utc::now().timestamp_millis();
+        // Recordings already linked to an event (the last day is plenty), so their event isn't offered again.
+        let recorded: Vec<(i64, String)> = {
+            let state = app.state::<AppState>();
+            let storage = state.lock();
+            let recent = storage.list_meetings(&Default::default()).unwrap_or_default().into_iter().filter_map(|m| {
+                let started = chrono::DateTime::parse_from_rfc3339(&m.started_at).ok()?.timestamp_millis();
+                (now - started < 86_400_000).then_some((m.id, started))
+            });
+            recent.filter_map(|(id, started)| Some((started, storage.read_meeting_file(&id).ok()?.calendar_event?.title))).collect()
+        };
+        let recorded: Vec<_> = recorded.iter().map(|(started_ms, title)| crate::calendar::Recorded { started_ms: *started_ms, event_title: title }).collect();
         let events = system::events(now, now + crate::calendar::NEXT_MS);
-        let e = crate::calendar::upcoming(&events, now)?;
+        let e = crate::calendar::upcoming(&events, now, &recorded)?;
         let app = e.join_url.as_deref().and_then(crate::calendar::meeting_app);
         Some(NextMeeting {
             title: e.title.trim().to_string(),

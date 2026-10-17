@@ -40,6 +40,7 @@ struct Item {
     attendees: Vec<String>,
     emails: Vec<String>,
     join_url: Option<String>,
+    declined: bool,
     start: DateTime<Tz>,
     all_day: bool,
     length: Length,
@@ -179,6 +180,9 @@ impl Calendar {
                         attendees: it.attendees.clone(),
                         emails: it.emails.clone(),
                         join_url: it.join_url.clone(),
+                        // Cancelled events are dropped when the file is read.
+                        cancelled: false,
+                        declined: it.declined,
                     });
                 }
             }
@@ -220,12 +224,13 @@ fn item(ev: &Block, zones: &HashMap<String, Tz>, me: &[String], series: bool) ->
     if recurrence.is_none() && series && ev.value("RRULE").is_some() && ev.times("EXDATE", zones).contains(&start.at) {
         return None;
     }
-    let (attendees, emails) = attendees(ev, me);
+    let (attendees, emails, declined) = attendees(ev, me);
     Some(Item {
         title: ev.value("SUMMARY").map(|s| unescape(s).trim().to_string()).unwrap_or_default(),
         attendees,
         emails,
         join_url: join_url(ev),
+        declined,
         start: start.at,
         all_day: start.all_day,
         length,
@@ -577,20 +582,23 @@ fn join_url(ev: &Block) -> Option<String> {
     super::join_link(&texts.iter().map(String::as_str).collect::<Vec<_>>())
 }
 
-/// The other people's names, and their email addresses where the calendar has them.
-fn attendees(ev: &Block, me: &[String]) -> (Vec<String>, Vec<String>) {
+/// The other people's names, their email addresses where the calendar has them, and whether the user declined.
+fn attendees(ev: &Block, me: &[String]) -> (Vec<String>, Vec<String>, bool) {
     let mut names: Vec<String> = Vec::new();
     let mut emails: Vec<String> = Vec::new();
+    let mut declined = false;
+    let is_me = |a: &str| me.iter().any(|m| m.trim().eq_ignore_ascii_case(a));
     for l in ev.0.iter().filter(|l| l.name.eq_ignore_ascii_case("ATTENDEE")) {
+        let value = l.value.trim();
+        let email = value.get(..7).filter(|p| p.eq_ignore_ascii_case("mailto:")).map(|_| value[7..].trim());
         if param(l, "PARTSTAT").is_some_and(|p| p.eq_ignore_ascii_case("DECLINED")) {
+            declined |= email.is_some_and(is_me);
             continue;
         }
         if param(l, "CUTYPE").is_some_and(|t| t.eq_ignore_ascii_case("ROOM") || t.eq_ignore_ascii_case("RESOURCE")) {
             continue;
         }
-        let value = l.value.trim();
-        let email = value.get(..7).filter(|p| p.eq_ignore_ascii_case("mailto:")).map(|_| value[7..].trim());
-        if email.is_some_and(|a| me.iter().any(|m| m.trim().eq_ignore_ascii_case(a))) {
+        if email.is_some_and(is_me) {
             continue;
         }
         let cn = param(l, "CN").filter(|n| !n.is_empty() && email.is_none_or(|a| !n.eq_ignore_ascii_case(a))).map(unescape);
@@ -602,7 +610,7 @@ fn attendees(ev: &Block, me: &[String]) -> (Vec<String>, Vec<String>) {
             emails.push(a);
         }
     }
-    (names, emails)
+    (names, emails, declined)
 }
 
 /// Windows time zone names (as Outlook writes them in TZID) → IANA, from CLDR's windowsZones.xml (the "001"
@@ -919,6 +927,29 @@ mod tests {
         assert_eq!(e[0].attendees, vec!["Ana Reyes", "Lee, Sam", "jordan.k"]);
         assert_eq!(e[0].emails, vec!["ana@example.com", "sam@example.com", "jordan.k@example.com"]);
         assert_eq!(e[0].join_url, None);
+        assert!(!e[0].declined);
+    }
+
+    #[test]
+    fn an_event_the_user_declined_says_so() {
+        let ics = cal("
+            BEGIN:VEVENT
+            UID:no@test
+            SUMMARY:Optional review
+            DTSTART:20261020T170000Z
+            DTEND:20261020T173000Z
+            ATTENDEE;CN=Ana Reyes;PARTSTAT=ACCEPTED:mailto:ana@example.com
+            ATTENDEE;CN=Miguel;PARTSTAT=DECLINED:mailto:miguel@example.com
+            END:VEVENT
+            BEGIN:VEVENT
+            UID:other@test
+            SUMMARY:Ana declined
+            DTSTART:20261020T180000Z
+            DTEND:20261020T183000Z
+            ATTENDEE;CN=Ana Reyes;PARTSTAT=DECLINED:mailto:ana@example.com
+            END:VEVENT");
+        let e = parse(&ics, utc(2026, 10, 20, 0, 0), utc(2026, 10, 21, 0, 0), &["miguel@example.com".to_string()]);
+        assert_eq!(e.iter().map(|e| e.declined).collect::<Vec<_>>(), vec![true, false]);
     }
 
     #[test]
