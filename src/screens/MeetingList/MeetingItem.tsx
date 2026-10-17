@@ -15,6 +15,26 @@ export function metaLine(m: MeetingListItem): string {
   return parts.join(" · ");
 }
 
+/** A meeting whose meeting.json couldn't be read (damaged, or written by a newer Talaan): Rust lists it as failed
+ *  with no start time (storage/store.rs `broken_item`). */
+export const unreadable = (m: MeetingListItem) => m.status === "failed" && !m.startedAt;
+
+/** The status part of a row's line, for the row and for screen readers. */
+export function statusLine(m: MeetingListItem): string {
+  if (unreadable(m)) return tr("shell.statusUnreadable");
+  if (m.status === "recording") return tr("shell.statusRecording");
+  if (m.status === "failed") return tr("shell.statusFailed");
+  if (m.status === "needs_recovery") return tr("shell.statusNeedsRecovery");
+  return metaLine(m);
+}
+
+/** What a screen reader hears for a finished (not processing) row: name, date, the line under it, pinned audio.
+ *  An unreadable meeting has no date to say. */
+export function rowLabel(m: MeetingListItem): string {
+  const status = [statusLine(m), m.pinned ? tr("shell.audioPinned") : ""].filter(Boolean).join(", ");
+  return m.startedAt ? tr("shell.meetingAria", { title: m.title, date: formatDate(m.startedAt), status }) : tr("shell.meetingAriaNoDate", { title: m.title, status });
+}
+
 /** The line under a meeting's title: the place people scan most, so plain 12 px text rather than the mono label. */
 const meta = "text-xs leading-[17px] text-faint";
 
@@ -59,20 +79,7 @@ export function MeetingItem({ meeting, selected }: { meeting: MeetingListItem; s
       onClick={go}
       className={cn(base, tone)}
       aria-current={selected ? "page" : undefined}
-      aria-label={label(
-        [
-          meeting.status === "recording"
-            ? t("shell.statusRecording")
-            : meeting.status === "failed"
-              ? t("shell.statusFailed")
-              : meeting.status === "needs_recovery"
-                ? t("shell.statusNeedsRecovery")
-                : metaLine(meeting),
-          meeting.pinned ? t("shell.audioPinned") : "",
-        ]
-          .filter(Boolean)
-          .join(", "),
-      )}
+      aria-label={rowLabel(meeting)}
     >
       <span className={cn("flex items-center gap-1.5", selected ? "font-bold" : "font-semibold")}>
         <span className="min-w-0 flex-1 truncate">{meeting.title}</span>
@@ -84,7 +91,7 @@ export function MeetingItem({ meeting, selected }: { meeting: MeetingListItem; s
         </span>
       ) : meeting.status === "failed" ? (
         <span className={cn(meta, "flex items-center gap-1 text-warn-fg")}>
-          <AlertTriangle size={12} aria-hidden="true" /> {t("shell.statusFailed")}
+          <AlertTriangle size={12} aria-hidden="true" /> {statusLine(meeting)}
         </span>
       ) : meeting.status === "needs_recovery" ? (
         <span className={cn(meta, "flex items-center gap-1 text-warn-fg")}>
