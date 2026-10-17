@@ -151,6 +151,13 @@ pub fn notify_done(app: &AppHandle, id: &str, heading: &str, title: &str) {
     }
 }
 
+/// Whether the OS will show Talaan's notifications (None: it can't say, or hasn't been asked yet), so the screens
+/// only promise one when it will appear.
+#[tauri::command(async)]
+pub fn notifications_allowed() -> Option<bool> {
+    crate::platform::notify::allowed()
+}
+
 /// Clicking a "Summary ready" notification: bring Talaan forward on that meeting.
 pub fn open_meeting(app: &AppHandle, id: &str) {
     if let Some(w) = app.get_webview_window("main") {

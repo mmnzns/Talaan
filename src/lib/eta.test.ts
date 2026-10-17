@@ -31,6 +31,9 @@ describe("etaText and savedText", () => {
     expect(etaText(en, at(-5 * 60_000), now)).toBe("Almost done");
     expect(etaText(fr, at(60_000), now)).toBe("Environ 1 min restante");
     expect(etaText(en, undefined, now)).toBeUndefined();
+    // Every chunk is done but speakers are still being told apart.
+    expect(etaText(en, at(-10_000), now, 1)).toBe("Finishing up");
+    expect(etaText(en, at(5 * 60_000), now, 0.5)).toBe("About 5 min left");
   });
   it("tells how long the transcript will take after Stop", () => {
     expect(savedText(en, at(4 * 60_000), now)).toBe("Recording saved. Writing the transcript now (about 4 min).");
