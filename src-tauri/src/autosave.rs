@@ -47,8 +47,9 @@ pub enum Outcome {
     FolderMissing,
 }
 
-/// Longest title kept in a file name, in characters, so paths stay well inside Windows' limits.
-const MAX_TITLE: usize = 120;
+/// Longest file name, in bytes: APFS and NTFS allow 255, and " (99).md" must still fit after it. Temp files have short
+/// names of their own (`write_atomic`), so they never come near the limit.
+const MAX_NAME_BYTES: usize = 200;
 
 /// "2026-10-14 Q4 Roadmap Sync.md": the meeting's local date (from its RFC 3339 start) and its title, without the
 /// characters Windows and macOS don't allow in file names.
@@ -56,8 +57,14 @@ pub fn file_name(started_at: &str, title: &str) -> String {
     let date = started_at.get(..10).filter(|d| d.bytes().enumerate().all(|(i, b)| if i == 4 || i == 7 { b == b'-' } else { b.is_ascii_digit() }));
     let clean: String = title.chars().map(|c| if c.is_control() || "\\/:*?\"<>|".contains(c) { ' ' } else { c }).collect();
     let mut clean = clean.split_whitespace().collect::<Vec<_>>().join(" ");
-    if clean.chars().count() > MAX_TITLE {
-        clean = clean.chars().take(MAX_TITLE).collect::<String>().trim_end().to_string();
+    // Cut on a character boundary so the whole name ("2026-10-14 " + title + ".md") fits in MAX_NAME_BYTES.
+    let room = MAX_NAME_BYTES - "2026-10-14 .md".len();
+    if clean.len() > room {
+        let mut end = room;
+        while !clean.is_char_boundary(end) {
+            end -= 1;
+        }
+        clean = clean[..end].trim_end().to_string();
     }
     // Windows drops trailing dots and spaces from names, which would make two names collide.
     let clean = clean.trim_end_matches(['.', ' ']);
@@ -65,6 +72,17 @@ pub fn file_name(started_at: &str, title: &str) -> String {
     match date {
         Some(d) => format!("{d} {title}.md"),
         None => format!("{title}.md"),
+    }
+}
+
+/// The same folder however it was spelled: symlinks resolved, and without regard to case on macOS and Windows,
+/// whose disks normally ignore it (so picking the folder again doesn't start a second set of copies).
+pub fn same_folder(a: &Path, b: &Path) -> bool {
+    let (Ok(x), Ok(y)) = (fs::canonicalize(a), fs::canonicalize(b)) else { return a == b };
+    if cfg!(any(target_os = "windows", target_os = "macos")) {
+        x.to_string_lossy().to_lowercase() == y.to_string_lossy().to_lowercase()
+    } else {
+        x == y
     }
 }
 
@@ -85,7 +103,7 @@ pub fn write(folder: &Path, name: &str, previous: Option<&Copy>, contents: &str,
     let target = folder.join(name);
     // Only a previous copy that is still in this folder, unchanged, is ours to replace (the folder may have changed
     // since, and an edited copy belongs to the person now).
-    let previous = previous.filter(|c| c.path.parent() == Some(folder) && c.untouched()).map(|c| c.path.as_path());
+    let previous = previous.filter(|c| c.path.parent().is_some_and(|p| same_folder(p, folder)) && c.untouched()).map(|c| c.path.as_path());
     let target = match previous {
         // Same name, or the same name in another case (macOS and Windows treat those as one file): move it to the
         // new spelling, then rewrite it.
@@ -121,10 +139,13 @@ fn free_name(folder: &Path, name: &str, mine: Option<&Path>) -> PathBuf {
         .expect("some name is free")
 }
 
-/// Temp file beside the target, then rename, so a sync app or Obsidian never sees half a file.
+/// Temp file beside the target, then rename, so a sync app or Obsidian never sees half a file. The temp name is
+/// short and unique (process, counter, time), so two writes can never share one.
 fn write_atomic(target: &Path, contents: &str) -> io::Result<()> {
-    let name = target.file_name().and_then(|n| n.to_str()).unwrap_or("meeting.md");
-    let tmp = target.with_file_name(format!(".{name}.talaan-tmp"));
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static NEXT: AtomicU64 = AtomicU64::new(0);
+    let nanos = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.subsec_nanos()).unwrap_or(0);
+    let tmp = target.with_file_name(format!(".talaan-{}-{}-{nanos}.tmp", std::process::id(), NEXT.fetch_add(1, Ordering::Relaxed)));
     fs::write(&tmp, contents)?;
     fs::rename(&tmp, target).inspect_err(|_| {
         let _ = fs::remove_file(&tmp);
@@ -223,7 +244,10 @@ mod tests {
         assert_eq!(file_name("2026-10-14T14:30:00-04:00", "Ends with dots..."), "2026-10-14 Ends with dots.md");
         assert_eq!(file_name("garbage", "Sync"), "Sync.md");
         let long = "x".repeat(300);
-        assert_eq!(file_name("2026-10-14", &long).chars().count(), "2026-10-14 ".len() + MAX_TITLE + ".md".len());
+        assert_eq!(file_name("2026-10-14", &long).len(), MAX_NAME_BYTES);
+        // Accented and other wide characters count by their bytes and are never cut in half.
+        let wide = file_name("2026-10-14", &"é日".repeat(100));
+        assert!(wide.len() <= MAX_NAME_BYTES && wide.ends_with(".md"), "{} bytes", wide.len());
     }
 
     #[test]
@@ -338,6 +362,32 @@ mod tests {
         let broken = |_: &Path| Err(io::Error::other("no bin here"));
         write(dir.path(), "b.md", Some(&old), "two", &broken).unwrap();
         assert_eq!(names(dir.path()), vec!["a.md", "b.md"]);
+    }
+
+    #[test]
+    fn the_same_folder_spelled_differently_keeps_one_copy() {
+        let dir = tempfile::tempdir().unwrap();
+        let Outcome::Written(first) = write(dir.path(), "a.md", None, "one", &bin).unwrap() else { panic!() };
+        // Picked again through a path with a "." in it (and, on Windows and macOS, in other case).
+        let mut again = dir.path().join(".").to_string_lossy().into_owned();
+        if cfg!(any(target_os = "windows", target_os = "macos")) {
+            again = again.to_uppercase();
+        }
+        let Outcome::Written(next) = write(Path::new(&again), "a.md", Some(&first), "two", &bin).unwrap() else { panic!() };
+        assert_eq!(names(dir.path()), vec!["a.md"]);
+        assert_eq!(read(&next.path), "two");
+    }
+
+    #[test]
+    fn two_writes_at_once_never_share_a_temp_file() {
+        let dir = tempfile::tempdir().unwrap();
+        std::thread::scope(|s| {
+            for i in 0..8 {
+                let d = dir.path();
+                s.spawn(move || write_atomic(&d.join(format!("{i}.md")), "x").unwrap());
+            }
+        });
+        assert_eq!(names(dir.path()).len(), 8, "no temp files left: {:?}", names(dir.path()));
     }
 
     mod bookkeeping {

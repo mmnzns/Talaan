@@ -7,7 +7,9 @@ use super::{AppState, CmdResult};
 use crate::autosave;
 use crate::storage::StorageError;
 use serde::Serialize;
+use std::collections::BTreeMap;
 use std::path::PathBuf;
+use std::sync::{Arc, Mutex};
 use tauri::{AppHandle, Emitter, Manager};
 
 pub const AUTOSAVE_DUE: &str = "autosave-due";
@@ -45,7 +47,18 @@ pub async fn autosave_write(app: AppHandle, id: String, contents: String, finish
         .map_err(|e| StorageError::Refused(e.to_string()))?
 }
 
+/// One write at a time per meeting, so the main window's queue and Check setup's Try again can't both pick a name
+/// and leave a "(2)" copy behind.
+fn meeting_lock(id: &str) -> Arc<Mutex<()>> {
+    static LOCKS: Mutex<BTreeMap<String, Arc<Mutex<()>>>> = Mutex::new(BTreeMap::new());
+    let mut locks = LOCKS.lock().unwrap_or_else(|e| e.into_inner());
+    locks.retain(|_, l| Arc::strong_count(l) > 1); // forget meetings nobody is writing
+    locks.entry(id.to_string()).or_default().clone()
+}
+
 fn write_one(app: &AppHandle, dir: &std::path::Path, id: &str, contents: &str, finished: bool) -> CmdResult<&'static str> {
+    let lock = meeting_lock(id);
+    let _one_at_a_time = lock.lock().unwrap_or_else(|e| e.into_inner());
     let state = app.state::<AppState>();
     let Some(plan) = autosave::plan(&state.lock(), id, finished)? else { return Ok("not_ready") };
     // The storage lock is not held while the folder is written: it may be a slow or sleeping drive.

@@ -38,7 +38,8 @@ fn changed<T>(app: &AppHandle, r: CmdResult<T>) -> CmdResult<T> {
     r
 }
 
-/// A change to what a meeting's exported copy shows: also refreshes its copy in the auto-save folder.
+/// A change to what a meeting's exported copy shows (title, summary edits and ticked action items, which arrive as
+/// summary updates, transcript edits, names): also refreshes its copy in the auto-save folder.
 fn edited<T>(app: &AppHandle, id: &str, r: CmdResult<T>) -> CmdResult<T> {
     let r = changed(app, r);
     if r.is_ok() {
