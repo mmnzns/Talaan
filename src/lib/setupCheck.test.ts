@@ -18,10 +18,20 @@ describe("needsFixing (the dot on the Settings button)", () => {
   it("is empty on a set-up computer, even before call audio is tested", () => {
     expect(needsFixing(checkSetup(probe()))).toEqual([]);
   });
+  it("never counts the summary check: transcript only is a choice, and a local server may be off", () => {
+    const noLocal = defaultSettings.localModels.map((m) => ({ ...m, state: "not_downloaded" as const }));
+    const results = checkSetup(probe({ settings: settings({ localModels: noLocal }) }));
+    expect(results.find((r) => r.id === "summary")?.status).toBe("fail");
+    expect(needsFixing(results)).toEqual([]);
+    const ollama = settings({ summaryEngine: "ollama" });
+    expect(needsFixing(checkSetup(probe({ settings: ollama, localServer: { ok: false, message: "Couldn't connect" } })))).toEqual([]);
+    expect(needsFixing(checkSetup(probe({ settings: settings({ summaryEngine: "byok", byokKeys: [] }) })))).toEqual([]);
+  });
+
   it("counts what stops a call, not notices", () => {
     expect(needsFixing(checkSetup(probe({ mic: "denied" }))).map((r) => r.id)).toEqual(["mic"]);
-    const noLocal = defaultSettings.localModels.map((m) => ({ ...m, state: "not_downloaded" as const }));
-    expect(needsFixing(checkSetup(probe({ settings: settings({ localModels: noLocal }) }))).map((r) => r.id)).toEqual(["summary"]);
+    const noSpeech = defaultSettings.speechModels.map((m) => ({ ...m, state: "not_downloaded" as const }));
+    expect(needsFixing(checkSetup(probe({ settings: settings({ speechModels: noSpeech }) }))).map((r) => r.id)).toEqual(["speech"]);
     const notices = probe({ soundRelay: "FxSound", mic: "undetermined", gpu: { state: "failed", detail: "lost" } });
     expect(checkSetup(notices).filter((r) => r.status === "warn").length).toBeGreaterThan(0);
     expect(needsFixing(checkSetup(notices))).toEqual([]);
