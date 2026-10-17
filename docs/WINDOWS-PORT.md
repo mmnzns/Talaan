@@ -135,9 +135,13 @@ Firefox stays Ask, as on the Mac.
 **Background call tabs (v1.1, C1).** The same walk also reads the tab strip: every tab is a `TabItem` whose name is its
 title, plus Chromium's own notes (Edge: "Example Domain - Memory usage - 22.4 MB"). The walk never enters a tab or the
 address bar, and stops after the level where it has both (they sit at the same depth, about 8 levels down; everything
-deeper is bookmarks, side panels and menus). `calls/tabs.rs` `title_call` knows the call pages' own titles: "Meet -
-abc-defg-hij" / "Meet – <name>", "… | Microsoft Teams", "Zoom Meeting" / "Zoom Webinar", each optionally followed by
-" - <note>". A matching title counts only because the browser is asked only while it's using the mic. The address bar
+deeper is bookmarks, side panels and menus). A window that shows neither after 300 elements (an installed web app,
+DevTools, a popup) is given up on, and one window may use at most 150 ms of the budget; UI Automation calls are capped
+at 120 ms (150 ms to connect). `calls/tabs.rs` `title_call` knows the call pages' own titles: "Meet - abc-defg-hij"
+(only with a meeting code: the home page and named pages can't be told apart), "<page> | Microsoft Teams" except
+Teams' own non-call pages (Chat, Activity, Calendar…, also in French and Spanish), "Zoom Meeting" / "Zoom Webinar",
+each optionally followed by " - <note>" (Chromium's notes come after " - " in every language: "Utilisation de la
+mémoire", "Uso de memoria"). A matching title counts only because the browser is asked only while it's using the mic. The address bar
 still wins (`Urls`); else matching titles give `Tabs::Titles`; else `Unknown`. Live check (2026-10-16, debug build):
 `background_call_tab_live_smoke` starts a separate Edge with a new temp profile (so nothing opens in the user's
 windows), opens a local page titled "Meet - abc-defg-hij", then example.com in front of it: `Titles` 5 times out of 5,

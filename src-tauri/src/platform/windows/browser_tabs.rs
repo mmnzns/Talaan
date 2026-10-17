@@ -44,8 +44,15 @@ const OMNIBOX_CLASS: &str = "OmniboxViewViews";
 /// Edge window has about 250 elements outside web content, and each tab adds one).
 const MAX_DEPTH: usize = 12;
 const MAX_NODES: usize = 1000;
+/// A window that shows neither an address bar nor a tab after this many elements is no browser window (an
+/// installed web app, DevTools, a picture-in-picture or a popup): give up on it early.
+const NOTHING_AFTER: usize = 300;
+/// The most one window may take of the budget, so a slow window leaves time for the others.
+const PER_WINDOW: Duration = Duration::from_millis(150);
 /// Cap on any single UI Automation call, so a hung browser can't hold the calls loop.
-const CALL_TIMEOUT_MS: u32 = 250;
+const CALL_TIMEOUT_MS: u32 = 120;
+/// Connecting to a browser's UI Automation provider the first time can take longer than one call.
+const CONNECT_TIMEOUT_MS: u32 = 150;
 
 /// An element as the search sees it.
 struct Element<N> {
@@ -76,7 +83,8 @@ fn scan<N>(root: N, mut children: impl FnMut(&N) -> Option<Vec<Element<N>>>, out
     for _ in 0..MAX_DEPTH {
         let mut next = Vec::new();
         for node in &level {
-            if out_of_time() || seen >= MAX_NODES {
+            let nothing_yet = found.omnibox.is_none() && found.titles.is_empty();
+            if out_of_time() || seen >= MAX_NODES || (nothing_yet && seen >= NOTHING_AFTER) {
                 return found;
             }
             for child in children(node).unwrap_or_default() {
@@ -173,7 +181,7 @@ fn image_path(pid: u32) -> Option<String> {
 unsafe fn read_windows(windows: &[HWND], started: Instant) -> ::windows::core::Result<(Vec<String>, Vec<String>)> {
     let uia: IUIAutomation = unsafe { CoCreateInstance(&CUIAutomation8, None, CLSCTX_INPROC_SERVER)? };
     if let Ok(uia2) = uia.cast::<IUIAutomation2>() {
-        let _ = unsafe { uia2.SetConnectionTimeout(CALL_TIMEOUT_MS) };
+        let _ = unsafe { uia2.SetConnectionTimeout(CONNECT_TIMEOUT_MS) };
         let _ = unsafe { uia2.SetTransactionTimeout(CALL_TIMEOUT_MS) };
     }
     let all = unsafe { uia.CreateTrueCondition()? };
@@ -212,7 +220,9 @@ unsafe fn read_windows(windows: &[HWND], started: Instant) -> ::windows::core::R
             break;
         }
         let Ok(window) = (unsafe { uia.ElementFromHandle(hwnd) }) else { continue };
-        let found = scan(window, children, out_of_time);
+        // This window's share: whatever is left of the budget, at most PER_WINDOW.
+        let window_started = Instant::now();
+        let found = scan(window, children, || out_of_time() || window_started.elapsed() > PER_WINDOW);
         titles.extend(found.titles);
         let Some(omnibox) = found.omnibox else { continue };
         let Ok(value) = (unsafe { omnibox.GetCurrentPatternAs::<IUIAutomationValuePattern>(UIA_ValuePatternId) }) else { continue };
@@ -363,7 +373,17 @@ mod tests {
             Some((0..50).map(|i| plain(n * 50 + i + 1, "")).collect())
         };
         assert_eq!(scan(0u32, wide, || false).omnibox, None);
-        assert!(calls * 50 <= MAX_NODES + 50, "{calls}");
+        assert!(calls * 50 <= NOTHING_AFTER + 50, "a window with nothing to find stops early: {calls}");
+        // With something found (a tab strip), the walk goes on to MAX_NODES looking for the address bar.
+        let mut calls = 0;
+        let tabs_then_wide = |n: &u32| {
+            calls += 1;
+            let tab = *n == 0;
+            Some((0..50).map(|i| Element { node: n * 50 + i + 1, class: String::new(), name: if tab && i == 0 { "Meet - abc-defg-hij".into() } else { String::new() }, document: false, tab_item: tab && i == 0 }).collect())
+        };
+        let found = scan(0u32, tabs_then_wide, || false);
+        assert_eq!(found.titles.len(), 1);
+        assert!(calls * 50 > NOTHING_AFTER && calls * 50 <= MAX_NODES + 50, "{calls}");
     }
 
     #[test]
