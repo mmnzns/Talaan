@@ -465,7 +465,9 @@ mod tests {
         let mut r = rig(&[reply(&[READY_GPU])], &[reply(&[READY]), reply(&[&cpu_done])], Duration::from_millis(400));
         let t = Instant::now();
         assert_eq!(summarize(&mut r.ai).unwrap(), "cpu");
-        assert!(t.elapsed() < Duration::from_secs(10));
+        // Given up after the rig's short stall, not the real one. (Not a wall-clock bound: under a full parallel
+        // test run, starting the fake helpers, cmd scripts on Windows, can take seconds.)
+        assert!(t.elapsed() < GPU_STALL);
         assert_eq!(*r.recorded.lock().unwrap(), ["the GPU helper stopped answering"]);
     }
 

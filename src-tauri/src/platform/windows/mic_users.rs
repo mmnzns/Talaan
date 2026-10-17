@@ -241,6 +241,11 @@ pub fn capture_sessions() -> Option<Vec<Session>> {
     Some(out)
 }
 
+/// The full exe path of a running process ("" when Windows won't say).
+pub fn exe_path(pid: u32) -> String {
+    identity_of(pid).0
+}
+
 /// (full exe path, package family name) of a running process; empty / `None` for whatever Windows won't say.
 fn identity_of(pid: u32) -> (String, Option<String>) {
     use ::windows::core::PWSTR;

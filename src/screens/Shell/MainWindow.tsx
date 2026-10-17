@@ -3,7 +3,7 @@ import { onWindows } from "../../lib/platform";
 import type { Route } from "../../lib/router";
 import { navigate, routes } from "../../lib/router";
 import { inTauri, openSettings } from "../../lib/windows";
-import { onEvent } from "../../data/tauri/invoke";
+import { call, onEvent } from "../../data/tauri/invoke";
 import { useSettingsStore, useStore } from "../../data/StoreProvider";
 import { startAutoSave } from "../../lib/autoSave";
 import { AskScreen } from "../Ask/AskScreen";
@@ -46,6 +46,13 @@ export function MainWindow({ route }: { route: Route }) {
     return () => offs.forEach((off) => off());
   }, [recording.start, recording.announceSaved]);
 
+  // Started by a notification click while Talaan wasn't running (Windows): open that meeting.
+  useEffect(() => {
+    if (!inTauri()) return;
+    void call<string | null>("meetings_launch_link")
+      .then((id) => id && navigate(routes.meeting(id)))
+      .catch(() => {});
+  }, []);
   // "Also save each meeting to a folder": Rust says when a copy is due, this window writes the Markdown.
   const meetingStore = useStore();
   const settingsStore = useSettingsStore();

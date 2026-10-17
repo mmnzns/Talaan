@@ -26,7 +26,24 @@ and audiodg are ignored too. Discord sitting in a voice channel holds the mic, s
 default (`callApps` in `src/data/defaultSettings.ts`).
 
 **Known:** relay apps (FxSound, Voicemeeter, Sonar) re-render audio under their own process, so Talaan's own sounds can reach
-"Them" and other audio may be captured twice.
+"Them" and other audio may be captured twice. Since v1.1 (R1) `devices::sound_relay` names a known one from the default
+output's name (FxSound, Voicemeeter, SteelSeries Sonar, NVIDIA Broadcast, Boom 3D, Krisp, Elgato Wave Link); the recording
+popover shows a one-time notice per enhancer (`soundRelayNoticeSeen` in settings) and Check setup a "Sound enhancer" row
+while it's in use. The capture itself is unchanged. On the PC it reads `Some("FxSound")` (the default output is FxSound).
+
+**"Can't hear the call" on Windows (v1.1, R9).** Process loopback follows the app, not the device:
+`loopback_follows_the_app_not_the_device` plays a tone from the test process on a non-default output (Realtek Digital
+Output, default FxSound) and a loopback of only that process hears it at full strength (2026-10-16: 440 Hz 0.209 for a 0.3
+tone). So INSTALL's old advice (set the call app's speaker to the Windows default) was wrong and is gone. The recorder's
+watch now also runs on Windows: when "Them" has been exact zeros (not just quiet) since the start for 60 s while the
+call app on the mic is itself playing sound, it shows `notice.no_call_audio_windows` once, without a settings button
+(there's nothing to switch on). "Playing" is the peak meter of that app's own audio sessions on any output
+(`devices::apps_playing`, matched by exe name from `calls::call_app_exes`; read once a second and held 8 s across
+pauses, `recorder::SoundLatch`), so a lobby, a webinar that hasn't started, hold music muted, or a browser or Discord
+just holding the mic never count. The notice says to keep recording and run Test call audio afterwards (restarting
+would split the meeting). Apps whose sound comes from another process (WebView2-based ones) aren't matched, so they
+never warn. `apps_playing_smoke` (a PowerShell process playing a Windows sound reads as playing, another exe doesn't)
+passed on the PC. macOS keeps its rule (something else playing, 10 s). The timer is `recorder::silence_watch`.
 
 **W3 done.** One Talaan at a time (`tauri-plugin-single-instance`: a second launch focuses the first window). The tray uses
 the coloured `32x32.png` icon on Windows and shows the timer in the tooltip ("Talaan · Recording 12:04"); the popover and call
@@ -44,9 +61,50 @@ is macOS only), Ctrl+, opens Settings, and the native window theme follows the a
 - the title bar follows dark mode;
 - Ctrl+, opens Settings;
 - clicking the tray icon again closes the popover;
-- a toast clicked from Action Center (after the banner is gone) opens the meeting (W5: if that click fails, the shortcut
-  needs a ToastActivatorCLSID);
+- a toast clicked from Action Center (after the banner is gone) opens the meeting (v1.1 W1, below);
 - Dark, then System, with Windows set to Light switches the app to light.
+
+**Toast clicks from Action Center (v1.1, W1).** A toast's foreground activation reaches only a running process while
+its banner is up; from Action Center an unpackaged app needs a COM activator (a `ToastActivatorCLSID` on the shortcut
+plus a registered COM server). Talaan uses protocol activation instead: the installer (`installer-hooks.nsh`,
+`NSIS_HOOK_POSTINSTALL`) registers `talaan://` under `HKCU\Software\Classes\talaan` pointing at `$INSTDIR\talaan.exe
+"%1"` (removed on uninstall, kept on update), and `notify.rs` posts `<toast activationType="protocol"
+launch="talaan://meeting/<id>">` whenever that key opens the running exe (else the old in-process toast, as in dev
+builds). A click makes Windows start `talaan.exe "talaan://meeting/<id>"`; the single-instance plugin hands the
+argument to the running Talaan (`deeplink::meeting_in_args` → `open_meeting`), or, when Talaan wasn't running, the new
+instance keeps it until the window asks (`meetings_launch_link`). Only `[A-Za-z0-9_-]` ids are accepted (any web
+page can open `talaan://`). Checked on the PC (2026-10-16, a test handler under `HKCU\Software\Classes\talaan`
+that logs its argument, removed afterwards): the protocol toast reaches Action Center; clicking it there (real mouse
+click) removes it and Windows launches the link, under PowerShell's app id and under Talaan's; `ShellExecute` and
+`Launcher.LaunchUriAsync` of the link run the handler directly. **But** the toast click, like `explorer.exe
+talaan://…`, went through Windows' app picker (`OpenWith.exe -Embedding`) instead of the handler: on this Windows 11
+Insider build (26300) a shell-launched custom link seems to need a user choice first (the PC's other link handlers,
+claude:// and codex://, have a protected `UrlAssociations` entry; adding `Application\AppUserModelID` or
+`RegisteredApplications` capabilities didn't change it). The picker window didn't paint while automated, so its
+choice wasn't made (that would write a protected per-user default). Hand check with the installed build:
+docs/TESTING.md. If the picker shows every time, the fallback is a COM activator.
+
+**Models out of Roaming (v1.1, W2).** Models (several GB) moved from `%APPDATA%\Talaan\models` (Roaming: copied at
+every sign-in on a roaming profile) to `%LOCALAPPDATA%\com.craftconceptsdigital.talaan\models`, the bundle-id folder
+Tauri already creates for WebView data. Not `%LOCALAPPDATA%\Talaan`: that is the per-user install folder. Tauri's
+uninstaller deletes its own files there one by one and then `RMDir "$INSTDIR"` (not recursive), and with "Delete the
+application data" ticked (never on `/UPDATE`) it runs `RmDir /r "$LOCALAPPDATA\${BUNDLEID}"`; our hook also removes
+`...\models` and `%APPDATA%\Talaan` (where models may still be). Meetings and settings stay in `%APPDATA%\Talaan`.
+`lib.rs` sets the folder (`models::set_models_root`) unless `TALAAN_DATA_DIR` is set (then models stay inside it,
+as before), and moves the old folder (`transcriber/relocate.rs`) in two steps. `prepare` runs during setup, before
+any worker or helper can open a model: it renames the whole folder, or each model folder, into place (instant on one
+volume), and removes old model folders an earlier launch already copied in full. What can't be renamed (another
+volume, a file in use) is copied after setup in a background thread (`copy_rest`): each model folder whole into
+`.talaan-move-<id>` in the new place, then renamed into place in one step, so a model is never half in each folder;
+the old folder stays for the rest of the session (a summary helper may have been given its path) and goes at the next
+launch. A model is copied only when the new volume has room for it plus 1 GB; a failed or cancelled copy removes its
+temp folder; nothing in the new folder is ever replaced. When something was copied, meetings that failed for lack of a
+model and summaries waiting for the local AI are queued again and Settings refreshes (`models_moved`). Delete model
+runs under the copy's lock (`relocate::forget`), so a copy can't put a deleted model back; Delete everything stops
+the copy and waits for it to let go (`relocate::stop`). `ModelStore` reads the old folder as Talaan's own
+(`legacy_root`) until the new copy is complete; downloads go to the new one, Delete removes both, Delete everything
+removes the new folder too, and the Privacy tab's size counts it. Tested with temp folders only (a file held open
+without delete sharing is copied instead of renamed; a file nobody may open makes the copy fail cleanly).
 
 **Dev note:** the single-instance guard is Windows only. On Windows, `npm run tauri dev` exits immediately if the installed
 Talaan is running; quit it first.
@@ -58,7 +116,9 @@ secret link, so it's kept in Windows Credential Manager (key `calendar-ics`, thr
 by Delete all Talaan data), never in settings.json; settings only hold `calendarConnected`. Privacy › What leaves this
 computer lists the download. `calendar/fetch.rs`
 downloads it (15 s in all, 20 MB cap, `webcal://` accepted; checked when a recording starts, at most every 15 minutes; a failed download keeps the old
-copy, and the recording tries once more a minute later). `calendar/ics.rs` reads it once per download and expands recurrences per window: RRULE, EXDATE,
+copy, and the recording tries once more a minute later). Since v1.1 (B3), when that download had failed at the start,
+`link_after_stop` tries again when the recording stops, then 5 and 30 minutes after the stop, while the meeting has no
+event and still has its placeholder title (a summary title ends it; the list is in memory, so a restart ends it too). When Stop comes while the start lookup is still running (a failed download waits a minute), the start thread does these tries itself; entries are dropped at Stop, or after a day for a discarded recording. `calendar/ics.rs` reads it once per download and expands recurrences per window: RRULE, EXDATE,
 RECURRENCE-ID overrides, IANA and Windows time zone names (Outlook's "Eastern Standard Time"), floating and all-day times,
 at most 1,000 occurrences per event. Reading is tolerant: a bad event is skipped and the rest are kept. The user's own
 address (from a Google address) and declined attendees are left out. The public Google holidays feed reads as 433 events.
@@ -68,10 +128,29 @@ views breadth-first (at most 12 levels and 600 elements, one cached round trip p
 a heavy page doesn't slow it down. Every UI Automation call is capped at 250 ms (`CUIAutomation8` with `IUIAutomation2`
 connection and transaction timeouts), and the budget is checked before each step. Live check (2026-10-15, a new Edge
 window each, closed afterwards): Meet → `Urls` (call seen) in 39 ms, example.com → `Unknown` in 45 ms, a long Wikipedia
-article → `Unknown` in 22 ms. **Limitation:** only the tab in front of each window is
-visible. So a call tab seen means the call (Always works), but no call tab seen means "can't tell" (Ask), never "not a call":
-a Meet call in a background tab still asks. Settings shows installed browsers as "ready" (Windows has no permission for this).
+article → `Unknown` in 22 ms. A call tab seen means the call (Always works), but no call tab seen means "can't tell" (Ask),
+never "not a call". Settings shows installed browsers as "ready" (Windows has no permission for this).
 Firefox stays Ask, as on the Mac.
+
+**Background call tabs (v1.1, C1).** The same walk also reads the tab strip: every tab is a `TabItem` whose name is its
+title, plus Chromium's own notes (Edge: "Example Domain - Memory usage - 22.4 MB"). The walk never enters a tab or the
+address bar, and stops after the level where it has both (they sit at the same depth, about 8 levels down; everything
+deeper is bookmarks, side panels and menus). A window that shows neither after 300 elements (an installed web app,
+DevTools, a popup) is given up on, and one window may use at most 150 ms of the budget; UI Automation calls are capped
+at 120 ms (150 ms to connect). `calls/tabs.rs` `title_call` knows the call pages' own titles: "Meet - abc-defg-hij"
+(only with a meeting code: the home page and named pages can't be told apart), "<page> | Microsoft Teams" except
+Teams' own non-call pages (Chat, Activity, Calendar…, also in French and Spanish), "Zoom Meeting" / "Zoom Webinar",
+each optionally followed by " - <note>" (Chromium's notes come after " - " in every language: "Utilisation de la
+mémoire", "Uso de memoria"). A matching title counts only because the browser is asked only while it's using the mic. The address bar
+still wins (`Urls`); else matching titles give `Tabs::Titles`; else `Unknown`. Live check (2026-10-16, debug build):
+`background_call_tab_live_smoke` starts a separate Edge with a new temp profile (so nothing opens in the user's
+windows), opens a local page titled "Meet - abc-defg-hij", then example.com in front of it: `Titles` 5 times out of 5,
+52-90 ms (first read 90 ms); `tab_urls` over every Edge window 74 ms. `tab_urls_live_smoke` (address bar plus tab
+titles): Meet 69 ms, example.com 60 ms, Wikipedia 34 ms (before the tab strip: 39 / 45 / 22 ms). A full walk without the
+early stop took 91-269 ms, too close to the 300 ms budget. **Limits:** English call-page titles only (Meet and Teams
+keep "Meet" and "Microsoft Teams" in other languages; Zoom's web client may translate "Zoom Meeting"); a Meet tab left
+open after a call, while the browser uses the mic for something else, reads as a call (the same is true of its
+address).
 
 **Known limits of the iCal reader** (rare in Google and Outlook feeds; fix if one shows up):
 
@@ -124,13 +203,17 @@ values; with the box ticked `%APPDATA%\Talaan`, `%LOCALAPPDATA%\com.craftconcept
 | `system_smoke` (5 s of system audio plus mic; play something while it runs) | `cargo test system_smoke -- --ignored --nocapture` |
 | `system_excludes_own_audio` (our tone must not reach "Them"; set `TALAAN_TONE_DEVICE` to a real output's name if the default is a relay app) | `TALAAN_TONE_DEVICE=<output name> cargo test system_excludes_own_audio -- --ignored --nocapture` |
 | `system_silence_keeps_packets_flowing` (30 s of silence still delivers 30 s of samples) | `cargo test system_silence_keeps_packets_flowing -- --ignored --nocapture` |
+| `apps_playing_smoke` (a PowerShell process plays a Windows sound; its session meter reads as playing) | `cargo test apps_playing_smoke -- --ignored --nocapture` |
+| `loopback_follows_the_app_not_the_device` (our tone on a non-default output is still in a loopback of our process) | `TALAAN_TONE_DEVICE=<non-default output> cargo test loopback_follows_the_app_not_the_device -- --ignored --nocapture` |
 | `mic_clock_smoke` (mic stamps are on the host clock) | `cargo test mic_clock_smoke -- --ignored --nocapture` |
 | `tracks_line_up_smoke` (mic and loopback stamp-vs-now lag under 200 ms; a PowerShell process plays a Windows sound) | `cargo test tracks_line_up_smoke -- --ignored --nocapture` |
 | `mic_users_live_smoke` (prints this exe's consent-store entry while recording and after) | `cargo test mic_users_live_smoke -- --ignored --nocapture` |
 | `capture_sessions_live_smoke` (our pid is an active capture session while recording, is kept out of `mic_users()`, and is gone 1.5 s after stopping) | `cargo test capture_sessions_live_smoke -- --ignored --nocapture` |
 | `toast_smoke` (posts one toast under the PowerShell app id, waits 5 s, prints what `show()` returned) | `cargo test toast_smoke -- --ignored --nocapture` |
+| `protocol_toast_smoke` (posts one protocol toast, `talaan://meeting/<TALAAN_TOAST_MEETING or smoke>`, under the PowerShell app id) | `cargo test protocol_toast_smoke -- --ignored --nocapture` |
 | `public_holiday_feed_smoke` (downloads Google's public Canadian holidays calendar and reads it; network) | `cargo test public_holiday_feed_smoke -- --ignored --nocapture` |
 | `tab_urls_live_smoke` (opens a new Edge window on a Meet URL, then example.com, then a long Wikipedia article; expects `Urls`, then `Unknown` twice, with timings; closes only the windows it opened) | `cargo test tab_urls_live_smoke -- --ignored --nocapture --test-threads=1` |
+| `background_call_tab_live_smoke` (a separate Edge with a temp profile: a page titled "Meet - abc-defg-hij" behind example.com; expects `Titles` under 300 ms; closes that Edge and deletes the profile) | `cargo test background_call_tab_live_smoke -- --ignored --nocapture --test-threads=1` |
 | `large_feed_timing` (reads a 21 MB synthetic calendar) | `cargo test --release large_feed_timing -- --ignored --nocapture` |
 | `pipeline_smoke` (real models on a recorded meeting) | `TALAAN_SMOKE_MEETING=<meeting dir> cargo test --release pipeline_smoke -- --ignored --nocapture` |
 
@@ -164,7 +247,7 @@ themselves (no Vulkan SDK on the PC by decision); CI builds them. Hand checks: d
 Everything outside `src-tauri/src/platform/macos/` is cross-platform by design: storage, the transcriber
 pipeline (VAD, Parakeet/Whisper, echo, merge, diarization), the summarizer and its helper protocol, Ask, call
 rules and tab classification, calendar event picking, Notion, the whole React UI. Models download at runtime
-(`~/AppData/Roaming/Talaan` via `dirs::data_dir()`), so nothing big lives in the repo. Fonts are bundled.
+(Windows: `%LOCALAPPDATA%\com.craftconceptsdigital.talaan\models` since v1.1, see below), so nothing big lives in the repo. Fonts are bundled.
 `keyring`, the updater and autostart plugins all support Windows.
 
 ## What has to be written (`src-tauri/src/platform/windows/`, plus one `cfg` line in `platform/mod.rs`)
@@ -181,7 +264,7 @@ Mirror each macOS item with the same names, so callers don't change:
 | `power.rs` `SleepWatcher` | Auto-pause on sleep | `WM_POWERBROADCAST` / `RegisterSuspendResumeNotification`. |
 | `notify.rs` | "Summary ready" notification, click opens the meeting | Windows toast (tauri-plugin-notification or WinRT `ToastNotificationManager` with an activation argument). |
 | `calendar.rs` | Calendar events (title, attendees) | The calendar's private iCal address (W4): download, then `calendar/ics.rs` parses and expands recurrences; the pure picker in `calendar/` is shared. WinRT `AppointmentStore` was ruled out by the W4 spike (below). |
-| `browser_tabs.rs` | Tab URLs of a browser using the mic | UI Automation on each Chromium window's address bar (W4; the tab in front only, so no call seen = Unsure). `calls/tabs.rs` classification is shared. |
+| `browser_tabs.rs` | Tab URLs of a browser using the mic | UI Automation on each Chromium window's address bar (W4) and tab titles (v1.1); no call seen = Unsure. `calls/tabs.rs` classification is shared. |
 | `thread.rs` | Background thread priority | `SetThreadPriority(THREAD_PRIORITY_BELOW_NORMAL)` / `THREAD_MODE_BACKGROUND_BEGIN`. |
 
 **W4 spike, AppointmentStore (2026-10-15, Miguel's PC, new Outlook installed, unpackaged debug test):**

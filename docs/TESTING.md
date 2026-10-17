@@ -85,16 +85,26 @@ quit the dev app first: one Talaan at a time.
 **Calls**
 - [ ] A real Microsoft Teams call (app) on Always: recording starts with the banner; leave → Call ended → stops.
 - [ ] A real Zoom call: same.
-- [ ] Google Meet in Edge or Chrome, tab in front, Browser calls on Always: starts by itself. Meet in a
-  background tab: asks instead.
+- [ ] Google Meet in Edge or Chrome, tab in front, Browser calls on Always: starts by itself. Join with the Meet
+  tab in front, then switch to another tab before the call is noticed (or join from a background tab): it still
+  starts by itself (the tab is titled with the meeting code, "Meet - abc-defg-hij"; a meeting tab titled by its name instead still asks). Same with Teams web.
 - [ ] Both sides in the transcript, Me/Them right, no echo lines (headphones). Summary written offline.
 - [ ] Calendar: paste the Google "Secret address in iCal format", Test and connect shows events; a recording
   during an event takes its title and attendees.
+- [ ] Offline start: turn Wi-Fi off, start a recording during an event, turn Wi-Fi on, stop with Transcript only on:
+  within a minute or two (or 5 minutes later) the meeting takes the event's title.
 
 **Shell**
 - [ ] Tray icon visible on light and dark taskbars; popover opens above the tray; hover shows the timer.
 - [ ] "Summary ready" toast appears and opens the meeting; a click from Action Center after the banner is
-  gone also opens it (if not: note it; the shortcut needs a ToastActivatorCLSID, a v1.0.1 follow-up).
+  gone also opens it (it's a `talaan://meeting/<id>` link the installer registers). The first click may show
+  Windows' "Select an app to open this talaan link" picker: choose Talaan and "Always". Note whether it appeared.
+  Then quit Talaan from the tray, click another "Summary ready" from Action Center: Talaan starts on that meeting.
+- [ ] After uninstalling, `HKCU\Software\Classes\talaan` is gone.
+- [ ] With FxSound (or Voicemeeter, Sonar) as the default output: the recording window shows "Your sound goes through
+  FxSound…" once (OK hides it for good), and Check setup has a "Sound enhancer" row.
+- [ ] Sit in a Zoom or Teams lobby (or a muted webinar) for over a minute while recording: no "can't hear the call"
+  notice. A normal call with people talking: no notice either.
 - [ ] Second launch focuses the first window. Ctrl+, opens Settings. Title bar follows dark mode.
 - [ ] Open at login: sign out and in, the tray icon is back.
 - [ ] Sleep mid-recording for 30 s: a pause gap, recording continues.

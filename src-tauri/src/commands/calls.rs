@@ -63,7 +63,7 @@ pub fn browser_access() -> Vec<(&'static str, &'static str)> {
 
 fn note_access(name: &'static str, tabs: &Tabs) {
     let state = match tabs {
-        Tabs::Urls(_) => "allowed",
+        Tabs::Urls(_) | Tabs::Titles(_) => "allowed",
         Tabs::Denied => "denied",
         Tabs::Unknown => return,
     };
@@ -73,7 +73,8 @@ fn note_access(name: &'static str, tabs: &Tabs) {
 }
 
 /// With tab detection on, turns the "browser" entry into the call it is, drops it when no tab is a call, or
-/// leaves it (Ask) when Talaan can't tell.
+/// leaves it (Ask) when Talaan can't tell. Only browsers that are using the mic right now are asked, so a call
+/// title in a tab (Windows) counts only while its browser holds the mic.
 fn resolve_browsers(users: &[crate::platform::mic_users::MicUser], apps: &mut Vec<&str>, cache: &mut TabCache) {
     if !apps.contains(&"browser") {
         return;
@@ -100,6 +101,28 @@ fn resolve_browsers(users: &[crate::platform::mic_users::MicUser], apps: &mut Ve
         BrowserCall::NotACall => apps.retain(|a| *a != "browser"),
         BrowserCall::Unsure => {}
     }
+}
+
+/// Exe file names of the call apps (or browsers that may be in a call) using the mic at the last tick of the calls
+/// loop.
+static CALL_EXES: Mutex<Vec<String>> = Mutex::new(Vec::new());
+
+/// For the recorder's "can't hear the call" watch on Windows.
+#[cfg_attr(not(target_os = "windows"), allow(dead_code))]
+pub fn call_app_exes() -> Vec<String> {
+    CALL_EXES.lock().unwrap_or_else(|e| e.into_inner()).clone()
+}
+
+/// The exe file name of each mic user that is a call app: from its path, else its id (Windows ids are exe names).
+fn call_exes(users: &[crate::platform::mic_users::MicUser], ignored: &[String]) -> Vec<String> {
+    let mut exes: Vec<String> = users
+        .iter()
+        .filter(|u| crate::calls::apps::identify(&u.bundle_id, &u.path, ignored).is_some())
+        .map(|u| u.path.rsplit(['\\', '/']).next().filter(|n| !n.is_empty()).unwrap_or(&u.bundle_id).to_string())
+        .collect();
+    exes.sort();
+    exes.dedup();
+    exes
 }
 
 fn epoch_ms() -> u64 {
@@ -205,6 +228,7 @@ pub fn setup(app: &AppHandle) {
                     if settings["tabDetection"].as_bool().unwrap_or(false) {
                         resolve_browsers(&users, &mut apps, &mut tab_cache);
                     }
+                    *CALL_EXES.lock().unwrap_or_else(|e| e.into_inner()) = if apps.is_empty() { vec![] } else { call_exes(&users, &ignored) };
                     // A verified browser call follows the Browser calls rule, Always included.
                     let rule = |a: &str| {
                         let a = if a == BROWSER_CALL { "browser" } else { a };
@@ -383,6 +407,16 @@ mod tests {
         assert_eq!(rules, vec![("zoom".to_string(), Rule::Always), ("facetime".to_string(), Rule::Never)]);
         assert_eq!(ignored, vec!["VoiceInk".to_string()]);
         assert!(rules_from(&Value::Null).0, "detection is on by default");
+    }
+
+    #[test]
+    fn call_apps_on_the_mic_are_named_by_their_exe() {
+        use crate::platform::mic_users::MicUser;
+        let u = |b: &str, p: &str| MicUser { pid: 1, bundle_id: b.into(), path: p.into() };
+        let users = [u("zoom.exe", r"C:\Zoom\bin\Zoom.exe"), u("msedge.exe", ""), u("notepad.exe", r"C:\Windows\notepad.exe")];
+        let exes = call_exes(&users, &[]);
+        assert!(exes.contains(&"Zoom.exe".to_string()) && exes.contains(&"msedge.exe".to_string()), "{exes:?}");
+        assert!(!exes.contains(&"notepad.exe".to_string()));
     }
 
     #[test]
