@@ -91,3 +91,22 @@ describe("checkSetup", () => {
     expect(find(probe({ data: { error: "permission denied" } }), "data")).toMatchObject({ status: "fail" });
   });
 });
+
+describe("checkSetup: folder copies", () => {
+  const on = settings({ autoSaveFolder: "/Volumes/Notes/Meetings" });
+
+  it("has no row until a folder is chosen", () => {
+    expect(checkSetup(probe()).some((r) => r.id === "autoSave")).toBe(false);
+  });
+
+  it("is fine while the folder is there", () => {
+    expect(find(probe({ settings: on, autoSave: { reachable: true, skipped: [] } }), "autoSave")).toMatchObject({ status: "ok" });
+  });
+
+  it("quietly says when the folder is away and how many meetings wait", () => {
+    const r = find(probe({ settings: on, autoSave: { reachable: false, skipped: ["a", "b"] } }), "autoSave");
+    expect(r).toMatchObject({ status: "warn", fix: { action: "retryAutoSave" } });
+    expect(r.detail).toContain("/Volumes/Notes/Meetings");
+    expect(r.detail).toContain("2 meetings are waiting");
+  });
+});
