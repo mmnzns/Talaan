@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useState } from "react";
 import { recorderClient } from "../../data";
 import { describeError } from "../../data/errors";
 import { useRecorder } from "../../data/useRecorder";
@@ -34,19 +34,20 @@ export function useRecording() {
     if (rec.notice && !open && active) toast(rec.notice.text);
   }, [rec.notice]);
 
-  // In the app the recording controls live in the menu bar popover; in a browser, a floating panel.
-  const showControls = () => (inTauri() ? void invoke("tray_toggle") : setOpen(true));
+  // In the app the recording controls live in the menu bar popover; in a browser, a floating panel (`begin`).
 
-  const begin = async () => {
+  const begin = useCallback(async () => {
     try {
       await recorderClient.start();
-      showControls();
+      if (inTauri()) void invoke("tray_toggle");
+      else setOpen(true);
     } catch (e) {
       toast(describeError(e));
     }
-  };
+  }, [toast]);
 
-  const start = async () => {
+  // Stable between renders (the main window subscribes its event listeners with these).
+  const start = useCallback(async () => {
     if (active) {
       if (inTauri()) void invoke("tray_toggle");
       else setOpen((o) => !o);
@@ -60,14 +61,17 @@ export function useRecording() {
       return setMicDenied(true);
     }
     await begin();
-  };
+  }, [active, begin]);
 
   /** After Stop: say the recording is safe and how long the transcript will take, then open the meeting. */
-  const announceSaved = async (id?: string) => {
-    const meeting = id ? await store.getMeeting(id).catch(() => undefined) : undefined;
-    toast(savedText(t, meeting?.eta));
-    if (id) navigate(routes.meeting(id));
-  };
+  const announceSaved = useCallback(
+    async (id?: string) => {
+      const meeting = id ? await store.getMeeting(id).catch(() => undefined) : undefined;
+      toast(savedText(t, meeting?.eta));
+      if (id) navigate(routes.meeting(id));
+    },
+    [store, t, toast],
+  );
 
   const stop = async () => {
     try {
