@@ -39,7 +39,7 @@ pub fn remove_legacy_address(store: &mut crate::storage::Storage) {
     #[cfg(not(target_os = "windows"))]
     let keep = |_: &str| true;
     if let Err(e) = store.remove_legacy_calendar_address(keep) {
-        eprintln!("talaan: couldn't remove the old calendar address from settings: {e}");
+        log::warn!("couldn't remove the old calendar address from settings: {}", e.for_log());
     }
 }
 
@@ -55,6 +55,13 @@ pub fn sync_source(_app: &AppHandle) {
 #[cfg(target_os = "windows")]
 #[tauri::command]
 pub async fn calendar_connect(url: String) -> Result<usize, String> {
+    let n = connect(url).await.inspect_err(|e| log::warn!("calendar connect failed: {}", crate::logging::text(e)))?;
+    log::info!("calendar connected ({n} entries in the next 7 days)");
+    Ok(n)
+}
+
+#[cfg(target_os = "windows")]
+async fn connect(url: String) -> Result<usize, String> {
     let url = crate::calendar::fetch::normalize_url(&url)?;
     let checked = url.clone();
     let n = tauri::async_runtime::spawn_blocking(move || system::test_address(&checked)).await.map_err(|e| e.to_string())??;
@@ -69,6 +76,7 @@ pub async fn calendar_connect(url: String) -> Result<usize, String> {
 pub fn calendar_disconnect() -> Result<(), String> {
     crate::keys::clear(crate::keys::CALENDAR_ICS)?;
     system::set_source(None);
+    log::info!("calendar disconnected");
     Ok(())
 }
 
@@ -316,7 +324,10 @@ fn link(app: &AppHandle, id: &str) -> Outcome {
     let offline = system::last_download_failed();
     #[cfg(not(target_os = "windows"))]
     let offline = false;
-    let Some(e) = pick(&events, at) else { return Outcome::NotFound { offline } };
+    let Some(e) = pick(&events, at) else {
+        log::info!("calendar: no matching event for meeting {id} (offline: {offline})");
+        return Outcome::NotFound { offline };
+    };
     let (title, attendees, emails) = (e.title.trim().to_string(), e.attendees.clone(), e.emails.clone());
     let saved = storage.lock().update_meeting_file(id, |f| {
         f.calendar_event = Some(CalendarEvent { title: title.clone(), attendees: attendees.clone(), emails: emails.clone() });
@@ -326,6 +337,7 @@ fn link(app: &AppHandle, id: &str) -> Outcome {
         }
     });
     if saved.is_ok() {
+        log::info!("calendar: meeting {id} linked to its event");
         notify(app, MEETINGS_CHANGED);
         Outcome::Linked
     } else {

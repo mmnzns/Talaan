@@ -23,8 +23,13 @@ pub struct Available {
 /// The newer version on GitHub, if there is one. Nothing is downloaded.
 #[tauri::command]
 pub async fn updates_check(app: AppHandle) -> CmdResult<Option<Available>> {
-    let updater = app.updater().map_err(|e| refused(tr_err("update.check_failed", e)))?;
-    let update = updater.check().await.map_err(|e| refused(tr_err("update.offline", e)))?;
+    let current = app.package_info().version.to_string();
+    let updater = app.updater().inspect_err(|e| log::warn!("update check failed: {}", crate::logging::text(e))).map_err(|e| refused(tr_err("update.check_failed", e)))?;
+    let update = updater.check().await.inspect_err(|e| log::warn!("update check failed (offline?): {}", crate::logging::text(e))).map_err(|e| refused(tr_err("update.offline", e)))?;
+    match &update {
+        Some(u) => log::info!("update check: {} is available (this is {current})", u.version),
+        None => log::info!("update check: {current} is the newest"),
+    }
     Ok(update.map(|u| Available { version: u.version, notes: u.body }))
 }
 
@@ -38,7 +43,9 @@ pub async fn updates_install(app: AppHandle) -> CmdResult<()> {
     let Some(update) = updater.check().await.map_err(|e| refused(tr_err("update.check_failed", e)))? else {
         return Err(refused(tr("update.up_to_date")));
     };
-    update.download_and_install(|_, _| {}, || {}).await.map_err(|e| refused(tr_err("update.install_failed", e)))?;
+    log::info!("installing update {}", update.version);
+    update.download_and_install(|_, _| {}, || {}).await.inspect_err(|e| log::error!("update install failed: {}", crate::logging::text(e))).map_err(|e| refused(tr_err("update.install_failed", e)))?;
+    log::info!("update installed, restarting");
     app.restart()
 }
 
@@ -47,6 +54,7 @@ pub fn check_at_launch(app: &AppHandle) {
     let app = app.clone();
     let on = app.state::<AppState>().lock().settings_get().ok().flatten().and_then(|s| s["checkUpdates"].as_bool()).unwrap_or(true);
     if !on || cfg!(debug_assertions) {
+        log::info!("update check at launch: {}", if on { "skipped (debug build)" } else { "turned off" });
         return;
     }
     tauri::async_runtime::spawn(async move {

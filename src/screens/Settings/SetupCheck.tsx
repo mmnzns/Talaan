@@ -8,6 +8,7 @@ import { useLang, useT } from "../../lib/i18n/I18nProvider";
 import { navigate, routes } from "../../lib/router";
 import { checkSetup, probeSetup, type CheckResult, type CheckStatus, type FixAction } from "../../lib/setupCheck";
 import { Button, Label, cn, useToast } from "../../ui";
+import { Diagnostics } from "./Diagnostics";
 import { Group, SectionIntro } from "./parts";
 
 const STATUS: Record<CheckStatus, { label: MessageKey; className: string }> = {
@@ -91,6 +92,7 @@ export function SetupCheck() {
         )) ?? <div className="py-4 text-[13px] text-subtle">{t("settings.setup_checking")}</div>}
       </Group>
       {results && <Label>{problems === 0 ? t("settings.setup_none") : t("settings.setup_problems", { count: problems })}</Label>}
+      <Diagnostics results={results} />
     </div>
   );
 }

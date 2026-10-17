@@ -9,6 +9,7 @@ pub mod mic_users;
 pub mod notify;
 pub mod permissions;
 pub mod power;
+pub mod system;
 pub mod system_tap;
 pub mod thread;
 pub mod trash;

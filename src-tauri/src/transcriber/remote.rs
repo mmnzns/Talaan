@@ -68,7 +68,7 @@ impl RemoteWhisper {
             _ => None,
         });
         match loaded {
-            Ok(b) if b.on_gpu() => {}
+            Ok(b) if b.on_gpu() => log::info!("speech GPU helper loaded the model on {} ({}, {} MB)", b.backend, b.device.as_deref().unwrap_or("?"), b.vram_mb),
             Ok(_) => {
                 proc.kill();
                 return Err(LoadError::NoGpu);

@@ -243,6 +243,11 @@ fn without_summary(deps: &Deps, id: &str, auto: bool, code: &str, message: Strin
 }
 
 fn without_summary_detail(deps: &Deps, id: &str, auto: bool, code: &str, message: String, detail: Option<String>) {
+    match &detail {
+        Some(d) => log::warn!("no summary for meeting {id} ({code}): {} | helper: {}", crate::logging::text(&message), crate::logging::text(d)),
+        None if code == TOO_SHORT => log::info!("no summary for meeting {id}: too little speech"),
+        None => log::warn!("no summary for meeting {id} ({code}): {}", crate::logging::text(&message)),
+    }
     let mut title = String::new();
     let saved = lock(&deps.storage).update_meeting_file(id, |f| {
         f.status = MeetingStatus::Ready;
@@ -273,6 +278,7 @@ fn process(deps: &Deps, id: &str, auto: bool, cancel: &AtomicBool) {
     if too_short(&meeting.transcript) {
         return without_summary(deps, id, auto, TOO_SHORT, SummarizeError::TooShort.message());
     }
+    log::info!("summarizing meeting {id} with the {} engine", config.engine);
     let profile = (deps.profile)(&config);
     let on_cpu = profile.device == Device::Cpu;
     let job = std::time::Instant::now();
@@ -289,6 +295,7 @@ fn process(deps: &Deps, id: &str, auto: bool, cancel: &AtomicBool) {
         Err(EngineError::Failed(m)) => return without_summary(deps, id, auto, FAILED, m),
         Err(EngineError::Cancelled) => return,
     };
+    log::info!("summary engine ready in {:.1}s: {}", job.elapsed().as_secs_f32(), engine.label());
 
     let language = config.language_for(&meeting.language);
     let opts = config.options_for(meeting.template.as_deref());
@@ -312,6 +319,7 @@ fn process(deps: &Deps, id: &str, auto: bool, cancel: &AtomicBool) {
 
     match summarize(&meeting, engine.as_mut(), &language, &opts, cancel, &mut report) {
         Ok(out) => {
+            log::info!("summarized meeting {id} in {:.1}s ({} parts)", job.elapsed().as_secs_f32(), out.parts);
             let s = lock(&deps.storage);
             if s.save_summary(id, &out.summary).is_err() {
                 drop(s);
@@ -342,7 +350,7 @@ fn process(deps: &Deps, id: &str, auto: bool, cancel: &AtomicBool) {
             drop(s);
             (deps.summarized)(id, &title);
         }
-        Err(SummarizeError::Engine(EngineError::Cancelled)) => {}
+        Err(SummarizeError::Engine(EngineError::Cancelled)) => log::info!("summary cancelled: meeting {id}"),
         Err(e @ SummarizeError::TooShort) => without_summary(deps, id, auto, TOO_SHORT, e.message()),
         Err(SummarizeError::Engine(EngineError::Unavailable(m))) => without_summary(deps, id, auto, NO_ENGINE, m),
         Err(e) => without_summary_detail(deps, id, auto, FAILED, e.message(), engine.failure_detail()),

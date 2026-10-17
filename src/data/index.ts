@@ -1,4 +1,5 @@
 import { inTauri } from "../lib/windows";
+import { MockDiagnosticsClient, TauriDiagnosticsClient, type DiagnosticsClient } from "./diagnostics";
 import { MockMeetingStore } from "./mock/store";
 import { MockRecorderClient, TauriRecorderClient, type RecorderClient } from "./recorder";
 import { MockSettingsStore } from "./mock/settings";
@@ -30,4 +31,5 @@ export const recorderClient: RecorderClient = real
         discard: (id) => mockMeetings.discardRecording(id),
       },
     });
+export const diagnosticsClient: DiagnosticsClient = real ? new TauriDiagnosticsClient() : new MockDiagnosticsClient();
 export const usingRealStorage = real;

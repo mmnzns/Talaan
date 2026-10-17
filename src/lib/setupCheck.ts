@@ -13,6 +13,8 @@ export interface CheckResult {
   title: string;
   status: CheckStatus;
   detail: string;
+  /** What "Copy diagnostics" puts in the report instead of `detail`, when `detail` holds a path. */
+  reportDetail?: string;
   fix?: { label: string; action: FixAction };
 }
 
@@ -174,20 +176,22 @@ function autoSave(p: Probe): CheckResult[] {
   const a = p.autoSave;
   if (!a) return [];
   const title = t("settings.setup_autosave");
-  const path = tildePath(p.settings.autoSaveFolder);
+  const shown = tildePath(p.settings.autoSaveFolder);
   // "waiting" copies are on their way; only ones that didn't make it are a problem.
   const stuck = a.pending.filter((p) => p.kind !== "waiting");
-  if (a.reachable && stuck.length === 0) return [{ id: "autoSave", title, status: "ok", detail: t("settings.setup_autosave_ok", { path }) }];
+  // The report never says where the folder is: its path can hold the user's name or a client's.
+  const both = (make: (path: string, error: string) => string) => ({ detail: make(shown, failed?.error ?? "?"), reportDetail: make("[folder]", "?") });
   const failed = stuck.find((p) => p.kind === "failed");
+  if (a.reachable && stuck.length === 0) return [{ id: "autoSave", title, status: "ok", ...both((path) => t("settings.setup_autosave_ok", { path })) }];
   const count = a.reachable ? stuck.length : a.pending.length;
   const waiting = count ? ` ${t("settings.setup_autosave_skipped", { count })}` : "";
-  const why = !a.reachable
-    ? t("settings.setup_autosave_missing", { path })
-    : failed
-      ? t("settings.setup_autosave_failed", { path, error: failed.error ?? "?" })
-      : t("settings.setup_autosave_ok", { path });
-  const detail = why + waiting;
-  return [{ id: "autoSave", title, status: "warn", detail, fix: { label: t("settings.setup_autosave_retry"), action: "retryAutoSave" } }];
+  const why = (path: string, error: string) =>
+    !a.reachable
+      ? t("settings.setup_autosave_missing", { path })
+      : failed
+        ? t("settings.setup_autosave_failed", { path, error })
+        : t("settings.setup_autosave_ok", { path });
+  return [{ id: "autoSave", title, status: "warn", ...both((path, error) => why(path, error) + waiting), fix: { label: t("settings.setup_autosave_retry"), action: "retryAutoSave" } }];
 }
 
 function data(p: Probe): CheckResult {

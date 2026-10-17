@@ -73,7 +73,9 @@ fn write_one(app: &AppHandle, dir: &std::path::Path, id: &str, contents: &str, f
     // The storage lock is not held while the folder is written: it may be a slow or sleeping drive.
     let result = autosave::write(dir, &plan.name, plan.previous.as_ref(), contents, &crate::platform::trash::to_trash);
     if let Err(e) = &result {
-        eprintln!("talaan: couldn't save {id} to the folder: {e}");
+        // The kind only: the error's text can hold the folder (the user's name) or the file name (the title).
+        let kind = e.kind();
+        log::warn!("autosave: couldn't save meeting {id} to the folder ({kind})");
     }
     Ok(autosave::record(&state.lock(), id, &result)?)
 }
