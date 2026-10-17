@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { recorderClient } from "../../data";
 import { describeError } from "../../data/errors";
 import { useSettingsStore, useStore } from "../../data/StoreProvider";
@@ -19,7 +19,8 @@ const STATUS: Record<CheckStatus, { label: MessageKey; className: string }> = {
 };
 
 /** "Check setup": everything a call needs, in one place, each with the button that fixes it. */
-export function SetupCheck() {
+/** `children` sit between the checks and Diagnostics (the Status tab's own settings). */
+export function SetupCheck({ children }: { children?: ReactNode }) {
   const t = useT();
   const lang = useLang();
   const store = useSettingsStore();
@@ -92,6 +93,7 @@ export function SetupCheck() {
         )) ?? <div className="py-4 text-[13px] text-subtle">{t("settings.setup_checking")}</div>}
       </Group>
       {results && <Label>{problems === 0 ? t("settings.setup_none") : t("settings.setup_problems", { count: problems })}</Label>}
+      {children}
       <Diagnostics results={results} />
     </div>
   );
