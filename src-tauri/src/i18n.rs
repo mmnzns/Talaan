@@ -382,6 +382,20 @@ const TABLE: &[(&str, &str, &str, &str)] = &[
     ("error.followup_bad_output", "The summary AI's email couldn't be used. Try again.", "Le courriel de l’IA de résumé n’a pas pu être utilisé. Réessayez.", "No se pudo usar el correo de la IA de resumen. Inténtalo de nuevo."),
     ("error.notes_while_recording", "Add notes from the recording window while the call is recorded.", "Pendant l’enregistrement, ajoutez vos notes depuis la fenêtre d’enregistrement.", "Mientras se graba, agrega tus notas desde la ventana de grabación."),
     ("error.unknown_template", "Unknown meeting type.", "Type de réunion inconnu.", "Tipo de reunión desconocido."),
+    (
+        "download.stalled",
+        "The download of {name} stopped: no data for 30 seconds. Check your connection and try again.",
+        "Le téléchargement de {name} s’est arrêté : aucune donnée depuis 30 secondes. Vérifiez votre connexion et réessayez.",
+        "La descarga de {name} se detuvo: no llegaron datos en 30 segundos. Revisa tu conexión e inténtalo de nuevo.",
+    ),
+    (
+        "download.not_a_model",
+        "Couldn't download {name}: the network sent a web page instead. You may need to sign in to this Wi-Fi in your browser first.",
+        "Impossible de télécharger {name} : le réseau a renvoyé une page Web. Vous devrez peut-être d’abord vous connecter à ce Wi-Fi dans votre navigateur.",
+        "No se pudo descargar {name}: la red envió una página web. Quizás primero debas iniciar sesión en esta red Wi-Fi desde tu navegador.",
+    ),
+    // The guided test recording's title (set when it starts).
+    ("recorder.test_title", "Test recording", "Enregistrement test", "Grabación de prueba"),
 ];
 
 fn pick(lang: Lang, key: &str) -> Option<&'static str> {

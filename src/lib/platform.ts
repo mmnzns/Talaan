@@ -41,7 +41,14 @@ export function platformCopy(os: OS, lang: Lang = "en"): PlatformCopy {
   };
 }
 
-export const os: OS = detectOS(typeof navigator === "undefined" ? "" : navigator.userAgent);
+/** The browser preview (no Tauri) can show the other platform's words: `?os=mac` or `?os=windows` in the URL. */
+function previewOverride(): OS | undefined {
+  if (typeof window === "undefined" || "__TAURI_INTERNALS__" in window) return undefined;
+  const v = new URLSearchParams(window.location.search).get("os");
+  return v === "mac" || v === "windows" ? v : undefined;
+}
+
+export const os: OS = previewOverride() ?? detectOS(typeof navigator === "undefined" ? "" : navigator.userAgent);
 
 /** For the few flows (not words) that differ: the Windows calendar address, Ctrl vs Cmd, the macOS title bar inset. */
 export const onWindows = os === "windows";
