@@ -11,7 +11,7 @@
   --t-rail: #F4F3EE;         /* meeting list column */
   --t-line: #E8E6DF;         /* hairline dividers, card borders */
   --t-subtle: #5F6270;       /* secondary text */
-  --t-faint: #686B7D;        /* labels, timestamps */
+  --t-faint: #696C7E;        /* labels, timestamps: the lightest grey with 4.5:1 on hover (#F1EFE8), the darkest background it sits on */
   --t-gold: #F5B700;         /* sun gold: highlights, progress, the active moment */
   --t-on-gold: #111318;
   --t-gold-soft: #FFF3C4;    /* highlighted rows, marks */
