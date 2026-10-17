@@ -197,8 +197,8 @@ pub fn stop_recording(app: &AppHandle) -> CmdResult<String> {
     let id = engine.stop(&storage, platform::host_now_ns()).map_err(err)?;
     drop(storage);
     drop(engine);
-    // A call started before its event was on the calendar (or a few minutes early) gets a second chance.
-    super::calendar::link_soon(app, &id);
+    // A second chance at the calendar event (and, after an offline start on Windows, a few more).
+    super::calendar::link_after_stop(app, &id);
     app.state::<super::transcriber::TranscriberState>().enqueue(&id);
     notify(app, MEETINGS_CHANGED);
     emit_state(app);

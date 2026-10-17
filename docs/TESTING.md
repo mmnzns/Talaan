@@ -91,6 +91,8 @@ quit the dev app first: one Talaan at a time.
 - [ ] Both sides in the transcript, Me/Them right, no echo lines (headphones). Summary written offline.
 - [ ] Calendar: paste the Google "Secret address in iCal format", Test and connect shows events; a recording
   during an event takes its title and attendees.
+- [ ] Offline start: turn Wi-Fi off, start a recording during an event, turn Wi-Fi on, stop with Transcript only on:
+  within a minute or two (or 5 minutes later) the meeting takes the event's title.
 
 **Shell**
 - [ ] Tray icon visible on light and dark taskbars; popover opens above the tray; hover shows the timer.
