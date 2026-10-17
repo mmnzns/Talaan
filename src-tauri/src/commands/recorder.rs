@@ -95,13 +95,18 @@ fn system_source() -> Box<dyn crate::recorder::source::AudioSource> {
 }
 
 /// `async` (off the main thread): it opens the audio devices, as an auto-start from the calls loop already does.
+/// `event`: started from the menu bar's next meeting, whose title and attendees the recording takes.
 #[tauri::command(async)]
-pub fn recorder_start(app: AppHandle, app_id: Option<String>, app_label: Option<String>) -> CmdResult<StatePayload> {
-    start_recording(&app, app_id.as_deref().unwrap_or("other"), app_label.as_deref().unwrap_or("Call"))
+pub fn recorder_start(app: AppHandle, app_id: Option<String>, app_label: Option<String>, event: Option<crate::storage::model::CalendarEvent>) -> CmdResult<StatePayload> {
+    start_with(&app, app_id.as_deref().unwrap_or("other"), app_label.as_deref().unwrap_or("Call"), event)
 }
 
 /// Starts a recording (Record button, an accepted nudge, or an app on Always).
 pub fn start_recording(app: &AppHandle, app_id: &str, app_label: &str) -> CmdResult<StatePayload> {
+    start_with(app, app_id, app_label, None)
+}
+
+fn start_with(app: &AppHandle, app_id: &str, app_label: &str, event: Option<crate::storage::model::CalendarEvent>) -> CmdResult<StatePayload> {
     let state = app.state::<AppState>();
     let rec = app.state::<RecorderState>();
     let on_speakers = speakers();
@@ -120,7 +125,10 @@ pub fn start_recording(app: &AppHandle, app_id: &str, app_label: &str) -> CmdRes
     }
     drop(storage);
     if let Some(id) = &st.meeting_id {
-        super::calendar::link_soon(app, id);
+        match event {
+            Some(e) => super::calendar::link_now(app, id, e),
+            None => super::calendar::link_soon(app, id),
+        }
     }
     if !st.system_audio {
         notice(app, crate::i18n::tr(NO_SYSTEM_AUDIO), "warning", Some("system-audio"));

@@ -38,6 +38,8 @@ pub struct Calendar {
 struct Item {
     title: String,
     attendees: Vec<String>,
+    emails: Vec<String>,
+    join_url: Option<String>,
     start: DateTime<Tz>,
     all_day: bool,
     length: Length,
@@ -169,7 +171,15 @@ impl Calendar {
             };
             for (s, e) in occurrences {
                 if s < to_ms && e > from_ms {
-                    out.push(Event { title: it.title.clone(), start_ms: s, end_ms: e, all_day: it.all_day, attendees: it.attendees.clone() });
+                    out.push(Event {
+                        title: it.title.clone(),
+                        start_ms: s,
+                        end_ms: e,
+                        all_day: it.all_day,
+                        attendees: it.attendees.clone(),
+                        emails: it.emails.clone(),
+                        join_url: it.join_url.clone(),
+                    });
                 }
             }
         }
@@ -210,9 +220,12 @@ fn item(ev: &Block, zones: &HashMap<String, Tz>, me: &[String], series: bool) ->
     if recurrence.is_none() && series && ev.value("RRULE").is_some() && ev.times("EXDATE", zones).contains(&start.at) {
         return None;
     }
+    let (attendees, emails) = attendees(ev, me);
     Some(Item {
         title: ev.value("SUMMARY").map(|s| unescape(s).trim().to_string()).unwrap_or_default(),
-        attendees: attendees(ev, me),
+        attendees,
+        emails,
+        join_url: join_url(ev),
         start: start.at,
         all_day: start.all_day,
         length,
@@ -556,8 +569,18 @@ fn until_in_utc(rule: &str, tz: Tz) -> String {
 
 /// Who else is invited: the CN, else the email address's local part. Left out: the user's own addresses, people
 /// who declined, rooms and resources, and non-email entries without a name.
-fn attendees(ev: &Block, me: &[String]) -> Vec<String> {
+/// The Zoom, Meet or Teams link: the conference fields Google and Outlook add first, then the URL, location and
+/// description.
+fn join_url(ev: &Block) -> Option<String> {
+    const FIELDS: [&str; 6] = ["X-GOOGLE-CONFERENCE", "X-MICROSOFT-SKYPETEAMSMEETINGURL", "X-MICROSOFT-ONLINEMEETINGEXTERNALLINK", "URL", "LOCATION", "DESCRIPTION"];
+    let texts: Vec<String> = FIELDS.iter().filter_map(|f| ev.value(f)).map(unescape).collect();
+    super::join_link(&texts.iter().map(String::as_str).collect::<Vec<_>>())
+}
+
+/// The other people's names, and their email addresses where the calendar has them.
+fn attendees(ev: &Block, me: &[String]) -> (Vec<String>, Vec<String>) {
     let mut names: Vec<String> = Vec::new();
+    let mut emails: Vec<String> = Vec::new();
     for l in ev.0.iter().filter(|l| l.name.eq_ignore_ascii_case("ATTENDEE")) {
         if param(l, "PARTSTAT").is_some_and(|p| p.eq_ignore_ascii_case("DECLINED")) {
             continue;
@@ -575,8 +598,11 @@ fn attendees(ev: &Block, me: &[String]) -> Vec<String> {
         if let Some(n) = name.filter(|n| !names.contains(n)) {
             names.push(n);
         }
+        if let Some(a) = email.and_then(super::email_of).filter(|a| !emails.iter().any(|e| e.eq_ignore_ascii_case(a))) {
+            emails.push(a);
+        }
     }
-    names
+    (names, emails)
 }
 
 /// Windows time zone names (as Outlook writes them in TZID) → IANA, from CLDR's windowsZones.xml (the "001"
@@ -891,6 +917,39 @@ mod tests {
             END:VEVENT");
         let e = parse(&ics, utc(2026, 10, 20, 0, 0), utc(2026, 10, 21, 0, 0), &["miguel@example.com".to_string()]);
         assert_eq!(e[0].attendees, vec!["Ana Reyes", "Lee, Sam", "jordan.k"]);
+        assert_eq!(e[0].emails, vec!["ana@example.com", "sam@example.com", "jordan.k@example.com"]);
+        assert_eq!(e[0].join_url, None);
+    }
+
+    #[test]
+    fn the_join_link_comes_from_the_conference_field_location_or_description() {
+        let ics = cal("
+            BEGIN:VEVENT
+            UID:a@test
+            SUMMARY:Google
+            DTSTART:20261020T170000Z
+            DTEND:20261020T173000Z
+            DESCRIPTION:Agenda: https://docs.example.com/x
+            X-GOOGLE-CONFERENCE:https://meet.google.com/abc-defg-hij
+            END:VEVENT
+            BEGIN:VEVENT
+            UID:b@test
+            SUMMARY:Zoom in notes
+            DTSTART:20261020T180000Z
+            DTEND:20261020T183000Z
+            LOCATION:Room 4\\, 2nd floor
+            DESCRIPTION:Ana is inviting you to a Zoom meeting.\\n\\nJoin: https://us02web.zoom.us/j/81234567890?pwd=x\\n
+            END:VEVENT
+            BEGIN:VEVENT
+            UID:c@test
+            SUMMARY:Lunch
+            DTSTART:20261020T190000Z
+            DTEND:20261020T193000Z
+            LOCATION:https://maps.example.com/cafe
+            END:VEVENT");
+        let e = parse(&ics, utc(2026, 10, 20, 0, 0), utc(2026, 10, 21, 0, 0), &[]);
+        let links: Vec<Option<&str>> = e.iter().map(|e| e.join_url.as_deref()).collect();
+        assert_eq!(links, vec![Some("https://meet.google.com/abc-defg-hij"), Some("https://us02web.zoom.us/j/81234567890?pwd=x"), None]);
     }
 
     #[test]

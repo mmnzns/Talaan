@@ -22,6 +22,9 @@ pub enum MeetingStatus {
 pub struct CalendarEvent {
     pub title: String,
     pub attendees: Vec<String>,
+    /// The attendees' email addresses, when the calendar has them ("Email this summary" sends to them).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub emails: Vec<String>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
@@ -146,6 +149,10 @@ pub struct MeetingFile {
     /// "Transcribe again" with this speech model; cleared once the new transcript is saved.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub retranscribe_model: Option<String>,
+    /// The copy written by "Also save each meeting to a folder" (`autosave.rs`): rewritten in place, and the only file
+    /// Talaan ever replaces in that folder.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub exported_path: Option<String>,
     #[serde(flatten)]
     pub extra: Map<String, Value>,
 }

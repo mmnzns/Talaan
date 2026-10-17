@@ -172,7 +172,7 @@ pub(crate) mod tests {
     #[test]
     fn calendar_attendees_are_offered_as_owner_names() {
         let mut m = meeting(vec![line("l0", 0, "them:0", "I'll send it.")]);
-        m.calendar_event = Some(crate::storage::model::CalendarEvent { title: "Q4 sync".into(), attendees: vec!["Priya Shah".into(), "Dana Reyes".into()] });
+        m.calendar_event = Some(crate::storage::model::CalendarEvent { title: "Q4 sync".into(), attendees: vec!["Priya Shah".into(), "Dana Reyes".into()], emails: vec![] });
         let p = summary_prompt(&m, &m.transcript, "en", None);
         assert!(p.user.contains("Calendar event: Q4 sync. Invited: Priya Shah, Dana Reyes."));
         m.calendar_event = None;

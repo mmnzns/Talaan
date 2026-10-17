@@ -65,6 +65,7 @@ impl Storage {
             summary_error: None,
             transcript_only: m.transcript_only,
             retranscribe_model: None,
+            exported_path: None,
             extra: Default::default(),
         };
         write_json_atomic(&dir.join(META), &file)?;

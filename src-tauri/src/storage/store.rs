@@ -90,6 +90,7 @@ impl Storage {
                         summary_error: None,
                         transcript_only: false,
                         retranscribe_model: None,
+                        exported_path: None,
                         extra: Default::default(),
                     };
                     write_json_atomic(&meetings.join(&id).join(META), &file)?;
