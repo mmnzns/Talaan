@@ -439,8 +439,12 @@ fn replace_words(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
     let mut word = String::new();
     let flush = |word: &mut String, out: &mut String| {
-        if is_email(word) {
+        // Sentence punctuation after an address isn't part of it; `%40` is an encoded `@`.
+        let core = word.trim_end_matches(['.', '-', '+', '%']);
+        let decoded = replace_ignore_case(core, "%40", "@");
+        if is_email(&decoded) {
             out.push_str("[email]");
+            out.push_str(&word[core.len()..]);
         } else if is_secret(word) {
             out.push_str("[secret]");
         } else {
@@ -496,6 +500,10 @@ mod tests {
     #[test]
     fn emails_and_keys_are_replaced() {
         assert_eq!(redact_with("attendee ana.cruz@example.com joined", None), "attendee [email] joined");
+        assert_eq!(redact_with("invite sent to ana@example.com.", None), "invite sent to [email].");
+        assert_eq!(redact_with("to ana@example.com, bob@example.org; done", None), "to [email], [email]; done");
+        assert_eq!(redact_with("q=ana%40example.com&x", None), "q=[email]&x");
+        assert_eq!(redact_with("q=ANA%40EXAMPLE.COM.", None), "q=[email].");
         for key in ["sk-ant-api03-AbCdEfGhIjKlMnOpQrStUvWx", "sk-proj-abcdefghijklmnop1234", "gsk_0123456789abcdefABCD", "ntn_123456789012ABCDEFGHIJ", "secret_abcdefghijklmnop", "AIzaSyA1b2C3d4E5f6G7h8I9j0"] {
             let out = redact_with(&format!("key {key} refused"), None);
             assert_eq!(out, "key [secret] refused", "{key}");
