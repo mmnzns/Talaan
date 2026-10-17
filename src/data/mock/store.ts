@@ -1,8 +1,9 @@
-import type { MeetingFilter, MeetingStore } from "../store";
+import type { FollowUpDraft, MeetingFilter, MeetingStore } from "../store";
 import type {
   AskAnswer,
   AskScope,
   Folder,
+  Mark,
   Meeting,
   MeetingId,
   MeetingListItem,
@@ -11,7 +12,7 @@ import type {
 } from "../types";
 import { withYourName } from "../../lib/transcript";
 import { mockAsk } from "./askAnswers";
-import { sampleSummary, sampleTranscript, seedFolders, seedMeetings } from "./seed";
+import { sampleFollowUp, sampleSummary, sampleTranscript, seedFolders, seedMeetings } from "./seed";
 
 const clone = <T>(v: T): T => structuredClone(v);
 
@@ -40,13 +41,16 @@ export class MockMeetingStore implements MeetingStore {
   private folders = seedFolders.map((f) => ({ ...f }));
   private listeners = new Set<() => void>();
   private askDelayMs: number;
+  private followUpDelayMs: number;
+  private followUpCancelled = false;
   private yourName: () => string | undefined;
 
   constructor(
     private now: Date = new Date(),
-    options: { empty?: boolean; askDelayMs?: number; yourName?: () => string | undefined } = {},
+    options: { empty?: boolean; askDelayMs?: number; followUpDelayMs?: number; yourName?: () => string | undefined } = {},
   ) {
     this.askDelayMs = options.askDelayMs ?? 700;
+    this.followUpDelayMs = options.followUpDelayMs ?? 2500;
     this.yourName = options.yourName ?? (() => undefined);
     for (const m of options.empty ? [] : seedMeetings(now)) {
       this.meetings.set(m.id, m);
@@ -201,9 +205,42 @@ export class MockMeetingStore implements MeetingStore {
   async generateSummary(id: MeetingId) {
     this.simulate(id, "summarizing", (m) => {
       m.status = "ready";
-      m.summary = sampleSummary();
+      m.summary = sampleSummary(m.template ?? "general", m.marks);
       this.originals.get(id)!.summary = clone(m.summary);
     });
+  }
+
+  async setTemplate(id: MeetingId, template?: string) {
+    this.mutate(id, (m) => (m.template = template));
+  }
+
+  async summarizeAs(id: MeetingId, template: string) {
+    this.mutate(id, (m) => (m.template = template));
+    await this.generateSummary(id);
+  }
+
+  async setNotes(id: MeetingId, notes: Mark[]) {
+    this.mutate(id, (m) => {
+      const kept = notes.filter((n) => n.note?.trim()).map((n, i) => ({ id: n.id || `n${Date.now()}-${i}`, at: n.later ? 0 : n.at, note: n.note!.trim(), ...(n.later ? { later: true } : {}) }));
+      m.marks = [...m.marks.filter((k) => !k.note?.trim()), ...kept].sort((a, b) => Number(!!a.later) - Number(!!b.later) || a.at - b.at);
+    });
+  }
+
+  async followUpEta(_id: MeetingId) {
+    return { finishAt: new Date(Date.now() + this.followUpDelayMs).toISOString(), onCpu: true };
+  }
+
+  async draftFollowUp(id: MeetingId): Promise<FollowUpDraft> {
+    this.followUpCancelled = false;
+    await new Promise((r) => setTimeout(r, this.followUpDelayMs));
+    if (this.followUpCancelled) throw new Error("Cancelled.");
+    const m = this.meetings.get(id);
+    if (!m?.summary) throw new Error("Write the summary first, then draft the follow-up.");
+    return sampleFollowUp(m);
+  }
+
+  async cancelFollowUp() {
+    this.followUpCancelled = true;
   }
 
   async renameSpeaker(id: MeetingId, speaker: Speaker, name: string) {

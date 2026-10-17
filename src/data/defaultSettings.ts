@@ -80,6 +80,8 @@ export const defaultSettings: Settings = {
   summaryEngine: "local",
   summarizeAutomatically: true,
   summaryLanguage: "meeting",
+  summaryTemplate: "general",
+  summaryInstructions: "",
   localModel: "recommended",
   // Mirrors the Rust catalog (src-tauri/src/summarizer/models.rs). In the app the states come from disk.
   localModels: [

@@ -43,6 +43,28 @@ describe("toMarkdown", () => {
   });
 });
 
+describe("notes, sections and highlights", () => {
+  const oneOnOne = seedMeetings(new Date("2026-10-14T20:00:00")).find((m) => m.id === "m-1on1")!;
+  it("lists your notes after the recap, with their time or 'after the call'", () => {
+    const md = toMarkdown(q4, false);
+    expect(md).toContain("### Your notes\n\n- onboarding first, pricing waits for Q1 (00:22)\n- check with the data team (01:12)\n- Ask Priya if analytics needs budget (after the call)");
+    expect(md.indexOf("### Your notes")).toBeLessThan(md.indexOf("### Decisions"));
+    // Notes are kept even before there is a summary.
+    expect(toMarkdown({ ...q4, summary: undefined }, false)).toContain("### Your notes");
+  });
+  it("adds the meeting type's sections and the highlights", () => {
+    expect(toMarkdown(oneOnOne, false)).toContain("### Support needed\n\n- Jordan needs a data analyst before January. (20:40)");
+    expect(toMarkdown(q4, false)).toContain("### Highlights\n\n- You promised design the onboarding wireframes by Friday");
+    expect(toShareText(oneOnOne)).toContain("\nFeedback\n• Jordan liked");
+  });
+  it("leaves a meeting without notes or extras as it was", () => {
+    const plain = { ...q4, marks: [], summary: { ...q4.summary!, highlights: undefined } };
+    const md = toMarkdown(plain, false);
+    expect(md).not.toContain("Your notes");
+    expect(md).not.toContain("Highlights");
+  });
+});
+
 describe("toPlainText", () => {
   it("strips the Markdown markup", () => {
     const text = toPlainText(q4, true);

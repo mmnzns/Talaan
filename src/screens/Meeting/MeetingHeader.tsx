@@ -1,4 +1,4 @@
-import { AudioLines, Calendar, FolderOpen, MessageCircle, MoreHorizontal, Pin, Sparkles, Trash2, VolumeX, X } from "lucide-react";
+import { AudioLines, Calendar, FolderOpen, LayoutList, MessageCircle, MoreHorizontal, Pin, Sparkles, Trash2, VolumeX, X } from "lucide-react";
 import { useState } from "react";
 import { useFolders, useSettings } from "../../data/hooks";
 import { useStore } from "../../data/StoreProvider";
@@ -9,6 +9,7 @@ import { Button, Chip, Field, Label, MenuItem, Popover, Select, Sheet, useToast 
 import { useT } from "../../lib/i18n/I18nProvider";
 import { useLang } from "../../lib/i18n/I18nProvider";
 import { describeError } from "../../data/errors";
+import { SummarizeAsSheet } from "./SummarizeAsSheet";
 
 interface Props {
   meeting: Meeting;
@@ -40,6 +41,7 @@ export function MeetingHeader({ meeting, editing, canRevert, onToggleEdit, onRev
   const [title, setTitle] = useState(meeting.title);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [retranscribing, setRetranscribing] = useState(false);
+  const [summarizingAs, setSummarizingAs] = useState(false);
   const { settings } = useSettings();
   const speechModel = meeting.transcription && (settings?.speechModels.find((m) => m.id === meeting.transcription!.model)?.name ?? meeting.transcription.model);
 
@@ -193,6 +195,15 @@ export function MeetingHeader({ meeting, editing, canRevert, onToggleEdit, onRev
                     <Sparkles size={14} aria-hidden="true" /> {meeting.summary ? t("meeting.summaryAgain") : t("meeting.generateSummary")}
                   </MenuItem>
                   <MenuItem
+                    disabled={meeting.transcript.length === 0}
+                    onClick={() => {
+                      setSummarizingAs(true);
+                      close();
+                    }}
+                  >
+                    <LayoutList size={14} aria-hidden="true" /> {t("meeting.summarizeAs")}
+                  </MenuItem>
+                  <MenuItem
                     disabled={!meeting.hasAudio}
                     onClick={() => {
                       setRetranscribing(true);
@@ -254,6 +265,7 @@ export function MeetingHeader({ meeting, editing, canRevert, onToggleEdit, onRev
       )}
 
       <RetranscribeSheet meeting={meeting} open={retranscribing} onClose={() => setRetranscribing(false)} />
+      <SummarizeAsSheet meeting={meeting} open={summarizingAs} onClose={() => setSummarizingAs(false)} />
 
       <Sheet open={confirmDelete} title={t("meeting.deleteTitle")} onClose={() => setConfirmDelete(false)}>
         <div className="flex flex-col gap-3 p-5">

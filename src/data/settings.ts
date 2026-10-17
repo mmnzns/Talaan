@@ -104,6 +104,10 @@ export interface Settings {
   summarizeAutomatically: boolean;
   /** "meeting" = the meeting's own language, or an ISO code. */
   summaryLanguage: string;
+  /** The meeting type new recordings are summarized as (lib/templates). */
+  summaryTemplate: string;
+  /** Applied to every summary ("Always mention budget numbers"). */
+  summaryInstructions: string;
   localModel: "recommended" | "larger";
   /** From disk in the app (like speechModels); never stored in settings.json. */
   localModels: LocalModel[];

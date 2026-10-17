@@ -9,6 +9,14 @@ export const common = area({
     etaMin_other: "About {count} min left",
     etaSoon: "Less than a minute left",
     etaAlmost: "Almost done",
+    // meeting types (src/lib/templates.ts)
+    meetingType: "Meeting type",
+    template_general: "General",
+    template_one_on_one: "1:1",
+    template_standup: "Stand-up",
+    template_interview: "Interview",
+    template_sales: "Sales or client call",
+    template_lecture: "Lecture or webinar",
   },
   fr: {
     cancel: "Annuler",
@@ -18,6 +26,14 @@ export const common = area({
     etaMin_other: "Environ {count} min restantes",
     etaSoon: "Moins d’une minute restante",
     etaAlmost: "Presque terminé",
+    // meeting types (src/lib/templates.ts)
+    meetingType: "Type de réunion",
+    template_general: "Général",
+    template_one_on_one: "Rencontre individuelle",
+    template_standup: "Mêlée quotidienne",
+    template_interview: "Entrevue",
+    template_sales: "Appel de vente ou client",
+    template_lecture: "Cours ou webinaire",
   },
   es: {
     cancel: "Cancelar",
@@ -27,5 +43,13 @@ export const common = area({
     etaMin_other: "Faltan aproximadamente {count} min",
     etaSoon: "Falta menos de un minuto",
     etaAlmost: "Ya casi termina",
+    // meeting types (src/lib/templates.ts)
+    meetingType: "Tipo de reunión",
+    template_general: "General",
+    template_one_on_one: "Reunión individual",
+    template_standup: "Reunión diaria",
+    template_interview: "Entrevista",
+    template_sales: "Llamada de ventas o con clientes",
+    template_lecture: "Clase o seminario web",
   },
 });

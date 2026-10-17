@@ -3,12 +3,19 @@ import type {
   AskAnswer,
   AskScope,
   Folder,
+  Mark,
   Meeting,
   MeetingId,
   MeetingListItem,
   Speaker,
   Summary,
 } from "./types";
+
+export interface FollowUpDraft {
+  subject: string;
+  body: string;
+  to: string[];
+}
 
 export interface MeetingFilter {
   folderId?: string;
@@ -34,6 +41,18 @@ export interface MeetingStore {
   retranscribe(id: MeetingId, model: string): Promise<void>;
   /** Transcript-only meeting: write the summary now (M5). */
   generateSummary(id: MeetingId): Promise<void>;
+  /** The meeting type to summarize it as (lib/templates); undefined = the Settings default. Works while recording. */
+  setTemplate(id: MeetingId, template?: string): Promise<void>;
+  /** "Summarize as…": remembers the type and writes the summary again (it replaces the old one and its edits). */
+  summarizeAs(id: MeetingId, template: string): Promise<void>;
+  /** The user's notes (marks with a note), edited in the meeting view. Marked moments stay. Not while recording. */
+  setNotes(id: MeetingId, notes: Mark[]): Promise<void>;
+  /** When a follow-up draft for this meeting should be done. */
+  followUpEta(id: MeetingId): Promise<{ finishAt: string; onCpu: boolean }>;
+  /** Draft follow-up email from the summary: subject, plain-text body, and the invitees' addresses when known. */
+  draftFollowUp(id: MeetingId): Promise<FollowUpDraft>;
+  /** Stops a follow-up draft that is being written. */
+  cancelFollowUp(): Promise<void>;
   /** A URL to play the meeting's audio (both sides mixed), or undefined when there is none (or in the browser). */
   playbackUrl(id: MeetingId): Promise<string | undefined>;
   /** Deletes the audio now; transcript and summary stay. */
