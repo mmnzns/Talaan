@@ -15,9 +15,17 @@ use tauri::{AppHandle, Manager};
 /// Log lines in the report.
 pub const TAIL_LINES: usize = 200;
 
-/// Settings that hold the user's own words or names.
-const PERSONAL: &[&str] = &["yourName", "recordingNotice", "calendarIcsUrl"];
-/// Addresses: kept when they point at this computer (the usual Ollama / LM Studio setup), else only "(set)".
+/// Settings that are safe to show as they are: switches, choices and model names. Anything not listed here (a new
+/// setting, or one that holds words, names or addresses) is left out of the report, named only in `notShown`.
+const SAFE: &[&str] = &[
+    "theme", "detectCalls", "autoTagApps", "launchAtLogin", "checkUpdates", "warnOnSpeakers", "notifySummaryReady", "activeSpeechModel",
+    "separateSpeakers", "reuseModels", "meetingLanguage", "uiLanguage", "useGpu", "summaryEngine", "summarizeAutomatically", "summaryLanguage",
+    "localModel", "ollamaModel", "byokProvider", "byokKeys", "byokModel", "calendarConnected", "tabDetection", "suggestSpeakerNames",
+    "retention", "transcriptRetention", "onboardingDone",
+];
+/// Settings shown only as set or empty: the user's own words.
+const PERSONAL: &[&str] = &["yourName", "recordingNotice"];
+/// Addresses: shown when they point at this computer (the usual Ollama / LM Studio setup), without a query.
 const ADDRESSES: &[&str] = &["ollamaAddress", "byokBaseUrl"];
 
 fn marker(v: &Value) -> Value {
@@ -30,66 +38,56 @@ fn marker(v: &Value) -> Value {
 
 fn is_local(address: &str) -> bool {
     let rest = address.trim().split_once("://").map(|(_, r)| r).unwrap_or(address.trim());
-    let host = rest.split(['/', ':']).next().unwrap_or("");
+    let host = rest.split(['/', ':', '?', '#']).next().unwrap_or("");
     matches!(host, "localhost" | "127.0.0.1" | "[::1]" | "0.0.0.0")
 }
 
-/// A key name that sounds like it holds a secret or an address.
-fn sensitive_key(k: &str) -> bool {
-    let k = k.to_ascii_lowercase();
-    ["secret", "token", "password", "apikey", "api_key", "url", "address", "email"].iter().any(|s| k.contains(s))
-}
-
-fn scrub(v: &mut Value, key: Option<&str>) {
+/// A safe value: strings redacted, arrays and objects of them too.
+fn safe(v: &Value) -> Value {
     match v {
-        Value::String(s) => {
-            if key.is_some_and(sensitive_key) {
-                *v = marker(v);
-            } else {
-                *s = logging::redact(s);
-            }
-        }
-        Value::Array(a) => a.iter_mut().for_each(|x| scrub(x, None)),
-        Value::Object(o) => o.iter_mut().for_each(|(k, x)| scrub(x, Some(k))),
-        _ => {}
+        Value::String(s) => Value::String(logging::redact(s)),
+        Value::Array(a) => Value::Array(a.iter().map(safe).collect()),
+        Value::Object(o) => Value::Object(o.iter().map(|(k, x)| (k.clone(), safe(x))).collect()),
+        other => other.clone(),
     }
 }
 
-/// settings.json for a bug report: no names, no recording notice, no addresses off this computer, no secrets.
+/// settings.json for a bug report, built from an allowlist: known-safe settings as they are; names and the
+/// recording notice as set or empty; the microphone without its owner's name; local addresses without their query,
+/// others as set; Notion as connected or not; call app rules by id; everything else left out.
 pub fn settings_for_report(v: &Value) -> Value {
-    let mut v = v.clone();
-    if let Some(o) = v.as_object_mut() {
-        for k in PERSONAL {
-            if let Some(x) = o.get_mut(*k) {
-                *x = marker(x);
+    let Some(o) = v.as_object() else { return json!("(not an object)") };
+    let mut out = serde_json::Map::new();
+    for (k, x) in o {
+        let shown = if SAFE.contains(&k.as_str()) {
+            safe(x)
+        } else if PERSONAL.contains(&k.as_str()) {
+            marker(x)
+        } else if ADDRESSES.contains(&k.as_str()) {
+            match x.as_str() {
+                Some(a) if is_local(a) => json!(a.split(['?', '#']).next().unwrap_or("").trim()),
+                _ => marker(x),
             }
-        }
-        // The chosen microphone, without its owner's name ("Miguel's AirPods" → "…'s AirPods").
-        if let Some(Value::String(m)) = o.get_mut("microphone") {
-            *m = logging::device(m);
-        }
-        for k in ADDRESSES {
-            if let Some(x) = o.get_mut(*k) {
-                if !x.as_str().is_some_and(is_local) {
-                    *x = marker(x);
-                }
-            }
-        }
-        if let Some(n) = o.get_mut("notion") {
-            *n = json!({ "connected": n["connected"].as_bool().unwrap_or(false), "destination": marker(&n["destination"]) });
-        }
+        } else if k == "microphone" {
+            x.as_str().map(|m| json!(logging::device(m))).unwrap_or(Value::Null)
+        } else if k == "notion" {
+            json!({ "connected": x["connected"].as_bool().unwrap_or(false), "destination": marker(&x["destination"]) })
+        } else if k == "callApps" {
+            let rules = x.as_array().map(|a| a.iter().map(|r| json!({ "id": safe(&r["id"]), "rule": safe(&r["rule"]) })).collect()).unwrap_or_default();
+            Value::Array(rules)
+        } else if k == "ignoredApps" {
+            json!(x.as_array().map(Vec::len).unwrap_or(0))
+        } else {
+            continue;
+        };
+        out.insert(k.clone(), shown);
     }
-    let local: Vec<(String, Value)> = ADDRESSES.iter().filter_map(|k| Some((k.to_string(), v.get(*k)?.clone()))).filter(|(_, x)| x.as_str().is_some_and(is_local)).collect();
-    scrub(&mut v, None);
-    // A local address survives the address rule above.
-    if let Some(o) = v.as_object_mut() {
-        for (k, x) in local {
-            o.insert(k, x);
-        }
+    let hidden: Vec<&String> = o.keys().filter(|k| !out.contains_key(k.as_str())).collect();
+    if !hidden.is_empty() {
+        out.insert("notShown".into(), json!(hidden));
     }
-    v
+    Value::Object(out)
 }
-
 /// The facts about this computer at the top of the report (and in the log at startup).
 pub struct Facts {
     pub version: String,
@@ -282,7 +280,12 @@ mod tests {
         assert_eq!(out["recordingNotice"], "(set)");
         assert_eq!(out["byokBaseUrl"], "(set)");
         assert_eq!(out["notion"], json!({ "connected": true, "destination": "(set)" }));
-        assert_eq!(out["someFutureToken"], "(set)");
+        // Anything not on the allowlist is left out, by name only.
+        assert_eq!(out.get("someFutureToken"), None);
+        assert_eq!(out.get("calendarIcsUrl"), None);
+        assert_eq!(out["notShown"], json!(["calendarIcsUrl", "someFutureToken"]));
+        assert_eq!(out["callApps"], json!([{ "id": "zoom", "rule": "ask" }]));
+        assert_eq!(out["ignoredApps"], 1);
         // What a bug report needs stays.
         assert_eq!(out["ollamaAddress"], "http://localhost:11434");
         assert_eq!(out["summaryEngine"], "byok");
@@ -290,6 +293,10 @@ mod tests {
         assert_eq!(out["callApps"][0]["rule"], "ask");
         assert_eq!(out["retention"], "7d");
         assert_eq!(settings_for_report(&json!({ "yourName": "" }))["yourName"], "(empty)");
+        // A local address loses its query; a microphone its owner.
+        let more = settings_for_report(&json!({ "ollamaAddress": "http://localhost:11434/v1?token=abc#x", "microphone": "Microphone (AirPods de Ana)" }));
+        assert_eq!(more["ollamaAddress"], "http://localhost:11434/v1");
+        assert_eq!(more["microphone"], "Microphone (AirPods de …)");
     }
 
     #[test]
