@@ -94,7 +94,8 @@ export function SummaryCard({ meeting, activeAt, editing, onJump }: Props) {
         {!summary && notes}
 
         {summary ? (
-          <div className={cn("flex flex-col gap-7", busy && "pointer-events-none opacity-50")} aria-busy={busy || undefined}>
+          // inert: no clicks, no keyboard and no edits while it is written again.
+          <div className={cn("flex flex-col gap-7", busy && "opacity-50")} aria-busy={busy || undefined} inert={busy || undefined}>
             <p className="m-0 text-[15px] leading-[23px] [text-wrap:pretty]">
               <Editable text={summary.recap} editing={editing} onCommit={(v) => set("recap", v)} />
             </p>

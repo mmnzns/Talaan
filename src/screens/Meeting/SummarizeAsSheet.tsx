@@ -41,13 +41,28 @@ export function SummarizeAsSheet({ meeting, open, onClose }: { meeting: Meeting;
             {t("meeting.rewriteBody")}
           </p>
         )}
-        <div role="radiogroup" aria-label={t("common.meetingType")} className="grid grid-cols-1 gap-1.5 min-[420px]:grid-cols-2">
+        <div
+          role="radiogroup"
+          aria-label={t("common.meetingType")}
+          className="grid grid-cols-1 gap-1.5 min-[420px]:grid-cols-2"
+          onKeyDown={(e) => {
+            // Arrow keys move the choice, like any radio group; Tab enters and leaves on the chosen one.
+            const step = { ArrowDown: 1, ArrowRight: 1, ArrowUp: -1, ArrowLeft: -1 }[e.key];
+            if (!step) return;
+            e.preventDefault();
+            const next = TEMPLATES[(TEMPLATES.indexOf(choice as (typeof TEMPLATES)[number]) + step + TEMPLATES.length) % TEMPLATES.length];
+            setChoice(next);
+            (e.currentTarget.querySelector(`[data-id="${next}"]`) as HTMLElement | null)?.focus();
+          }}
+        >
           {TEMPLATES.map((id) => (
             <button
               key={id}
               type="button"
               role="radio"
+              data-id={id}
               aria-checked={choice === id}
+              tabIndex={choice === id ? 0 : -1}
               onClick={() => setChoice(id)}
               className={cn(
                 "flex cursor-pointer items-center gap-2.5 rounded-control border bg-surface px-3 py-2 text-left font-[inherit] text-[13px] text-ink",

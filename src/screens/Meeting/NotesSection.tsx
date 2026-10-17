@@ -24,9 +24,12 @@ function NoteRow({
   onJump,
   onSave,
   onDelete,
+  readOnly,
 }: {
   note: Mark;
   active: boolean;
+  /** While recording: the recorder owns the notes until Stop. */
+  readOnly?: boolean;
   onJump: (at: Ms) => void;
   onSave: (text: string) => void;
   onDelete: () => void;
@@ -57,6 +60,7 @@ function NoteRow({
           rows={1}
           value={draft ?? text}
           aria-label={note.later ? t("meeting.noteLaterAria") : t("meeting.noteAria", { time: formatTime(note.at) })}
+          readOnly={readOnly}
           onChange={(e) => setDraft(e.target.value)}
           onBlur={commit}
           onKeyDown={(e) => {
@@ -72,14 +76,16 @@ function NoteRow({
           className="min-h-5 min-w-0 resize-none overflow-hidden rounded border border-transparent bg-transparent px-1 text-ink [font:inherit] outline-none hover:border-line focus:border-edge focus:bg-raised"
         />
       </span>
-      <button
-        type="button"
-        aria-label={t("meeting.deleteNote")}
-        onClick={onDelete}
-        className="mt-0.5 grid size-5 flex-none cursor-pointer place-items-center rounded border-0 bg-transparent p-0 text-faint opacity-0 hover:text-ink focus-visible:opacity-100 group-hover:opacity-100 group-focus-within:opacity-100"
-      >
-        <X size={13} aria-hidden="true" />
-      </button>
+      {!readOnly && (
+        <button
+          type="button"
+          aria-label={t("meeting.deleteNote")}
+          onClick={onDelete}
+          className="mt-0.5 grid size-5 flex-none cursor-pointer place-items-center rounded border-0 bg-transparent p-0 text-faint opacity-0 hover:text-ink focus-visible:opacity-100 group-hover:opacity-100 group-focus-within:opacity-100"
+        >
+          <X size={13} aria-hidden="true" />
+        </button>
+      )}
     </div>
   );
 }
@@ -129,6 +135,7 @@ export function NotesSection({ meeting, activeAt, onJump, onChanged }: Props) {
                   note={n}
                   active={!n.later && n.at === activeAt}
                   onJump={onJump}
+                  readOnly={locked}
                   onSave={(text) => void save(notes.map((x) => (x.id === n.id ? { ...x, note: text } : x)))}
                   onDelete={() => void save(notes.filter((x) => x.id !== n.id))}
                 />

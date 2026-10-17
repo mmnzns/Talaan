@@ -137,6 +137,7 @@ export function RecordingPopover({ state, levels, notice, app, maxHeight, onPaus
   /** Notes typed in this window during this recording, newest last (the saved meeting has them all). */
   const [typed, setTyped] = useState<{ at: number; text: string }[]>([]);
   const [template, setTemplate] = useTemplate(state.meetingId);
+  const focusNote = useRef(false);
   const [confirmDiscard, setConfirmDiscard] = useState(false);
   const [transcriptOnly, setTranscriptOnly] = useTranscriptOnly(state.meetingId);
   const moreId = useId();
@@ -290,7 +291,11 @@ export function RecordingPopover({ state, levels, notice, app, maxHeight, onPaus
           <button
             type="button"
             aria-expanded={notesOpen}
-            onClick={() => setNotesOpen(!notesOpen)}
+            onClick={() => {
+              // Only opening it by hand puts the cursor in the box; reopening the window leaves focus alone.
+              focusNote.current = !notesOpen;
+              setNotesOpen(!notesOpen);
+            }}
             className="-mx-1 flex cursor-pointer items-center gap-1.5 self-start rounded-md border-0 bg-transparent px-1 py-0.5 font-[inherit] text-xs font-semibold text-subtle outline-offset-2 hover:text-ink focus-visible:outline-2 focus-visible:outline-ink"
           >
             <ChevronDown size={13} aria-hidden="true" className={cn("transition-transform", notesOpen && "rotate-180")} />
@@ -322,8 +327,13 @@ export function RecordingPopover({ state, levels, notice, app, maxHeight, onPaus
                 <label className="flex h-[34px] items-center gap-2 rounded-control border border-input bg-paper px-3 focus-within:border-ink">
                   <span className="sr-only">{t("recording.quickNoteLabel")}</span>
                   <input
+                    ref={(el) => {
+                      if (el && focusNote.current) {
+                        focusNote.current = false;
+                        el.focus();
+                      }
+                    }}
                     value={note}
-                    autoFocus
                     onChange={(e) => setNote(e.target.value)}
                     disabled={paused}
                     placeholder={t("recording.quickNotePlaceholder")}
