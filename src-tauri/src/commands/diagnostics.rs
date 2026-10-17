@@ -52,6 +52,17 @@ fn safe(v: &Value) -> Value {
     }
 }
 
+/// A call app rule's id: Talaan's own ids as they are; an app the user added (its id is made from the name they
+/// typed) as "custom".
+fn call_app_id(id: &Value) -> Value {
+    let known = |s: &str| crate::calls::apps::CALL_APPS.iter().any(|(k, _, _)| *k == s) || s == super::calls::BROWSER_CALL;
+    match id.as_str() {
+        Some(s) if known(s) => json!(s),
+        Some(_) => json!("custom"),
+        None => Value::Null,
+    }
+}
+
 /// settings.json for a bug report, built from an allowlist: known-safe settings as they are; names and the
 /// recording notice as set or empty; the microphone without its owner's name; local addresses without their query,
 /// others as set; Notion as connected or not; call app rules by id; everything else left out.
@@ -73,7 +84,7 @@ pub fn settings_for_report(v: &Value) -> Value {
         } else if k == "notion" {
             json!({ "connected": x["connected"].as_bool().unwrap_or(false), "destination": marker(&x["destination"]) })
         } else if k == "callApps" {
-            let rules = x.as_array().map(|a| a.iter().map(|r| json!({ "id": safe(&r["id"]), "rule": safe(&r["rule"]) })).collect()).unwrap_or_default();
+            let rules = x.as_array().map(|a| a.iter().map(|r| json!({ "id": call_app_id(&r["id"]), "rule": safe(&r["rule"]) })).collect()).unwrap_or_default();
             Value::Array(rules)
         } else if k == "ignoredApps" {
             json!(x.as_array().map(Vec::len).unwrap_or(0))
@@ -285,6 +296,8 @@ mod tests {
         assert_eq!(out.get("calendarIcsUrl"), None);
         assert_eq!(out["notShown"], json!(["calendarIcsUrl", "someFutureToken"]));
         assert_eq!(out["callApps"], json!([{ "id": "zoom", "rule": "ask" }]));
+        let custom = settings_for_report(&json!({ "callApps": [{ "id": "browser", "rule": "never" }, { "id": "ana-s-secret-tool", "name": "Ana's secret tool", "rule": "always" }] }));
+        assert_eq!(custom["callApps"], json!([{ "id": "browser", "rule": "never" }, { "id": "custom", "rule": "always" }]));
         assert_eq!(out["ignoredApps"], 1);
         // What a bug report needs stays.
         assert_eq!(out["ollamaAddress"], "http://localhost:11434");
