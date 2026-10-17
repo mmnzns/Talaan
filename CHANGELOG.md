@@ -1,5 +1,39 @@
 # Changelog
 
+## 1.1.0 (2026-10-16)
+
+**Easier to start**
+- **Setup in one click:** "Download what Talaan needs" with a time estimate, or choose each model yourself. Nothing downloads until you click. Downloads keep going after setup.
+- **A 1-minute test recording** on first run, so you see Talaan work before a real call.
+- **Zoom asks before recording** on new installs, like every other call app.
+- **Plainer settings:** a Status tab that checks everything a call needs, speech models grouped as Best for most people / Fastest / For older computers, and summary AI as "On this computer" or "Online AI with your own account".
+
+**Better summaries**
+- **Your notes shape the summary.** Notes typed during or after the call are kept and built on; each marked moment becomes a clickable highlight.
+- **Meeting types:** summarize as General, 1:1, Stand-up, Interview, Sales or client call, or Lecture or webinar, plus your own instructions.
+- **Draft a follow-up email** from the summary, to copy or open in your mail app.
+- **Time left, not just a percentage,** for transcripts and summaries, learned from your computer's speed.
+
+**Around the meeting**
+- **Next meeting in the menu bar or tray,** with its own Start recording.
+- **Suggested speaker names** from the invite. Talaan never renames anyone by itself.
+- **Also save each meeting to a folder** as a Markdown file (an Obsidian vault, Documents, a synced folder). Renamed copies replace the old ones, which go to the Trash.
+- **Email this summary** to the people who were invited.
+
+**When something goes wrong**
+- **Copy diagnostics** for bug reports: version, setup checks and a log that never contains what was said.
+- **Fixed:** Talaan could freeze after a recording stopped, with "Meeting not found" and Quit doing nothing.
+- **Fixed:** a meeting's title didn't update on screen when the summary named it.
+- **Fixed:** error messages no longer blame memory without evidence.
+- **More stable:** a bug in one background task no longer closes the app mid-recording.
+
+**Windows**
+- **Uses your graphics card** for speech and summaries, falling back to the processor on its own.
+- **No more black console window** during summaries.
+- **Calls in a background browser tab** are recognized. Clicking a notification opens the meeting.
+- **Models move out of the roaming profile.** Sound enhancers like FxSound are noticed.
+- **Built for any x64 processor** from the last decade (no more risk of a crash on some Intel PCs).
+
 ## 1.0.2 (2026-10-15)
 
 - **More speech models, all on your computer:** Whisper Large v3, Large v2, Medium, Base and Tiny; Parakeet Ultra, Parakeet v2 (English), Parakeet Unified (English) and Nemotron 3.5 (35 languages), alongside Whisper Large Turbo, Parakeet v3 and Whisper Small. Setup shows the three recommended ones with "Show all models".
