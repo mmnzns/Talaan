@@ -7,6 +7,8 @@ mod helper;
 mod i18n;
 mod importer;
 mod keys;
+#[cfg(test)]
+mod log_scan;
 mod logging;
 mod notion;
 mod platform;
