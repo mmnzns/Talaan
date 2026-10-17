@@ -225,15 +225,97 @@ pub fn redact_with(s: &str, home: Option<&str>) -> String {
     // One line per record.
     let mut s = s.replace("\r\n", " | ").replace(['\n', '\r'], " | ");
     if let Some(h) = home.filter(|h| !h.is_empty()) {
-        s = s.replace(h, "~");
+        s = replace_ignore_case(&s, h, "~");
         if h.contains('\\') {
-            s = s.replace(&h.replace('\\', "/"), "~");
+            s = replace_ignore_case(&s, &h.replace('\\', "/"), "~");
         }
     }
+    let s = scrub_profiles(&s);
     let s = drop_quoted(&s);
     let s = cut_urls(&s);
     let s = replace_words(&s);
     cut(&s, MAX_LINE)
+}
+
+/// `s` with every ASCII-case-insensitive match of `from` replaced.
+fn replace_ignore_case(s: &str, from: &str, to: &str) -> String {
+    if from.is_empty() {
+        return s.to_string();
+    }
+    let (hay, needle) = (s.to_ascii_lowercase(), from.to_ascii_lowercase());
+    let mut out = String::with_capacity(s.len());
+    let mut last = 0;
+    for (i, _) in hay.match_indices(&needle) {
+        if i < last {
+            continue;
+        }
+        out.push_str(&s[last..i]);
+        out.push_str(to);
+        last = i + needle.len();
+    }
+    out.push_str(&s[last..]);
+    out
+}
+
+fn path_end(c: char) -> bool {
+    matches!(c, '\\' | '/') || c.is_whitespace() || matches!(c, '"' | '\'' | '`' | ')' | ']' | ',' | ';' | ':')
+}
+
+/// Any user profile in a path, whoever's it is and however it is written: `C:\Users\<name>` (also with `/`, in any
+/// case, and 8.3 names like `ANACRU~1`), `/Users/<name>` and `/home/<name>` become `~`; a network path
+/// `\\server\share\<folder>` (a redirected profile) becomes `\\…`.
+fn scrub_profiles(s: &str) -> String {
+    let lower = s.to_ascii_lowercase();
+    let bytes = s.as_bytes();
+    let mut out = String::with_capacity(s.len());
+    let mut i = 0;
+    while i < s.len() {
+        let rest = &lower[i..];
+        let prev_ok = i == 0 || !(bytes[i - 1] as char).is_ascii_alphanumeric();
+        // C:\Users\name or C:/Users/name
+        let drive = prev_ok && rest.len() > 9 && bytes[i].is_ascii_alphabetic() && (rest[1..].starts_with(":\\users\\") || rest[1..].starts_with(":/users/"));
+        // /Users/name, /home/name
+        let unix = prev_ok && (rest.starts_with("/users/") || rest.starts_with("/home/"));
+        // \\server\share\folder
+        let unc = rest.starts_with("\\\\") && (i == 0 || bytes[i - 1].is_ascii_whitespace() || b"(\"'`=:,".contains(&bytes[i - 1]));
+        if drive || unix {
+            let start = i + if drive { 9 } else if rest.starts_with("/users/") { 7 } else { 6 };
+            let end = s[start..].find(path_end).map(|e| start + e).unwrap_or(s.len());
+            if end > start {
+                out.push('~');
+                i = end;
+                continue;
+            }
+        }
+        if unc {
+            // Server, share and the folder under it (the profile's name in a redirected profile).
+            let mut j = i + 2;
+            let mut parts = 0;
+            while parts < 3 {
+                match s[j..].find(|c: char| c == '\\' || c == '/' || c.is_whitespace() || matches!(c, '"' | '\'' | '`' | ')' | ',')) {
+                    Some(e) if matches!(s[j + e..].chars().next(), Some('\\' | '/')) => {
+                        j += e + 1;
+                        parts += 1;
+                    }
+                    Some(e) => {
+                        j += e;
+                        break;
+                    }
+                    None => {
+                        j = s.len();
+                        break;
+                    }
+                }
+            }
+            out.push_str("\\\\…");
+            i = if parts == 3 { j - 1 } else { j };
+            continue;
+        }
+        let c = s[i..].chars().next().unwrap();
+        out.push(c);
+        i += c.len_utf8();
+    }
+    out
 }
 
 fn cut(s: &str, max: usize) -> String {
@@ -487,6 +569,22 @@ mod tests {
         assert_eq!(redact_with(r"no file C:\Users\ana\AppData\Roaming\Talaan\models", Some(r"C:\Users\ana")), r"no file ~\AppData\Roaming\Talaan\models");
         assert_eq!(redact_with("no file C:/Users/ana/x", Some(r"C:\Users\ana")), "no file ~/x");
         assert_eq!(redact_with("/Users/ana/Library/Logs/Talaan", Some("/Users/ana")), "~/Library/Logs/Talaan");
+    }
+
+    #[test]
+    fn any_profile_folder_is_scrubbed() {
+        // The exact home folder, in any case.
+        assert_eq!(redact_with(r"no file c:\users\ana\x", Some(r"C:\Users\Ana")), r"no file ~\x");
+        // Someone else's profile, 8.3 short names, forward slashes.
+        assert_eq!(redact_with(r"open C:\Users\ANACRU~1\AppData\Local\Temp\x.wav failed", None), r"open ~\AppData\Local\Temp\x.wav failed");
+        assert_eq!(redact_with(r"D:/users/Bob.Smith/Music", None), "~/Music");
+        assert_eq!(redact_with("/Users/ana/Library/Logs and /home/bob/x", None), "~/Library/Logs and ~/x");
+        // Redirected profiles on a network share.
+        assert_eq!(redact_with(r"read \\fs01\profiles$\ana\Documents\x failed", None), r"read \\…\Documents\x failed");
+        assert_eq!(redact_with(r"open \\nas\homes failed", None), r"open \\… failed");
+        // Not profiles.
+        assert_eq!(redact_with("GET /v1/users/me ok", None), "GET /v1/users/me ok");
+        assert_eq!(redact_with(r"C:\Program Files\Talaan\talaan.exe", None), r"C:\Program Files\Talaan\talaan.exe");
     }
 
     #[test]
