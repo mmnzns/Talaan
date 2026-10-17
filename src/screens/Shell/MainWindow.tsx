@@ -12,6 +12,9 @@ import { MeetingList } from "../MeetingList/MeetingList";
 import { MeetingPane } from "../Meeting/MeetingPane";
 import { RecordingContext, useRecording } from "./RecordingPanel";
 import { Toolbar } from "./Toolbar";
+import { SetupDownloadPill } from "../Onboarding/SetupDownload";
+import { TrayTip } from "../Onboarding/TrayTip";
+import { TestRecordingWatcher } from "../Onboarding/TestRecording";
 
 export function MainWindow({ route }: { route: Route }) {
   const [importing, setImporting] = useState(false);
@@ -75,6 +78,7 @@ export function MainWindow({ route }: { route: Route }) {
     <RecordingContext.Provider value={{ start: recording.start }}>
     <div className="flex h-full flex-col bg-paper">
       <Toolbar onImport={() => setImporting(true)} onRecord={recording.start} recording={recording.state} />
+      <TrayTip />
       <div className="flex min-h-0 flex-1">
         <MeetingList selectedId={route.name === "meeting" ? route.id : undefined} />
         <main className="flex min-w-0 flex-1 flex-col bg-paper">
@@ -96,6 +100,8 @@ export function MainWindow({ route }: { route: Route }) {
         }}
       />
       {recording.panel}
+      <SetupDownloadPill />
+      <TestRecordingWatcher />
     </div>
     </RecordingContext.Provider>
   );

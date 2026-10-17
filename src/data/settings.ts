@@ -77,6 +77,12 @@ export interface SpeechModel {
   languages: string; // "English only" | "25 European languages" ...
   state: "not_downloaded" | "downloading" | "downloaded" | "on_this_mac";
   progress?: number; // 0..1 while downloading
+  /** What an interrupted download left on disk (0..1), while not downloading; Download resumes from it. */
+  partial?: number;
+  /** Why the last download failed, until the next try. */
+  error?: string;
+  /** The partial download was stopped with Cancel: it waits for a click (never resumed at launch). */
+  cancelled?: boolean;
 }
 
 /** A local summary AI model (downloaded once, runs on this computer). */
@@ -88,6 +94,12 @@ export interface LocalModel {
   sizeMb: number;
   state: "not_downloaded" | "downloading" | "downloaded";
   progress?: number;
+  /** What an interrupted download left on disk (0..1), while not downloading; Download resumes from it. */
+  partial?: number;
+  /** Why the last download failed, until the next try. */
+  error?: string;
+  /** The partial download was stopped with Cancel: it waits for a click (never resumed at launch). */
+  cancelled?: boolean;
 }
 
 export interface Settings {
@@ -154,6 +166,10 @@ export interface Settings {
   transcriptRetention: TranscriptRetention;
   // App state
   onboardingDone: boolean;
+  /** Windows: the one-time "Talaan lives in the system tray" hint after onboarding. Set when onboarding ends. */
+  showTrayTip?: boolean;
+  /** The guided test recording's meeting, until the user deletes or keeps it. */
+  testMeetingId?: string;
 }
 
 export interface SettingsStore {

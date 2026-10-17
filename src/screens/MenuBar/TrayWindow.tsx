@@ -44,7 +44,7 @@ export function TrayWindow() {
     if (perm === "denied" || perm === "restricted") return inMain("record-request");
     if (perm === "undetermined" && !(await recorderClient.requestMicrophone().catch(() => false))) return inMain("record-request");
     try {
-      await (next ? recorderClient.start(appOf(next), eventOf(next)) : recorderClient.start());
+      await (next ? recorderClient.start(appOf(next), undefined, eventOf(next)) : recorderClient.start());
     } catch (e) {
       toast(describeError(e));
     }

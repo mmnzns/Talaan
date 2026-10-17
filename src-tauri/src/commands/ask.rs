@@ -128,12 +128,21 @@ fn ask(app: &AppHandle, question: &str, scope: &Scope) -> CmdResult<AskAnswer> {
             Scope::Folder { id } => storage.list_meetings(&Filter { folder_id: Some(id.clone()), ..Default::default() })?.into_iter().map(|m| m.id).collect(),
             Scope::Tag { tag } => storage.list_meetings(&Filter { tag: Some(tag.clone()), ..Default::default() })?.into_iter().map(|m| m.id).collect(),
         };
-        let meetings: Vec<Meeting> = ids.iter().filter_map(|id| storage.get_meeting(id).ok()).filter(searchable).collect();
+        let settings = storage.settings_get()?;
+        // The guided test recording stays out of answers while its keep-or-delete offer is open (unless it's the
+        // meeting being asked about).
+        let test = (!matches!(scope, Scope::Meeting { .. })).then(|| pending_test(settings.as_ref())).flatten();
+        let meetings: Vec<Meeting> = ids.iter().filter(|id| Some(id.as_str()) != test).filter_map(|id| storage.get_meeting(id).ok()).filter(searchable).collect();
         let dirs: Vec<PathBuf> = meetings.iter().map(|m| storage.dir(&m.item.id)).collect::<Result<_, _>>()?;
-        (meetings, dirs, storage.settings_get()?)
+        (meetings, dirs, settings)
     };
     let single = matches!(scope, Scope::Meeting { .. });
     answer_from(&state.data_dir, &state.embedder, &meetings, &dirs, settings.as_ref(), single, question)
+}
+
+/// The test recording whose keep-or-delete offer is still open (`testMeetingId` in settings.json).
+pub(crate) fn pending_test(settings: Option<&serde_json::Value>) -> Option<&str> {
+    settings?.get("testMeetingId")?.as_str().filter(|s| !s.is_empty())
 }
 
 /// The question answered from these meetings (their folders hold the search indexes).
@@ -225,6 +234,14 @@ pub fn search_model(data_dir: &Path) -> Option<PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_pending_test_recording_is_known_from_settings() {
+        assert_eq!(pending_test(Some(&serde_json::json!({ "testMeetingId": "m1" }))), Some("m1"));
+        assert_eq!(pending_test(Some(&serde_json::json!({ "testMeetingId": "" }))), None);
+        assert_eq!(pending_test(Some(&serde_json::json!({}))), None);
+        assert_eq!(pending_test(None), None);
+    }
 
     #[test]
     fn scopes_come_from_the_frontend_shape() {

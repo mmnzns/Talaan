@@ -19,6 +19,12 @@ fn folder(app: &AppHandle) -> Option<PathBuf> {
     s["autoSaveFolder"].as_str().map(str::trim).filter(|f| !f.is_empty()).map(PathBuf::from)
 }
 
+/// Onboarding's test recording (while its keep-or-delete offer is open) never gets a copy in the folder.
+fn is_test(app: &AppHandle, id: &str) -> bool {
+    let s = app.state::<AppState>().lock().settings_get().ok().flatten();
+    super::ask::pending_test(s.as_ref()) == Some(id)
+}
+
 /// A meeting's copy should be written: `finished` when its summary (or transcript-only result) was just saved;
 /// otherwise it changed (title, summary edits, ticks, names) and only an existing or pending copy is updated. It is
 /// marked pending first (so a quit before it's written doesn't lose it), then the main window is told. On its own
@@ -26,7 +32,7 @@ fn folder(app: &AppHandle) -> Option<PathBuf> {
 pub fn due(app: &AppHandle, id: &str, finished: bool) {
     let (app, id) = (app.clone(), id.to_string());
     std::thread::spawn(move || {
-        if folder(&app).is_none() {
+        if folder(&app).is_none() || is_test(&app, &id) {
             return;
         }
         let due = autosave::mark_due(&app.state::<AppState>().lock(), &id, finished).unwrap_or(false);
@@ -59,6 +65,9 @@ fn meeting_lock(id: &str) -> Arc<Mutex<()>> {
 fn write_one(app: &AppHandle, dir: &std::path::Path, id: &str, contents: &str, finished: bool) -> CmdResult<&'static str> {
     let lock = meeting_lock(id);
     let _one_at_a_time = lock.lock().unwrap_or_else(|e| e.into_inner());
+    if is_test(app, id) {
+        return Ok("not_ready");
+    }
     let state = app.state::<AppState>();
     let Some(plan) = autosave::plan(&state.lock(), id, finished)? else { return Ok("not_ready") };
     // The storage lock is not held while the folder is written: it may be a slow or sleeping drive.

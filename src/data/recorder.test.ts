@@ -13,14 +13,16 @@ describe("TauriRecorderClient", () => {
     const c = new TauriRecorderClient();
     await c.start({ id: "zoom", label: "Zoom" });
     await c.start();
-    await c.start({ id: "zoom", label: "Zoom" }, { title: "Design review", attendees: ["Ana Reyes"], emails: ["ana@example.com"] });
+    await c.start(undefined, { maxMs: 60_000 });
+    await c.start({ id: "zoom", label: "Zoom" }, undefined, { title: "Design review", attendees: ["Ana Reyes"], emails: ["ana@example.com"] });
     await c.mark("pricing");
     await c.mark();
     await c.openSettings("system-audio");
     expect(invoke.mock.calls).toEqual([
-      ["recorder_start", { appId: "zoom", appLabel: "Zoom", event: null }],
-      ["recorder_start", { appId: null, appLabel: null, event: null }],
-      ["recorder_start", { appId: "zoom", appLabel: "Zoom", event: { title: "Design review", attendees: ["Ana Reyes"], emails: ["ana@example.com"] } }],
+      ["recorder_start", { appId: "zoom", appLabel: "Zoom", test: null, event: null }],
+      ["recorder_start", { appId: null, appLabel: null, test: null, event: null }],
+      ["recorder_start", { appId: null, appLabel: null, test: { maxMs: 60_000 }, event: null }],
+      ["recorder_start", { appId: "zoom", appLabel: "Zoom", test: null, event: { title: "Design review", attendees: ["Ana Reyes"], emails: ["ana@example.com"] } }],
       ["recorder_mark", { note: "pricing" }],
       ["recorder_mark", { note: null }],
       ["permissions_open_settings", { pane: "system-audio" }],
@@ -66,5 +68,31 @@ describe("MockRecorderClient", () => {
     expect(seen.length).toBeGreaterThan(2);
     expect(seen.every((v) => v > 0)).toBe(true);
     await c.stop();
+  });
+});
+
+describe("MockRecorderClient with the preview's meetings", () => {
+  afterEach(() => vi.useRealTimers());
+
+  it("creates the meeting on Start and saves it on Stop, as the app does", async () => {
+    vi.useFakeTimers();
+    const calls: string[] = [];
+    const c = new MockRecorderClient({ meetings: { start: (test) => (calls.push(`start ${test}`), "m-1"), stop: (id, ms) => calls.push(`stop ${id} ${ms}`), discard: (id) => calls.push(`discard ${id}`) } });
+    expect((await c.start()).meetingId).toBe("m-1");
+    await vi.advanceTimersByTimeAsync(3000);
+    expect(await c.stop()).toBe("m-1");
+    await c.start();
+    await c.discard();
+    expect(calls).toEqual(["start false", "stop m-1 3000", "start false", "discard m-1"]);
+  });
+
+  it("stops the test recording by itself at its limit", async () => {
+    vi.useFakeTimers();
+    const stops: number[] = [];
+    const c = new MockRecorderClient({ meetings: { start: () => "t-1", stop: (_id, ms) => stops.push(ms), discard: () => {} } });
+    await c.start(undefined, { maxMs: 5000 });
+    await vi.advanceTimersByTimeAsync(6000);
+    expect(stops).toEqual([5000]);
+    expect((await c.status()).state).toBe("idle");
   });
 });
