@@ -123,6 +123,7 @@ export function RecordingStage() {
             />
           </label>
           <Button onClick={() => client.notice({ text: "Switched to MacBook Pro Microphone. Recording continues.", kind: "info" })}>Simulate AirPods disconnecting</Button>
+          <Button onClick={() => client.setRelay("FxSound")}>Simulate FxSound as the output</Button>
           <Button
             onClick={() =>
               client.notice({ text: "No call audio is coming through. If the other people are talking, allow Talaan under Screen & System Audio Recording.", kind: "warning", settingsPane: "system-audio" })

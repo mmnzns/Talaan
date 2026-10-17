@@ -41,6 +41,11 @@ fn is_internal_speaker(device: AudioObjectID) -> bool {
     }
 }
 
+/// The sound enhancer the default output goes through (a Windows notice; not looked for on the Mac).
+pub fn sound_relay() -> Option<&'static str> {
+    None
+}
+
 /// Another app is playing sound (used to tell "the call is quiet" from "the tap is blocked").
 /// Not the output device's running state: Talaan's own tap keeps that running.
 pub fn others_playing() -> bool {

@@ -3,6 +3,7 @@ mod autosave;
 mod calendar;
 mod calls;
 mod commands;
+mod deeplink;
 mod eta;
 mod gpu;
 mod helper;
@@ -53,7 +54,12 @@ pub fn run() {
     // Talaan instead. (On the Mac the OS already does this, and the plugin's socket would make `tauri dev` exit
     // while the installed app runs.)
     #[cfg(target_os = "windows")]
-    let builder = builder.plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| commands::tray::show_main(app)));
+    // A second launch with a `talaan://meeting/<id>` link (a toast clicked, also from Action Center) opens it.
+    #[cfg(target_os = "windows")]
+    let builder = builder.plugin(tauri_plugin_single_instance::init(|app, args, _cwd| match deeplink::meeting_in_args(&args) {
+        Some(id) => commands::summarizer::open_meeting(app, &id),
+        None => commands::tray::show_main(app),
+    }));
     builder
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
@@ -62,6 +68,29 @@ pub fn run() {
         .setup(|app| {
             logging::init(&logging::resolve_dir(std::env::var("TALAAN_DATA_DIR").ok(), dirs::home_dir(), dirs::data_local_dir()));
             let root = commands::resolve_data_dir(std::env::var("TALAAN_DATA_DIR").ok(), dirs::data_dir());
+            // Windows: models (gigabytes) live in %LOCALAPPDATA%, out of the roaming profile. Renames happen now,
+            // before any worker can open a model; what needs copying is copied after setup, in the background,
+            // and the old folder is read until then. A TALAAN_DATA_DIR run keeps models inside that folder.
+            #[cfg(target_os = "windows")]
+            let models_to_copy = if std::env::var("TALAAN_DATA_DIR").map_or(true, |s| s.trim().is_empty()) {
+                dirs::data_local_dir().map(|local| {
+                    let new = transcriber::models::local_models_root(&local, &app.config().identifier);
+                    transcriber::models::set_models_root(new.clone());
+                    let old = root.join("models");
+                    let left = match transcriber::relocate::prepare(&old, &new) {
+                        Ok(m) => m.left,
+                        Err(e) => {
+                            // The kind only: the error's text names the models folders, which hold the user's name.
+                            let kind = e.kind();
+                            log::warn!("models move failed ({kind}), the old folder is used");
+                            vec![]
+                        }
+                    };
+                    (old, new, left)
+                })
+            } else {
+                None
+            };
             let started = || -> Result<storage::Storage, storage::StorageError> {
                 let mut store = storage::Storage::new(root.clone())?;
                 store.load_policy()?;
@@ -89,6 +118,24 @@ pub fn run() {
             commands::updates::apply_login_item(app.handle());
             commands::updates::check_at_launch(app.handle());
             commands::tray::setup(app.handle())?;
+            #[cfg(target_os = "windows")]
+            if let Some((old, new, left)) = models_to_copy.filter(|(_, _, left)| !left.is_empty()) {
+                let handle = app.handle().clone();
+                std::thread::spawn(move || {
+                    let r = transcriber::relocate::copy_rest(&old, &new, &left, transcriber::relocate::free_bytes);
+                    if !r.left.is_empty() {
+                        log::info!("models move: {} model(s) left for the next launch", r.left.len());
+                    }
+                    if r.moved > 0 {
+                        commands::transcriber::models_moved(&handle);
+                    }
+                });
+            }
+            // Started by a toast click while Talaan wasn't running: open that meeting once the window loads.
+            #[cfg(target_os = "windows")]
+            if let Some(id) = deeplink::meeting_in_args(&std::env::args().collect::<Vec<_>>()) {
+                commands::summarizer::open_meeting_at_launch(app.handle(), id);
+            }
 
             let handle = app.handle().clone();
             std::thread::spawn(move || loop {
@@ -161,6 +208,7 @@ pub fn run() {
             rec_cmd::recorder_stop,
             rec_cmd::recorder_discard,
             rec_cmd::recorder_status,
+            rec_cmd::audio_sound_relay,
             rec_cmd::permissions_status,
             rec_cmd::permissions_request_mic,
             rec_cmd::permissions_open_settings,
@@ -171,6 +219,7 @@ pub fn run() {
             commands::transcriber::models_cancel,
             commands::transcriber::models_delete,
             commands::summarizer::meetings_generate_summary,
+            commands::summarizer::meetings_launch_link,
             commands::summarizer::meetings_set_template,
             commands::summarizer::meetings_summarize_as,
             commands::summarizer::meetings_followup_eta,

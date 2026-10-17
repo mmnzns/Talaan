@@ -109,6 +109,15 @@ pub fn setup(app: &AppHandle, data_dir: PathBuf) {
     app.manage(TranscriberState { worker, data_dir, on_gpu, downloads: Mutex::default(), failed: Mutex::default() });
 }
 
+/// Windows: models finished moving out of Roaming (`relocate::copy_rest`). Meetings or summaries that found no
+/// model meanwhile try again, and Settings refreshes.
+#[cfg_attr(not(target_os = "windows"), allow(dead_code))]
+pub fn models_moved(app: &AppHandle) {
+    requeue_waiting_for_model(app);
+    super::summarizer::requeue_waiting(app);
+    let _ = app.emit(MODELS_CHANGED, ());
+}
+
 /// Queues meetings that failed only because no model was there.
 fn requeue_waiting_for_model(app: &AppHandle) {
     let state = app.state::<AppState>();
@@ -338,10 +347,17 @@ pub fn models_cancel(app: AppHandle, t: State<TranscriberState>, id: String) -> 
 #[tauri::command]
 pub fn models_delete(app: AppHandle, t: State<TranscriberState>, id: String) -> CmdResult<()> {
     let model = find_any(&id).ok_or_else(|| err(format!("No model called {id}")))?;
-    let dir = ModelStore::new(&t.data_dir, false).own_dir(model);
-    if dir.exists() {
-        std::fs::remove_dir_all(&dir).map_err(|e| err(crate::i18n::tr_err("error.delete_model", e)))?;
-    }
+    // The current folder and, while the Windows move isn't finished, the old one. Under the move's lock, so a
+    // copy in progress can't put the model back.
+    let dirs = ModelStore::new(&t.data_dir, false).own_dirs(model);
+    crate::transcriber::relocate::forget(model.id, || -> CmdResult<()> {
+        for dir in &dirs {
+            if dir.exists() {
+                std::fs::remove_dir_all(dir).map_err(|e| err(crate::i18n::tr_err("error.delete_model", e)))?;
+            }
+        }
+        Ok(())
+    })?;
     let _ = app.emit(MODELS_CHANGED, ());
     Ok(())
 }

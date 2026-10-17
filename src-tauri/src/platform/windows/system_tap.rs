@@ -654,6 +654,32 @@ mod tests {
         assert!(skew.abs() < 1_000, "QPC stamps should be on host time");
     }
 
+    /// What process loopback captures when an app plays to an output that isn't the Windows default (R9): this
+    /// process plays a tone on the output named by `TALAAN_TONE_DEVICE` (pick one that isn't the default, and
+    /// preferably one with nothing plugged in, such as a digital output), and a loopback of only this process
+    /// listens. A strong 440 Hz reading means the capture follows the process, whatever device it plays to.
+    /// `TALAAN_TONE_DEVICE=<output name> cargo test loopback_follows_the_app_not_the_device -- --ignored --nocapture`
+    #[test]
+    #[ignore]
+    fn loopback_follows_the_app_not_the_device() {
+        use cpal::traits::HostTrait;
+        let default = cpal::default_host().default_output_device().map(|d| d.to_string()).unwrap_or_default();
+        let target = std::env::var("TALAAN_TONE_DEVICE").expect("set TALAAN_TONE_DEVICE to a non-default output");
+        println!("default output: {default}");
+        assert!(!default.contains(&target), "TALAAN_TONE_DEVICE names the default output; pick another one");
+        let _tone = play_tone();
+        std::thread::sleep(Duration::from_millis(300));
+        let (p, mut c) = crate::recorder::feed::feed();
+        let feed: SharedFeed = Arc::new(std::sync::Mutex::new(p));
+        let opened = host_now_ns();
+        let (live, _) = open(Target::OnlyUs, &feed).unwrap();
+        std::thread::sleep(Duration::from_secs(2));
+        close(live);
+        let (secs, level, ours, _) = feed_stats(&mut c, opened);
+        println!("only us, tone on a non-default output: {secs:.2} s · RMS {level:.4} · 440 Hz {ours:.4}");
+        assert!(ours > 0.1, "process loopback didn't hear our tone on a non-default output ({ours:.4})");
+    }
+
     /// Median of `now - stamp` (ms, signed) over the first buffers a feed delivers, polled every 2 ms.
     /// Also returns the (stamp, rms) of every buffer so a burst can be located.
     fn lag_and_levels(c: &mut crate::recorder::feed::FeedConsumer, lags: &mut Vec<i64>, levels: &mut Vec<(u64, f64)>) {

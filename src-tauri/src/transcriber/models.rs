@@ -331,27 +331,64 @@ impl Location {
     }
 }
 
+/// Where Talaan's own models live when that isn't `<data>/models`: on Windows,
+/// `%LOCALAPPDATA%\<bundle id>\models`, out of the roaming profile (set once at launch, see `lib.rs`).
+static MODELS_ROOT: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
+
+#[cfg_attr(not(target_os = "windows"), allow(dead_code))]
+pub fn set_models_root(root: PathBuf) {
+    let _ = MODELS_ROOT.set(root);
+}
+
+/// Windows: the models folder under `%LOCALAPPDATA%`, in the folder named after the bundle id. Tauri's uninstaller
+/// removes that folder (`RmDir /r "$LOCALAPPDATA\${BUNDLEID}"`) only when "Delete the application data" is ticked,
+/// and never on update; the install folder (`%LOCALAPPDATA%\Talaan`) is not used, since it holds the program.
+#[cfg_attr(not(target_os = "windows"), allow(dead_code))]
+pub fn local_models_root(local_app_data: &Path, identifier: &str) -> PathBuf {
+    local_app_data.join(identifier).join("models")
+}
+
+/// Talaan's own models folder for a data folder.
+pub fn models_root(data_dir: &Path) -> PathBuf {
+    MODELS_ROOT.get().cloned().unwrap_or_else(|| data_dir.join("models"))
+}
+
 /// Where models are stored and which other apps' folders may already have them.
 #[derive(Debug, Clone)]
 pub struct ModelStore {
     pub root: PathBuf,
+    /// The folder models were in before (`<data>/models`, Windows before v1.1), still read as Talaan's own copy
+    /// until the move (`relocate`) has emptied it.
+    pub legacy_root: Option<PathBuf>,
     pub reuse_roots: Vec<PathBuf>,
     pub reuse: bool,
 }
 
 impl ModelStore {
     pub fn new(data_dir: &Path, reuse: bool) -> Self {
-        ModelStore { root: data_dir.join("models"), reuse_roots: default_reuse_roots(), reuse }
+        Self::with_root(data_dir, models_root(data_dir), reuse)
     }
 
+    fn with_root(data_dir: &Path, root: PathBuf, reuse: bool) -> Self {
+        let old = data_dir.join("models");
+        ModelStore { legacy_root: (old != root).then_some(old), root, reuse_roots: default_reuse_roots(), reuse }
+    }
+
+    /// Where Talaan downloads `m` to.
     pub fn own_dir(&self, m: &ModelInfo) -> PathBuf {
         self.root.join(m.id)
     }
 
+    /// Every folder of Talaan's own that may hold `m` (the current one, then the old one): what Delete removes.
+    pub fn own_dirs(&self, m: &ModelInfo) -> Vec<PathBuf> {
+        std::iter::once(self.own_dir(m)).chain(self.legacy_root.iter().map(|r| r.join(m.id))).collect()
+    }
+
     pub fn locate(&self, m: &ModelInfo) -> Location {
-        let own = self.own_dir(m);
-        if complete(&own, m) {
-            return Location::Own(own);
+        for own in self.own_dirs(m) {
+            if complete(&own, m) {
+                return Location::Own(own);
+            }
         }
         if self.reuse {
             for root in &self.reuse_roots {
@@ -429,7 +466,7 @@ mod tests {
     #[test]
     fn own_copy_wins_and_partial_files_do_not_count() {
         let data = tempfile::tempdir().unwrap();
-        let store = ModelStore { root: data.path().join("models"), reuse_roots: vec![], reuse: true };
+        let store = ModelStore { root: data.path().join("models"), legacy_root: None, reuse_roots: vec![], reuse: true };
         let m = fake_model();
         assert_eq!(store.locate(m), Location::Missing);
         sparse(&store.own_dir(m).join(m.files[0].name), m.files[0].size - 1);
@@ -444,9 +481,52 @@ mod tests {
         let other = tempfile::tempdir().unwrap();
         let m = fake_model();
         sparse(&other.path().join("Models").join(m.files[0].name), m.files[0].size);
-        let mut store = ModelStore { root: data.path().join("models"), reuse_roots: vec![other.path().to_path_buf()], reuse: true };
+        let mut store = ModelStore { root: data.path().join("models"), legacy_root: None, reuse_roots: vec![other.path().to_path_buf()], reuse: true };
         assert_eq!(store.locate(m), Location::OnThisMac(other.path().join("Models")));
         store.reuse = false;
         assert_eq!(store.locate(m), Location::Missing);
+    }
+
+    #[test]
+    fn the_old_folder_is_read_until_the_move_is_done() {
+        let data = tempfile::tempdir().unwrap();
+        let local = tempfile::tempdir().unwrap();
+        let m = fake_model();
+        let store = ModelStore::with_root(data.path(), local_models_root(local.path(), "com.example.app"), false);
+        assert_eq!(store.root, local.path().join("com.example.app").join("models"));
+        assert_eq!(store.legacy_root.as_deref(), Some(data.path().join("models").as_path()));
+        // Still in the old place: found there, as Talaan's own (so Delete removes it).
+        let old = data.path().join("models").join(m.id);
+        sparse(&old.join(m.files[0].name), m.files[0].size);
+        assert_eq!(store.locate(m), Location::Own(old.clone()));
+        assert_eq!(store.own_dirs(m), vec![store.own_dir(m), old.clone()]);
+        // Downloads go to the new place; once the move is done the new copy is used.
+        crate::transcriber::relocate::prepare(&data.path().join("models"), &store.root).unwrap();
+        assert_eq!(store.locate(m), Location::Own(store.own_dir(m)));
+        assert!(!old.exists());
+    }
+
+    #[test]
+    fn without_a_separate_models_folder_there_is_no_old_one() {
+        let data = tempfile::tempdir().unwrap();
+        let store = ModelStore::with_root(data.path(), data.path().join("models"), false);
+        assert_eq!(store.legacy_root, None);
+        assert_eq!(store.own_dirs(fake_model()).len(), 1);
+    }
+
+    /// The models folder is the bundle-id folder Tauri's uninstaller removes when "Delete the application data"
+    /// is ticked, and not the install folder (`%LOCALAPPDATA%\<productName>`), which holds the program.
+    #[test]
+    fn windows_models_live_in_the_bundle_id_folder() {
+        let conf: serde_json::Value = serde_json::from_str(include_str!("../../tauri.conf.json")).unwrap();
+        let id = conf["identifier"].as_str().unwrap();
+        let product = conf["productName"].as_str().unwrap();
+        let root = local_models_root(Path::new(r"C:\Users\a\AppData\Local"), id);
+        assert_eq!(root, Path::new(r"C:\Users\a\AppData\Local").join(id).join("models"));
+        assert!(!root.starts_with(Path::new(r"C:\Users\a\AppData\Local").join(product)));
+        // The uninstaller removes it (with the box ticked), and the old place too.
+        let nsh = include_str!("../../windows/installer-hooks.nsh");
+        assert!(nsh.contains(r#"RmDir /r "$LOCALAPPDATA\${BUNDLEID}\models""#));
+        assert!(nsh.contains(r#"RmDir /r "$APPDATA\Talaan""#));
     }
 }

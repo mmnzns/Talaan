@@ -116,6 +116,8 @@ export interface Settings {
   recordingNotice: string;
   microphone: string; // "default" or a device name
   warnOnSpeakers: boolean;
+  /** The sound enhancer whose notice the recording popover already showed (Windows; shown once per enhancer). */
+  soundRelayNoticeSeen?: string;
   notifySummaryReady: boolean;
   // Call apps
   callApps: CallAppRule[];

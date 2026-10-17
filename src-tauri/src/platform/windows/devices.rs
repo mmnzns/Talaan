@@ -1,6 +1,6 @@
 //! Default device changes (headphones in or out) and whether sound is coming out of the computer's own speakers.
 
-use ::windows::Win32::Devices::FunctionDiscovery::PKEY_Device_EnumeratorName;
+use ::windows::Win32::Devices::FunctionDiscovery::{PKEY_Device_EnumeratorName, PKEY_Device_FriendlyName};
 use ::windows::Win32::Foundation::PROPERTYKEY;
 use ::windows::core::{implement, PCWSTR};
 use ::windows::Win32::Media::Audio::{
@@ -91,9 +91,65 @@ fn peak(device: &IMMDevice) -> f32 {
     unsafe { device.Activate::<IAudioMeterInformation>(CLSCTX_ALL, None).and_then(|m| m.GetPeakValue()) }.unwrap_or(0.0)
 }
 
-/// Windows loopback can't be blocked by a permission, so the Mac's "no call audio" watch doesn't run here.
-pub fn others_playing() -> bool {
-    false
+/// Whether one of `exes` (exe file names, any case) is playing sound right now: the peak meter of its own audio
+/// session on any output, before relay apps or the device volume (R9). Talaan's own sessions never match.
+pub fn apps_playing(exes: &[String]) -> bool {
+    use ::windows::core::Interface;
+    use ::windows::Win32::Media::Audio::{IAudioSessionControl2, IAudioSessionManager2};
+    if exes.is_empty() {
+        return false;
+    }
+    let mut sessions = Vec::new();
+    for d in active_outputs() {
+        let Ok(manager) = (unsafe { d.Activate::<IAudioSessionManager2>(CLSCTX_ALL, None) }) else { continue };
+        let Ok(list) = (unsafe { manager.GetSessionEnumerator() }) else { continue };
+        for i in 0..unsafe { list.GetCount() }.unwrap_or(0) {
+            let Ok(control) = (unsafe { list.GetSession(i) }) else { continue };
+            let Ok(pid) = control.cast::<IAudioSessionControl2>().and_then(|c| unsafe { c.GetProcessId() }) else { continue };
+            if pid == 0 || pid == std::process::id() {
+                continue;
+            }
+            let peak = control.cast::<IAudioMeterInformation>().and_then(|m| unsafe { m.GetPeakValue() }).unwrap_or(0.0);
+            if peak > PEAK_SILENCE {
+                sessions.push((super::mic_users::exe_path(pid), peak));
+            }
+        }
+    }
+    any_app_playing(exes, &sessions)
+}
+
+/// `sessions`: (exe path, peak) of sessions with sound. True when one belongs to an app in `exes`.
+pub fn any_app_playing(exes: &[String], sessions: &[(String, f32)]) -> bool {
+    sessions.iter().any(|(path, peak)| {
+        let exe = path.rsplit(['\\', '/']).next().unwrap_or("");
+        *peak > PEAK_SILENCE && !exe.is_empty() && exes.iter().any(|e| e.eq_ignore_ascii_case(exe))
+    })
+}
+
+/// Sound enhancers and mixers that put a virtual output in front of the real one and replay everything under their
+/// own program (so process loopback can't leave Talaan's own sounds out). Matched, ignoring case, against the default
+/// output's name ("FxSound Speakers (FxSound Audio Enhancer)"); the second value is the name the notice shows.
+const RELAYS: &[(&str, &str)] = &[
+    ("fxsound", "FxSound"),
+    ("voicemeeter", "Voicemeeter"),
+    ("steelseries sonar", "SteelSeries Sonar"),
+    ("nvidia broadcast", "NVIDIA Broadcast"),
+    ("boom 3d", "Boom 3D"),
+    ("krisp", "Krisp"),
+    ("wave link", "Elgato Wave Link"),
+];
+
+/// The relay app an output belongs to, by the output's name.
+pub fn relay_name(output_name: &str) -> Option<&'static str> {
+    let name = output_name.to_lowercase();
+    RELAYS.iter().find(|(key, _)| name.contains(key)).map(|(_, shown)| *shown)
+}
+
+/// The sound enhancer or mixer the default output goes through, if it's a known one (R1). The capture itself is
+/// unchanged; this only feeds a notice.
+pub fn sound_relay() -> Option<&'static str> {
+    let device = default_output().ok()?;
+    relay_name(&device_string(&device, &PKEY_Device_FriendlyName).ok()?)
 }
 
 fn enumerator() -> ::windows::core::Result<IMMDeviceEnumerator> {
@@ -209,8 +265,49 @@ impl Drop for DeviceWatcher {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ::windows::Win32::Devices::FunctionDiscovery::PKEY_Device_FriendlyName;
     use ::windows::Win32::Media::Audio::{eCommunications, eMultimedia};
+
+    /// Live: a PowerShell process plays a Windows sound; its own session reads as playing, another exe's doesn't.
+    /// `cargo test apps_playing_smoke -- --ignored --nocapture`
+    #[test]
+    #[ignore]
+    fn apps_playing_smoke() {
+        let mut ps = std::process::Command::new("powershell")
+            .args(["-NoProfile", "-Command", r"$p = New-Object Media.SoundPlayer 'C:\Windows\Media\Alarm01.wav'; $p.PlaySync()"])
+            .spawn()
+            .unwrap();
+        let mut seen = false;
+        for _ in 0..40 {
+            std::thread::sleep(std::time::Duration::from_millis(100));
+            seen |= apps_playing(&["powershell.exe".to_string()]);
+        }
+        let other = apps_playing(&["nothing-here.exe".to_string()]);
+        let _ = ps.wait();
+        println!("powershell playing: {seen}, other exe: {other}");
+        assert!(seen && !other);
+    }
+
+    #[test]
+    fn only_the_call_apps_own_sound_counts() {
+        let exes = vec!["Zoom.exe".to_string(), "msedge.exe".to_string()];
+        let s = |p: &str, peak: f32| (p.to_string(), peak);
+        assert!(any_app_playing(&exes, &[s(r"C:\Users\a\AppData\Roaming\Zoom\bin\zoom.exe", 0.2)]));
+        assert!(!any_app_playing(&exes, &[s(r"C:\Program Files\Spotify\Spotify.exe", 0.5)]), "other apps don't count");
+        assert!(!any_app_playing(&exes, &[s(r"C:\Zoom\Zoom.exe", 0.0)]), "a silent session doesn't count");
+        assert!(!any_app_playing(&[], &[s(r"C:\Zoom\Zoom.exe", 0.3)]));
+        assert!(!any_app_playing(&exes, &[s("", 0.3)]));
+    }
+
+    #[test]
+    fn sound_enhancers_are_known_by_their_output_name() {
+        assert_eq!(relay_name("FxSound Speakers (FxSound Audio Enhancer)"), Some("FxSound"));
+        assert_eq!(relay_name("VoiceMeeter Input (VB-Audio VoiceMeeter VAIO)"), Some("Voicemeeter"));
+        assert_eq!(relay_name("SteelSeries Sonar - Gaming (SteelSeries Sonar Virtual Audio Device)"), Some("SteelSeries Sonar"));
+        assert_eq!(relay_name("Speakers (NVIDIA Broadcast)"), Some("NVIDIA Broadcast"));
+        assert_eq!(relay_name("Speakers (Realtek(R) Audio)"), None);
+        assert_eq!(relay_name("Headphones (USB-C to 3.5mm Headphone Jack Adapter)"), None);
+        assert_eq!(relay_name(""), None);
+    }
 
     #[test]
     fn a_watcher_can_be_added_and_removed() {
@@ -289,7 +386,8 @@ mod tests {
     #[test]
     fn device_queries_do_not_fail() {
         eprintln!("on built-in speakers: {}", on_builtin_speakers());
-        let _ = others_playing();
+        eprintln!("sound relay: {:?}", sound_relay());
+        eprintln!("edge playing: {}", apps_playing(&["msedge.exe".to_string()]));
         if let Ok(d) = default_output() {
             eprintln!("default output: {}", describe(&d));
         }

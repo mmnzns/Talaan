@@ -8,6 +8,7 @@ pub mod engine;
 pub mod merge;
 pub mod models;
 pub mod pipeline;
+pub mod relocate;
 pub mod remote;
 pub mod vad;
 pub mod worker;

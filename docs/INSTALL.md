@@ -170,7 +170,7 @@ Talaan notices when a call app starts using your microphone: Zoom, Microsoft Tea
 With **Settings › Connections › Browser call detection** on, Talaan can tell a Google Meet, Zoom web or Teams web tab from other sites using the mic, so **Browser calls** can be set to **Always**.
 
 - **Mac**: works with Chrome, Safari, Arc and other browsers after you allow each one once.
-- **Windows**: Talaan reads only the address of the tab **in front** in Chrome or Edge (and other Chromium browsers). If the call is in a background tab, Talaan can't see it, so it asks instead of recording automatically. Firefox calls are always asked about.
+- **Windows**: in Chrome or Edge (and other Chromium browsers), Talaan reads the address of the tab in front and the names of the other tabs, only while the browser is using your microphone. A call in a background tab is recognized by its tab name (for example "Meet - abc-defg-hij" or "… | Microsoft Teams"). If Talaan still can't tell, it asks instead of recording automatically. Firefox calls are always asked about.
 
 ### Calendar on Windows
 
@@ -196,7 +196,7 @@ Meetings are plain files (transcript, summary, audio) in Talaan's data folder:
 
 ### Models download once
 
-Speech, summary, speaker and search models download only when you click Download (in setup or Settings), then stay on your computer. They live in the same data folder. You can switch or delete them in **Settings › Speech models** and **Settings › Summary AI**. If another speech app already downloaded the same model, Talaan can reuse it read-only (**Reuse models already on this computer**).
+Speech, summary, speaker and search models download only when you click Download (in setup or Settings), then stay on your computer. On the Mac they live in the same data folder. On Windows they live in `%LOCALAPPDATA%\com.craftconceptsdigital.talaan\models`, so a company PC with a roaming profile doesn't copy gigabytes at every sign-in (Talaan 1.1 moves models from the old `%APPDATA%\Talaan\models` by itself). You can switch or delete them in **Settings › Speech models** and **Settings › Summary AI**. If another speech app already downloaded the same model, Talaan can reuse it read-only (**Reuse models already on this computer**).
 
 #### Which speech model
 
@@ -227,7 +227,7 @@ On Windows, speech recognition runs on the processor, and Parakeet is many times
 | Where the icon lives | Menu bar (top) | System tray (bottom right) |
 | System audio permission | Asked once | Not needed |
 | Calendar | Reads the Calendar app | Paste your calendar's iCal address |
-| Browser call detection | All tabs, after allowing each browser | Only the tab in front, Chrome and Edge |
+| Browser call detection | All tabs, after allowing each browser | Tab in front by address, other tabs by name; Chrome and Edge |
 | Speech recognition | Uses the graphics chip | Uses the processor (Parakeet recommended) |
 | Settings shortcut | Cmd+, | Ctrl+, |
 
@@ -249,11 +249,11 @@ Then click **Check again** in Check setup.
 
 ### Windows: Talaan's own sounds, or the call, are recorded twice
 
-Sound "enhancers" and mixers such as **FxSound**, **Voicemeeter** and **SteelSeries Sonar** replay all your computer's sound through their own program. Talaan can then pick up its own sounds as "Them", or capture the call twice. If transcripts show doubled lines or odd echoes, turn the enhancer off during calls, or set your call app's speaker straight to your headphones or speakers.
+Sound "enhancers" and mixers such as **FxSound**, **Voicemeeter**, **SteelSeries Sonar** and **NVIDIA Broadcast** replay all your computer's sound through their own program. Talaan can then pick up its own sounds as "Them", or capture the call twice. When your sound goes through one of them, the recording window and **Check setup** say so. If transcripts show doubled lines or odd echoes, turn the enhancer off during calls.
 
 ### Windows: the other people are missing
 
-If "Them" is empty, check the call app's audio settings. When the call app sends sound to a device other than the Windows default (a headset, a virtual device), set its speaker to the same device Windows uses, or to your default device, then run **Test call audio** again.
+Talaan hears every app's sound except its own, whichever speakers or headset the app plays to, so you don't need to change the call app's speaker. If "Them" stays empty for a minute while the call app is playing sound, Talaan says so. Keep recording, and after the call run **Test call audio** in **Check setup**.
 
 ### Mac: the other people are missing
 
@@ -263,7 +263,7 @@ System audio permission is off. Open **System Settings › Privacy & Security �
 
 - Check **Settings › General › Detect calls** is on.
 - Check the app's rule in **Settings › Call apps** isn't **Never**, and that it isn't in **Ignored apps**.
-- Browser calls: turn on **Settings › Connections › Browser call detection**. On Windows, keep the call tab in front.
+- Browser calls: turn on **Settings › Connections › Browser call detection**. On Windows, if a background call tab isn't recognized, bring it to the front.
 - Talaan only notices calls while it's running. Keep **Settings › General › Open at login** on.
 - You can always start by hand: click the Talaan icon, then **Start recording**.
 
@@ -307,7 +307,7 @@ If you can't open Talaan any more, skip this and remove the folders by hand as s
 2. Open **Windows Settings › Apps › Installed apps**, find **Talaan**, click **...** › **Uninstall**.
 3. In the uninstaller, tick **Delete the application data** if you want, then **Uninstall**.
 
-Ticking **Delete the application data** removes everything Talaan stored: your meetings, audio, models and settings (`%APPDATA%\Talaan`), the app's window data, saved API keys, the Notion secret and the calendar address. Leave it unticked to keep your meetings for a later reinstall. The startup entry (**Open at login**) is removed on every uninstall, ticked or not.
+Ticking **Delete the application data** removes everything Talaan stored: your meetings, audio and settings (`%APPDATA%\Talaan`), the models (`%LOCALAPPDATA%\com.craftconceptsdigital.talaan\models`), the app's window data, saved API keys, the Notion secret and the calendar address. Leave it unticked to keep your meetings for a later reinstall. The startup entry (**Open at login**) and the `talaan://` link Talaan's notifications use are removed on every uninstall, ticked or not.
 
 Talaan has no setting to keep meetings in another folder: they're always in `%APPDATA%\Talaan`. If you started it with the `TALAAN_DATA_DIR` environment variable (testing only), the uninstaller doesn't know about that folder; delete it by hand. Files you exported, and models Talaan was reusing from another app, are never touched.
 
@@ -316,8 +316,9 @@ If you uninstalled without it and want everything gone, delete these by hand:
 | What | Where |
 |---|---|
 | Program files | `%LOCALAPPDATA%\Talaan` (removed by the uninstaller) |
-| Meetings, audio, models, settings | `%APPDATA%\Talaan` |
-| App window data | `%LOCALAPPDATA%\com.craftconceptsdigital.talaan` and `%APPDATA%\com.craftconceptsdigital.talaan` |
+| Meetings, audio, settings | `%APPDATA%\Talaan` |
+| Models, app window data | `%LOCALAPPDATA%\com.craftconceptsdigital.talaan` and `%APPDATA%\com.craftconceptsdigital.talaan` |
+| Notification link | `HKEY_CURRENT_USER\Software\Classes\talaan` (removed by the uninstaller) |
 | Saved API keys | **Control Panel › Credential Manager › Windows Credentials**, under Generic Credentials: `claude.Talaan`, `openai.Talaan`, `gemini.Talaan`, `compatible.Talaan`, `notion.Talaan`, `calendar-ics.Talaan` |
 
 Or paste this into PowerShell:
@@ -326,6 +327,7 @@ Or paste this into PowerShell:
 Remove-Item -Recurse -Force "$env:APPDATA\Talaan", "$env:APPDATA\com.craftconceptsdigital.talaan", "$env:LOCALAPPDATA\com.craftconceptsdigital.talaan" -ErrorAction SilentlyContinue
 "claude","openai","gemini","compatible","notion","calendar-ics" | ForEach-Object { cmdkey /delete:"$_.Talaan" }
 Remove-ItemProperty HKCU:\Software\Microsoft\Windows\CurrentVersion\Run -Name Talaan -ErrorAction SilentlyContinue
+Remove-Item -Recurse HKCU:\Software\Classes\talaan -ErrorAction SilentlyContinue
 ```
 
 (`cmdkey` says "Element not found" for keys you never saved. That's fine.)

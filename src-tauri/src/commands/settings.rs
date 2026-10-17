@@ -32,7 +32,17 @@ pub fn settings_set(app: AppHandle, state: State<AppState>, value: Value) -> Cmd
 #[tauri::command]
 pub fn data_delete_all(app: AppHandle, state: State<AppState>) -> CmdResult<()> {
     super::recorder::discard_for_wipe(&app);
-    state.lock().delete_all_data()?;
+    // A models copy still running (Windows) lets go of its files first, and makes nothing afterwards.
+    crate::transcriber::relocate::stop(std::time::Duration::from_secs(10));
+    let models = {
+        let mut storage = state.lock();
+        storage.delete_all_data()?;
+        crate::transcriber::models::models_root(storage.root())
+    };
+    // Windows keeps models outside the data folder (%LOCALAPPDATA%); the data folder's own went above.
+    if models.exists() {
+        std::fs::remove_dir_all(&models).map_err(|e| crate::storage::StorageError::Refused(crate::i18n::tr_err("error.delete_model", e)))?;
+    }
     crate::keys::clear_all();
     super::updates::remove_login_item(&app);
     crate::logging::delete_files();
@@ -57,5 +67,11 @@ pub fn data_reveal(state: State<AppState>) -> CmdResult<()> {
 #[tauri::command]
 pub fn data_info(state: State<AppState>) -> CmdResult<DataInfo> {
     let storage = state.lock();
-    Ok(DataInfo { path: storage.root().to_string_lossy().to_string(), bytes: crate::storage::io::dir_size(storage.root()) })
+    let mut bytes = crate::storage::io::dir_size(storage.root());
+    // Windows: models live outside the data folder (%LOCALAPPDATA%); count them too.
+    let models = crate::transcriber::models::models_root(storage.root());
+    if !models.starts_with(storage.root()) {
+        bytes += crate::storage::io::dir_size(&models);
+    }
+    Ok(DataInfo { path: storage.root().to_string_lossy().to_string(), bytes })
 }

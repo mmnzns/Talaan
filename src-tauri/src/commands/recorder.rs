@@ -25,6 +25,11 @@ const NO_SYSTEM_AUDIO: &str = "notice.no_system_audio_windows";
 const NO_CALL_AUDIO: &str = "notice.no_call_audio";
 #[cfg(target_os = "windows")]
 const NO_CALL_AUDIO: &str = "notice.no_call_audio_windows";
+// Where the "can't hear the call" notice's button goes: the Mac's privacy pane; Windows has nothing to switch on.
+#[cfg(not(target_os = "windows"))]
+const NO_CALL_AUDIO_PANE: Option<&str> = Some("system-audio");
+#[cfg(target_os = "windows")]
+const NO_CALL_AUDIO_PANE: Option<&str> = None;
 
 #[derive(Default)]
 pub struct RecorderState {
@@ -85,6 +90,8 @@ pub struct StatePayload {
     #[serde(flatten)]
     status: Status,
     on_built_in_speakers: bool,
+    /// Windows: the sound enhancer or mixer the default output goes through (FxSound...), for a one-time notice.
+    sound_relay: Option<&'static str>,
 }
 
 #[derive(Serialize, Clone)]
@@ -102,14 +109,21 @@ pub struct Levels {
     them: f32,
 }
 
-fn speakers() -> bool {
-    platform::devices::on_builtin_speakers()
+/// What the outputs look like: on speakers the mic can hear, and through which sound enhancer, if any.
+fn speakers() -> (bool, Option<&'static str>) {
+    (platform::devices::on_builtin_speakers(), platform::devices::sound_relay())
 }
 
 /// `on_built_in_speakers` comes from `speakers()`, asked before taking the engine lock: on Windows it can read
 /// every output's meter.
-fn payload(engine: &Engine, on_built_in_speakers: bool) -> StatePayload {
-    StatePayload { status: engine.status(platform::host_now_ns()), on_built_in_speakers }
+fn payload(engine: &Engine, (on_built_in_speakers, sound_relay): (bool, Option<&'static str>)) -> StatePayload {
+    StatePayload { status: engine.status(platform::host_now_ns()), on_built_in_speakers, sound_relay }
+}
+
+/// Check setup: the sound enhancer the default output goes through, if any (Windows; always none on the Mac).
+#[tauri::command(async)]
+pub fn audio_sound_relay() -> Option<&'static str> {
+    platform::devices::sound_relay()
 }
 
 fn emit_state(app: &AppHandle) {
@@ -167,10 +181,12 @@ fn start_with(app: &AppHandle, app_id: &str, app_label: &str, test_max_ms: Optio
         .map_err(err)?;
     let st = engine.status(platform::host_now_ns());
     log::info!(
-        "recording started: meeting {}, app {app_id}, microphone {}, call audio {}, built-in speakers {on_speakers}",
+        "recording started: meeting {}, app {app_id}, microphone {}, call audio {}, built-in speakers {}, sound enhancer {}",
         st.meeting_id.as_deref().unwrap_or("?"),
         crate::logging::device(&st.mic_name),
-        if st.system_audio { "on" } else { "off" }
+        if st.system_audio { "on" } else { "off" },
+        on_speakers.0,
+        on_speakers.1.unwrap_or("none"), // a known product's name (relay_name), never the device's own
     );
     if let Some(id) = &st.meeting_id {
         if test_max_ms.is_some() {
@@ -262,10 +278,10 @@ pub fn stop_recording(app: &AppHandle) -> CmdResult<String> {
     drop(storage);
     log::info!("recording stopped: meeting {id}, {}s recorded", elapsed / 1000);
     let was_test = rec.test.lock().unwrap_or_else(|e| e.into_inner()).take().is_some_and(|t| t.meeting_id == id);
-    // A call started before its event was on the calendar (or a few minutes early) gets a second chance. The test
+    // A second chance at the calendar event (and, after an offline start on Windows, a few more). The test
     // recording is never a calendar event.
     if !was_test {
-        super::calendar::link_soon(app, &id);
+        super::calendar::link_after_stop(app, &id);
     }
     transcriber.enqueue(&id);
     notify(app, MEETINGS_CHANGED);
@@ -443,6 +459,8 @@ pub fn setup(app: &AppHandle) {
         let mut warned = false;
         // A blocked tap delivers zeros from the first sample. Once any sound came through, it isn't blocked.
         let mut heard_them = false;
+        #[cfg(target_os = "windows")]
+        let mut call_sound = SoundLatch::default();
         // System audio gave up mid-recording (it reconnects on its own first). Said once per recording.
         let mut warned_lost = false;
         loop {
@@ -453,6 +471,10 @@ pub fn setup(app: &AppHandle) {
                 silent_since = None;
                 warned = false;
                 heard_them = false;
+                #[cfg(target_os = "windows")]
+                {
+                    call_sound = SoundLatch::default();
+                }
                 warned_lost = false;
                 continue;
             }
@@ -480,20 +502,22 @@ pub fn setup(app: &AppHandle) {
 
             heard_them |= them > 0.0;
 
-            // Digital silence from the tap since the start while something plays = system audio is blocked.
-            // (Apps keep output streams running while quiet, so silence after real sound means nothing.)
+            // Digital silence (exact zeros, not just quiet) from the tap since the start, while there should be
+            // call audio = Talaan can't hear the call. (Apps keep output streams running while quiet, so silence
+            // after real sound means nothing.) macOS: something else is playing (the tap is blocked by a
+            // permission), 10 s. Windows: loopback can't be blocked, so the sign is the call app on the mic
+            // actually playing sound (its own audio session's meter) while Talaan gets nothing, for 60 s. A lobby,
+            // a webinar not started yet, hold, or a browser just holding the mic play nothing, so they never count.
             // The test records the microphone only, so the other side is silent on purpose.
             if !heard_them && test.is_none() {
-                let playing = platform::devices::others_playing();
-                if them == 0.0 && playing && !paused {
-                    let since = *silent_since.get_or_insert_with(Instant::now);
-                    if !warned && since.elapsed() > Duration::from_secs(10) {
-                        warned = true;
-                        log::warn!("shown: {NO_CALL_AUDIO} (only silence from the call audio while something plays)");
-                        notice(&app, crate::i18n::tr(NO_CALL_AUDIO), "warning", Some("system-audio"));
-                    }
-                } else if paused || !playing {
-                    silent_since = None;
+                #[cfg(not(target_os = "windows"))]
+                let (expected, after) = (platform::devices::others_playing(), Duration::from_secs(10));
+                #[cfg(target_os = "windows")]
+                let (expected, after) = (call_sound.playing(Instant::now(), || platform::devices::apps_playing(&super::calls::call_app_exes())), Duration::from_secs(60));
+                if silence_watch(&mut silent_since, Instant::now(), them == 0.0 && expected && !paused, after) && !warned {
+                    warned = true;
+                    log::warn!("shown: {NO_CALL_AUDIO} (only silence from the call audio while it should play)");
+                    notice(&app, crate::i18n::tr(NO_CALL_AUDIO), "warning", NO_CALL_AUDIO_PANE);
                 }
             }
 
@@ -509,6 +533,38 @@ pub fn setup(app: &AppHandle) {
             }
         }
     });
+}
+
+/// Whether the call app is playing sound (Windows, R9). Read at most once a second (it walks every output's
+/// sessions), and true for 8 s after it was last heard, so the gaps between sentences don't reset the timer.
+#[derive(Default)]
+#[cfg_attr(not(target_os = "windows"), allow(dead_code))]
+struct SoundLatch {
+    checked: Option<Instant>,
+    heard: Option<Instant>,
+}
+
+#[cfg_attr(not(target_os = "windows"), allow(dead_code))]
+impl SoundLatch {
+    fn playing(&mut self, now: Instant, probe: impl FnOnce() -> bool) -> bool {
+        if self.checked.is_none_or(|t| now.duration_since(t) >= Duration::from_secs(1)) {
+            self.checked = Some(now);
+            if probe() {
+                self.heard = Some(now);
+            }
+        }
+        self.heard.is_some_and(|t| now.duration_since(t) < Duration::from_secs(8))
+    }
+}
+
+/// The "can't hear the call" timer: true once `silent` has held without a break for `after` (`since` holds when
+/// it started; any break resets it).
+fn silence_watch(since: &mut Option<Instant>, now: Instant, silent: bool, after: Duration) -> bool {
+    if !silent {
+        *since = None;
+        return false;
+    }
+    now.duration_since(*since.get_or_insert(now)) >= after
 }
 
 /// On quit: finish a running recording so nothing is lost.
@@ -535,10 +591,43 @@ pub fn discard_for_wipe(app: &AppHandle) {
 
 #[cfg(test)]
 mod tests {
-    use super::{auto_tag, test_limit_reached, MicOnly, TestRun};
+    use super::{auto_tag, silence_watch, test_limit_reached, MicOnly, SoundLatch, TestRun};
     use crate::recorder::engine::Status;
     use crate::recorder::source::AudioSource;
     use serde_json::json;
+    use std::time::{Duration, Instant};
+
+    #[test]
+    fn the_call_app_counts_as_playing_for_a_few_seconds_and_is_read_once_a_second() {
+        let t0 = Instant::now();
+        let at = |ms: u64| t0 + Duration::from_millis(ms);
+        let mut l = SoundLatch::default();
+        let mut probes = 0;
+        assert!(!l.playing(at(0), || { probes += 1; false }));
+        assert!(!l.playing(at(500), || { probes += 1; true }), "not read again within the second");
+        assert!(l.playing(at(1000), || { probes += 1; true }));
+        assert!(l.playing(at(8900), || { probes += 1; false }), "a pause in the talk");
+        assert!(!l.playing(at(9100), || { probes += 1; false }), "8 s without sound");
+        assert_eq!(probes, 3);
+    }
+
+    #[test]
+    fn the_call_audio_warning_needs_unbroken_silence() {
+        let t0 = Instant::now();
+        let at = |s: u64| t0 + Duration::from_secs(s);
+        let minute = Duration::from_secs(60);
+        let mut since = None;
+        assert!(!silence_watch(&mut since, at(0), true, minute));
+        assert!(!silence_watch(&mut since, at(59), true, minute));
+        assert!(silence_watch(&mut since, at(60), true, minute));
+        // A break (sound, a pause, no call app on the mic) starts it over.
+        let mut since = None;
+        assert!(!silence_watch(&mut since, at(0), true, minute));
+        assert!(!silence_watch(&mut since, at(50), false, minute));
+        assert!(!silence_watch(&mut since, at(51), true, minute));
+        assert!(!silence_watch(&mut since, at(110), true, minute));
+        assert!(silence_watch(&mut since, at(111), true, minute));
+    }
 
     fn status(id: &str, elapsed_ms: u64) -> Status {
         Status { state: "recording", meeting_id: Some(id.into()), elapsed_ms, marks: 0, notes: 0, mic_name: String::new(), system_audio: false }
