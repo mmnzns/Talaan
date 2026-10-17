@@ -26,11 +26,10 @@ pub fn transcript_md(title: &str, lines: &[TranscriptLine], speakers: &BTreeMap<
     out
 }
 
-/// `marks`: the meeting's marks; the ones with text are the user's notes, listed under "Your notes".
-pub fn summary_md(title: &str, s: &Summary, marks: &[Mark]) -> String {
-    let at = |t: Option<u64>| t.map(|t| format!(" ({})", format_time(t))).unwrap_or_default();
-    let mut out = format!("# {title}\n\n{}\n", s.recap);
+/// The user's notes as a "Your notes" list (empty when there are none).
+fn notes_list(marks: &[Mark]) -> String {
     let notes: Vec<&Mark> = marks.iter().filter(|m| m.note_text().is_some()).collect();
+    let mut out = String::new();
     if !notes.is_empty() {
         out.push_str("\n## Your notes\n\n");
         for n in notes {
@@ -38,6 +37,20 @@ pub fn summary_md(title: &str, s: &Summary, marks: &[Mark]) -> String {
             out.push_str(&format!("- {}{when}\n", n.note_text().unwrap_or_default()));
         }
     }
+    out
+}
+
+/// `summary.md` before there is a summary: the user's notes alone, or None when there are none either.
+pub fn notes_md(title: &str, marks: &[Mark]) -> Option<String> {
+    let list = notes_list(marks);
+    (!list.is_empty()).then(|| format!("# {title}\n{list}"))
+}
+
+/// `marks`: the meeting's marks; the ones with text are the user's notes, listed under "Your notes".
+pub fn summary_md(title: &str, s: &Summary, marks: &[Mark]) -> String {
+    let at = |t: Option<u64>| t.map(|t| format!(" ({})", format_time(t))).unwrap_or_default();
+    let mut out = format!("# {title}\n\n{}\n", s.recap);
+    out.push_str(&notes_list(marks));
     if !s.decisions.is_empty() {
         out.push_str("\n## Decisions\n\n");
         for d in &s.decisions {
@@ -142,5 +155,8 @@ mod tests {
         assert!(md.contains("## Your notes\n\n- ask about legal (01:01)\n- send the deck\n"));
         assert!(md.contains("## Blockers\n\n- Dana: waiting on legal (01:05)"));
         assert!(md.contains("## Highlights\n\n- Budget set at 50k. (02:00)"));
+        // Before there is a summary, the notes alone.
+        assert_eq!(notes_md("Stand-up", &marks).unwrap(), "# Stand-up\n\n## Your notes\n\n- ask about legal (01:01)\n- send the deck\n");
+        assert_eq!(notes_md("Stand-up", &marks[..1]), None);
     }
 }

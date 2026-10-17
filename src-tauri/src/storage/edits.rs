@@ -1,7 +1,7 @@
 //! Edits live beside the originals; originals are never rewritten. Revert deletes the edit files.
 
 use super::io::{read_json_opt, remove_if_exists, write_json_atomic, write_text_atomic};
-use super::markdown::{summary_md, transcript_md};
+use super::markdown::{notes_md, summary_md, transcript_md};
 use super::model::{MeetingStatus, Summary, TranscriptLine};
 use super::paths::*;
 use super::{Result, Storage, StorageError};
@@ -107,7 +107,10 @@ impl Storage {
         }
         match &m.summary {
             Some(s) => write_text_atomic(&dir.join(SUMMARY_MD), &summary_md(&m.item.title, s, &m.marks))?,
-            None => remove_if_exists(&dir.join(SUMMARY_MD))?,
+            None => match notes_md(&m.item.title, &m.marks) {
+                Some(md) => write_text_atomic(&dir.join(SUMMARY_MD), &md)?,
+                None => remove_if_exists(&dir.join(SUMMARY_MD))?,
+            },
         }
         Ok(())
     }
