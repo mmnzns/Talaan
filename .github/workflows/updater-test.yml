@@ -1,0 +1,175 @@
+name: Updater test
+
+# The in-app updater, end to end, on disposable runners (docs/TESTING.md, "Updater test (CI)"). Manual only:
+# Actions › Updater test › Run workflow (pick the branch), or `gh workflow run updater-test.yml --ref <branch>`.
+#
+# Builds Talaan twice from this commit, as VERSION_A and VERSION_B, through the release scripts plus a config overlay
+# (scripts/updater-e2e/config.mjs): a throwaway updater key made in the job, the updater pointed at a feed on
+# 127.0.0.1 laid out like a GitHub release (scripts/updater-e2e/feed.mjs, latest.json from scripts/latest-json.mjs),
+# and the updater-e2e feature, whose hook runs the Settings › Update now code path without a click. Then it installs
+# A, seeds a meeting and settings with Open at login on, lets A find, download, verify and install B, and checks
+# that B reopened by itself with the meeting, settings and Open at login intact (scripts/updater-e2e/windows.ps1,
+# macos.sh). Logs and reports are uploaded as artifacts.
+#
+# Never uses the real updater key or any secret: tauri.conf.json's pubkey and endpoint are untouched, and these
+# builds trust only the throwaway key, so nothing they make could install on a real user's Talaan or vice versa.
+
+on:
+  workflow_dispatch:
+    inputs:
+      macos:
+        description: Also test the Mac (ad-hoc signed app, no certificate)
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+env:
+  VERSION_A: 0.0.1
+  VERSION_B: 0.0.2
+  PORT: "8765"
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 150
+    env:
+      LIBCLANG_PATH: C:\Program Files\LLVM\bin
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+      # Like the release's Windows build, without the Vulkan SDK (the GPU helpers don't take part in an update).
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+          key: updater-test
+          cache-on-failure: true
+      - run: npm ci
+
+      - name: Throwaway updater key and the two test configs
+        shell: pwsh
+        run: |
+          $dir = Join-Path $env:RUNNER_TEMP 'updater-key'
+          New-Item -ItemType Directory -Force $dir | Out-Null
+          $pw = [guid]::NewGuid().ToString('N')
+          Write-Output "::add-mask::$pw"
+          npm run tauri -- signer generate --ci -p $pw -w "$dir\test.key"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $endpoint = "http://127.0.0.1:$env:PORT/$env:GITHUB_REPOSITORY/releases/latest/download/latest.json"
+          node scripts/updater-e2e/config.mjs $env:VERSION_A "$dir\test.key.pub" $endpoint "$env:RUNNER_TEMP\conf-a.json"
+          node scripts/updater-e2e/config.mjs $env:VERSION_B "$dir\test.key.pub" $endpoint "$env:RUNNER_TEMP\conf-b.json"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          "TAURI_SIGNING_PRIVATE_KEY=$dir\test.key" >> $env:GITHUB_ENV
+          "TAURI_SIGNING_PRIVATE_KEY_PASSWORD=$pw" >> $env:GITHUB_ENV
+
+      - name: Build A
+        shell: pwsh
+        env:
+          TALAAN_TEST_CONFIG: ${{ runner.temp }}\conf-a.json
+        run: |
+          ./scripts/release-windows.ps1
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          New-Item -ItemType Directory -Force "$env:RUNNER_TEMP\a" | Out-Null
+          Copy-Item "src-tauri\target\release\bundle\nsis\Talaan_$($env:VERSION_A)_x64-setup.exe" "$env:RUNNER_TEMP\a\"
+
+      - name: Build B and its feed
+        shell: pwsh
+        env:
+          TALAAN_TEST_CONFIG: ${{ runner.temp }}\conf-b.json
+        run: |
+          ./scripts/release-windows.ps1
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $in = "$env:RUNNER_TEMP\feed-in"
+          New-Item -ItemType Directory -Force $in | Out-Null
+          Copy-Item "src-tauri\target\release\bundle\nsis\Talaan_$($env:VERSION_B)_x64-setup.exe*" $in
+          node scripts/updater-e2e/feed.mjs $in "v$env:VERSION_B" "$env:RUNNER_TEMP\feed" $env:PORT windows-x86_64 windows-x86_64-nsis
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Update A to B
+        shell: pwsh
+        run: >
+          ./scripts/updater-e2e/windows.ps1
+          -InstallerA "$env:RUNNER_TEMP\a\Talaan_$($env:VERSION_A)_x64-setup.exe"
+          -VersionA $env:VERSION_A -VersionB $env:VERSION_B
+          -FeedRoot "$env:RUNNER_TEMP\feed" -Port $env:PORT
+          -Out "$env:RUNNER_TEMP\updater-test"
+
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: updater-test-windows
+          path: |
+            ${{ runner.temp }}/updater-test
+            ${{ runner.temp }}/feed/**/latest.json
+          if-no-files-found: warn
+
+  macos:
+    if: inputs.macos
+    runs-on: macos-latest
+    timeout-minutes: 150
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+          key: updater-test
+          cache-on-failure: true
+      - run: npm ci
+
+      - name: Throwaway updater key and the two test configs
+        run: |
+          set -euo pipefail
+          dir="$RUNNER_TEMP/updater-key"; mkdir -p "$dir"
+          pw="$(uuidgen)"
+          echo "::add-mask::$pw"
+          npm run tauri -- signer generate --ci -p "$pw" -w "$dir/test.key"
+          endpoint="http://127.0.0.1:$PORT/$GITHUB_REPOSITORY/releases/latest/download/latest.json"
+          node scripts/updater-e2e/config.mjs "$VERSION_A" "$dir/test.key.pub" "$endpoint" "$RUNNER_TEMP/conf-a.json" --mac
+          node scripts/updater-e2e/config.mjs "$VERSION_B" "$dir/test.key.pub" "$endpoint" "$RUNNER_TEMP/conf-b.json" --mac
+          echo "TAURI_SIGNING_PRIVATE_KEY=$dir/test.key" >> "$GITHUB_ENV"
+          echo "TAURI_SIGNING_PRIVATE_KEY_PASSWORD=$pw" >> "$GITHUB_ENV"
+
+      # Like scripts/release-local.sh, but ad-hoc signed (no certificate) and without the .dmg.
+      - name: Build A
+        run: |
+          set -euo pipefail
+          npm run tauri build -- --target aarch64-apple-darwin --bundles app --config "$RUNNER_TEMP/conf-a.json"
+          app=src-tauri/target/aarch64-apple-darwin/release/bundle/macos/Talaan.app
+          grep -rq TALAAN_UPDATER_E2E "$app/Contents/MacOS" || { echo "::error::A has no updater-e2e hook"; exit 1; }
+          mkdir -p "$RUNNER_TEMP/a"
+          ditto "$app" "$RUNNER_TEMP/a/Talaan.app"
+
+      - name: Build B and its feed
+        run: |
+          set -euo pipefail
+          npm run tauri build -- --target aarch64-apple-darwin --bundles app --config "$RUNNER_TEMP/conf-b.json"
+          out=src-tauri/target/aarch64-apple-darwin/release/bundle/macos
+          in="$RUNNER_TEMP/feed-in"; mkdir -p "$in"
+          # Same names as a real release (scripts/upload-mac-release.sh).
+          cp "$out/Talaan.app.tar.gz" "$in/Talaan_aarch64.app.tar.gz"
+          cp "$out/Talaan.app.tar.gz.sig" "$in/Talaan_aarch64.app.tar.gz.sig"
+          node scripts/updater-e2e/feed.mjs "$in" "v$VERSION_B" "$RUNNER_TEMP/feed" "$PORT" darwin-aarch64 darwin-aarch64-app
+
+      - name: Update A to B
+        run: bash scripts/updater-e2e/macos.sh "$RUNNER_TEMP/a/Talaan.app" "$VERSION_A" "$VERSION_B" "$RUNNER_TEMP/feed" "$PORT" "$RUNNER_TEMP/updater-test"
+
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: updater-test-macos
+          path: |
+            ${{ runner.temp }}/updater-test
+            ${{ runner.temp }}/feed/**/latest.json
+          if-no-files-found: warn

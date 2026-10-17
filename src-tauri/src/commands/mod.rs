@@ -16,6 +16,9 @@ pub mod summarizer;
 pub mod transcriber;
 pub mod tray;
 pub mod updates;
+// Test builds only (.github/workflows/updater-test.yml); never in a release.
+#[cfg(feature = "updater-e2e")]
+pub mod updater_e2e;
 
 use crate::storage::{Storage, StorageError};
 use std::sync::{Arc, Mutex, MutexGuard};
