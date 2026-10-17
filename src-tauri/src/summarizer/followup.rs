@@ -116,6 +116,29 @@ pub fn draft(meeting: &Meeting, summary: &Summary, engine: &mut dyn SummaryEngin
     parse(&second).ok_or(FollowUpError::BadOutput)
 }
 
+/// How waiting for a queued draft ended.
+#[derive(Debug, PartialEq)]
+pub enum Waited<T> {
+    Done(T),
+    Cancelled,
+    /// The job ended without an answer (it panicked).
+    Lost,
+}
+
+/// Waits for a queued draft's answer in short steps, giving up as soon as `cancel` is set, so a cancelled draft
+/// behind a long summary doesn't hold its caller until its turn.
+pub fn wait_for<T>(rx: &std::sync::mpsc::Receiver<T>, cancel: &AtomicBool, step: std::time::Duration) -> Waited<T> {
+    use std::sync::mpsc::RecvTimeoutError;
+    loop {
+        match rx.recv_timeout(step) {
+            Ok(v) => return Waited::Done(v),
+            Err(RecvTimeoutError::Disconnected) => return Waited::Lost,
+            Err(RecvTimeoutError::Timeout) if cancel.load(std::sync::atomic::Ordering::Relaxed) => return Waited::Cancelled,
+            Err(RecvTimeoutError::Timeout) => {}
+        }
+    }
+}
+
 /// How long a draft should take, in seconds: the engine's start-up plus its pace on a summary-sized input (the
 /// summary's words read at speaking pace) and the email it writes.
 pub fn estimate(profile: &Profile, measured: Option<f64>, summary: &Summary) -> f64 {
@@ -180,6 +203,21 @@ mod tests {
         assert_eq!(e.prompts.len(), 2);
         let mut bad = Scripted { replies: vec![Ok("no".into()), Ok("{\"subject\":\"x\",\"body\":\" \"}".into())], prompts: vec![], context: 16_384 };
         assert_eq!(draft(&meeting(vec![]), &summary(), &mut bad, "en", &AtomicBool::new(false)), Err(FollowUpError::BadOutput));
+    }
+
+    #[test]
+    fn waiting_stops_at_cancel_and_says_when_the_job_was_lost() {
+        use std::time::Duration;
+        let step = Duration::from_millis(5);
+        let (tx, rx) = std::sync::mpsc::channel::<u32>();
+        tx.send(7).unwrap();
+        assert_eq!(wait_for(&rx, &AtomicBool::new(false), step), Waited::Done(7));
+        // Nothing comes, and Cancel is pressed: back at once, not when the job gets its turn.
+        let t = std::time::Instant::now();
+        assert_eq!(wait_for(&rx, &AtomicBool::new(true), step), Waited::Cancelled);
+        assert!(t.elapsed() < Duration::from_secs(1));
+        drop(tx);
+        assert_eq!(wait_for(&rx, &AtomicBool::new(false), step), Waited::Lost);
     }
 
     #[test]

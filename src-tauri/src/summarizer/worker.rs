@@ -152,6 +152,14 @@ impl Worker {
         cv.notify_one();
     }
 
+    /// Takes the job tagged `tag` out of the queue if it hasn't started (a cancelled draft). True when it was there.
+    pub fn drop_job(&self, tag: &str) -> bool {
+        let mut q = self.queue.0.lock().unwrap_or_else(|e| e.into_inner());
+        let before = q.jobs.len();
+        q.jobs.retain(|(t, _)| t != tag);
+        q.jobs.len() < before
+    }
+
     /// What the job tagged `tag` waits for now (or would, queued now): the summary being written, the job running
     /// and the jobs queued before it.
     pub fn ahead_of(&self, tag: &str) -> Ahead {
@@ -655,6 +663,9 @@ mod tests {
         // Each job knows what is ahead of it: the summary, and for the second, the first job too.
         assert_eq!(w.ahead_of("first"), Ahead { summary: Some(id.clone()), jobs: 0 });
         assert_eq!(w.ahead_of("second"), Ahead { summary: Some(id.clone()), jobs: 1 });
+        // A queued job can be taken back before it starts.
+        w.run_between("dropped", Box::new(|| panic!("never runs")));
+        assert!(w.drop_job("dropped") && !w.drop_job("dropped"));
         *go.lock().unwrap() = true;
         rx.recv_timeout(Duration::from_secs(5)).unwrap();
         assert_eq!(*log.lock().unwrap(), vec!["summary starts", "summary ends", "job"]);

@@ -339,10 +339,14 @@ pub fn meetings_draft_followup(state: State<AppState>, s: State<SummarizerState>
         s.worker.run_between(&request, Box::new(move || {
             let _ = tx.send(run_followup(&cfg, &data_dir, &meeting, &summary, &flag));
         }));
-        // The channel closes without an answer only when the draft panicked.
-        match rx.recv() {
-            Ok(r) => r,
-            Err(_) => Err(FollowUpError::Engine(EngineError::Failed(tr("error.followup_internal")))),
+        match followup::wait_for(&rx, &cancel, std::time::Duration::from_millis(150)) {
+            followup::Waited::Done(r) => r,
+            followup::Waited::Cancelled => {
+                // Not started yet: it never will. Already running: it sees the flag and stops.
+                s.worker.drop_job(&request);
+                Err(FollowUpError::Engine(EngineError::Cancelled))
+            }
+            followup::Waited::Lost => Err(FollowUpError::Engine(EngineError::Failed(tr("error.followup_internal")))),
         }
     } else {
         run_followup(&cfg, &s.data_dir, &meeting, &summary, &cancel)
