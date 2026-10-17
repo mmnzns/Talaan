@@ -38,6 +38,7 @@ pub fn setup(on_click: impl Fn(String) + Send + Sync + 'static) {
 /// (Settings › System › Notifications). None when Windows can't say.
 pub fn allowed() -> Option<bool> {
     use windows::UI::Notifications::{NotificationSetting, ToastNotificationManager};
+    super::com::init();
     let exe = std::env::current_exe().unwrap_or_default();
     let notifier = ToastNotificationManager::CreateToastNotifierWithId(&windows_core::HSTRING::from(app_id(&exe))).ok()?;
     Some(notifier.Setting().ok()? == NotificationSetting::Enabled)
@@ -51,6 +52,8 @@ pub fn post(id: &str, title: &str, body: &str) {
 }
 
 fn show(id: &str, title: &str, body: &str) -> Result<(), String> {
+    // WinRT on this thread (the summarizer worker), both toast paths.
+    super::com::init();
     let exe = std::env::current_exe().unwrap_or_default();
     if protocol_is_ours(&exe) {
         return show_protocol(app_id(&exe), &toast_xml(title, body, &deeplink::meeting_uri(id))).map_err(|e| e.to_string());
@@ -102,6 +105,7 @@ fn show_protocol(app_id: &str, xml: &str) -> ::windows::core::Result<()> {
     use ::windows::core::HSTRING;
     use ::windows::Data::Xml::Dom::XmlDocument;
     use ::windows::UI::Notifications::{ToastNotification, ToastNotificationManager};
+    super::com::init();
     let doc = XmlDocument::new()?;
     doc.LoadXml(&HSTRING::from(xml))?;
     let toast = ToastNotification::CreateToastNotification(&doc)?;
@@ -131,15 +135,26 @@ mod tests {
         assert!(xml.contains("<text>Q4 &lt;plan&gt; &amp; &quot;budget&quot;</text>"), "{xml}");
     }
 
-    /// Windows accepts the protocol toast's XML (parses it into a notification without showing it).
+    /// Windows' XML parser reads the protocol toast (as `show_protocol` does), with COM set up as the app does
+    /// it. No `ToastNotification` is built here: CI runners (Windows Server) may have no notification platform,
+    /// and the old version of this test, which built one on a thread without COM, crashed the test binary there
+    /// (STATUS_ACCESS_VIOLATION). Parsing happens on fresh threads that end, which used to tear the MTA down.
     #[test]
     fn windows_reads_the_protocol_toast() {
         use ::windows::core::HSTRING;
         use ::windows::Data::Xml::Dom::XmlDocument;
-        use ::windows::UI::Notifications::ToastNotification;
-        let doc = XmlDocument::new().unwrap();
-        doc.LoadXml(&HSTRING::from(toast_xml("Summary ready", "A & B", "talaan://meeting/abc"))).unwrap();
-        assert!(ToastNotification::CreateToastNotification(&doc).is_ok());
+        for _ in 0..3 {
+            std::thread::spawn(|| {
+                super::super::com::init();
+                let doc = XmlDocument::new().unwrap();
+                doc.LoadXml(&HSTRING::from(toast_xml("Summary ready", "A & B", "talaan://meeting/abc"))).unwrap();
+                let root = doc.DocumentElement().unwrap();
+                assert_eq!(root.GetAttribute(&HSTRING::from("activationType")).unwrap(), "protocol");
+                assert_eq!(root.GetAttribute(&HSTRING::from("launch")).unwrap(), "talaan://meeting/abc");
+            })
+            .join()
+            .unwrap();
+        }
     }
 
     /// Manual: posts one protocol toast (talaan://meeting/<id>, id from TALAAN_TOAST_MEETING or "smoke") under the
