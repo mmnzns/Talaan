@@ -57,6 +57,10 @@ describe("notes, sections and highlights", () => {
     expect(toMarkdown(q4, false)).toContain("### Highlights\n\n- You promised design the onboarding wireframes by Friday");
     expect(toShareText(oneOnOne)).toContain("\nFeedback\n• Jordan liked");
     expect(toShareText(q4)).toContain("\nYour notes\n• onboarding first, pricing waits for Q1 (00:22)");
+    // Before there is a summary, the notes still come along.
+    const noSummary = toShareText({ ...q4, summary: undefined });
+    expect(noSummary).toContain("(no summary yet)\n\nYour notes\n• onboarding first");
+    expect(toShareText({ ...q4, summary: undefined, marks: [] })).not.toContain("Your notes");
   });
   it("leaves a meeting without notes or extras as it was", () => {
     const plain = { ...q4, marks: [], summary: { ...q4.summary!, highlights: undefined } };
