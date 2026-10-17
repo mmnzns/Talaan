@@ -4,6 +4,8 @@ import type { Route } from "../../lib/router";
 import { navigate, routes } from "../../lib/router";
 import { inTauri, openSettings } from "../../lib/windows";
 import { onEvent } from "../../data/tauri/invoke";
+import { useSettingsStore, useStore } from "../../data/StoreProvider";
+import { startAutoSave } from "../../lib/autoSave";
 import { AskScreen } from "../Ask/AskScreen";
 import { ImportSheet } from "../Shell/ImportSheet";
 import { MeetingList } from "../MeetingList/MeetingList";
@@ -43,6 +45,14 @@ export function MainWindow({ route }: { route: Route }) {
     ];
     return () => offs.forEach((off) => off());
   }, [recording.start, recording.announceSaved]);
+
+  // "Also save each meeting to a folder": Rust says when a copy is due, this window writes the Markdown.
+  const meetingStore = useStore();
+  const settingsStore = useSettingsStore();
+  useEffect(() => {
+    if (!inTauri()) return;
+    return startAutoSave(meetingStore, settingsStore, (cb) => onEvent<{ id: string; finished: boolean }>("autosave-due", cb));
+  }, [meetingStore, settingsStore]);
 
   // Drop an audio file anywhere on the window to import it.
   useEffect(() => {

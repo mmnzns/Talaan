@@ -99,6 +99,7 @@ export function PrivacyTab({ settings: s, update }: TabProps) {
           <h2 className="m-0 font-display text-xl font-bold tracking-[-0.02em]">{t("settings.wipe_heading")}</h2>
           <p className="m-0 text-[13px] text-subtle">
             {t("settings.wipe_body")}
+            {s.autoSaveFolder ? ` ${t("settings.wipe_keeps_copies")}` : ""}
           </p>
           <div className="flex justify-end gap-2">
             <Button disabled={deleting} onClick={() => setConfirm(false)}>

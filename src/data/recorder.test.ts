@@ -14,13 +14,15 @@ describe("TauriRecorderClient", () => {
     await c.start({ id: "zoom", label: "Zoom" });
     await c.start();
     await c.start(undefined, { maxMs: 60_000 });
+    await c.start({ id: "zoom", label: "Zoom" }, undefined, { title: "Design review", attendees: ["Ana Reyes"], emails: ["ana@example.com"] });
     await c.mark("pricing");
     await c.mark();
     await c.openSettings("system-audio");
     expect(invoke.mock.calls).toEqual([
-      ["recorder_start", { appId: "zoom", appLabel: "Zoom", test: null }],
-      ["recorder_start", { appId: null, appLabel: null, test: null }],
-      ["recorder_start", { appId: null, appLabel: null, test: { maxMs: 60_000 } }],
+      ["recorder_start", { appId: "zoom", appLabel: "Zoom", test: null, event: null }],
+      ["recorder_start", { appId: null, appLabel: null, test: null, event: null }],
+      ["recorder_start", { appId: null, appLabel: null, test: { maxMs: 60_000 }, event: null }],
+      ["recorder_start", { appId: "zoom", appLabel: "Zoom", test: null, event: { title: "Design review", attendees: ["Ana Reyes"], emails: ["ana@example.com"] } }],
       ["recorder_mark", { note: "pricing" }],
       ["recorder_mark", { note: null }],
       ["permissions_open_settings", { pane: "system-audio" }],

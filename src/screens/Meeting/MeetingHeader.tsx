@@ -1,4 +1,4 @@
-import { AudioLines, Calendar, FolderOpen, LayoutList, MessageCircle, MoreHorizontal, Pin, Sparkles, Trash2, VolumeX, X } from "lucide-react";
+import { AudioLines, Calendar, FolderOpen, LayoutList, Mail, MessageCircle, MoreHorizontal, Pin, Sparkles, Trash2, VolumeX, X } from "lucide-react";
 import { useState } from "react";
 import { useFolders, useSettings } from "../../data/hooks";
 import { useStore } from "../../data/StoreProvider";
@@ -20,6 +20,8 @@ interface Props {
   onRevert: () => void;
   onCopy: (kind: "text" | "email") => void;
   onExport: () => void;
+  /** "Email this summary": opens the mail app. */
+  onEmail: () => void;
   copied?: "text" | "email";
 }
 
@@ -31,7 +33,7 @@ const languageName = (code: string, ui: string) => {
   }
 };
 
-export function MeetingHeader({ meeting, editing, canRevert, onToggleEdit, onRevert, onCopy, onExport, copied }: Props) {
+export function MeetingHeader({ meeting, editing, canRevert, onToggleEdit, onRevert, onCopy, onExport, onEmail, copied }: Props) {
   const store = useStore();
   const toast = useToast();
   const t = useT();
@@ -172,6 +174,14 @@ export function MeetingHeader({ meeting, editing, canRevert, onToggleEdit, onRev
                   </MenuItem>
                   <MenuItem
                     onClick={() => {
+                      onEmail();
+                      close();
+                    }}
+                  >
+                    <Mail size={14} aria-hidden="true" /> {t("meeting.emailMenu")}
+                  </MenuItem>
+                  <MenuItem
+                    onClick={() => {
                       navigate(routes.ask(meeting.id));
                       close();
                     }}
@@ -275,6 +285,7 @@ export function MeetingHeader({ meeting, editing, canRevert, onToggleEdit, onRev
           <h2 className="m-0 font-display text-xl font-bold tracking-[-0.02em]">{t("meeting.deleteQuestion", { title: meeting.title })}</h2>
           <p className="m-0 text-[13px] text-subtle">
             {t("meeting.deleteBody")}
+            {settings?.autoSaveFolder ? ` ${t("meeting.deleteKeepsCopy")}` : ""}
           </p>
           <div className="flex justify-end gap-2">
             <Button onClick={() => setConfirmDelete(false)}>{t("common.cancel")}</Button>

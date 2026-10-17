@@ -12,6 +12,7 @@ pub mod power;
 pub mod system;
 pub mod system_tap;
 pub mod thread;
+pub mod trash;
 
 pub use clock::host_now_ns;
 pub use thread::background_priority;

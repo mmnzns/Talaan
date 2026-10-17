@@ -86,6 +86,11 @@ pub fn settings_for_report(v: &Value) -> Value {
         } else if k == "callApps" {
             let rules = x.as_array().map(|a| a.iter().map(|r| json!({ "id": call_app_id(&r["id"]), "rule": safe(&r["rule"]) })).collect()).unwrap_or_default();
             Value::Array(rules)
+        } else if k == "autoSaveFolder" {
+            // Whether auto-save is on, never where: the folder's path can hold the user's name or a client's.
+            json!(if x.as_str().is_some_and(|f| !f.trim().is_empty()) { "on" } else { "off" })
+        } else if k == "autoSaveTranscript" {
+            safe(x)
         } else if k == "ignoredApps" {
             json!(x.as_array().map(Vec::len).unwrap_or(0))
         } else {
@@ -153,6 +158,43 @@ pub fn scrub_devices(line: &str, devices: &[String]) -> String {
     out
 }
 
+/// The auto-save folder out of a Check setup line, as typed or shortened to `~` (the app's own line says "[folder]"
+/// already; this is for one that doesn't).
+pub fn scrub_folder(line: &str, folder: &str) -> String {
+    let folder = folder.trim().trim_end_matches(['/', '\\']);
+    if folder.len() < 2 {
+        return line.to_string();
+    }
+    let mut forms = vec![folder.to_string()];
+    for home in ["USERPROFILE", "HOME"].iter().filter_map(|v| std::env::var(v).ok()).filter(|h| h.len() > 2) {
+        if let Some(rest) = folder.strip_prefix(home.as_str()) {
+            forms.push(format!("~{rest}"));
+            forms.push(format!("~{}", rest.replace('\\', "/")));
+        }
+    }
+    let mut out = line.to_string();
+    for f in forms {
+        out = replace_ignore_case(&out, &f, "[folder]");
+    }
+    out
+}
+
+fn replace_ignore_case(s: &str, from: &str, to: &str) -> String {
+    let (low, from_low) = (s.to_lowercase(), from.to_lowercase());
+    if low.len() != s.len() {
+        return s.replace(from, to);
+    }
+    let mut out = String::new();
+    let mut i = 0;
+    while let Some(j) = low[i..].find(&from_low) {
+        out.push_str(&s[i..i + j]);
+        out.push_str(to);
+        i += j + from_low.len();
+    }
+    out.push_str(&s[i..]);
+    out
+}
+
 /// `devices`: the connected microphones' names; the chosen one from the settings is added here. Check setup lines
 /// name them ("Miguel's AirPods isn't connected"), so they lose their owner's name.
 pub fn report(facts: &Facts, setup: &[String], settings: Option<&Value>, devices: &[String], log: &[String]) -> String {
@@ -161,6 +203,7 @@ pub fn report(facts: &Facts, setup: &[String], settings: Option<&Value>, devices
     if let Some(m) = settings.and_then(|s| s["microphone"].as_str()) {
         devices.push(m.to_string());
     }
+    let folder = settings.and_then(|s| s["autoSaveFolder"].as_str()).unwrap_or("");
     let mut s = String::new();
     s.push_str("Talaan diagnostics\n");
     s.push_str("No meeting content: no transcripts, summaries, titles, names, addresses or keys.\n\n");
@@ -174,7 +217,7 @@ pub fn report(facts: &Facts, setup: &[String], settings: Option<&Value>, devices
         s.push_str("(not run)\n");
     }
     for line in setup {
-        s.push_str(&hash_ids(&logging::redact(&scrub_devices(line, &devices)), &salt));
+        s.push_str(&hash_ids(&logging::redact(&scrub_folder(&scrub_devices(line, &devices), folder)), &salt));
         s.push('\n');
     }
     s.push_str("\n== Settings (personal values removed) ==\n");
@@ -259,6 +302,28 @@ pub fn logs_reveal() -> CmdResult<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_auto_save_folder_shows_only_as_on_or_off() {
+        let on = settings_for_report(&json!({ "autoSaveFolder": "C:\\Users\\Miguel Monzones\\Clients\\Acme", "autoSaveTranscript": true }));
+        assert_eq!(on["autoSaveFolder"], "on");
+        assert_eq!(on["autoSaveTranscript"], true);
+        assert!(!on.to_string().contains("Acme"));
+        assert_eq!(settings_for_report(&json!({ "autoSaveFolder": "  " }))["autoSaveFolder"], "off");
+    }
+
+    #[test]
+    fn a_setup_line_loses_the_auto_save_folder() {
+        let folder = "D:\\Miguel Monzones\\Clients\\Acme";
+        let line = "warn · Folder copies · Can’t reach d:\\miguel monzones\\clients\\acme right now.";
+        assert_eq!(scrub_folder(line, folder), "warn · Folder copies · Can’t reach [folder] right now.");
+        assert_eq!(scrub_folder(line, ""), line);
+        let facts = Facts { version: "1.1.0".into(), os: "Windows".into(), cpu: "x".into(), graphics: "y".into(), log_dir: "z".into() };
+        let settings = json!({ "autoSaveFolder": folder });
+        let out = report(&facts, &[format!("ok · Folder copies · Saving each meeting to {folder}.")], Some(&settings), &[], &[]);
+        assert!(!out.contains("Acme") && !out.contains("Monzones"), "{out}");
+        assert!(out.contains("autoSaveFolder") && out.contains("\"on\""), "{out}");
+    }
 
     fn personal_settings() -> Value {
         json!({

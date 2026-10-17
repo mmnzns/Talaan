@@ -9,5 +9,5 @@ export function newIssueUrl(version: string): string {
 
 /** Check setup results as report lines: "fail · Speech model · No speech model yet, …". */
 export function setupLines(results: CheckResult[] | undefined): string[] {
-  return (results ?? []).map((r) => `${r.status} · ${r.title} · ${r.detail}`);
+  return (results ?? []).map((r) => `${r.status} · ${r.title} · ${r.reportDetail ?? r.detail}`);
 }

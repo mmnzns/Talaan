@@ -13,6 +13,7 @@ const FORBIDDEN: &[&str] = &[
     "your_name", "yourName", "workspace", "destination", "reply", "answer", "question", "passages", "events", "name", "names", "line",
     "speaker", "path", "token", "password", "recordingNotice", "recording_notice", "instruction", "instructions", "section", "sections",
     "highlight", "highlights", "invitee", "invitees", "draft", "drafts", "follow_up", "followUp",
+    "folder", "folders", "dir", "file", "filename", "file_name", "autoSaveFolder", "auto_save_folder", "contents",
 ];
 
 /// Names that usually hold an error or other free text: only through a sanitizer.
@@ -511,6 +512,25 @@ fn summary_features_can_never_be_logged() {
     ] {
         assert!(problems_in(call).iter().any(|p| p.contains(&format!("`{name}`"))), "{call}: {:?}", problems_in(call));
     }
+}
+
+#[test]
+fn auto_save_folders_files_and_attendees_can_never_be_logged() {
+    for (call, name) in [
+        (r#"log::warn!("{}", folder.display());"#, "folder"),
+        (r#"log::warn!("{}", dir.display());"#, "dir"),
+        (r#"log::warn!("{}", s["autoSaveFolder"]);"#, "autoSaveFolder"),
+        (r#"log::warn!("{}", plan.file_name);"#, "file_name"),
+        (r#"log::warn!("{}", target.file_name().unwrap().to_string_lossy());"#, "file_name"),
+        (r#"log::warn!("{}", contents.len());"#, "contents"),
+        (r#"log::info!("{}", e.attendees.len());"#, "attendees"),
+    ] {
+        assert!(problems_in(call).iter().any(|p| p.contains(&format!("`{name}`"))), "{call}: {:?}", problems_in(call));
+    }
+    // What the auto-save code logs: the io error's kind and the meeting id.
+    assert!(problems_in(r#"log::warn!("autosave: couldn't save meeting {id} to the folder ({kind})");"#).is_empty());
+    // The error itself is free text (it can hold the path): only its kind goes in.
+    assert!(!problems_in(r#"log::warn!("autosave: couldn't save meeting {id} ({})", e.kind());"#).is_empty());
 }
 
 #[test]

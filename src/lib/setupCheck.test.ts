@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { defaultSettings } from "../data/defaultSettings";
-import type { Settings } from "../data/settings";
+import type { AutoSaveStatus, Settings } from "../data/settings";
+import { setupLines } from "./diagnostics";
 import { checkSetup, type Probe } from "./setupCheck";
 
 const settings = (patch: Partial<Settings> = {}): Settings => ({ ...structuredClone(defaultSettings), ...patch });
@@ -89,5 +90,52 @@ describe("checkSetup", () => {
 
   it("reports a data folder it can't read", () => {
     expect(find(probe({ data: { error: "permission denied" } }), "data")).toMatchObject({ status: "fail" });
+  });
+});
+
+describe("checkSetup: folder copies", () => {
+  const on = settings({ autoSaveFolder: "/Volumes/Notes/Meetings" });
+
+  it("has no row until a folder is chosen", () => {
+    expect(checkSetup(probe()).some((r) => r.id === "autoSave")).toBe(false);
+  });
+
+  it("is fine while the folder is there", () => {
+    expect(find(probe({ settings: on, autoSave: { reachable: true, pending: [] } }), "autoSave")).toMatchObject({ status: "ok" });
+  });
+
+  it("quietly says when the folder is away and how many meetings wait", () => {
+    const r = find(probe({ settings: on, autoSave: { reachable: false, pending: [{ id: "a", kind: "missing" }, { id: "b", kind: "waiting" }] } }), "autoSave");
+    expect(r).toMatchObject({ status: "warn", fix: { action: "retryAutoSave" } });
+    expect(r.detail).toContain("/Volumes/Notes/Meetings");
+    expect(r.detail).toContain("2 meetings are waiting");
+  });
+});
+
+describe("checkSetup: folder copies that failed", () => {
+  const on = settings({ autoSaveFolder: "/notes" });
+
+  it("shows any write failure with the count and Try again", () => {
+    const r = find(probe({ settings: on, autoSave: { reachable: true, pending: [{ id: "a", kind: "failed", error: "Access is denied." }] } }), "autoSave");
+    expect(r).toMatchObject({ status: "warn", fix: { action: "retryAutoSave" } });
+    expect(r.detail).toContain("Access is denied.");
+    expect(r.detail).toContain("1 meeting is waiting");
+  });
+
+  it("never puts the folder or the error's text in the diagnostics", () => {
+    const s = settings({ autoSaveFolder: "/Users/miguel/Clients/Acme" });
+    for (const autoSave of [
+      { reachable: true, pending: [] },
+      { reachable: false, pending: [{ id: "a", kind: "missing" }] },
+      { reachable: true, pending: [{ id: "a", kind: "failed", error: "Access is denied: /Users/miguel/Clients/Acme/Budget.md" }] },
+    ] as AutoSaveStatus[]) {
+      const [line] = setupLines([find(probe({ settings: s, autoSave }), "autoSave")]);
+      expect(line).toContain("[folder]");
+      expect(line).not.toMatch(/Acme|miguel|Budget/);
+    }
+  });
+
+  it("doesn't count copies that are just on their way", () => {
+    expect(find(probe({ settings: on, autoSave: { reachable: true, pending: [{ id: "a", kind: "waiting" }] } }), "autoSave").status).toBe("ok");
   });
 });
