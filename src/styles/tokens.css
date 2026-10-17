@@ -10,7 +10,7 @@
   --t-sunken: #F4F3EE;       /* wells, inputs */
   --t-rail: #F4F3EE;         /* meeting list column */
   --t-line: #E8E6DF;         /* hairline dividers, card borders */
-  --t-subtle: #5F6270;       /* secondary text */
+  --t-subtle: #4E515E;       /* secondary text */
   --t-faint: #696C7E;        /* labels, timestamps: the lightest grey with 4.5:1 on hover (#F1EFE8), the darkest background it sits on */
   --t-gold: #F5B700;         /* sun gold: highlights, progress, the active moment */
   --t-on-gold: #111318;
@@ -62,7 +62,7 @@
   --t-sunken: #12141B;
   --t-rail: #12141B;
   --t-line: #262A35;
-  --t-subtle: #A7AAB5;
+  --t-subtle: #B3B6C0;
   --t-faint: #8E92A0;
   --t-gold: #F5B700;
   --t-on-gold: #111318;
