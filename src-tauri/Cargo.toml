@@ -15,6 +15,11 @@ edition = "2024"
 name = "talaan_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
+[features]
+# Test builds only: the updater end-to-end test (.github/workflows/updater-test.yml) turns this on through its
+# config overlay. Release builds never do; scripts/release-windows.ps1 checks talaan.exe for it.
+updater-e2e = []
+
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 

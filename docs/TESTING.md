@@ -110,6 +110,7 @@ quit the dev app first: one Talaan at a time.
 - [ ] Sleep mid-recording for 30 s: a pause gap, recording continues.
 
 **Update from a previous build** (local, before any tag; the real key isn't needed)
+Automated on CI by the **Updater test** workflow (below, "Updater test (CI)"); do this by hand only to see it yourself.
 - [ ] Make a throwaway key: `npm run tauri signer generate -- --ci -p test -f -w "$env:TEMP\talaan-test.key"`,
   copy the public key from `$env:TEMP\talaan-test.key.pub`.
 - [ ] Old build: temporarily set the version to 0.9.9 in a config file and point the updater at this PC:
@@ -142,6 +143,57 @@ quit the dev app first: one Talaan at a time.
 - [ ] If the first tag shows that `gh release upload/download <tag>` can't find the draft (never tried on a test
   repo), look the draft up with `gh api repos/mmnzns/Talaan/releases --jq '.[] | select(.tag_name=="vX") | .id'`
   and upload through `gh api` instead (scripts/latest-json.mjs, scripts/upload-mac-release.sh, release.yml).
+
+## Updater test (CI)
+
+The in-app updater, end to end, on GitHub's disposable runners (never on Miguel's PC or Mac):
+`.github/workflows/updater-test.yml`. Manual only. Start it from Actions › **Updater test** › Run workflow (pick
+the branch), or:
+
+```
+gh workflow run updater-test.yml --ref <branch>             # Windows and Mac
+gh workflow run updater-test.yml --ref <branch> -f macos=false   # Windows only
+gh run watch                                                 # then pick the run
+```
+
+What it does, per platform (Windows: `scripts/updater-e2e/windows.ps1`; Mac: `scripts/updater-e2e/macos.sh`):
+1. Makes a throwaway updater key in the job (`tauri signer generate`, random password). The real key and the
+   repo's secrets are never used.
+2. Builds this commit twice, as 0.0.1 (A) and 0.0.2 (B): Windows through `scripts/release-windows.ps1` (without the
+   GPU helpers), the Mac like `scripts/release-local.sh` but ad-hoc signed and without the .dmg. Each build gets a
+   config overlay (`scripts/updater-e2e/config.mjs`, passed to `tauri build --config`; `tauri.conf.json` stays as
+   it is): the test version, the throwaway public key, the updater endpoint
+   `http://127.0.0.1:8765/<repo>/releases/latest/download/latest.json` (plain http on 127.0.0.1 needs
+   `dangerousInsecureTransportProtocol`, set only here) and the `updater-e2e` Cargo feature.
+3. Lays out B like a GitHub release on 127.0.0.1 (`scripts/updater-e2e/feed.mjs`): `latest.json` comes from the real
+   `scripts/latest-json.mjs --dir`, with only `https://github.com/` swapped for the local server
+   (`scripts/updater-e2e/serve.mjs`, which logs each download).
+4. Installs A (Windows: the NSIS installer with `/S`; Mac: Talaan.app into /Applications), seeds a meeting and
+   settings with Open at login on (`%APPDATA%\Talaan`, `~/Library/Application Support/Talaan`), and starts A with
+   `TALAAN_UPDATER_E2E=install`. On Windows it first makes HKLM's Run key read-only for the runner's account, so
+   Open at login goes to HKCU like on a normal (non-administrator) PC.
+5. A's hook (`src-tauri/src/commands/updater_e2e.rs`) runs `updates_check` and `updates_install`, the commands
+   behind Settings › Update now. Every launch of a test build writes `updater-e2e-<version>.json` to the log folder.
+6. Checks: A found B; B's update file was downloaded from the feed; Talaan reopened by itself as B; the installed exe
+   (and on Windows the Apps list) says B; B lists the meeting and reads the settings; `transcript.md` is unchanged;
+   Open at login is still on (Windows: HKCU Run `Talaan` points at the installed exe, nothing in HKLM; Mac:
+   `~/Library/LaunchAgents/Talaan.plist` points at /Applications/Talaan.app). It also logs whether the Run entry
+   disappeared at any moment during the update. Every check runs; the job fails at the end if any failed.
+
+Artifacts: `updater-test-windows` and `updater-test-macos` (both reports, the app's logs, the feed server's log,
+settings.json after the update, the Run entries / LaunchAgent, `latest.json`).
+
+**How the hook stays out of real builds:** the module exists only with the `updater-e2e` Cargo feature, which only
+this workflow's config overlay turns on; even then it installs only when `TALAAN_UPDATER_E2E=install` is set.
+`scripts/release-windows.ps1` refuses `TALAAN_TEST_CONFIG` on a tag, and fails a release build whose talaan.exe
+contains `TALAAN_UPDATER_E2E` (and a test build that doesn't). Test builds trust only the throwaway key, so a test
+build can't install a real release and a real install never accepts a test build.
+
+**What it doesn't cover:** updating from the shipped 1.0.x builds (they trust the real key and GitHub, so that path
+is only exercised by a real release; see "Update path" above), the Mac's self-signed certificate keeping
+permissions across an update (the test app is ad-hoc signed), and SmartScreen / Gatekeeper on a downloaded installer.
+The first run on a branch builds everything from scratch (an hour or more per platform); later runs on that branch
+reuse the Rust cache (kept even when the test fails).
 
 ## GPU on Windows (G1)
 

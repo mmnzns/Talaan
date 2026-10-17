@@ -39,7 +39,15 @@ if ($gpu) {
 $conf = @{ bundle = @{ createUpdaterArtifacts = $signed; resources = $resources } } | ConvertTo-Json -Depth 5
 $confPath = Join-Path $env:TEMP 'talaan-release.conf.json'
 [IO.File]::WriteAllText($confPath, $conf)
-npm run tauri build -- --config $confPath
+# Test builds only (.github/workflows/updater-test.yml): TALAAN_TEST_CONFIG names one more config, merged last
+# (scripts/updater-e2e/config.mjs: test version, throwaway updater key, local feed, the updater-e2e feature).
+$testConf = @()
+if ($env:TALAAN_TEST_CONFIG) {
+  if ($env:GITHUB_REF_TYPE -eq 'tag') { throw "TALAAN_TEST_CONFIG is for test builds; a tag builds a release" }
+  $testConf = @('--config', $env:TALAAN_TEST_CONFIG)
+  Write-Host "Test build: merging $env:TALAAN_TEST_CONFIG"
+}
+npm run tauri build -- --config $confPath @testConf
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
 # whisper.cpp and llama.cpp must be optimized (.cargo/config.toml); cmake-rs alone builds them at /Od.
@@ -98,6 +106,20 @@ foreach ($f in 'src-tauri\target\release\talaan.exe', 'src-tauri\target\release\
   if (@(Get-Imports $f) -contains 'vulkan-1.dll') { throw "$f imports vulkan-1.dll; only the GPU helpers may" }
 }
 Write-Host "talaan.exe and talaan-llm.exe don't import vulkan-1.dll"
+
+# The updater test's hook (src-tauri/src/commands/updater_e2e.rs, feature updater-e2e) never ships: a release
+# talaan.exe must not contain its variable's name. A test build must, or the test would prove nothing.
+$exeText = [Text.Encoding]::GetEncoding(28591).GetString([IO.File]::ReadAllBytes((Resolve-Path 'src-tauri\target\release\talaan.exe')))
+$hasHook = $exeText.Contains('TALAAN_UPDATER_E2E')
+Remove-Variable exeText
+if ($env:TALAAN_TEST_CONFIG) {
+  if (-not $hasHook) { throw "Test build without the updater-e2e hook: does TALAAN_TEST_CONFIG turn on the updater-e2e feature?" }
+  Write-Host "Test build: talaan.exe has the updater-e2e hook (never in a release)"
+} elseif ($hasHook) {
+  throw "talaan.exe contains the updater-e2e test hook; release builds must not turn on the updater-e2e feature"
+} else {
+  Write-Host "talaan.exe has no test hook"
+}
 if ($gpu) {
   foreach ($h in 'talaan-llm-vulkan.exe', 'talaan-stt-vulkan.exe') {
     if (-not (@(Get-Imports "src-tauri\binaries\$h") -contains 'vulkan-1.dll')) { throw "$h doesn't import vulkan-1.dll: not a Vulkan build" }

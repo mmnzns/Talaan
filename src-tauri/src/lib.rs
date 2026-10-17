@@ -117,6 +117,8 @@ pub fn run() {
             commands::calendar::sync_source(app.handle());
             commands::updates::apply_login_item(app.handle());
             commands::updates::check_at_launch(app.handle());
+            #[cfg(feature = "updater-e2e")]
+            commands::updater_e2e::start(app.handle());
             commands::tray::setup(app.handle())?;
             #[cfg(target_os = "windows")]
             if let Some((old, new, left)) = models_to_copy.filter(|(_, _, left)| !left.is_empty()) {
