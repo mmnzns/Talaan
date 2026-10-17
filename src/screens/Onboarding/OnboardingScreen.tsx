@@ -9,7 +9,8 @@ import { Button, Chip, Field, Label, Radio, Switch, cn, useToast } from "../../u
 import { SunCorner } from "../../brand/SunCorner";
 import { onWindows, systemAudioNeedsPermission, usePlatform } from "../../lib/platform";
 import { openSettings } from "../../lib/windows";
-import { useT } from "../../lib/i18n/I18nProvider";
+import { useLang, useT } from "../../lib/i18n/I18nProvider";
+import { modelNote, splitByTier, tierOf } from "../../lib/modelTiers";
 import { LeavesTable } from "../Settings/LeavesTable";
 import { setupItems } from "../../lib/setupDownload";
 import { DownloadAnnouncer, SetupProgress, gb, useSetupDownload } from "./SetupDownload";
@@ -450,11 +451,9 @@ function SetupStep({ settings: s, onChooseIndividually }: { settings: Settings; 
 
 type StepProps = { settings: Settings; update: (p: Partial<Settings>) => Promise<Settings> };
 
-/** How many speech models setup lists before "Show all" (the catalog lists the recommended ones first). */
-const FEATURED_MODELS = 3;
-
 function ModelStep({ settings: s, update }: StepProps) {
   const t = useT();
+  const lang = useLang();
   const store = useSettingsStore();
   const status = (m: Settings["speechModels"][number]) => {
     if (m.state === "on_this_mac") return t("onboarding.modelOnThisComputer");
@@ -463,25 +462,24 @@ function ModelStep({ settings: s, update }: StepProps) {
     return t("onboarding.modelSize", { size: gb(m.sizeMb) });
   };
   const chosen = s.speechModels.find((m) => m.id === s.activeSpeechModel);
-  // The three recommended models first; the rest behind "Show all" (the chosen one always shows).
+  // The three plain-language choices first (lib/modelTiers); the rest behind "Show all" (the chosen one always shows).
   const [all, setAll] = useState(false);
-  const shown = all ? s.speechModels : s.speechModels.filter((m, i) => i < FEATURED_MODELS || m.id === s.activeSpeechModel);
+  const { tiered, more } = splitByTier(s.speechModels);
+  const shown = all ? [...tiered, ...more] : [...tiered, ...more.filter((m) => m.id === s.activeSpeechModel)];
   return (
     <StepBody pinned={chosen && <DownloadRow item={chosen} onDownload={() => void store.downloadModel(chosen.id)} onCancel={() => void store.cancelModelDownload(chosen.id)} />}>
       <h1 className={h1}>{t("onboarding.modelTitle")}</h1>
       <p className={desc}>{t("onboarding.modelDesc")}</p>
       <div role="radiogroup" aria-label={t("onboarding.modelGroup")} className="flex flex-col gap-2">
-        {shown.map((m) => (
-          <Option
-            key={m.id}
-            on={s.activeSpeechModel === m.id}
-            title={m.name}
-            tag={m.id === "whisper-turbo" ? t("onboarding.recommended") : undefined}
-            onClick={() => update({ activeSpeechModel: m.id })}
-          >
-            {m.note} {status(m)}
-          </Option>
-        ))}
+        {shown.map((m) => {
+          const tier = tierOf(m.id);
+          return (
+            <Option key={m.id} on={s.activeSpeechModel === m.id} title={tier ? t(tier.label) : m.name} onClick={() => update({ activeSpeechModel: m.id })}>
+              {tier && <span className="block">{t("settings.model_tech", { name: m.name, maker: m.maker })}</span>}
+              {modelNote(lang, m)} {status(m)}
+            </Option>
+          );
+        })}
       </div>
       {!all && s.speechModels.length > shown.length && (
         <button type="button" className="cursor-pointer self-start border-0 bg-transparent p-0 text-[13px] font-semibold text-ink underline" onClick={() => setAll(true)}>
