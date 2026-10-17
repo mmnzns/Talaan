@@ -14,6 +14,7 @@ pub fn settings_set(app: AppHandle, state: State<AppState>, value: Value) -> Cmd
     storage.settings_set(value)?;
     // Your name shows in every meeting.
     let renamed = storage.your_name() != name_before;
+    crate::logging::set_your_name(storage.your_name());
     // A changed retention setting takes effect right away.
     let report = storage.apply_retention(chrono::Utc::now())?;
     drop(storage);

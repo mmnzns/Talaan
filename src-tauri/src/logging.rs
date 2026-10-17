@@ -574,14 +574,58 @@ fn replace_words(s: &str) -> String {
 /// Devices people name after themselves, for the apostrophe-less genitive ("Miguels AirPods").
 const PERSONAL_DEVICES: &[&str] = &["airpods", "iphone", "ipad", "macbook", "imac", "mac", "galaxy", "pixel", "buds", "beats", "headset", "headphones", "kopfhörer", "mikrofon", "telefon", "handy"];
 
+/// The name the user gave in Settings › General › Your name, so device names can lose it wherever it appears.
+static YOUR_NAME: std::sync::RwLock<Option<String>> = std::sync::RwLock::new(None);
+
+/// Called at startup and whenever settings change.
+pub fn set_your_name(name: Option<String>) {
+    *YOUR_NAME.write().unwrap_or_else(|e| e.into_inner()) = name.map(|n| n.trim().to_string()).filter(|n| !n.is_empty());
+}
+
 /// A device name without a person's name in it: "Miguel's AirPods Pro" → "…'s AirPods Pro",
-/// "AirPods de Miguel" → "AirPods de …".
+/// "AirPods de Miguel" → "AirPods de …", and the user's own name wherever it appears ("Studio Miguel" → "Studio …").
 pub fn device(name: &str) -> String {
+    let your_name = YOUR_NAME.read().unwrap_or_else(|e| e.into_inner()).clone();
+    device_with(name, your_name.as_deref())
+}
+
+pub fn device_with(name: &str, your_name: Option<&str>) -> String {
+    let mut name = name.trim().to_string();
+    if let Some(full) = your_name.map(str::trim).filter(|n| n.chars().count() >= 2) {
+        // The whole name first, then each part of it ("Miguel Monzones" → "Miguel", "Monzones").
+        let parts = std::iter::once(full).chain(full.split_whitespace().filter(|w| w.chars().count() >= 3));
+        for part in parts {
+            name = replace_word_ignore_case(&name, part, "…");
+        }
+    }
+    owner_free(&name)
+}
+
+/// Like `replace_ignore_case`, but only whole words: "Ana" leaves "Analog" alone.
+fn replace_word_ignore_case(s: &str, from: &str, to: &str) -> String {
+    let (hay, needle) = (s.to_ascii_lowercase(), from.to_ascii_lowercase());
+    let mut out = String::with_capacity(s.len());
+    let mut last = 0;
+    for (i, _) in hay.match_indices(&needle) {
+        let before = s[..i].chars().next_back();
+        let after = s[i + needle.len()..].chars().next();
+        if i < last || before.is_some_and(char::is_alphanumeric) || after.is_some_and(char::is_alphanumeric) {
+            continue;
+        }
+        out.push_str(&s[last..i]);
+        out.push_str(to);
+        last = i + needle.len();
+    }
+    out.push_str(&s[last..]);
+    out
+}
+
+fn owner_free(name: &str) -> String {
     let name = name.trim();
     // Windows wraps the device: "Micrófono (AirPods de Miguel)". Clean the part in brackets, keep the rest.
     if let Some(open) = name.find('(').filter(|_| name.ends_with(')')) {
         let inner = &name[open + 1..name.len() - 1];
-        let clean = device(inner);
+        let clean = owner_free(inner);
         if clean != inner.trim() {
             return format!("{}({clean})", &name[..open]);
         }
@@ -600,7 +644,8 @@ pub fn device(name: &str) -> String {
             return format!("…{}", &name[i..]);
         }
     }
-    for of in [" de ", " of ", " von "] {
+    // "of" in the languages Talaan's users name their devices in: es/fr/pt de, en of, de von, it di, pt do/da, nl van.
+    for of in [" de ", " of ", " von ", " di ", " do ", " da ", " van "] {
         if let Some(i) = name.rfind(of) {
             let after = &name[i + of.len()..];
             if after.chars().next().is_some_and(char::is_uppercase) && !after.contains(['(', ')']) {
@@ -798,6 +843,17 @@ mod tests {
         assert_eq!(device("AirPods de Miguel"), "AirPods de …");
         assert_eq!(device("Microphone (Realtek(R) Audio)"), "Microphone (Realtek(R) Audio)");
         assert_eq!(device("MacBook Pro Microphone"), "MacBook Pro Microphone");
+        // Italian, Portuguese, Dutch.
+        assert_eq!(device_with("Cuffie di Marco", None), "Cuffie di …");
+        assert_eq!(device_with("AirPods do João", None), "AirPods do …");
+        assert_eq!(device_with("Fones da Ana", None), "Fones da …");
+        assert_eq!(device_with("Microfoon (AirPods van Sanne)", None), "Microfoon (AirPods van …)");
+        // The user's own name, anywhere, in any case, whole or in part.
+        assert_eq!(device_with("Studio miguel mic", Some("Miguel Monzones")), "Studio … mic");
+        assert_eq!(device_with("MONZONES-PC Microphone", Some("Miguel Monzones")), "…-PC Microphone");
+        assert_eq!(device_with("Microphone (Realtek(R) Audio)", Some("Ana")), "Microphone (Realtek(R) Audio)");
+        assert_eq!(device_with("Analog Mic", Some("Ana")), "Analog Mic");
+        assert_eq!(device_with("MacBook Pro Microphone", Some("  ")), "MacBook Pro Microphone");
         // Windows: the owner's name inside "Microphone (…)", the rest kept.
         assert_eq!(device("Micrófono (AirPods de Miguel)"), "Micrófono (AirPods de …)");
         assert_eq!(device("Microphone (AirPods von Ana)"), "Microphone (AirPods von …)");

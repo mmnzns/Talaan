@@ -71,6 +71,7 @@ pub fn run() {
                 Ok(store)
             };
             let store = started().inspect_err(|e| log::error!("couldn't open the data folder: {}", e.for_log()))?;
+            logging::set_your_name(store.your_name());
             app.manage(AppState::new(store));
             // Off the main thread: on the Mac it asks sw_vers and sysctl.
             let handle = app.handle().clone();
