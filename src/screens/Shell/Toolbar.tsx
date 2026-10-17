@@ -10,6 +10,8 @@ import { inTauri, openSettings } from "../../lib/windows";
 import { navigate, routes } from "../../lib/router";
 import { useT } from "../../lib/i18n/I18nProvider";
 import { Button, Chip, cn } from "../../ui";
+import { useSetupProblems } from "./useSetupProblems";
+import { privacyChip } from "../../lib/privacyChip";
 
 interface Props {
   onImport: () => void;
@@ -23,7 +25,8 @@ export function Toolbar({ onImport, onRecord, recording }: Props) {
   // A newer version found by the launch check (the app only; nothing is downloaded until Update now).
   const [update, setUpdate] = useState<string>();
   useEffect(() => (inTauri() ? onEvent<{ version: string }>("update-available", (u) => setUpdate(u.version)) : undefined), []);
-  const local = !settings || settings.summaryEngine !== "byok";
+  // Something in Settings › Status stops a call: a dot on the button, which then opens Status.
+  const problems = useSetupProblems();
 
   return (
     <header
@@ -35,9 +38,10 @@ export function Toolbar({ onImport, onRecord, recording }: Props) {
     >
       <Logo size={28} />
       <span className="font-display text-lg font-bold tracking-[-0.02em]">talaan</span>
-      <Chip>
-        <span className="size-[7px] rounded-full bg-gold shadow-[0_0_0_3px_color-mix(in_srgb,var(--t-gold)_30%,transparent)]" />
-        {local ? t("shell.offlineLocal") : t("shell.cloudOn")}
+      {/* The privacy promise in plain words; opens the Privacy tab's "what leaves this computer". */}
+      <Chip className="font-sans text-xs normal-case" onClick={() => void openSettings("privacy")} title={t("shell.privacyChipTitle")}>
+        <span aria-hidden="true" className="size-[7px] rounded-full bg-gold shadow-[0_0_0_3px_color-mix(in_srgb,var(--t-gold)_30%,transparent)]" />
+        {t(privacyChip(settings))}
       </Chip>
       {update && (
         <Chip tone="gold" onClick={() => void openSettings("general")} title={t("shell.updateReadyTitle", { version: update })}>
@@ -64,8 +68,15 @@ export function Toolbar({ onImport, onRecord, recording }: Props) {
           <span className="font-mono">{recording.state === "paused" ? t("shell.paused") : formatTime(recording.elapsedMs)}</span>
         </Button>
       )}
-      <Button size="icon" aria-label={t("shell.settings")} onClick={() => openSettings()}>
+      <Button
+        size="icon"
+        className="relative"
+        aria-label={problems > 0 ? t("shell.settingsNeedsFix") : t("shell.settings")}
+        title={problems > 0 ? t("shell.settingsNeedsFix") : undefined}
+        onClick={() => void openSettings(problems > 0 ? "status" : undefined)}
+      >
         <SettingsIcon size={16} aria-hidden="true" />
+        {problems > 0 && <span aria-hidden="true" className="absolute right-1 top-1 size-2 rounded-full bg-danger ring-2 ring-surface" />}
       </Button>
     </header>
   );

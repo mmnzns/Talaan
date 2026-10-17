@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { detectOS, onMac, onWindows, os, platformCopy } from "./platform";
+import { detectOS, onMac, onWindows, os, platformCopy, systemAudioPermissionName } from "./platform";
 
 const MAC_UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)";
 const WIN_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36 Edg/130.0.0.0";
@@ -51,5 +51,19 @@ describe("platformCopy", () => {
   it("speaks French and Spanish", () => {
     expect(platformCopy("windows", "fr").settingsApp).toBe("Paramètres Windows");
     expect(platformCopy("mac", "es").settingsApp).toBe("Ajustes del Sistema");
+  });
+});
+
+describe("systemAudioPermissionName", () => {
+  it("uses the name System Settings shows on that macOS", () => {
+    expect(systemAudioPermissionName("en", 14)).toBe("Screen Recording");
+    expect(systemAudioPermissionName("en", 15)).toBe("Screen & System Audio Recording");
+    expect(systemAudioPermissionName("en", 26)).toBe("Screen & System Audio Recording");
+    expect(systemAudioPermissionName("fr", 14)).toBe("Enregistrement de l’écran");
+    expect(systemAudioPermissionName("es", 15)).toBe("Grabación de pantalla y audio del sistema");
+  });
+  it("uses the newer name while the version is unknown", () => {
+    expect(systemAudioPermissionName("en")).toBe("Screen & System Audio Recording");
+    expect(systemAudioPermissionName("en", null)).toBe("Screen & System Audio Recording");
   });
 });

@@ -12,5 +12,5 @@ export { Switch } from "./Switch";
 export { Timestamp } from "./Timestamp";
 export { cn } from "./cn";
 export { Editable } from "./Editable";
-export { MenuItem, Popover } from "./Popover";
+export { MenuItem, MenuSeparator, Popover } from "./Popover";
 export { ToastProvider, useToast } from "./Toast";

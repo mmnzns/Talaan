@@ -33,6 +33,7 @@ export function StatusBanner({ meeting }: { meeting: Meeting }) {
     return (
       <Banner title={t("meeting.noModelTitle")} text={t("meeting.noModelText")}>
         <Button variant="primary" onClick={() => void openSettings("models")}>{t("meeting.openModels")}</Button>
+        <StatusButton />
       </Banner>
     );
   }
@@ -47,10 +48,17 @@ export function StatusBanner({ meeting }: { meeting: Meeting }) {
       <Banner title={t("meeting.failedTitle")} text={text}>
         {meeting.hasAudio && <Button variant="primary" onClick={() => run(store.retryProcessing(meeting.id))}>{t("meeting.tryAgain")}</Button>}
         <Button variant={meeting.hasAudio ? "default" : "primary"} onClick={leave}>{t("meeting.delete")}</Button>
+        <StatusButton />
       </Banner>
     );
   }
   return null;
+}
+
+/** Settings › Status: every check a call needs, each with its fix. Banners about setup link to it. */
+export function StatusButton() {
+  const t = useT();
+  return <Button onClick={() => void openSettings("status")}>{t("meeting.checkStatus")}</Button>;
 }
 
 function Banner({ title, text, children }: { title: string; text: string; children: React.ReactNode }) {
@@ -61,7 +69,7 @@ function Banner({ title, text, children }: { title: string; text: string; childr
         <div className="text-sm font-bold">{title}</div>
         <div className="text-[13px]">{text}</div>
       </div>
-      <div className="flex gap-2">{children}</div>
+      <div className="flex flex-wrap gap-2">{children}</div>
     </div>
   );
 }

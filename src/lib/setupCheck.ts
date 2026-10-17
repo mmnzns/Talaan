@@ -51,6 +51,15 @@ export function checkSetup(p: Probe): CheckResult[] {
   return [mic(p), device(p), systemAudio(p), ...relay(p), speech(s), speakers(s), ...gpu(p), summary(p), ...calendar(p), data(p), ...autoSave(p)];
 }
 
+/** The checks the Settings button's dot is for: only what stops a call from being recorded or transcribed
+ *  ("fail"). The summary check never lights it: a transcript-only setup is a valid choice, and an Ollama server
+ *  that's off is normal; summary problems show on the meeting and in Status. Notices (a sound enhancer, the
+ *  processor instead of the graphics card, a folder that is away) and checks that need a test ("unknown") never
+ *  light it either. */
+export function needsFixing(results: CheckResult[]): CheckResult[] {
+  return results.filter((r) => r.status === "fail" && r.id !== "summary");
+}
+
 /** Windows: a sound enhancer or mixer replays everything, Talaan's own sounds included, under its own program. */
 function relay(p: Probe): CheckResult[] {
   if (!p.soundRelay) return [];
@@ -94,7 +103,7 @@ function gpu(p: Probe): CheckResult[] {
   }
 }
 
-function mic(p: Probe): CheckResult {
+function mic(p: Pick<Probe, "mic">): CheckResult {
   const title = t("settings.setup_mic");
   switch (p.mic) {
     case "granted":
@@ -109,7 +118,7 @@ function mic(p: Probe): CheckResult {
   }
 }
 
-function device(p: Probe): CheckResult {
+function device(p: Pick<Probe, "settings" | "inputs">): CheckResult {
   const title = t("settings.setup_device");
   const chosen = p.settings.microphone !== "default" ? p.settings.microphone : undefined;
   if (!p.inputs) return { id: "device", title, status: "warn", detail: t("settings.setup_device_unknown") };
@@ -198,6 +207,33 @@ function data(p: Probe): CheckResult {
   const title = t("settings.setup_data");
   if ("error" in p.data) return { id: "data", title, status: "fail", detail: t("settings.setup_data_fail", { error: p.data.error }) };
   return { id: "data", title, status: "ok", detail: `${tildePath(p.data.path)} · ${formatBytes(p.data.bytes)}`, fix: { label: t("settings.folder_open"), action: "openData" } };
+}
+
+/** The last full look with the graphics card asked again (after its switch changes): every other row stays as it
+ *  was, so nothing else is probed. */
+export async function regraphics(p: Probe, store: Pick<SettingsStore, "get" | "gpuStatus">): Promise<Probe> {
+  const [settings, gpu] = await Promise.all([store.get(), store.gpuStatus().catch(() => undefined)]);
+  return { ...p, settings, gpu };
+}
+
+/** What the Settings button's dot looks at: microphone access, the microphones connected and the speech model
+ *  from settings. Cheap and quiet on purpose: no helper starts (graphics card), no folder is walked (data size,
+ *  auto-save) and nothing goes over the network (a local AI server, the calendar). The full look is `probeSetup`,
+ *  for the Status tab. */
+export type LightProbe = Pick<Probe, "settings" | "mic" | "inputs">;
+
+export async function probeLight(store: Pick<SettingsStore, "get" | "audioInputs">, recorder: Pick<RecorderClient, "microphonePermission">): Promise<LightProbe> {
+  const [settings, mic, inputs] = await Promise.all([
+    store.get(),
+    recorder.microphonePermission().catch(() => "unknown" as const),
+    store.audioInputs().catch(() => undefined),
+  ]);
+  return { settings, mic, inputs };
+}
+
+/** The checks a light look can judge, in Status order. */
+export function lightChecks(p: LightProbe): CheckResult[] {
+  return [mic(p), device(p), speech(p.settings)];
 }
 
 const message = (e: unknown) => (e instanceof Error ? e.message : String(e));

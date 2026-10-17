@@ -43,6 +43,11 @@ export function Popover({ trigger, children, align = "right", className }: Props
   );
 }
 
+/** A hairline between groups of menu items. */
+export function MenuSeparator() {
+  return <div role="separator" className="my-1 border-t border-line" />;
+}
+
 export function MenuItem({ className, ...rest }: React.ButtonHTMLAttributes<HTMLButtonElement>) {
   return (
     <button

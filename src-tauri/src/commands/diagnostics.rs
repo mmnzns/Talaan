@@ -290,6 +290,26 @@ pub fn diagnostics_report(app: AppHandle, setup: Vec<String>) -> String {
     report(&f, &setup, settings.as_ref(), &crate::recorder::mic::input_devices(), &log)
 }
 
+/// The major version in `sw_vers -productVersion` ("14.6.1" -> 14). None when it isn't a version.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+pub(crate) fn macos_major(product_version: &str) -> Option<u32> {
+    product_version.trim().split('.').next()?.parse().ok().filter(|&m| m > 0)
+}
+
+/// macOS's major version, for wording that follows the system (macOS 14 calls the system audio permission
+/// "Screen Recording", 15 and later "Screen & System Audio Recording"). None on Windows, or if it can't be told.
+#[tauri::command]
+pub async fn system_macos_major() -> Option<u32> {
+    #[cfg(target_os = "macos")]
+    {
+        tauri::async_runtime::spawn_blocking(|| macos_major(&crate::platform::system::product_version())).await.ok().flatten()
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        None
+    }
+}
+
 /// Open log folder: shows talaan.log in the file manager.
 #[tauri::command]
 pub fn logs_reveal() -> CmdResult<()> {
@@ -302,6 +322,16 @@ pub fn logs_reveal() -> CmdResult<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_macos_major_version_is_read_from_sw_vers() {
+        assert_eq!(macos_major("14.6.1"), Some(14));
+        assert_eq!(macos_major("15.1
+"), Some(15));
+        assert_eq!(macos_major("26.0"), Some(26));
+        assert_eq!(macos_major(""), None);
+        assert_eq!(macos_major("macOS"), None);
+    }
 
     #[test]
     fn the_auto_save_folder_shows_only_as_on_or_off() {

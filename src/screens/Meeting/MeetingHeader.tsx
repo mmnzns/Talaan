@@ -5,7 +5,7 @@ import { useStore } from "../../data/StoreProvider";
 import type { Meeting } from "../../data/types";
 import { formatClock, formatDate, formatDuration } from "../../lib/format";
 import { navigate, routes } from "../../lib/router";
-import { Button, Chip, Field, Label, MenuItem, Popover, Select, Sheet, useToast } from "../../ui";
+import { Button, Chip, Field, Label, MenuItem, MenuSeparator, Popover, Select, Sheet, useToast } from "../../ui";
 import { useT } from "../../lib/i18n/I18nProvider";
 import { useLang } from "../../lib/i18n/I18nProvider";
 import { describeError } from "../../data/errors";
@@ -156,6 +156,7 @@ export function MeetingHeader({ meeting, editing, canRevert, onToggleEdit, onRev
               {copied === "text" ? t("meeting.copied") : t("meeting.copyText")}
             </Button>
             <Popover
+              className="max-h-[50vh] w-64 overflow-y-auto"
               trigger={({ toggle }) => (
                 <Button size="icon" aria-label={t("meeting.moreActions")} onClick={toggle}>
                   <MoreHorizontal size={16} aria-hidden="true" />
@@ -188,15 +189,7 @@ export function MeetingHeader({ meeting, editing, canRevert, onToggleEdit, onRev
                   >
                     <MessageCircle size={14} aria-hidden="true" /> {t("meeting.askAbout")}
                   </MenuItem>
-                  <MenuItem
-                    disabled={!meeting.hasAudio}
-                    onClick={() => {
-                      store.setPinned(meeting.id, !meeting.pinned);
-                      close();
-                    }}
-                  >
-                    <Pin size={14} aria-hidden="true" /> {meeting.pinned ? t("meeting.stopKeepAudio") : t("meeting.keepAudio")}
-                  </MenuItem>
+                  <MenuSeparator />
                   <MenuItem
                     disabled={meeting.transcript.length === 0}
                     onClick={() => {
@@ -224,6 +217,16 @@ export function MeetingHeader({ meeting, editing, canRevert, onToggleEdit, onRev
                   >
                     <AudioLines size={14} aria-hidden="true" /> {t("meeting.retranscribeMenu")}
                   </MenuItem>
+                  <MenuSeparator />
+                  <MenuItem
+                    disabled={!meeting.hasAudio}
+                    onClick={() => {
+                      store.setPinned(meeting.id, !meeting.pinned);
+                      close();
+                    }}
+                  >
+                    <Pin size={14} aria-hidden="true" /> {meeting.pinned ? t("meeting.stopKeepAudio") : t("meeting.keepAudio")}
+                  </MenuItem>
                   <MenuItem
                     disabled={!meeting.hasAudio || meeting.pinned}
                     onClick={() => {
@@ -244,6 +247,7 @@ export function MeetingHeader({ meeting, editing, canRevert, onToggleEdit, onRev
                   >
                     <FolderOpen size={14} aria-hidden="true" /> {t("meeting.openFolder")}
                   </MenuItem>
+                  <MenuSeparator />
                   <MenuItem
                     className="text-danger"
                     onClick={() => {

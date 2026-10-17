@@ -2,8 +2,12 @@ import { routes, navigate } from "./router";
 
 export const inTauri = () => typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 
-/** Opens the Settings window (a separate Tauri window). In a plain browser it navigates instead. */
-export async function openSettings(tab = "general"): Promise<void> {
+/** The event that asks an open Settings window to show a tab (SettingsWindow listens). */
+export const SETTINGS_TAB_EVENT = "settings-tab";
+
+/** Opens the Settings window (a separate Tauri window) on `tab`, or on Status when none is given. An open window
+ *  comes to the front and, when `tab` is given, switches to it. In a plain browser it navigates instead. */
+export async function openSettings(tab?: string): Promise<void> {
   if (!inTauri()) {
     navigate(routes.settings(tab));
     return;
@@ -11,6 +15,9 @@ export async function openSettings(tab = "general"): Promise<void> {
   const { WebviewWindow } = await import("@tauri-apps/api/webviewWindow");
   const existing = await WebviewWindow.getByLabel("settings");
   if (existing) {
+    if (tab) {
+      await existing.emitTo("settings", SETTINGS_TAB_EVENT, tab).catch(() => {});
+    }
     await existing.setFocus();
     return;
   }
