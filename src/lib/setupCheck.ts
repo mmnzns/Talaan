@@ -51,6 +51,13 @@ export function checkSetup(p: Probe): CheckResult[] {
   return [mic(p), device(p), systemAudio(p), ...relay(p), speech(s), speakers(s), ...gpu(p), summary(p), ...calendar(p), data(p), ...autoSave(p)];
 }
 
+/** The checks the Settings button's dot is for: only what stops a call from being recorded, transcribed or
+ *  summarized ("fail"). Notices (a sound enhancer, the processor instead of the graphics card, a folder that is
+ *  away) and checks that need a test ("unknown") never light it. */
+export function needsFixing(results: CheckResult[]): CheckResult[] {
+  return results.filter((r) => r.status === "fail");
+}
+
 /** Windows: a sound enhancer or mixer replays everything, Talaan's own sounds included, under its own program. */
 function relay(p: Probe): CheckResult[] {
   if (!p.soundRelay) return [];

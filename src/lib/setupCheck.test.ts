@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { defaultSettings } from "../data/defaultSettings";
 import type { AutoSaveStatus, Settings } from "../data/settings";
 import { setupLines } from "./diagnostics";
-import { checkSetup, type Probe } from "./setupCheck";
+import { checkSetup, needsFixing, type Probe } from "./setupCheck";
 
 const settings = (patch: Partial<Settings> = {}): Settings => ({ ...structuredClone(defaultSettings), ...patch });
 const probe = (patch: Partial<Probe> = {}): Probe => ({
@@ -13,6 +13,20 @@ const probe = (patch: Partial<Probe> = {}): Probe => ({
   ...patch,
 });
 const find = (p: Probe, id: string) => checkSetup(p).find((c) => c.id === id)!;
+
+describe("needsFixing (the dot on the Settings button)", () => {
+  it("is empty on a set-up computer, even before call audio is tested", () => {
+    expect(needsFixing(checkSetup(probe()))).toEqual([]);
+  });
+  it("counts what stops a call, not notices", () => {
+    expect(needsFixing(checkSetup(probe({ mic: "denied" }))).map((r) => r.id)).toEqual(["mic"]);
+    const noLocal = defaultSettings.localModels.map((m) => ({ ...m, state: "not_downloaded" as const }));
+    expect(needsFixing(checkSetup(probe({ settings: settings({ localModels: noLocal }) }))).map((r) => r.id)).toEqual(["summary"]);
+    const notices = probe({ soundRelay: "FxSound", mic: "undetermined", gpu: { state: "failed", detail: "lost" } });
+    expect(checkSetup(notices).filter((r) => r.status === "warn").length).toBeGreaterThan(0);
+    expect(needsFixing(checkSetup(notices))).toEqual([]);
+  });
+});
 
 describe("checkSetup", () => {
   it("is all clear on a set-up computer, except call audio, which needs a test", () => {

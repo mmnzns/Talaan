@@ -15,7 +15,7 @@ describe("parseRoute", () => {
     expect(parseRoute("#/ask?m=m-q4")).toEqual({ name: "ask", meetingId: "m-q4" });
     expect(parseRoute("#/screens/recording")).toEqual({ name: "screens", which: "recording" });
     expect(parseRoute("#/settings/privacy")).toEqual({ name: "settings", tab: "privacy" });
-    expect(parseRoute("#/settings")).toEqual({ name: "settings", tab: "general" });
+    expect(parseRoute("#/settings")).toEqual({ name: "settings", tab: "status" });
   });
   it("round-trips the route builders", () => {
     expect(parseRoute(routes.meeting("m-q4", 5000))).toEqual({ name: "meeting", id: "m-q4", t: 5000 });

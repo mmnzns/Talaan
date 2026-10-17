@@ -10,6 +10,7 @@ import { inTauri, openSettings } from "../../lib/windows";
 import { navigate, routes } from "../../lib/router";
 import { useT } from "../../lib/i18n/I18nProvider";
 import { Button, Chip, cn } from "../../ui";
+import { useSetupProblems } from "./useSetupProblems";
 
 interface Props {
   onImport: () => void;
@@ -24,6 +25,8 @@ export function Toolbar({ onImport, onRecord, recording }: Props) {
   const [update, setUpdate] = useState<string>();
   useEffect(() => (inTauri() ? onEvent<{ version: string }>("update-available", (u) => setUpdate(u.version)) : undefined), []);
   const local = !settings || settings.summaryEngine !== "byok";
+  // Something in Settings › Status stops a call: a dot on the button, which then opens Status.
+  const problems = useSetupProblems();
 
   return (
     <header
@@ -64,8 +67,15 @@ export function Toolbar({ onImport, onRecord, recording }: Props) {
           <span className="font-mono">{recording.state === "paused" ? t("shell.paused") : formatTime(recording.elapsedMs)}</span>
         </Button>
       )}
-      <Button size="icon" aria-label={t("shell.settings")} onClick={() => openSettings()}>
+      <Button
+        size="icon"
+        className="relative"
+        aria-label={problems > 0 ? t("shell.settingsNeedsFix") : t("shell.settings")}
+        title={problems > 0 ? t("shell.settingsNeedsFix") : undefined}
+        onClick={() => void openSettings(problems > 0 ? "status" : undefined)}
+      >
         <SettingsIcon size={16} aria-hidden="true" />
+        {problems > 0 && <span aria-hidden="true" className="absolute right-1 top-1 size-2 rounded-full bg-danger ring-2 ring-surface" />}
       </Button>
     </header>
   );

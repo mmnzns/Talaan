@@ -14,6 +14,7 @@ export const shell = area({
     showRecording: "Show recording controls",
     paused: "Paused",
     settings: "Settings",
+    settingsNeedsFix: "Settings: something needs fixing",
     // Recording panel
     savedWriting: "Recording saved. Writing the transcript now.",
     savedWritingSoon: "Recording saved. Writing the transcript now (less than a minute).",
@@ -108,6 +109,7 @@ export const shell = area({
     showRecording: "Afficher les commandes d’enregistrement",
     paused: "En pause",
     settings: "Paramètres",
+    settingsNeedsFix: "Paramètres : quelque chose est à corriger",
     savedWriting: "Enregistrement sauvegardé. Rédaction de la transcription en cours.",
     savedWritingSoon: "Enregistrement sauvegardé. Rédaction de la transcription en cours (moins d’une minute).",
     savedWritingMin_one: "Enregistrement sauvegardé. Rédaction de la transcription en cours (environ {count} min).",
@@ -196,6 +198,7 @@ export const shell = area({
     showRecording: "Mostrar los controles de grabación",
     paused: "En pausa",
     settings: "Ajustes",
+    settingsNeedsFix: "Ajustes: hay algo que corregir",
     savedWriting: "Grabación guardada. Escribiendo la transcripción ahora.",
     savedWritingSoon: "Grabación guardada. Escribiendo la transcripción ahora (menos de un minuto).",
     savedWritingMin_one: "Grabación guardada. Escribiendo la transcripción ahora (aproximadamente {count} min).",
