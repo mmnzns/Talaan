@@ -135,6 +135,9 @@ pub(crate) mod tests {
             decisions: vec![SummaryItem { id: "d0".into(), text: "Launch on the 20th".into(), at: Some(36_000) }],
             action_items: vec![ActionItem { id: "a0".into(), text: "Email legal".into(), at: Some(24_000), owner: Some("Daniel".into()), due: Some("Monday".into()), done: false }],
             open_questions: vec![],
+            sections: vec![],
+            highlights: vec![],
+            template: None,
             engine: "x".into(),
             edited: false,
         });

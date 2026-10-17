@@ -1,5 +1,5 @@
 use super::{notify, AppState, CmdResult, MEETINGS_CHANGED};
-use crate::storage::model::{Meeting, MeetingListItem, Summary};
+use crate::storage::model::{Mark, Meeting, MeetingListItem, Summary};
 use crate::storage::library::Folder;
 use crate::storage::{Filter, StorageError};
 use serde::Deserialize;
@@ -78,6 +78,12 @@ pub fn meetings_rename_speaker(app: AppHandle, state: State<AppState>, id: Strin
 #[tauri::command]
 pub fn meetings_set_transcript_only(app: AppHandle, state: State<AppState>, id: String, on: bool) -> CmdResult<()> {
     changed(&app, state.lock().set_transcript_only(&id, on))
+}
+
+/// The user's notes, edited in the meeting view (marks with text; marked moments stay as they are).
+#[tauri::command]
+pub fn meetings_set_notes(app: AppHandle, state: State<AppState>, id: String, notes: Vec<Mark>) -> CmdResult<()> {
+    changed(&app, state.lock().set_notes(&id, &notes))
 }
 
 #[tauri::command]

@@ -1,7 +1,9 @@
 //! The background summarizer: one thread, one meeting at a time, queue rebuilt from `summarizing` at launch.
 //! A meeting enters `summarizing` and leaves `ready`, with a summary or with `summary_error` saying why not.
 
+use super::prompt::Options;
 use super::summarize::{summarize, too_short, EngineError, SummarizeError, SummaryEngine};
+use super::templates;
 use crate::eta::{self, Device, Profile};
 use crate::storage::model::{MeetingStatus, ProcessingError};
 use crate::storage::speed::set_eta;
@@ -26,6 +28,10 @@ pub struct Config {
     pub engine: String,
     /// "meeting" = the meeting's language, or an ISO code.
     pub language: String,
+    /// Settings › Summary AI › Default meeting type (a `templates` id).
+    pub template: String,
+    /// Settings › Summary AI › Custom instructions.
+    pub instructions: String,
     pub settings: Value,
 }
 
@@ -35,12 +41,21 @@ impl Config {
         Config {
             engine: v["summaryEngine"].as_str().unwrap_or("local").to_string(),
             language: v["summaryLanguage"].as_str().filter(|l| !l.is_empty()).unwrap_or("meeting").to_string(),
+            template: v["summaryTemplate"].as_str().filter(|t| templates::exists(t)).unwrap_or(templates::GENERAL).to_string(),
+            instructions: v["summaryInstructions"].as_str().unwrap_or("").to_string(),
             settings: v,
         }
     }
 
     pub fn language_for(&self, meeting_language: &str) -> String {
         if self.language == "meeting" { meeting_language.to_string() } else { self.language.clone() }
+    }
+
+    /// How a meeting is written: its own meeting type when one was chosen for it, else the default, and the
+    /// custom instructions.
+    pub fn options_for(&self, meeting_template: Option<&str>) -> Options {
+        let template = meeting_template.filter(|t| templates::exists(t)).unwrap_or(&self.template).to_string();
+        Options { template, instructions: self.instructions.clone() }
     }
 }
 
@@ -189,6 +204,7 @@ fn process(deps: &Deps, id: &str, cancel: &AtomicBool) {
     };
 
     let language = config.language_for(&meeting.language);
+    let opts = config.options_for(meeting.template.as_deref());
     let mut last_report = Instant::now() - Duration::from_secs(10);
     let mut first_report: Option<Instant> = None;
     let mut report = |p: f32| {
@@ -204,7 +220,7 @@ fn process(deps: &Deps, id: &str, cancel: &AtomicBool) {
         }
     };
 
-    match summarize(&meeting, engine.as_mut(), &language, cancel, &mut report) {
+    match summarize(&meeting, engine.as_mut(), &language, &opts, cancel, &mut report) {
         Ok(out) => {
             let s = lock(&deps.storage);
             if s.save_summary(id, &out.summary).is_err() {
@@ -413,6 +429,41 @@ mod tests {
         assert_eq!(m.summary_error.unwrap().code, TOO_SHORT);
         assert!(m.item.title.starts_with("Call, Zoom"));
         assert!(done.lock().unwrap().iter().all(|d| d.starts_with("transcript: ")));
+    }
+
+    #[test]
+    fn the_meetings_own_type_wins_over_the_default() {
+        let c = Config::from_settings(Some(&json!({ "summaryTemplate": "standup", "summaryInstructions": "Mention budgets." })));
+        assert_eq!(c.options_for(None), Options { template: "standup".into(), instructions: "Mention budgets.".into() });
+        assert_eq!(c.options_for(Some("interview")).template, "interview");
+        assert_eq!(c.options_for(Some("from_the_future")).template, "standup");
+        let d = Config::from_settings(Some(&json!({ "summaryTemplate": "nope" })));
+        assert_eq!(d.options_for(None), Options { template: "general".into(), instructions: String::new() });
+    }
+
+    #[test]
+    fn a_new_summary_replaces_the_old_ones_edits_and_is_written_as_the_chosen_type() {
+        let (_d, storage, id, w, _) = setup(Box::new(|_| Ok(Box::new(Scripted { replies: vec![Ok(reply("Plan", "Second."))], prompts: vec![], context: 16_384 }))));
+        {
+            let s = storage.lock().unwrap();
+            let mut first = crate::storage::store::tests::summary("First.");
+            first.action_items[0].done = true;
+            s.save_summary(&id, &first).unwrap();
+            let mut edited = first.clone();
+            edited.recap = "Edited.".into();
+            s.update_summary(&id, &edited).unwrap();
+            assert!(s.get_meeting(&id).unwrap().summary.unwrap().edited);
+            s.update_meeting_file(&id, |f| {
+                f.template = Some("interview".into());
+                f.status = MeetingStatus::Summarizing;
+            })
+            .unwrap();
+        }
+        w.enqueue(&id);
+        wait(&w);
+        let s = storage.lock().unwrap().get_meeting(&id).unwrap().summary.unwrap();
+        assert_eq!((s.recap.as_str(), s.edited, s.template.as_deref()), ("Second.", false, Some("interview")));
+        assert!(s.action_items.iter().all(|a| !a.done));
     }
 
     #[test]

@@ -10,7 +10,11 @@ use crate::gpu::{Gpu, Kind, Plan};
 use crate::summarizer::local::{helper_path, GpuHelper, LocalAi, GPU_STALL};
 use crate::summarizer::models::{local_model, LLM_CATALOG};
 use crate::summarizer::summarize::{EngineError, SummaryEngine};
+use crate::summarizer::followup::{self, FollowUpError};
+use crate::summarizer::templates;
 use crate::summarizer::worker::{Config, Deps, Worker, NO_ENGINE};
+use crate::storage::model::Eta;
+use std::sync::atomic::{AtomicBool, Ordering};
 use crate::transcriber::models::{Location, ModelStore};
 use serde::Serialize;
 use std::path::{Path, PathBuf};
@@ -21,6 +25,9 @@ pub const SUMMARY_READY: &str = "summary-ready";
 
 pub struct SummarizerState {
     worker: Worker,
+    data_dir: PathBuf,
+    /// Set by Cancel on a follow-up draft.
+    followup_cancel: Arc<AtomicBool>,
 }
 
 impl SummarizerState {
@@ -115,6 +122,7 @@ pub fn setup(app: &AppHandle, data_dir: PathBuf) {
     let ready_app = app.clone();
     let done_app = app.clone();
     let gpu = Gpu::shared(&data_dir);
+    let state_dir = data_dir.clone();
     let worker = Worker::start(Deps {
         storage: state.shared(),
         changed: Arc::new(move || notify(&changed_app, MEETINGS_CHANGED)),
@@ -129,7 +137,7 @@ pub fn setup(app: &AppHandle, data_dir: PathBuf) {
     for id in state.lock().ids_with_status(MeetingStatus::Summarizing).unwrap_or_default() {
         worker.enqueue(&id);
     }
-    app.manage(SummarizerState { worker });
+    app.manage(SummarizerState { worker, data_dir: state_dir, followup_cancel: Arc::default() });
 }
 
 pub const OPEN_MEETING: &str = "open-meeting";
@@ -177,6 +185,28 @@ pub fn requeue_waiting(app: &AppHandle) {
 /// Generate summary (also: regenerate). Needs a transcript.
 #[tauri::command]
 pub fn meetings_generate_summary(app: AppHandle, state: State<AppState>, s: State<SummarizerState>, id: String) -> CmdResult<()> {
+    start_summary(&app, &state, &s, &id, None)
+}
+
+/// The meeting type to summarize a meeting as (from the recording window); none for the Settings default.
+#[tauri::command]
+pub fn meetings_set_template(app: AppHandle, state: State<AppState>, id: String, template: Option<String>) -> CmdResult<()> {
+    state.lock().set_template(&id, template.as_deref())?;
+    notify(&app, MEETINGS_CHANGED);
+    Ok(())
+}
+
+/// The meeting's ⋯ menu › Summarize as…: remembers the type and writes the summary again.
+#[tauri::command]
+pub fn meetings_summarize_as(app: AppHandle, state: State<AppState>, s: State<SummarizerState>, id: String, template: String) -> CmdResult<()> {
+    if !templates::exists(&template) {
+        return Err(refused(tr("error.unknown_template")));
+    }
+    start_summary(&app, &state, &s, &id, Some(&template))
+}
+
+fn start_summary(app: &AppHandle, state: &State<AppState>, s: &State<SummarizerState>, id: &str, template: Option<&str>) -> CmdResult<()> {
+    let id = id.to_string();
     let storage = state.lock();
     let meeting = storage.get_meeting(&id)?;
     if meeting.transcript.is_empty() {
@@ -189,11 +219,63 @@ pub fn meetings_generate_summary(app: AppHandle, state: State<AppState>, s: Stat
         f.status = MeetingStatus::Summarizing;
         f.progress = Some(0.0);
         f.summary_error = None;
+        if let Some(t) = template {
+            f.template = Some(t.to_string());
+        }
     })?;
     drop(storage);
     s.enqueue(&id);
-    notify(&app, MEETINGS_CHANGED);
+    notify(app, MEETINGS_CHANGED);
     Ok(())
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FollowUpDraft {
+    subject: String,
+    body: String,
+    /// The invitees' addresses from the calendar event, when it had them.
+    to: Vec<String>,
+}
+
+/// When a follow-up draft for this meeting should be done (shown while it is written).
+#[tauri::command(async)]
+pub fn meetings_followup_eta(state: State<AppState>, s: State<SummarizerState>, id: String) -> CmdResult<Eta> {
+    let storage = state.lock();
+    let summary = storage.get_meeting(&id)?.summary.ok_or_else(|| refused(tr("error.no_summary_for_followup")))?;
+    let cfg = Config::from_settings(storage.settings_get().ok().flatten().as_ref());
+    let profile = summary_profile(&cfg, &Gpu::shared(&s.data_dir));
+    let secs = followup::estimate(&profile, storage.speed_rate(&profile.key), &summary);
+    Ok(crate::storage::speed::eta_in(secs, profile.device == crate::eta::Device::Cpu))
+}
+
+/// Draft follow-up email: a short request over the summary the user sees (with their edits), in the summary
+/// language, with whichever summary engine is set up. Runs off the main thread; Cancel stops it.
+#[tauri::command(async)]
+pub fn meetings_draft_followup(state: State<AppState>, s: State<SummarizerState>, id: String) -> CmdResult<FollowUpDraft> {
+    let (meeting, cfg) = {
+        let storage = state.lock();
+        (storage.get_meeting(&id)?, Config::from_settings(storage.settings_get().ok().flatten().as_ref()))
+    };
+    let summary = meeting.summary.clone().ok_or_else(|| refused(tr("error.no_summary_for_followup")))?;
+    s.followup_cancel.store(false, Ordering::Relaxed);
+    let mut engine = make_engine(&cfg, &s.data_dir).map_err(|e| match e {
+        EngineError::Unavailable(m) | EngineError::Failed(m) => refused(m),
+        EngineError::Cancelled => refused(tr("error.cancelled")),
+    })?;
+    let language = cfg.language_for(&meeting.language);
+    let f = followup::draft(&meeting, &summary, engine.as_mut(), &language, &s.followup_cancel).map_err(|e| match e {
+        FollowUpError::Engine(EngineError::Unavailable(m)) | FollowUpError::Engine(EngineError::Failed(m)) => refused(m),
+        FollowUpError::Engine(EngineError::Cancelled) => refused(tr("error.cancelled")),
+        FollowUpError::BadOutput => refused(tr("error.followup_bad_output")),
+    })?;
+    let to = meeting.calendar_event.map(|e| e.emails).unwrap_or_default();
+    Ok(FollowUpDraft { subject: f.subject, body: f.body, to })
+}
+
+#[tauri::command]
+pub fn meetings_cancel_followup(s: State<SummarizerState>) {
+    s.followup_cancel.store(true, Ordering::Relaxed);
 }
 
 #[derive(Serialize)]

@@ -2,9 +2,11 @@
 
 pub mod chunk;
 pub mod engines;
+pub mod followup;
 pub mod local;
 pub mod models;
 pub mod parse;
 pub mod prompt;
 pub mod summarize;
+pub mod templates;
 pub mod worker;

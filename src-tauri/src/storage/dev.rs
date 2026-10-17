@@ -64,6 +64,7 @@ impl Storage {
             transcription: m.transcription.clone(),
             summary_error: None,
             transcript_only: m.transcript_only,
+            template: m.template.clone(),
             retranscribe_model: None,
             extra: Default::default(),
         };

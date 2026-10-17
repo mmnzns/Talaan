@@ -34,10 +34,15 @@ impl Storage {
     }
 }
 
+/// When something `secs_left` from now should be done.
+pub fn eta_in(secs_left: f64, on_cpu: bool) -> Eta {
+    let left = chrono::Duration::milliseconds((secs_left.max(0.0) * 1000.0).min(48.0 * 3600.0 * 1000.0) as i64);
+    Eta { finish_at: (chrono::Local::now() + left).fixed_offset().to_rfc3339(), on_cpu }
+}
+
 /// Sets when the current step should be done, `secs_left` from now.
 pub fn set_eta(f: &mut MeetingFile, secs_left: f64, on_cpu: bool) {
-    let left = chrono::Duration::milliseconds((secs_left.max(0.0) * 1000.0).min(48.0 * 3600.0 * 1000.0) as i64);
-    f.eta = Some(Eta { finish_at: (chrono::Local::now() + left).fixed_offset().to_rfc3339(), on_cpu });
+    f.eta = Some(eta_in(secs_left, on_cpu));
 }
 
 #[cfg(test)]
