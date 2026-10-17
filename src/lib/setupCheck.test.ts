@@ -23,6 +23,15 @@ describe("checkSetup", () => {
     expect(find(probe({ systemAudio: false }), "systemAudio")).toMatchObject({ status: "fail", fix: { action: "systemAudioSettings" } });
   });
 
+  it("on Windows, names the sound enhancer the sound goes through, after call audio", () => {
+    expect(checkSetup(probe({ soundRelay: null })).some((r) => r.id === "relay")).toBe(false);
+    const p = probe({ soundRelay: "FxSound" });
+    expect(checkSetup(p).map((r) => r.id).slice(0, 4)).toEqual(["mic", "device", "systemAudio", "relay"]);
+    const r = find(p, "relay");
+    expect(r.status).toBe("warn");
+    expect(r.detail).toBe("Your sound goes through FxSound, so Talaan may hear its own sounds. If the transcript repeats lines, record with FxSound off.");
+  });
+
   it("says how to fix the microphone", () => {
     expect(find(probe({ mic: "undetermined" }), "mic")).toMatchObject({ status: "warn", fix: { action: "allowMic" } });
     expect(find(probe({ mic: "denied" }), "mic")).toMatchObject({ status: "fail", fix: { action: "micSettings" } });
