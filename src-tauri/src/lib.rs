@@ -94,6 +94,8 @@ pub fn run() {
             commands::tray::i18n_set_language,
             commands::tray::tray_toggle,
             commands::tray::window_fit,
+            commands::tray::tray_room,
+            commands::summarizer::notifications_allowed,
             commands::tray::tray_hide,
             commands::tray::app_show_main,
             commands::tray::app_quit,

@@ -19,7 +19,7 @@ export function MeetingItem({ meeting, selected }: { meeting: MeetingListItem; s
   const t = useT();
   const now = useNow();
   const processing = meeting.status === "transcribing" || meeting.status === "summarizing";
-  const left = processing ? etaText(t, meeting.eta, now) : undefined;
+  const left = processing ? etaText(t, meeting.eta, now, meeting.progress)?.toLocaleLowerCase() : undefined;
   const go = () => navigate(routes.meeting(meeting.id));
 
   const base = "flex w-full cursor-pointer flex-col gap-1 rounded-xl border-0 px-3.5 py-[11px] text-left font-[inherit] text-ink";

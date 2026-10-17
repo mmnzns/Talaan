@@ -76,7 +76,8 @@ export function MenuBarPopover({ onStart, onOpenMeeting, onOpenApp, onQuit, next
         {recent.length === 0 && <span className="px-2.5 py-2 text-[13px] text-subtle">{t("recording.recentEmpty")}</span>}
         {recent.map((m) => {
           const busy = m.status === "summarizing" || m.status === "transcribing";
-          const left = busy ? etaText(t, m.eta, now) : undefined;
+          // Lowercase like the rest of this mono line ("summarizing · about 7 min left").
+          const left = busy ? etaText(t, m.eta, now, m.progress)?.toLocaleLowerCase() : undefined;
           const busyText = !busy
             ? ""
             : left

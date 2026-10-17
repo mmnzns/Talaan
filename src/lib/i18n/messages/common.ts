@@ -9,6 +9,7 @@ export const common = area({
     etaMin_other: "About {count} min left",
     etaSoon: "Less than a minute left",
     etaAlmost: "Almost done",
+    etaFinishing: "Finishing up",
   },
   fr: {
     cancel: "Annuler",
@@ -18,6 +19,7 @@ export const common = area({
     etaMin_other: "Environ {count} min restantes",
     etaSoon: "Moins d’une minute restante",
     etaAlmost: "Presque terminé",
+    etaFinishing: "Finalisation en cours",
   },
   es: {
     cancel: "Cancelar",
@@ -27,5 +29,6 @@ export const common = area({
     etaMin_other: "Faltan aproximadamente {count} min",
     etaSoon: "Falta menos de un minuto",
     etaAlmost: "Ya casi termina",
+    etaFinishing: "Terminando",
   },
 });
