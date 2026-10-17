@@ -215,6 +215,7 @@ values; with the box ticked `%APPDATA%\Talaan`, `%LOCALAPPDATA%\com.craftconcept
 | `tab_urls_live_smoke` (opens a new Edge window on a Meet URL, then example.com, then a long Wikipedia article; expects `Urls`, then `Unknown` twice, with timings; closes only the windows it opened) | `cargo test tab_urls_live_smoke -- --ignored --nocapture --test-threads=1` |
 | `background_call_tab_live_smoke` (a separate Edge with a temp profile: a page titled "Meet - abc-defg-hij" behind example.com; expects `Titles` under 300 ms; closes that Edge and deletes the profile) | `cargo test background_call_tab_live_smoke -- --ignored --nocapture --test-threads=1` |
 | `large_feed_timing` (reads a 21 MB synthetic calendar) | `cargo test --release large_feed_timing -- --ignored --nocapture` |
+| `gpu_whisper_live` (GPU helper vs processor on the fixture, then a forced crash, a broken helper and the gpu.json skip; scratch data folder with `models/whisper-base` and `models/vad`) | `TALAAN_DATA_DIR=<scratch> cargo test --release gpu_whisper_live -- --ignored --nocapture --test-threads=1` |
 | `pipeline_smoke` (real models on a recorded meeting) | `TALAAN_SMOKE_MEETING=<meeting dir> cargo test --release pipeline_smoke -- --ignored --nocapture` |
 
 **Speed (release builds).** whisper.cpp and llama.cpp were compiled at `/Od` in release on Windows: with the Visual Studio generator the `cmake` crate overwrites `CMAKE_C_FLAGS_RELEASE`/`CMAKE_CXX_FLAGS_RELEASE` and drops every `/O` flag (debug builds were fine). A 62 s clip took 398 s; with the fix it takes about 29 s, same transcript. Fix: `.cargo/config.toml` sets both variables to `-O2 -DNDEBUG`, which the -sys crates forward as CMake defines. Also tuned: CPU Whisper uses three quarters of the logical cores (2..=12; 16 threads on a 16-thread Ryzen is 2-3x slower than 12) and flash attention is on only for Metal. Cargo does not rebuild the -sys crates when `[env]` changes, so after editing `.cargo/config.toml` run `cargo clean --manifest-path src-tauri/Cargo.toml --release -p whisper-rs-sys -p llama-cpp-sys-2`. The same flags apply on macOS (-O2 instead of CMake's -O3 for CPU code; negligible, Metal runs the models).
@@ -241,6 +242,22 @@ CI uses `C:\tg` for path length), with the x86-64-v3 baseline; `release-windows.
 `vulkan-1.dll` (dumpbin). CI: `.github/actions/vulkan-sdk` (LunarG 1.4.363.0, cached); Release › Run workflow uploads
 the installer and the bare helpers; CI › Run workflow adds `windows-gpu`. **Not verified locally:** the Vulkan builds
 themselves (no Vulkan SDK on the PC by decision); CI builds them. Hand checks: docs/TESTING.md, "GPU on Windows (G1)".
+
+**Whisper on the GPU, measured (2026-10-16, Miguel's PC, `gpu_whisper_live`).** The CI-built `talaan-stt-vulkan.exe`
+(copied from the installed app) through `transcriber::fallback::load`, the app's own path, on
+`fixtures/three-speakers/them.wav` (62 s) with Whisper Base, release build, scratch data folder. The helper picked
+**NVIDIA GeForce RTX 5070 Ti** (Vulkan, 15,995 MB) over the AMD Radeon iGPU; driver fingerprint
+"AMD Radeon(TM) Graphics 32.0.21045.5002; Meta Virtual Monitor 11.1.45.729; NVIDIA GeForce RTX 5070 Ti 32.0.16.1742".
+Whole pipeline (Silero VAD + Whisper + merge), five runs: **GPU 0.92-0.98 s** (once 1.69 s on a first meeting; helper start and model load another
+0.34-0.41 s), **processor 3.07-5.04 s** (12 threads, native build; load 0.11 s), so about 3.5x faster with Base;
+the gap should be much larger with Large Turbo (not measured: a 574 MB download). Same transcript on both, 99% of
+`truth.json`'s words. Fallback: with `TALAAN_GPU=fail` the helper aborts on its first chunk (0xC0000409), the
+meeting is transcribed on the processor with the same text, and `gpu.json` gets
+`stt: "speech GPU helper stopped: exit code -1073740791 (0xC0000409)
+ggml_vulkan: TALAAN_GPU=fail, stopping on purpose"`
+(no `llm` entry); the next meeting plans "processor (the GPU failed before: ...)" and starts no helper; clearing
+`gpu.json` (Try again) plans the GPU again. A helper file that isn't a program (os error 216) also falls back and is
+remembered ("couldn't start speech GPU helper ..."). No stray helper processes were left.
 
 ## What's already shared
 

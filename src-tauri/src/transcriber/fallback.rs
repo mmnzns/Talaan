@@ -225,4 +225,111 @@ mod tests {
         assert!(reason.contains("exit code 5") && reason.contains("Device lost"), "{reason}");
         assert!(gpu.failure(Kind::Llm).is_none());
     }
+
+    /// Live (Windows, a PC with a discrete GPU): the real GPU helper through `load`, then the processor, on the same
+    /// call; then a GPU that crashes on its first chunk (`TALAAN_GPU=fail`) and a helper that can't start, each
+    /// falling back to the processor and writing gpu.json; then a later meeting skipping the GPU until Try again.
+    /// Uses a scratch data folder, never Talaan's own:
+    /// `TALAAN_DATA_DIR=<scratch> cargo test --release gpu_whisper_live -- --ignored --nocapture --test-threads=1`
+    /// It needs `<scratch>/models/<model id>/` (default `whisper-base`, or `TALAAN_SMOKE_MODEL`) and
+    /// `<scratch>/models/vad/`. The helpers come from `src-tauri/binaries` (or `TALAAN_GPU_HELPERS`); the audio is
+    /// `fixtures/three-speakers` (or `TALAAN_SMOKE_MEETING`).
+    #[test]
+    #[ignore]
+    fn gpu_whisper_live() {
+        use crate::gpu::Skip;
+        use crate::transcriber::pipeline::run;
+        use crate::transcriber::vad::Vad;
+        use std::path::PathBuf;
+        use std::sync::atomic::AtomicBool;
+        use std::time::Instant;
+
+        let data = PathBuf::from(std::env::var("TALAAN_DATA_DIR").expect("set TALAAN_DATA_DIR to a scratch folder"));
+        let own = dirs::data_dir().unwrap().join("Talaan");
+        assert!(std::fs::canonicalize(&data).ok() != std::fs::canonicalize(&own).ok(), "not Talaan's own data folder");
+        let manifest = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        let helpers = std::env::var("TALAAN_GPU_HELPERS").map(PathBuf::from).unwrap_or_else(|_| manifest.join("binaries"));
+        let meeting = std::env::var("TALAAN_SMOKE_MEETING").map(PathBuf::from).unwrap_or_else(|_| manifest.join("../fixtures/three-speakers"));
+        let id = std::env::var("TALAAN_SMOKE_MODEL").unwrap_or_else(|_| "whisper-base".into());
+        let model = super::super::models::find(&id).expect("a catalog id");
+        let model_dir = data.join("models").join(model.id);
+        let mut vad = Vad::load(&data.join("models/vad/ggml-silero-v6.2.0.bin")).unwrap();
+        // SAFETY: an ignored test run with --test-threads=1; nothing else reads the environment meanwhile.
+        unsafe { std::env::remove_var(talaan_llm_protocol::FAIL_ENV) };
+
+        let gpu = Arc::new(Gpu::detect_with_helpers(&data, &helpers));
+        gpu.clear();
+        let mut transcribe = |label: &str, engine: &mut dyn Engine| {
+            let t = Instant::now();
+            let out = run(&meeting, engine, &mut vad, None, None, &AtomicBool::new(false), &mut |_| {}).unwrap();
+            let secs = t.elapsed().as_secs_f32();
+            let text = out.lines.iter().map(|l| l.text.as_str()).collect::<Vec<_>>().join(" ");
+            eprintln!("== {label}: {secs:.2}s for {:.0}s of speech, {} lines, language {:?}\n   {text}", out.speech_ms as f32 / 1000.0, out.lines.len(), out.language);
+            (secs, text)
+        };
+        let words = |s: &str| s.to_lowercase().split(|c: char| !c.is_alphanumeric() && c != '\'').filter(|w| !w.is_empty()).map(str::to_string).collect::<Vec<_>>();
+        let truth: Vec<serde_json::Value> = std::fs::read(meeting.join("truth.json")).ok().and_then(|b| serde_json::from_slice(&b).ok()).unwrap_or_default();
+        let truth = words(&truth.iter().filter_map(|l| l["text"].as_str()).collect::<Vec<_>>().join(" "));
+        let recall = |text: &str| {
+            let got: std::collections::HashSet<String> = words(text).into_iter().collect();
+            truth.iter().filter(|w| got.contains(*w)).count() as f32 / truth.len().max(1) as f32
+        };
+
+        // Which GPU the helper picks, straight from it.
+        let Plan::Gpu { exe, env } = gpu.plan(Kind::Stt, true) else { panic!("GPU not planned: {}", crate::gpu::describe(&gpu.plan(Kind::Stt, true))) };
+        let probe = RemoteWhisper::load(&exe, &env, &model_dir.join(model.files[0].name), model.name, Timeouts::default()).unwrap_or_else(|e| panic!("{e:?}"));
+        eprintln!("== GPU: {:?}; driver: {}", probe.backend(), crate::gpu::driver_fingerprint());
+        drop(probe);
+
+        // 1. GPU, the way the app loads it (twice; "load" is the helper starting and loading the model).
+        for round in ["GPU, 1st meeting", "GPU, 2nd meeting"] {
+            let t = Instant::now();
+            let mut e = load(model, &model_dir, true, &gpu).unwrap();
+            let loaded = t.elapsed().as_secs_f32();
+            let (_, text) = transcribe(round, e.as_mut());
+            eprintln!("   load {loaded:.2}s, recall vs truth.json {:.0}%", recall(&text) * 100.0);
+            assert!(gpu.marker().is_none(), "the GPU worked, nothing to remember: {:?}", gpu.marker());
+        }
+        // 2. The processor, same audio.
+        let t = Instant::now();
+        let mut cpu = engine::load(model, &model_dir, false).unwrap();
+        let loaded = t.elapsed().as_secs_f32();
+        let (_, cpu_text) = transcribe("CPU", cpu.as_mut());
+        eprintln!("   load {loaded:.2}s, recall vs truth.json {:.0}%", recall(&cpu_text) * 100.0);
+        drop(cpu);
+
+        // 3. The GPU helper aborts on its first chunk: the meeting still transcribes, on the processor.
+        unsafe { std::env::set_var(talaan_llm_protocol::FAIL_ENV, "fail") };
+        let mut e = load(model, &model_dir, true, &gpu).unwrap();
+        let (_, text) = transcribe("GPU crash -> CPU", e.as_mut());
+        unsafe { std::env::remove_var(talaan_llm_protocol::FAIL_ENV) };
+        drop(e);
+        assert!(recall(&text) > 0.5, "the fallback transcript is the processor's");
+        let failure = gpu.failure(Kind::Stt).expect("gpu.json names the speech helper");
+        eprintln!("== gpu.json after the crash:\n{}", std::fs::read_to_string(data.join("gpu.json")).unwrap());
+        assert!(failure.reason.contains("speech GPU helper"), "{}", failure.reason);
+        assert!(gpu.failure(Kind::Llm).is_none());
+
+        // 4. A later meeting skips the GPU (no helper is started) until Try again.
+        assert!(matches!(gpu.plan(Kind::Stt, true), Plan::Cpu(Skip::Failed(_))));
+        eprintln!("== plan now: {}", crate::gpu::describe(&gpu.plan(Kind::Stt, true)));
+        let mut e = load(model, &model_dir, true, &gpu).unwrap();
+        transcribe("after the failure (GPU skipped)", e.as_mut());
+        drop(e);
+        gpu.clear();
+        assert!(matches!(gpu.plan(Kind::Stt, true), Plan::Gpu { .. }), "Try again uses the GPU again");
+
+        // 5. A helper that can't start at all (not a program): processor, and remembered.
+        let broken = tempfile::tempdir().unwrap();
+        std::fs::write(broken.path().join(format!("{}{}", crate::gpu::STT_HELPER, std::env::consts::EXE_SUFFIX)), "not a program").unwrap();
+        let bad = Arc::new(Gpu::detect_with_helpers(&data, broken.path()));
+        let mut e = load(model, &model_dir, true, &bad).unwrap();
+        let (_, text) = transcribe("broken helper -> CPU", e.as_mut());
+        drop(e);
+        assert!(recall(&text) > 0.5);
+        let reason = bad.failure(Kind::Stt).expect("remembered").reason;
+        eprintln!("== broken helper reason: {reason}");
+        assert!(reason.contains("couldn't start"), "{reason}");
+        bad.clear();
+    }
 }
