@@ -270,6 +270,7 @@ export function MeetingHeader({ meeting, editing, canRevert, onToggleEdit, onRev
           <h2 className="m-0 font-display text-xl font-bold tracking-[-0.02em]">{t("meeting.deleteQuestion", { title: meeting.title })}</h2>
           <p className="m-0 text-[13px] text-subtle">
             {t("meeting.deleteBody")}
+            {settings?.autoSaveFolder ? ` ${t("meeting.deleteKeepsCopy")}` : ""}
           </p>
           <div className="flex justify-end gap-2">
             <Button onClick={() => setConfirmDelete(false)}>{t("common.cancel")}</Button>

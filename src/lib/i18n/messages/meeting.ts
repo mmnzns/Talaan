@@ -46,6 +46,7 @@ export const meeting = area({
     deleteQuestion: "Delete “{title}”?",
     deleteBody: "This removes the transcript, summary and any audio from this computer. It can’t be undone.",
     deleteConfirm: "Delete meeting",
+    deleteKeepsCopy: "Its copy in your auto-save folder is kept.",
     // export sheet
     fmtMdNote: "For Obsidian, GitHub or any notes app",
     fmtPdfNote: "To print or attach",
@@ -233,6 +234,7 @@ export const meeting = area({
     deleteQuestion: "Supprimer « {title} » ?",
     deleteBody: "Cette action supprime la transcription, le résumé et tout audio de cet ordinateur. Elle est irréversible.",
     deleteConfirm: "Supprimer la réunion",
+    deleteKeepsCopy: "Sa copie dans le dossier choisi pour vos réunions est conservée.",
     fmtMdNote: "Pour Obsidian, GitHub ou n’importe quelle application de notes",
     fmtPdfNote: "Pour imprimer ou joindre à un courriel",
     fmtTxtName: "Texte brut",
@@ -412,6 +414,7 @@ export const meeting = area({
     deleteQuestion: "¿Eliminar “{title}”?",
     deleteBody: "Esto elimina la transcripción, el resumen y todo el audio de esta computadora. No se puede deshacer.",
     deleteConfirm: "Eliminar reunión",
+    deleteKeepsCopy: "Su copia en la carpeta que elegiste para tus reuniones se conserva.",
     fmtMdNote: "Para Obsidian, GitHub o cualquier app de notas",
     fmtPdfNote: "Para imprimir o adjuntar",
     fmtTxtName: "Texto sin formato",

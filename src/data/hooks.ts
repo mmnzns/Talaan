@@ -71,12 +71,18 @@ export function useSettings() {
   return { settings: value, update };
 }
 
-/** The meeting coming up (or in progress), for the menu bar. Asked again every minute and when the popover opens. */
+/**
+ * The meeting coming up (or in progress), for the menu bar. Asked when the popover opens (it takes focus) and every
+ * minute while it's open, never while it's hidden: on Windows asking may download the calendar (at most every 15
+ * minutes), which Privacy describes as happening only then.
+ */
 export function useNextMeeting(): NextMeeting | null | undefined {
   const store = useSettingsStore();
   const [tick, setTick] = useState(0);
   useEffect(() => {
-    const id = setInterval(() => setTick((n) => n + 1), 60_000);
+    const id = setInterval(() => {
+      if (document.hasFocus()) setTick((n) => n + 1);
+    }, 60_000);
     return () => clearInterval(id);
   }, []);
   const { value } = useLive<NextMeeting | null>(store, () => store.nextMeeting().catch(() => null), [store, tick]);

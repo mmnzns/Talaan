@@ -34,7 +34,7 @@ export function PrivacyTab({ settings: s, update }: TabProps) {
     ["settings.flow_notion", s.notion.connected ? "settings.when_export" : "settings.when_not_connected"],
     ["settings.flow_autosave", s.autoSaveFolder ? "settings.when_each_meeting" : "settings.when_off"],
     ["settings.flow_update", s.checkUpdates ? "settings.when_launch" : "settings.when_off"],
-    ...(onWindows && s.calendarConnected ? [["settings.flow_calendar_windows", "settings.when_recording_start"] as [MessageKey, MessageKey]] : []),
+    ...(onWindows && s.calendarConnected ? [["settings.flow_calendar_windows", "settings.when_calendar_windows"] as [MessageKey, MessageKey]] : []),
     ["settings.flow_analytics", "settings.when_never_collected"],
   ];
 
@@ -121,6 +121,7 @@ export function PrivacyTab({ settings: s, update }: TabProps) {
           <h2 className="m-0 font-display text-xl font-bold tracking-[-0.02em]">{t("settings.wipe_heading")}</h2>
           <p className="m-0 text-[13px] text-subtle">
             {t("settings.wipe_body")}
+            {s.autoSaveFolder ? ` ${t("settings.wipe_keeps_copies")}` : ""}
           </p>
           <div className="flex justify-end gap-2">
             <Button disabled={deleting} onClick={() => setConfirm(false)}>
