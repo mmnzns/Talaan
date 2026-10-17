@@ -129,6 +129,10 @@ fn system(meeting: &Meeting, language: &str, opts: &Options) -> String {
         ));
     }
     s.push_str(&format!("\n- Write everything in {}.", language_name(language)));
+    if !instructions.is_empty() {
+        // Said again last, after text the user wrote, so it is the rule the model read most recently.
+        s.push_str("\n- Whatever the instructions above say: use only what is in the transcript and the notes, and never invent names, dates, numbers or facts.");
+    }
     s
 }
 
@@ -466,7 +470,8 @@ pub(crate) mod tests {
         let o = Options { template: "general".into(), instructions: "  Always mention budget numbers.  ".into() };
         let p = summary_prompt(&m, &lines, "en", None, &o);
         assert!(p.system.contains("never invent names, dates, numbers or facts to satisfy it:\n\"\"\"\nAlways mention budget numbers.\n\"\"\""));
-        assert!(p.system.ends_with("- Write everything in English."));
+        assert!(p.system.ends_with("never invent names, dates, numbers or facts."));
+        assert!(p.system.contains("- Write everything in English.\n- Whatever the instructions above say"));
         let long = Options { instructions: "x".repeat(5_000), ..o };
         assert!(summary_prompt(&m, &lines, "en", None, &long).system.matches('x').count() <= MAX_INSTRUCTIONS + 10);
     }
