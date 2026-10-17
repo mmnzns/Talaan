@@ -1,4 +1,4 @@
-import { AudioLines, Calendar, FolderOpen, MessageCircle, MoreHorizontal, Pin, Sparkles, Trash2, VolumeX, X } from "lucide-react";
+import { AudioLines, Calendar, FolderOpen, Mail, MessageCircle, MoreHorizontal, Pin, Sparkles, Trash2, VolumeX, X } from "lucide-react";
 import { useState } from "react";
 import { useFolders, useSettings } from "../../data/hooks";
 import { useStore } from "../../data/StoreProvider";
@@ -18,6 +18,8 @@ interface Props {
   onRevert: () => void;
   onCopy: (kind: "text" | "email") => void;
   onExport: () => void;
+  /** "Email this summary": opens the mail app. */
+  onEmail: () => void;
   copied?: "text" | "email";
 }
 
@@ -29,7 +31,7 @@ const languageName = (code: string, ui: string) => {
   }
 };
 
-export function MeetingHeader({ meeting, editing, canRevert, onToggleEdit, onRevert, onCopy, onExport, copied }: Props) {
+export function MeetingHeader({ meeting, editing, canRevert, onToggleEdit, onRevert, onCopy, onExport, onEmail, copied }: Props) {
   const store = useStore();
   const toast = useToast();
   const t = useT();
@@ -165,6 +167,14 @@ export function MeetingHeader({ meeting, editing, canRevert, onToggleEdit, onRev
                     }}
                   >
                     {copied === "email" ? t("meeting.copiedEmail") : t("meeting.copyEmail")}
+                  </MenuItem>
+                  <MenuItem
+                    onClick={() => {
+                      onEmail();
+                      close();
+                    }}
+                  >
+                    <Mail size={14} aria-hidden="true" /> {t("meeting.emailMenu")}
                   </MenuItem>
                   <MenuItem
                     onClick={() => {

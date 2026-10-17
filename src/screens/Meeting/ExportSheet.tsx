@@ -7,33 +7,61 @@ import type { Meeting } from "../../data/types";
 import { formatDate } from "../../lib/format";
 import { SunCorner } from "../../brand/SunCorner";
 import { exportMeeting } from "../../lib/exportFile";
+import { copyText, toEmailBody, toMailto, toPlainText, toShareText } from "../../lib/share";
 import { describeError } from "../../data/errors";
 import { openLink, openSettings } from "../../lib/windows";
 import { useT } from "../../lib/i18n/I18nProvider";
 import type { MessageKey } from "../../lib/i18n";
 import { Label, Button, Radio, Select, Sheet, Switch, cn } from "../../ui";
 
-type Format = "md" | "pdf" | "txt" | "notion";
+export type ExportFormat = "copy" | "md" | "pdf" | "txt" | "email" | "notion";
 
-const FORMATS: { id: Format; name: string; note: MessageKey }[] = [
-  { id: "md", name: "Markdown", note: "meeting.fmtMdNote" },
+// Copy as text first: what most people want (UX audit P1 #23). Brand names stay as they are.
+const FORMATS: { id: ExportFormat; name: MessageKey | string; note: MessageKey }[] = [
+  { id: "copy", name: "meeting.fmtCopyName", note: "meeting.fmtCopyNote" },
+  { id: "email", name: "meeting.fmtEmailName", note: "meeting.fmtEmailNote" },
+  { id: "md", name: "meeting.fmtMdName", note: "meeting.fmtMdNote" },
   { id: "pdf", name: "PDF", note: "meeting.fmtPdfNote" },
-  { id: "txt", name: "", note: "meeting.fmtTxtNote" },
+  { id: "txt", name: "meeting.fmtTxtName", note: "meeting.fmtTxtNote" },
   { id: "notion", name: "Notion", note: "meeting.fmtNotionNote" },
 ];
-const CTA: Record<Format, MessageKey> = { md: "meeting.ctaMd", pdf: "meeting.ctaPdf", txt: "meeting.ctaTxt", notion: "meeting.ctaNotion" };
+const CTA: Record<ExportFormat, MessageKey> = {
+  copy: "meeting.ctaCopy",
+  md: "meeting.ctaMd",
+  pdf: "meeting.ctaPdf",
+  txt: "meeting.ctaTxt",
+  email: "meeting.ctaEmail",
+  notion: "meeting.ctaNotion",
+};
+
+/** Opens the mail app with the summary, unless the link would be too long (`truncated`: offer Copy summary first). */
+export async function emailSummary(meeting: Meeting): Promise<{ truncated: boolean }> {
+  const { url, truncated } = toMailto(meeting);
+  if (!truncated) await openLink(url);
+  return { truncated };
+}
 
 
 interface Props {
   open: boolean;
   meeting: Meeting;
   onClose: () => void;
+  /** Open on this choice (the meeting menu's "Email this summary"). */
+  initialFormat?: ExportFormat;
+  /** The mail link was too long: open on "copy the summary instead". */
+  startTooLong?: boolean;
 }
 
-export function ExportSheet({ open, meeting, onClose }: Props) {
+export function ExportSheet({ open, meeting, onClose, initialFormat, startTooLong }: Props) {
   const { settings } = useSettings();
   const t = useT();
-  const [format, setFormat] = useState<Format>("md");
+  const [format, setFormat] = useState<ExportFormat>(initialFormat ?? "copy");
+  const [tooLong, setTooLong] = useState(false);
+  useEffect(() => {
+    if (!open) return;
+    setFormat(initialFormat ?? "copy");
+    setTooLong(Boolean(startTooLong));
+  }, [open, initialFormat, startTooLong]);
   const [withTranscript, setWithTranscript] = useState(false);
   const settingsStore = useSettingsStore();
   const store = useStore();
@@ -56,6 +84,7 @@ export function ExportSheet({ open, meeting, onClose }: Props) {
 
   const close = () => {
     setDone(undefined);
+    setTooLong(false);
     setLink(undefined);
     onClose();
   };
@@ -69,6 +98,14 @@ export function ExportSheet({ open, meeting, onClose }: Props) {
         const url = await store.exportToNotion(meeting.id, destination, withTranscript);
         setLink(url || undefined);
         return setDone(t("meeting.sentToNotion", { title: destination.title }));
+      }
+      if (format === "copy") {
+        await copyText(withTranscript ? toPlainText(meeting, true) : toShareText(meeting));
+        return setDone(t("meeting.copiedDone"));
+      }
+      if (format === "email") {
+        const { truncated } = await emailSummary(meeting);
+        return truncated ? setTooLong(true) : setDone(t("meeting.emailOpened"));
       }
       const where = await exportMeeting(meeting, format, withTranscript);
       if (format === "pdf") return close(); // the print sheet takes it from here
@@ -91,7 +128,33 @@ export function ExportSheet({ open, meeting, onClose }: Props) {
         <div className="font-display text-2xl font-bold leading-7 tracking-[-0.02em]">{t("meeting.exportTitle")}</div>
       </div>
 
-      {done ? (
+      {tooLong && !done ? (
+        <div className="relative flex flex-col items-start gap-3 px-[26px] pb-[26px]" role="status">
+          <p className="m-0 max-w-[460px] text-[13px] leading-[19px] text-subtle">{t("meeting.emailTooLong")}</p>
+          <span className="flex flex-wrap gap-2">
+            <Button
+              variant="primary"
+              onClick={async () => {
+                await copyText(toEmailBody(meeting));
+                setDone(t("meeting.copiedDone"));
+              }}
+            >
+              {t("meeting.copySummary")}
+            </Button>
+            <Button
+              onClick={async () => {
+                await openLink(toMailto(meeting).url);
+                setDone(t("meeting.emailOpened"));
+              }}
+            >
+              {t("meeting.openShortEmail")}
+            </Button>
+            <Button variant="ghost" onClick={close}>
+              {t("common.cancel")}
+            </Button>
+          </span>
+        </div>
+      ) : done ? (
         <div className="relative flex flex-col items-start gap-3 px-[26px] pb-[26px]" role="status">
           <span className="grid size-9 place-items-center rounded-full bg-gold text-on-gold">
             <Check size={18} aria-hidden="true" />
@@ -128,8 +191,8 @@ export function ExportSheet({ open, meeting, onClose }: Props) {
                 >
                   <Radio checked={on} />
                   <span className="flex flex-1 flex-col">
-                    <span className="font-semibold">{f.name || t("meeting.fmtTxtName")}</span>
-                    <span className="text-xs leading-[17px] text-subtle">{t(f.note)}</span>
+                    <span className="font-semibold">{f.name.startsWith("meeting.") ? t(f.name as MessageKey) : f.name}</span>
+                    <span className="text-xs leading-[17px] text-subtle">{t(f.id === "email" && !meeting.calendarEvent?.emails?.length ? "meeting.fmtEmailNoteNoOne" : f.note)}</span>
                   </span>
                 </button>
               );
@@ -137,7 +200,7 @@ export function ExportSheet({ open, meeting, onClose }: Props) {
           </div>
 
           <div className="flex flex-col px-[26px]">
-            <div className="flex items-center justify-between gap-5 border-t border-line py-4">
+            <div className={cn("flex items-center justify-between gap-5 border-t border-line py-4", format === "email" && "hidden")}>
               <div>
                 <div className="font-semibold">{t("meeting.includeTranscript")}</div>
                 <div className="text-xs text-subtle">{t("meeting.summaryAlways")}</div>
