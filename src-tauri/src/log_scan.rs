@@ -10,7 +10,8 @@ use std::path::{Path, PathBuf};
 const FORBIDDEN: &[&str] = &[
     "title", "titles", "text", "texts", "recap", "summary", "decisions", "action_items", "open_questions", "prompt", "prompts", "attendee",
     "attendees", "email", "emails", "key", "api_key", "secret", "url", "address", "body", "note", "notes", "notice", "transcript", "lines",
-    "your_name", "yourName", "workspace", "destination", "reply", "answer", "question", "passages", "events",
+    "your_name", "yourName", "workspace", "destination", "reply", "answer", "question", "passages", "events", "name", "names", "line",
+    "speaker", "speakers", "path", "token", "password", "recordingNotice", "recording_notice",
 ];
 
 /// Names that usually hold an error or other free text: only through a sanitizer.
@@ -177,17 +178,20 @@ pub fn calls(src: &str) -> Vec<Call> {
     out
 }
 
-/// `code` without the values that go through a sanitizer: `text(…)` spans and `x.for_log()`.
-fn without_sanitized(code: &str) -> String {
-    let mut out = String::new();
+/// `code` split into what is outside a sanitizer and what is inside one (`text(…)` spans, and `x.for_log()`).
+/// Inside, a generic error name is fine (the sanitizer handles errors), but a forbidden field still isn't:
+/// `text()` only redacts, it can't make a transcript safe.
+fn split_sanitized(code: &str) -> (String, String) {
+    let mut outside = String::new();
+    let mut inside = String::new();
     let mut rest = code;
     while let Some(i) = rest.find("text(") {
         if i > 0 && rest[..i].ends_with(|c: char| c.is_alphanumeric() || c == '_') {
-            out.push_str(&rest[..i + 5]);
+            outside.push_str(&rest[..i + 5]);
             rest = &rest[i + 5..];
             continue;
         }
-        out.push_str(&rest[..i]);
+        outside.push_str(&rest[..i]);
         let mut depth = 0;
         let mut end = rest.len();
         for (j, c) in rest[i..].char_indices() {
@@ -203,15 +207,19 @@ fn without_sanitized(code: &str) -> String {
                 _ => {}
             }
         }
-        out.push_str(" sanitized ");
+        inside.push(' ');
+        inside.push_str(&rest[i + 5..end.saturating_sub(1).max(i + 5)]);
+        outside.push_str(" sanitized ");
         rest = &rest[end..];
     }
-    out.push_str(rest);
-    while let Some(i) = out.find(".for_log()") {
-        let start = out[..i].rfind(|c: char| !(c.is_alphanumeric() || c == '_' || c == '.')).map(|s| s + 1).unwrap_or(0);
-        out.replace_range(start..i + ".for_log()".len(), " sanitized ");
+    outside.push_str(rest);
+    while let Some(i) = outside.find(".for_log()") {
+        let start = outside[..i].rfind(|c: char| !(c.is_alphanumeric() || c == '_' || c == '.')).map(|s| s + 1).unwrap_or(0);
+        inside.push(' ');
+        inside.push_str(&outside[start..i].to_string());
+        outside.replace_range(start..i + ".for_log()".len(), " sanitized ");
     }
-    out
+    (outside, inside)
 }
 
 /// `{name}`, `{x.y:>6}` → `name`, `x`, `y`; the format spec after `:` is returned separately.
@@ -245,7 +253,8 @@ pub fn problems(call: &Call) -> Vec<String> {
     if call.bracket != '(' {
         bad.push(format!("`{}!{}` (use parentheses)", call.name, call.bracket));
     }
-    let mut ids: Vec<String> = words(&without_sanitized(&call.code)).map(str::to_string).collect();
+    let (outside, inside) = split_sanitized(&call.code);
+    let mut ids: Vec<String> = words(&outside).map(str::to_string).collect();
     for s in &call.strings {
         for (name, spec) in placeholders(s) {
             if spec.contains('?') {
@@ -254,11 +263,23 @@ pub fn problems(call: &Call) -> Vec<String> {
             ids.extend(words(&name).map(str::to_string));
         }
     }
-    for id in ids {
+    for id in &ids {
         if FORBIDDEN.contains(&id.as_str()) {
             bad.push(format!("names `{id}`"));
         } else if GENERIC.contains(&id.as_str()) {
             bad.push(format!("`{id}` without logging::text(…) or .for_log()"));
+        }
+    }
+    for id in words(&inside) {
+        if FORBIDDEN.contains(&id) {
+            bad.push(format!("names `{id}` (a sanitizer only redacts; it can't make that safe)"));
+        }
+    }
+    // Index keys and other literals after the format string: `s["yourName"]`.
+    for s in call.strings.iter().skip(1) {
+        let key = s.trim_matches(|c: char| c == '"' || c == '#' || c.is_whitespace());
+        if FORBIDDEN.iter().any(|f| f.eq_ignore_ascii_case(key)) {
+            bad.push(format!("reads `{key}`"));
         }
     }
     bad
@@ -284,9 +305,18 @@ fn rust_files() -> Vec<PathBuf> {
     files
 }
 
-/// The source up to its test module (`#[cfg(test)]` followed by `mod`).
-fn app_code(src: &str) -> &str {
-    &src[..src.find("#[cfg(test)]\nmod ").unwrap_or(src.len())]
+/// The source up to its test module: `#[cfg(test)]` followed by `mod name {`. A bodiless `#[cfg(test)] mod x;`
+/// (lib.rs declaring this file) is not a cut point.
+pub fn app_code(src: &str) -> &str {
+    let marker = "#[cfg(test)]\nmod ";
+    for (i, _) in src.match_indices(marker) {
+        let rest = &src[i + marker.len()..];
+        let head = &rest[..rest.find(['{', ';']).unwrap_or(rest.len())];
+        if rest[head.len()..].starts_with('{') && head.trim().chars().all(|c| c.is_alphanumeric() || c == '_') {
+            return &src[..i];
+        }
+    }
+    src
 }
 
 #[test]
@@ -366,4 +396,47 @@ fn f() {
     let debug = problems_of("{x:?}");
     assert_eq!(debug.iter().filter(|p| p.contains("Debug")).count(), 2, "{debug:?}");
     assert!(problems_of("{m.title}").iter().any(|p| p.contains("`title`")));
+}
+
+fn problems_in(src: &str) -> Vec<String> {
+    calls(src).iter().flat_map(problems).collect()
+}
+
+#[test]
+fn a_sanitizer_doesnt_make_content_safe() {
+    // A generic error name is fine inside text(); a forbidden field isn't.
+    assert!(problems_in(r#"log::warn!("failed: {}", crate::logging::text(&e));"#).is_empty());
+    let recap = problems_in(r#"log::info!("{}", crate::logging::text(&summary.recap));"#);
+    assert!(recap.iter().any(|p| p.contains("`summary`")) && recap.iter().any(|p| p.contains("`recap`")), "{recap:?}");
+    assert!(problems_in(r#"log::info!("{}", meeting.title.for_log());"#).iter().any(|p| p.contains("`title`")));
+    // Index keys.
+    assert!(problems_in(r#"log::info!("{}", crate::logging::text(&s["yourName"]));"#).iter().any(|p| p.contains("reads `yourName`")));
+    assert!(problems_in(r#"log::info!("{}", v["recordingNotice"].as_str().unwrap_or(""));"#).iter().any(|p| p.contains("reads `recordingNotice`")));
+    assert!(problems_in(r#"log::info!("{}", if on { "on" } else { "off" });"#).is_empty());
+    // The newer names.
+    for (call, name) in [
+        (r#"log::info!("{name}");"#, "name"),
+        (r#"log::info!("{}", l.line);"#, "line"),
+        (r#"log::info!("{speaker}");"#, "speaker"),
+        (r#"log::info!("{}", path.display());"#, "path"),
+        (r#"log::info!("{token}");"#, "token"),
+        (r#"log::info!("{}", password);"#, "password"),
+        (r#"log::info!("{}", crate::logging::text(&notes));"#, "notes"),
+        (r#"log::info!("{email}");"#, "email"),
+        (r#"log::info!("{transcript}");"#, "transcript"),
+    ] {
+        assert!(problems_in(call).iter().any(|p| p.contains(&format!("`{name}`"))), "{call}");
+    }
+}
+
+#[test]
+fn a_bodiless_test_module_doesnt_end_the_scan() {
+    let src = "mod a;\n#[cfg(test)]\nmod log_scan;\nmod b;\n\npub fn run() {\n    log::info!(\"{title}\");\n}\n\n#[cfg(test)]\nmod tests {\n    fn t() { log::info!(\"{title}\"); }\n}\n";
+    let code = app_code(src);
+    assert!(code.contains("pub fn run()") && !code.contains("mod tests"), "{code}");
+    assert_eq!(problems_in(code).len(), 1, "only run()'s call is app code");
+    assert_eq!(app_code("fn x() {}\n"), "fn x() {}\n");
+    // lib.rs itself is scanned past its `#[cfg(test)] mod log_scan;` line.
+    let lib = fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("src/lib.rs")).unwrap().replace("\r\n", "\n");
+    assert!(app_code(&lib).contains("pub fn run()"));
 }

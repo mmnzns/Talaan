@@ -301,7 +301,7 @@ fn restart_later(app: AppHandle, flag: Arc<AtomicBool>, mic: bool) {
         drop(engine);
         let which = if mic { "microphone" } else { "call audio" };
         match &result {
-            Ok(name) => log::info!("{which} switched to {}", crate::logging::device(name)),
+            Ok(device_name) => log::info!("{which} switched to {}", crate::logging::device(device_name)),
             Err(e) => log::warn!("{which} couldn't follow the device change: {}", crate::logging::text(e)),
         }
         match (mic, result) {
