@@ -100,26 +100,29 @@ pub fn web_call(url: &str) -> Option<&'static str> {
 }
 
 /// The call a tab is in, by its title in the tab strip (Windows reads titles for the tabs that aren't in front).
-/// Only the shapes the call pages themselves use: "Meet - abc-defg-hij" or "Meet – Weekly sync" (Google Meet),
-/// "… | Microsoft Teams" (any Teams page, as with the address), "Zoom Meeting" / "Zoom Webinar" (the Zoom web
-/// client). Chromium adds its own notes after the title (" - Memory usage - 22.4 MB", " - Audio playing"), so a
-/// match may be followed by " - …". The caller counts a title only for a browser that is using the mic.
+/// Only the shapes call pages themselves use: "Meet - abc-defg-hij" (Google Meet, with its meeting code; a title
+/// without one is the home page or a named page that can't be told apart), "<page> | Microsoft Teams" unless the
+/// page is one of Teams' own non-call pages (Chat, Activity, Calendar…), "Zoom Meeting" / "Zoom Webinar" (the Zoom
+/// web client). Chromium appends its own notes after " - " in every language ("Memory usage - 22.4 MB",
+/// "Utilisation de la mémoire", "Uso de memoria"), so a match may be followed by " - …". The caller counts a title
+/// only for a browser that is using the mic.
 pub fn title_call(title: &str) -> Option<&'static str> {
     let t = title.trim();
     // Where a page's own title may end: the end, or the start of a note Chromium appended.
     let ends_here = |rest: &str| rest.is_empty() || rest.starts_with(" - ");
     for dash in ["Meet - ", "Meet \u{2013} ", "Meet \u{2014} "] {
         if let Some(rest) = t.strip_prefix(dash) {
-            // The meeting code or name, which Chromium's notes never are.
-            let name = rest.split(" - ").next().unwrap_or("").trim();
-            if !name.is_empty() && !CHROMIUM_NOTES.iter().any(|n| name.starts_with(n)) {
+            let code = rest.split(" - ").next().unwrap_or("").trim();
+            if is_meet_code(code) {
                 return Some("Google Meet");
             }
         }
     }
     const TEAMS: &str = "| Microsoft Teams";
     if let Some(i) = t.find(TEAMS) {
-        if ends_here(&t[i + TEAMS.len()..]) {
+        let page = t[..i].split(" | ").next().unwrap_or("").trim();
+        let not_a_call = page.is_empty() || TEAMS_PAGES.iter().any(|p| page.eq_ignore_ascii_case(p));
+        if ends_here(&t[i + TEAMS.len()..]) && !not_a_call {
             return Some("Microsoft Teams");
         }
     }
@@ -131,9 +134,18 @@ pub fn title_call(title: &str) -> Option<&'static str> {
     None
 }
 
-/// The notes Chromium appends to a tab's accessible name (English UI), so "Meet - Memory usage - 20 MB" (the
-/// Meet home page) isn't read as a meeting called "Memory usage".
-const CHROMIUM_NOTES: &[&str] = &["Memory usage", "Audio playing", "Audio muted", "Camera", "Microphone", "Network error", "Crashed", "Pinned", "Sharing"];
+/// A Google Meet code: three groups of lowercase letters, 3-4-3 ("abc-defg-hij").
+fn is_meet_code(code: &str) -> bool {
+    let parts: Vec<&str> = code.split('-').collect();
+    parts.len() == 3 && [3, 4, 3].iter().zip(&parts).all(|(n, p)| p.len() == *n && p.chars().all(|c| c.is_ascii_lowercase()))
+}
+
+/// Teams' own pages that aren't calls (the first part of "<page> | … | Microsoft Teams"), English, French, Spanish.
+const TEAMS_PAGES: &[&str] = &[
+    "Chat", "Activity", "Calendar", "Teams", "Calls", "Files", "Apps", "Assignments", "Search", "OneDrive", "Communities", "Home",
+    "Conversation", "Activité", "Calendrier", "Équipes", "Appels", "Fichiers", "Applications", "Accueil", "Recherche",
+    "Actividad", "Calendario", "Equipos", "Llamadas", "Archivos", "Aplicaciones", "Inicio", "Búsqueda",
+];
 
 #[cfg(test)]
 mod tests {
@@ -142,11 +154,15 @@ mod tests {
     #[test]
     fn call_tabs_are_recognized_by_title() {
         assert_eq!(title_call("Meet - abc-defg-hij"), Some("Google Meet"));
-        assert_eq!(title_call("Meet \u{2013} Weekly sync"), Some("Google Meet"));
         assert_eq!(title_call("Meet - abc-defg-hij - Memory usage - 19.2 MB"), Some("Google Meet"));
         assert_eq!(title_call("Meet - abc-defg-hij - Camera or microphone recording"), Some("Google Meet"));
         assert_eq!(title_call("Meeting with Ana | Microsoft Teams"), Some("Microsoft Teams"));
-        assert_eq!(title_call("Chat | Microsoft Teams - Memory usage - 80 MB"), Some("Microsoft Teams"));
+        assert_eq!(title_call("Weekly sync | Microsoft Teams - Memory usage - 80 MB"), Some("Microsoft Teams"));
+        // Chromium's notes in French and Spanish.
+        assert_eq!(title_call("Meet - abc-defg-hij - Utilisation de la mémoire : 19,2 Mo"), Some("Google Meet"));
+        assert_eq!(title_call("Meet - abc-defg-hij - Uso de memoria: 19,2 MB"), Some("Google Meet"));
+        assert_eq!(title_call("Réunion | Microsoft Teams - Lecture audio en cours"), Some("Microsoft Teams"));
+        assert_eq!(title_call("Zoom Meeting - Reproduciendo audio"), Some("Zoom"));
         assert_eq!(title_call("Zoom Meeting"), Some("Zoom"));
         assert_eq!(title_call("Zoom Webinar - Audio playing"), Some("Zoom"));
     }
@@ -158,6 +174,16 @@ mod tests {
             "Google Meet",
             "Meet - ",
             "Meet - Memory usage - 20 MB",
+            "Meet - Utilisation de la mémoire : 20 Mo",
+            "Meet - Uso de memoria: 20 MB",
+            "Meet \u{2013} Weekly sync",
+            "Meet - abc-defg",
+            "Meet - ABC-DEFG-HIJ",
+            "Chat | Microsoft Teams",
+            "Chat | Ana Silva | Microsoft Teams - Memory usage - 80 MB",
+            "Calendrier | Microsoft Teams",
+            "Actividad | Microsoft Teams",
+            "| Microsoft Teams",
             "Meeting notes - Google Docs",
             "Meetup: Toronto Rust",
             "Microsoft Teams | Microsoft Learn",
