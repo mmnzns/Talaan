@@ -160,6 +160,19 @@ export function SummaryCard({ meeting, activeAt, editing, onJump }: Props) {
               </Group>
             ))}
 
+            {summary.sectionsMissing && summary.template && (
+              <span className="-mt-3 flex flex-wrap items-center gap-2 text-xs text-subtle">
+                <span>{t("meeting.sectionsMissing", { type: t(templateName(summary.template)) })}</span>
+                <Button
+                  variant="ghost"
+                  className="h-7 px-2 text-xs"
+                  onClick={() => rewrite.ask(() => store.summarizeAs(meeting.id, summary.template!).catch((e) => toast(describeError(e))))}
+                >
+                  {t("meeting.tryAgain")}
+                </Button>
+              </span>
+            )}
+
             {(summary.highlights?.length ?? 0) > 0 && (
               <Group title={t("meeting.highlightsLabel")} empty="" show>
                 <Clamp count={summary.highlights!.length} limit={3}>

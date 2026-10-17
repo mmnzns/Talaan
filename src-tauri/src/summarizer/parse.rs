@@ -164,7 +164,7 @@ pub fn to_summary(draft: &Draft, lines: &[TranscriptLine], engine: &str) -> Summ
         .enumerate()
         .map(|(i, (text, t))| SummaryItem { id: format!("q{i}"), text, at: time(t) })
         .collect();
-    Summary { recap: clean(&draft.recap), decisions, action_items, open_questions, sections: vec![], highlights: vec![], template: None, engine: engine.into(), edited: false }
+    Summary { recap: clean(&draft.recap), decisions, action_items, open_questions, sections: vec![], highlights: vec![], template: None, sections_missing: false, engine: engine.into(), edited: false }
 }
 
 /// The meeting type's sections: titles in the type's own words, items with snapped times, empty ones dropped.

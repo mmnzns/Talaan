@@ -249,6 +249,9 @@ export function seedMeetings(now: Date = new Date()): Meeting[] {
         { id: "r-a1", text: "Audit mobile page speed", owner: "Sam Okafor", due: "Oct 20", at: mmss("40:10"), done: false },
       ],
       openQuestions: [],
+      // Shows the "sections couldn't be written" line in the browser preview.
+      template: "sales",
+      sectionsMissing: true,
       engine: "Local AI",
       edited: false,
     },
