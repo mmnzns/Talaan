@@ -1,4 +1,4 @@
-import type { Folder, Meeting, Summary, TranscriptLine } from "../types";
+import type { Folder, Meeting, Summary, SummarySection, TranscriptLine } from "../types";
 
 const mmss = (s: string): number => {
   const [m, sec] = s.split(":").map(Number);
@@ -69,6 +69,8 @@ export function seedMeetings(now: Date = new Date()): Meeting[] {
       openQuestions: [
         { id: "q4-o0", text: "Who owns analytics tracking for the new onboarding steps?" },
       ],
+      highlights: [{ id: "h0", text: "You promised design the onboarding wireframes by Friday, so the two-sprint plan can hold.", at: mmss("00:41") }],
+      template: "general",
       engine: "Local AI",
       edited: false,
     },
@@ -83,8 +85,10 @@ export function seedMeetings(now: Date = new Date()): Meeting[] {
       ["01:12", "them:2", "Someone still needs to own analytics for the new steps. I can find out who."],
     ]),
     marks: [
+      { id: "q4-n0", at: mmss("00:22"), note: "onboarding first, pricing waits for Q1" },
       { id: "q4-k0", at: mmss("00:41") },
       { id: "q4-k1", at: mmss("01:12"), note: "check with the data team" },
+      { id: "q4-n1", at: 0, note: "Ask Priya if analytics needs budget", later: true },
     ],
     pauses: [{ at: mmss("00:48"), durationMs: 2 * 60 * 1000 }],
   };
@@ -130,6 +134,7 @@ export function seedMeetings(now: Date = new Date()): Meeting[] {
     pinned: true,
     calendarEvent: { title: "Weekly 1:1", attendees: ["Jordan Lee"], emails: ["jordan.lee@example.com"] },
     speakers: { me: "Me", "them:0": "Them" },
+    template: "one_on_one",
     summary: {
       recap:
         "Reviewed last week's priorities and agreed to push the pricing brief until the onboarding launch. Jordan flagged a staffing gap on the data side.",
@@ -139,6 +144,12 @@ export function seedMeetings(now: Date = new Date()): Meeting[] {
         { id: "o-a1", text: "Draft a request for a data analyst", owner: "Jordan Lee", at: mmss("20:40"), done: true },
       ],
       openQuestions: [{ id: "o-o0", text: "Can the data analyst start before January?" }],
+      sections: [
+        { id: "s0", title: "Updates", items: [{ id: "s0i0", text: "Onboarding work is on track for the launch.", at: mmss("00:08") }] },
+        { id: "s1", title: "Feedback", items: [{ id: "s1i0", text: "Jordan liked how the pricing brief was scoped.", at: mmss("12:05") }] },
+        { id: "s2", title: "Support needed", items: [{ id: "s2i0", text: "Jordan needs a data analyst before January.", at: mmss("20:40") }] },
+      ],
+      template: "one_on_one",
       engine: "Local AI",
       edited: false,
     },
@@ -148,7 +159,71 @@ export function seedMeetings(now: Date = new Date()): Meeting[] {
       ["12:05", "me", "I will share the Q1 pricing brief with design after the onboarding launch."],
       ["20:40", "them:0", "I will draft the request for a data analyst today."],
     ]),
-    marks: [],
+    marks: [{ id: "o-n0", at: mmss("20:41"), note: "Jordan short on data help" }],
+    pauses: [],
+  };
+
+  const standup: Omit<Meeting, "hasAudio"> = {
+    id: "m-standup",
+    title: "Team stand-up",
+    app: "meet",
+    appLabel: "Google Meet",
+    startedAt: at(now, 2, 9, 30),
+    durationMs: mmss("14:20"),
+    status: "ready",
+    folderId: "work",
+    tags: ["standup"],
+    peopleCount: 4,
+    language: "en",
+    pinned: false,
+    template: "standup",
+    speakers: { me: "Me", "them:1": "Dana Reyes", "them:2": "Sam Okafor", "them:3": "Priya Shah" },
+    summary: {
+      recap: "A quick round of updates. The export fix shipped, the pricing page is in review, and Sam is blocked on legal sign-off for the new terms.",
+      decisions: [{ id: "su-d0", text: "Dana takes over the release notes this week.", at: mmss("09:10") }],
+      actionItems: [{ id: "su-a0", text: "Chase legal about the new terms", owner: "Me", due: "Today", at: mmss("06:30"), done: false }],
+      openQuestions: [],
+      sections: [
+        {
+          id: "s0",
+          title: "Yesterday",
+          items: [
+            { id: "s0i0", text: "Dana: fixed the CSV export bug.", at: mmss("00:40") },
+            { id: "s0i1", text: "Sam: finished the new terms page.", at: mmss("03:10") },
+            { id: "s0i2", text: "Priya: reviewed two pricing drafts.", at: mmss("05:00") },
+            { id: "s0i3", text: "Me: planned the onboarding analytics.", at: mmss("07:20") },
+            { id: "s0i4", text: "Dana: cleaned up the release checklist.", at: mmss("01:30") },
+          ],
+        },
+        {
+          id: "s1",
+          title: "Today",
+          items: [
+            { id: "s1i0", text: "Dana: start the release notes.", at: mmss("01:50") },
+            { id: "s1i1", text: "Sam: wait on legal, then ship the terms page.", at: mmss("03:40") },
+            { id: "s1i2", text: "Priya: send the pricing page for review.", at: mmss("05:30") },
+          ],
+        },
+        { id: "s2", title: "Blockers", items: [{ id: "s2i0", text: "Sam: needs legal sign-off on the new terms.", at: mmss("06:30") }] },
+      ] satisfies SummarySection[],
+      template: "standup",
+      engine: "Local AI",
+      edited: false,
+    },
+    transcript: lines("su", [
+      ["00:00", "me", "Morning all. Quick round, Dana first."],
+      ["00:40", "them:1", "Yesterday I fixed the CSV export bug."],
+      ["01:30", "them:1", "And I cleaned up the release checklist."],
+      ["01:50", "them:1", "Today I start the release notes."],
+      ["03:10", "them:2", "I finished the new terms page yesterday."],
+      ["03:40", "them:2", "Today I am waiting on legal, then I can ship it."],
+      ["05:00", "them:3", "I reviewed two pricing drafts."],
+      ["05:30", "them:3", "Today the pricing page goes out for review."],
+      ["06:30", "them:2", "My only blocker is legal sign-off on the terms."],
+      ["07:20", "me", "I planned the onboarding analytics. I will chase legal for Sam today."],
+      ["09:10", "them:1", "I can take the release notes this week."],
+    ]),
+    marks: [{ id: "su-k0", at: mmss("06:31") }],
     pauses: [],
   };
 
@@ -246,7 +321,7 @@ export function seedMeetings(now: Date = new Date()): Meeting[] {
     pauses: [],
   };
 
-  return [q4, vendor, oneOnOne, retro, imported, failed, recover].map((m) => ({ ...m, hasAudio: Boolean(m.audioKeptUntil) || m.pinned }));
+  return [q4, vendor, oneOnOne, standup, retro, imported, failed, recover].map((m) => ({ ...m, hasAudio: Boolean(m.audioKeptUntil) || m.pinned }));
 }
 
 export function sampleTranscript(prefix: string): TranscriptLine[] {
@@ -257,14 +332,39 @@ export function sampleTranscript(prefix: string): TranscriptLine[] {
   ]);
 }
 
-export function sampleSummary(): Summary {
+/** Sample sections per meeting type, for the browser preview's "Summarize as…". */
+const SAMPLE_SECTIONS: Record<string, [string, string][]> = {
+  one_on_one: [["Updates", "The release timeline is on track."], ["Feedback", "The written plan was clear."], ["Support needed", "Help with the release checklist."]],
+  standup: [["Yesterday", "Me: drafted the release timeline."], ["Today", "Me: send the release plan."], ["Blockers", "None said."]],
+  interview: [["Strengths", "Clear about the release process."], ["Concerns", "Little detail on testing."], ["Next steps", "Send the plan in writing."]],
+  sales: [["Client needs", "A firm release date."], ["Objections", "Worried about the timeline slipping."], ["Next steps", "Send the release plan in writing."]],
+  lecture: [["Key points", "Plan the release timeline first."], ["Terms", "Release plan: the written order of the steps."], ["Resources mentioned", "The release checklist."]],
+};
+
+export function sampleSummary(template = "general", marks: { at: number; note?: string; later?: boolean }[] = []): Summary {
+  const sections = (SAMPLE_SECTIONS[template] ?? []).map(([title, text], i) => ({ id: `s${i}`, title, items: [{ id: `s${i}i0`, text, at: 20_000 }] }));
+  const highlights = marks.filter((m) => !m.note && !m.later).map((m, i) => ({ id: `h${i}`, text: "What was being said when you marked this moment.", at: m.at }));
   return {
     recap:
       "A short call to confirm the timeline for the next release. Both sides agreed to start with the release plan and follow up in writing.",
     decisions: [{ id: "gen-d0", text: "Start with the release timeline.", at: 20_000 }],
     actionItems: [{ id: "gen-a0", text: "Send the release plan in writing", owner: "Me", at: 20_000, done: false }],
     openQuestions: [],
+    ...(sections.length ? { sections } : {}),
+    ...(highlights.length ? { highlights } : {}),
+    template,
     engine: "Local AI",
     edited: false,
   };
+}
+
+/** The browser preview's "Draft follow-up email": built from the summary, the way the AI is asked to write it. */
+export function sampleFollowUp(m: Meeting): { subject: string; body: string; to: string[] } {
+  const s = m.summary!;
+  const out = ["Hi everyone,", "", `Thanks for joining "${m.title}" today. Here is a quick recap.`];
+  if (s.decisions.length) out.push("", "Decisions:", ...s.decisions.map((d) => `- ${d.text}`));
+  if (s.actionItems.length)
+    out.push("", "Action items:", ...s.actionItems.map((a) => `- ${a.text}${a.owner ? ` (${a.owner}${a.due ? `, ${a.due}` : ""})` : a.due ? ` (${a.due})` : ""}`));
+  out.push("", "Thanks again,", m.speakers.me && m.speakers.me !== "Me" ? m.speakers.me : "");
+  return { subject: `Follow-up: ${m.title}`, body: out.join("\n").trim(), to: m.calendarEvent?.emails ?? [] };
 }

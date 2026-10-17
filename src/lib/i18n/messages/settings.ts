@@ -384,6 +384,12 @@ export const settings = area({
     setup_autosave_skipped_one: "{count} meeting is waiting to be saved there.",
     setup_autosave_skipped_other: "{count} meetings are waiting to be saved there.",
     setup_autosave_retry: "Try again",
+    // meeting types and custom instructions
+    default_type: "Default meeting type",
+    default_type_desc: "How new recordings are summarized. You can change it while recording, or later with Summarize as…",
+    instructions_title: "Custom instructions",
+    instructions_desc: "Applied to every summary. The AI follows them but never makes up facts.",
+    instructions_placeholder: "For example: Always mention budget numbers.",
   },
   fr: {
     nav_label: "Paramètres",
@@ -756,6 +762,12 @@ export const settings = area({
     setup_autosave_skipped_one: "{count} réunion attend d’y être enregistrée.",
     setup_autosave_skipped_other: "{count} réunions attendent d’y être enregistrées.",
     setup_autosave_retry: "Réessayer",
+    // meeting types and custom instructions
+    default_type: "Type de réunion par défaut",
+    default_type_desc: "La façon dont les nouveaux enregistrements sont résumés. Vous pouvez le changer pendant l’enregistrement, ou plus tard avec Résumer comme…",
+    instructions_title: "Instructions personnalisées",
+    instructions_desc: "Appliquées à chaque résumé. L’IA les suit, sans jamais inventer de faits.",
+    instructions_placeholder: "Par exemple : mentionnez toujours les montants du budget.",
   },
   es: {
     nav_label: "Ajustes",
@@ -1128,5 +1140,11 @@ export const settings = area({
     setup_autosave_skipped_one: "{count} reunión espera para guardarse ahí.",
     setup_autosave_skipped_other: "{count} reuniones esperan para guardarse ahí.",
     setup_autosave_retry: "Reintentar",
+    // meeting types and custom instructions
+    default_type: "Tipo de reunión predeterminado",
+    default_type_desc: "Cómo se resumen las grabaciones nuevas. Puedes cambiarlo mientras grabas o después con Resumir como…",
+    instructions_title: "Instrucciones personalizadas",
+    instructions_desc: "Se aplican a cada resumen. La IA las sigue, pero nunca inventa datos.",
+    instructions_placeholder: "Por ejemplo: menciona siempre las cifras del presupuesto.",
   },
 });

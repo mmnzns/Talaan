@@ -49,6 +49,16 @@ pub fn blocks(m: &Meeting, include_transcript: bool) -> Vec<Value> {
     if let Some(s) = &m.summary {
         out.push(block("heading_2", &tr("notion.recap")));
         out.push(block("paragraph", s.recap.trim()));
+    }
+    let notes: Vec<_> = m.marks.iter().filter_map(|k| k.note_text().map(|n| (k, n))).collect();
+    if !notes.is_empty() {
+        out.push(block("heading_2", &tr("notion.your_notes")));
+        for (k, n) in notes {
+            let at = if k.later { format!(" ({})", tr("notion.after_call")) } else { when(Some(k.at)) };
+            out.push(block("bulleted_list_item", &format!("{n}{at}")));
+        }
+    }
+    if let Some(s) = &m.summary {
         if !s.decisions.is_empty() {
             out.push(block("heading_2", &tr("notion.decisions")));
             out.extend(s.decisions.iter().map(|d| block("bulleted_list_item", &format!("{}{}", d.text.trim(), when(d.at)))));
@@ -70,6 +80,14 @@ pub fn blocks(m: &Meeting, include_transcript: bool) -> Vec<Value> {
         if !s.open_questions.is_empty() {
             out.push(block("heading_2", &tr("notion.open_questions")));
             out.extend(s.open_questions.iter().map(|q| block("bulleted_list_item", q.text.trim())));
+        }
+        for sec in &s.sections {
+            out.push(block("heading_2", sec.title.trim()));
+            out.extend(sec.items.iter().map(|i| block("bulleted_list_item", &format!("{}{}", i.text.trim(), when(i.at)))));
+        }
+        if !s.highlights.is_empty() {
+            out.push(block("heading_2", &tr("notion.highlights")));
+            out.extend(s.highlights.iter().map(|h| block("bulleted_list_item", &format!("{}{}", h.text.trim(), when(h.at)))));
         }
     }
     if include_transcript && !m.transcript.is_empty() {
@@ -177,7 +195,28 @@ mod tests {
         let mut m = meeting(vec![line("l0", 0, "me", "Hi."), line("l1", 4_000, "them:1", "Pricing moves to Q1.")]);
         m.speakers.insert("them:1".into(), "Priya".into());
         m.summary = Some(crate::storage::store::tests::summary("We planned Q1."));
+        m.marks.clear();
         m
+    }
+
+    #[test]
+    fn notes_sections_and_highlights_get_their_own_headings() {
+        use crate::storage::model::{Mark, SummaryItem, SummarySection};
+        let mut m = sample();
+        m.marks = vec![Mark { id: "k0".into(), at: 61_000, note: Some("ask about legal".into()), later: false }, Mark { id: "n0".into(), at: 0, note: Some("send the deck".into()), later: true }, Mark { id: "k1".into(), at: 5_000, note: None, later: false }];
+        let s = m.summary.as_mut().unwrap();
+        s.sections = vec![SummarySection { id: "s0".into(), title: "Blockers".into(), items: vec![SummaryItem { id: "s0i0".into(), text: "Dana: legal".into(), at: None }] }];
+        s.highlights = vec![SummaryItem { id: "h0".into(), text: "Budget agreed.".into(), at: Some(5_000) }];
+        let texts: Vec<String> = blocks(&m, false).iter().map(|b| {
+            let kind = b["type"].as_str().unwrap();
+            b[kind]["rich_text"].as_array().map(|r| r.iter().map(|t| t["text"]["content"].as_str().unwrap_or("")).collect::<String>()).unwrap_or_default()
+        }).collect();
+        let at = |t: &str| texts.iter().position(|x| x == t).unwrap_or_else(|| panic!("{t} in {texts:?}"));
+        assert!(at("Recap") < at("Your notes") && at("Your notes") < at("Decisions"));
+        assert_eq!(texts[at("Your notes") + 1], "ask about legal (01:01)");
+        assert_eq!(texts[at("Your notes") + 2], "send the deck (after the call)");
+        assert_eq!(texts[at("Blockers") + 1], "Dana: legal");
+        assert_eq!(texts[at("Highlights") + 1], "Budget agreed. (00:05)");
     }
 
     #[test]

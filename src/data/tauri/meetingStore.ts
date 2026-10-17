@@ -1,6 +1,6 @@
 import type { NotionDestination } from "../settings";
-import type { MeetingFilter, MeetingStore } from "../store";
-import type { AskAnswer, AskScope, Folder, Meeting, MeetingId, MeetingListItem, Speaker, Summary } from "../types";
+import type { FollowUpDraft, FollowUpEta, MeetingFilter, MeetingStore } from "../store";
+import type { AskAnswer, AskScope, Folder, Mark, Meeting, MeetingId, MeetingListItem, Speaker, Summary } from "../types";
 import { call, onEvent } from "./invoke";
 
 /** MeetingStore backed by the Rust storage module. */
@@ -51,6 +51,30 @@ export class TauriMeetingStore implements MeetingStore {
 
   generateSummary(id: MeetingId) {
     return call<void>("meetings_generate_summary", { id });
+  }
+
+  setTemplate(id: MeetingId, template?: string) {
+    return call<void>("meetings_set_template", { id, template: template ?? null });
+  }
+
+  summarizeAs(id: MeetingId, template: string) {
+    return call<void>("meetings_summarize_as", { id, template });
+  }
+
+  setNotes(id: MeetingId, notes: Mark[]) {
+    return call<void>("meetings_set_notes", { id, notes });
+  }
+
+  followUpEta(id: MeetingId) {
+    return call<FollowUpEta>("meetings_followup_eta", { id });
+  }
+
+  draftFollowUp(id: MeetingId, request: string) {
+    return call<FollowUpDraft>("meetings_draft_followup", { id, request });
+  }
+
+  cancelFollowUp(request: string) {
+    return call<void>("meetings_cancel_followup", { request });
   }
 
   async playbackUrl(id: MeetingId) {
