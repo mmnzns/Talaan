@@ -1,5 +1,5 @@
 import { defaultSettings, withDefaults } from "../defaultSettings";
-import type { BrowserState, ByokProvider, CalendarAccess, GpuStatus, LocalModel, NotionDestination, Settings, SettingsStore, SpeechModel } from "../settings";
+import type { AutoSaveResult, AutoSaveStatus, BrowserState, ByokProvider, CalendarAccess, GpuStatus, LocalModel, NextMeeting, NotionDestination, Settings, SettingsStore, SpeechModel } from "../settings";
 import { call, onEvent } from "./invoke";
 
 
@@ -169,6 +169,28 @@ export class TauriSettingsStore implements SettingsStore {
   async disconnectCalendar(): Promise<void> {
     await call<void>("calendar_disconnect");
     await this.update({ calendarConnected: false });
+  }
+
+  nextMeeting(): Promise<NextMeeting | null> {
+    return call<NextMeeting | null>("calendar_next");
+  }
+
+  async pickFolder(title: string): Promise<string | undefined> {
+    const { open } = await import("@tauri-apps/plugin-dialog");
+    const picked = await open({ directory: true, multiple: false, title });
+    return typeof picked === "string" ? picked : undefined;
+  }
+
+  writeAutoSave(id: string, contents: string, finished: boolean): Promise<AutoSaveResult> {
+    return call<AutoSaveResult>("autosave_write", { id, contents, finished });
+  }
+
+  autoSaveStatus(): Promise<AutoSaveStatus | null> {
+    return call<AutoSaveStatus | null>("autosave_status");
+  }
+
+  revealAutoSaveFolder(): Promise<void> {
+    return call<void>("autosave_reveal");
   }
 
   gpuStatus(): Promise<GpuStatus> {

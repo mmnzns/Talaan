@@ -1,6 +1,6 @@
 import { defaultSettings, withDefaults } from "../defaultSettings";
 import { onWindows } from "../../lib/platform";
-import type { ByokProvider, GpuStatus, Settings, SettingsStore } from "../settings";
+import type { AutoSaveResult, AutoSaveStatus, ByokProvider, GpuStatus, NextMeeting, Settings, SettingsStore } from "../settings";
 
 export { defaultSettings };
 
@@ -17,6 +17,8 @@ function load(): Settings {
 }
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+/** When the sample data was loaded: the sample next meeting counts down from here. */
+const MOCK_ANCHOR = Date.now();
 
 /** In-memory SettingsStore persisted to localStorage so both windows share it. Replaced in M2/M10. */
 export class MockSettingsStore implements SettingsStore {
@@ -153,6 +155,54 @@ export class MockSettingsStore implements SettingsStore {
   async disconnectCalendar() {
     await this.update({ calendarConnected: false });
   }
+
+  /** Sample next meeting while the calendar is "connected". `talaan.mock.nextMeeting` in localStorage picks the
+   *  case to look at: "soon" (default, in about 12 minutes), "now" (started 5 minutes ago) or "none". */
+  async nextMeeting(): Promise<NextMeeting | null> {
+    if (!this.state.calendarConnected) return null;
+    let mode = "soon";
+    try {
+      mode = localStorage.getItem("talaan.mock.nextMeeting") ?? "soon";
+    } catch {
+      /* storage unavailable */
+    }
+    if (mode === "none") return null;
+    const start = mode === "now" ? MOCK_ANCHOR - 5 * 60_000 : MOCK_ANCHOR + 12 * 60_000 - 30_000;
+    return {
+      title: "Design review: onboarding",
+      startMs: start,
+      endMs: start + 30 * 60_000,
+      attendees: ["Ana Reyes", "Sam Okafor"],
+      emails: ["ana.reyes@example.com", "sam.okafor@example.com"],
+      joinUrl: "https://us02web.zoom.us/j/81234567890",
+      appId: "zoom",
+      appLabel: "Zoom",
+    };
+  }
+
+  async pickFolder(): Promise<string | undefined> {
+    await sleep(300);
+    return onWindows ? "C:\\Users\\you\\Documents\\Obsidian\\Meetings" : "/Users/you/Documents/Obsidian/Meetings";
+  }
+
+  /** The copies the sample data "wrote", by meeting. */
+  readonly savedCopies = new Map<string, string>();
+
+  async writeAutoSave(id: string, contents: string): Promise<AutoSaveResult> {
+    if (!this.state.autoSaveFolder) return "off";
+    if (/offline|unplugged/i.test(this.state.autoSaveFolder)) return "missing";
+    this.savedCopies.set(id, contents);
+    return "written";
+  }
+
+  /** A folder named "…offline…" or "…unplugged…" acts like a disconnected drive. */
+  async autoSaveStatus(): Promise<AutoSaveStatus | null> {
+    if (!this.state.autoSaveFolder) return null;
+    const reachable = !/offline|unplugged/i.test(this.state.autoSaveFolder);
+    return { reachable, skipped: reachable ? [] : ["m-q4", "m-1on1"] };
+  }
+
+  async revealAutoSaveFolder() {}
 
   async deleteModel(id: string): Promise<void> {
     this.setModel(id, { state: "not_downloaded", progress: undefined });

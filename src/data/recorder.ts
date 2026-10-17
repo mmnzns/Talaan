@@ -1,5 +1,6 @@
 import { call } from "./tauri/invoke";
 import { listen } from "@tauri-apps/api/event";
+import type { Meeting } from "./types";
 
 export interface RecorderState {
   state: "idle" | "recording" | "paused";
@@ -24,12 +25,16 @@ export interface RecorderNotice {
   settingsPane?: "microphone" | "system-audio";
 }
 
+/** A calendar event as a meeting keeps it (`Meeting.calendarEvent`). */
+export type CalendarEventInfo = NonNullable<Meeting["calendarEvent"]>;
+
 export const IDLE: RecorderState = { state: "idle", elapsedMs: 0, marks: 0, notes: 0, micName: "", systemAudio: false, onBuiltInSpeakers: false };
 
 /** The recorder as the UI sees it. Tauri in the app, a simulation in the browser and on the Screens stage. */
 export interface RecorderClient {
   status(): Promise<RecorderState>;
-  start(app?: { id: string; label: string }): Promise<RecorderState>;
+  /** `event`: started from the menu bar's next meeting; the recording takes its title and attendees. */
+  start(app?: { id: string; label: string }, event?: CalendarEventInfo): Promise<RecorderState>;
   pause(): Promise<void>;
   resume(): Promise<void>;
   mark(note?: string): Promise<void>;
@@ -57,8 +62,8 @@ export class TauriRecorderClient implements RecorderClient {
   status() {
     return call<RecorderState>("recorder_status");
   }
-  start(app?: { id: string; label: string }) {
-    return call<RecorderState>("recorder_start", { appId: app?.id ?? null, appLabel: app?.label ?? null });
+  start(app?: { id: string; label: string }, event?: CalendarEventInfo) {
+    return call<RecorderState>("recorder_start", { appId: app?.id ?? null, appLabel: app?.label ?? null, event: event ?? null });
   }
   pause() {
     return call<void>("recorder_pause");

@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { startLive } from "./live";
 import { useSettingsStore, useStore } from "./StoreProvider";
 import type { MeetingFilter } from "./store";
-import type { Settings } from "./settings";
+import type { NextMeeting, Settings } from "./settings";
 import type { Folder, Meeting, MeetingListItem } from "./types";
 
 /**
@@ -69,4 +69,16 @@ export function useSettings() {
   const { value } = useLive<Settings>(store, () => store.get(), [store]);
   const update = useCallback((patch: Partial<Settings>) => store.update(patch), [store]);
   return { settings: value, update };
+}
+
+/** The meeting coming up (or in progress), for the menu bar. Asked again every minute and when the popover opens. */
+export function useNextMeeting(): NextMeeting | null | undefined {
+  const store = useSettingsStore();
+  const [tick, setTick] = useState(0);
+  useEffect(() => {
+    const id = setInterval(() => setTick((n) => n + 1), 60_000);
+    return () => clearInterval(id);
+  }, []);
+  const { value } = useLive<NextMeeting | null>(store, () => store.nextMeeting().catch(() => null), [store, tick]);
+  return value;
 }

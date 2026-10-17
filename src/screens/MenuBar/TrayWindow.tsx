@@ -6,6 +6,8 @@ import { describeError } from "../../data/errors";
 import { useRecorder } from "../../data/useRecorder";
 import { useFitWindow, useTransparentPage } from "../../lib/floatingWindow";
 import { useToast } from "../../ui";
+import type { NextMeeting } from "../../data/settings";
+import { appOf, eventOf } from "../../lib/nextMeeting";
 import { MenuBarPopover } from "../Recording/MenuBarPopover";
 import { RecordingPopover } from "../Recording/RecordingPopover";
 
@@ -27,13 +29,14 @@ export function TrayWindow() {
   const active = rec.state.state !== "idle";
   useFitWindow(ref, active);
 
-  const start = async () => {
+  // `next`: started from the calendar's next meeting, so the recording takes its title, attendees and call app.
+  const start = async (next?: NextMeeting) => {
     const perm = await recorderClient.microphonePermission().catch(() => "unknown" as const);
     // A denied microphone is explained in the main window, which has room for it.
     if (perm === "denied" || perm === "restricted") return inMain("record-request");
     if (perm === "undetermined" && !(await recorderClient.requestMicrophone().catch(() => false))) return inMain("record-request");
     try {
-      await recorderClient.start();
+      await (next ? recorderClient.start(appOf(next), eventOf(next)) : recorderClient.start());
     } catch (e) {
       toast(describeError(e));
     }

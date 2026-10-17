@@ -51,7 +51,7 @@ export function seedMeetings(now: Date = new Date()): Meeting[] {
     language: "en",
     audioKeptUntil: inDays(now, 7),
     pinned: false,
-    calendarEvent: { title: "Q4 Roadmap Sync", attendees: ["You", "Dana Reyes", "Priya Shah"] },
+    calendarEvent: { title: "Q4 Roadmap Sync", attendees: ["You", "Dana Reyes", "Priya Shah"], emails: ["dana.reyes@example.com", "priya.shah@example.com"] },
     speakers: { me: "Me", "them:1": "Dana Reyes", "them:2": "Priya Shah" },
     transcription: { model: "whisper-turbo", echoLinesRemoved: 2, speechMs: mmss("38:40"), tookMs: 95_000, finishedAt: at(now, 0, 15, 14) },
     summary: {
@@ -128,7 +128,8 @@ export function seedMeetings(now: Date = new Date()): Meeting[] {
     language: "en",
     audioKeptUntil: inDays(now, 6),
     pinned: true,
-    speakers: { me: "Me", "them:1": "Jordan Lee" },
+    calendarEvent: { title: "Weekly 1:1", attendees: ["Jordan Lee"], emails: ["jordan.lee@example.com"] },
+    speakers: { me: "Me", "them:0": "Them" },
     summary: {
       recap:
         "Reviewed last week's priorities and agreed to push the pricing brief until the onboarding launch. Jordan flagged a staffing gap on the data side.",
@@ -142,10 +143,10 @@ export function seedMeetings(now: Date = new Date()): Meeting[] {
       edited: false,
     },
     transcript: lines("o", [
-      ["00:00", "them:1", "How did the week go on your side?"],
+      ["00:00", "them:0", "How did the week go on your side?"],
       ["00:08", "me", "Busy, but the onboarding work is on track."],
       ["12:05", "me", "I will share the Q1 pricing brief with design after the onboarding launch."],
-      ["20:40", "them:1", "I will draft the request for a data analyst today."],
+      ["20:40", "them:0", "I will draft the request for a data analyst today."],
     ]),
     marks: [],
     pauses: [],
@@ -164,7 +165,8 @@ export function seedMeetings(now: Date = new Date()): Meeting[] {
     peopleCount: 4,
     language: "en",
     pinned: false,
-    speakers: { me: "Me", "them:1": "Priya Shah", "them:2": "Sam Okafor" },
+    calendarEvent: { title: "Website launch retro", attendees: ["Priya Shah", "Sam Okafor", "Lee Wong"], emails: ["priya.shah@example.com", "sam.okafor@example.com", "lee.wong@example.com"] },
+    speakers: { me: "Me" },
     summary: {
       recap:
         "The launch landed on time. Page speed regressed on mobile and the legal review started too late. Both get a checklist item for the next launch.",

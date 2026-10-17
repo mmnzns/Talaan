@@ -1,18 +1,23 @@
 import { useState } from "react";
-import { useMeetings } from "../../data/hooks";
+import { useMeetings, useNextMeeting } from "../../data/hooks";
+import type { NextMeeting } from "../../data/settings";
+import { startsIn } from "../../lib/nextMeeting";
 import { useStore } from "../../data/StoreProvider";
 import { dayGroup, formatClock } from "../../lib/format";
 import { copyText, toShareText } from "../../lib/share";
 import { openSettings } from "../../lib/windows";
 import { navigate, routes } from "../../lib/router";
-import { Button, Label, useToast } from "../../ui";
+import { Button, Chip, Label, useToast } from "../../ui";
 import { useT } from "../../lib/i18n/I18nProvider";
 import { Logo } from "../../brand/Logo";
 import { etaText, PROCESSING_KEYS, useNow } from "../../lib/eta";
 import { SunCorner } from "../../brand/SunCorner";
 
 interface Props {
-  onStart: () => void;
+  /** `next`: the calendar meeting to record (its title and attendees go on the recording). */
+  onStart: (next?: NextMeeting) => void;
+  /** The next meeting to show; when left out, it comes from the calendar (`useNextMeeting`). */
+  next?: NextMeeting | null;
   /** Open a meeting in the main window (the popover is its own window in the app). */
   onOpenMeeting?: (id: string) => void;
   onOpenApp?: () => void;
@@ -20,7 +25,7 @@ interface Props {
 }
 
 /** Menu bar popover when nothing is recording. */
-export function MenuBarPopover({ onStart, onOpenMeeting, onOpenApp, onQuit }: Props) {
+export function MenuBarPopover({ onStart, onOpenMeeting, onOpenApp, onQuit, next: given }: Props) {
   const t = useT();
   const store = useStore();
   const toast = useToast();
@@ -28,6 +33,9 @@ export function MenuBarPopover({ onStart, onOpenMeeting, onOpenApp, onQuit }: Pr
   const [copied, setCopied] = useState<string>();
   const recent = meetings.slice(0, 3);
   const now = useNow();
+  const fetched = useNextMeeting();
+  const candidate = given !== undefined ? given : fetched;
+  const next = candidate && startsIn(candidate, now) !== "ended" ? candidate : undefined;
 
   const copy = async (id: string) => {
     const m = await store.getMeeting(id);
@@ -53,10 +61,14 @@ export function MenuBarPopover({ onStart, onOpenMeeting, onOpenApp, onQuit }: Pr
             </Label>
           </div>
         </div>
-        <Button variant="primary" className="relative h-[42px] w-full text-sm" onClick={onStart}>
-          <span aria-hidden="true" className="size-[9px] rounded-full bg-red shadow-[0_0_0_3px_color-mix(in_srgb,var(--t-red)_30%,transparent)]" />
-          {t("recording.startRecording")}
-        </Button>
+        {next ? (
+          <NextMeetingCard next={next} now={now} onStart={() => onStart(next)} onOther={() => onStart()} />
+        ) : (
+          <Button variant="primary" className="relative h-[42px] w-full text-sm" onClick={() => onStart()}>
+            <RecDot />
+            {t("recording.startRecording")}
+          </Button>
+        )}
         <span className="relative text-xs leading-[17px] text-subtle">{t("recording.asksWhen")}</span>
       </div>
       <div className="flex flex-col gap-1 px-2.5 py-4">
@@ -106,5 +118,39 @@ export function MenuBarPopover({ onStart, onOpenMeeting, onOpenApp, onQuit }: Pr
         </button>
       </div>
     </div>
+  );
+}
+
+const RecDot = () => <span aria-hidden="true" className="size-[9px] rounded-full bg-red shadow-[0_0_0_3px_color-mix(in_srgb,var(--t-red)_30%,transparent)]" />;
+
+/** The calendar meeting in progress or starting within the hour, with its own Start recording. */
+function NextMeetingCard({ next, now, onStart, onOther }: { next: NextMeeting; now: number; onStart: () => void; onOther: () => void }) {
+  const t = useT();
+  const when = startsIn(next, now);
+  const people = next.attendees.slice(0, 3).join(", ") + (next.attendees.length > 3 ? ", …" : "");
+  return (
+    <section aria-label={t("recording.nextAria", { title: next.title })} className="relative flex flex-col gap-3">
+      <div className="flex flex-col gap-1 rounded-xl border border-line bg-paper px-3.5 py-3">
+        <div className="flex items-center gap-2">
+          <Label className="inline-flex flex-1 items-center gap-1.5">
+            {when === "now" && <span aria-hidden="true" className="size-1.5 rounded-full bg-gold" />}
+            {t("recording.nextMeeting")} · {when === "now" ? t("recording.nextNow") : t("recording.nextIn", { min: when })}
+          </Label>
+          {next.appLabel && <Chip>{next.appLabel}</Chip>}
+        </div>
+        <span className="truncate font-semibold">{next.title}</span>
+        <span className="truncate text-xs leading-[17px] text-subtle">
+          {formatClock(new Date(next.startMs).toISOString())}
+          {people && ` · ${t("recording.nextWith", { names: people })}`}
+        </span>
+      </div>
+      <Button variant="primary" className="h-[42px] w-full text-sm" onClick={onStart}>
+        <RecDot />
+        {t("recording.startRecording")}
+      </Button>
+      <button type="button" onClick={onOther} className="-mt-1 cursor-pointer self-center border-0 bg-transparent p-0 font-[inherit] text-xs text-subtle underline hover:text-ink">
+        {t("recording.recordOther")}
+      </button>
+    </section>
   );
 }
