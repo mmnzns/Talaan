@@ -167,7 +167,7 @@ function MicrophoneRow({ settings: s, update }: TabProps) {
   const missing = chosen !== "default" && inputs.length > 0 && !inputs.includes(chosen);
   return (
     <Row title={t("settings.mic_title")} desc={missing ? t("settings.mic_missing") : t("settings.mic_desc")}>
-      <Select label={t("settings.mic_title")} wrapperClassName="w-56" value={chosen} onChange={(e) => update({ microphone: e.target.value })}>
+      <Select label={t("settings.mic_title")} wrapperClassName="w-56" title={chosen === "default" ? undefined : chosen} value={chosen} onChange={(e) => update({ microphone: e.target.value })}>
         <option value="default">{t("settings.mic_default")}</option>
         {inputs.map((n) => (
           <option key={n} value={n}>

@@ -152,7 +152,7 @@ export function OnboardingScreen() {
             {at === "extras" && <ExtrasStep settings={settings} update={update} connectionsAfter={connectionsAfter} setConnectionsAfter={setConnectionsAfter} />}
             {at === "done" && <Done systemAudio={systemAudio} settings={settings} name={name} setName={setName} />}
             <div className="relative flex items-center gap-2 border-t border-line px-7 py-[16px] [@media(max-height:680px)]:py-3">
-              <Label>{t("onboarding.stepOf", { n: index, total: steps.length - 1, name: t(`onboarding.${STEP_NAME[at]}`) })}</Label>
+              <Label className="normal-case">{t("onboarding.stepOf", { n: index, total: steps.length - 1, name: t(`onboarding.${STEP_NAME[at]}`) })}</Label>
               <span className="flex-1" />
               <Button variant="ghost" onClick={() => go(steps[index - 1])}>
                 {t("onboarding.back")}
@@ -251,7 +251,20 @@ function Welcome() {
   );
 }
 
-function PermRow({ title, desc: d, state, onAllow, onDeny, onOpen, deniedNote }: { title: string; desc: string; state: Perm; onAllow?: () => void; onDeny?: () => void; onOpen?: () => void; deniedNote?: string }) {
+/** `text` with `mark` replaced by `bold` in bold (the Mac permission's name, so it can be found in the dialog). */
+function withBold(text: string, mark: string, bold?: string): ReactNode {
+  const at = text.indexOf(mark);
+  if (at < 0 || !bold) return text;
+  return (
+    <>
+      {text.slice(0, at)}
+      <strong className="font-semibold text-ink">{bold}</strong>
+      {text.slice(at + mark.length)}
+    </>
+  );
+}
+
+function PermRow({ title, desc: d, state, onAllow, onDeny, onOpen, deniedNote }: { title: string; desc: ReactNode; state: Perm; onAllow?: () => void; onDeny?: () => void; onOpen?: () => void; deniedNote?: string }) {
   const t = useT();
   const platform = usePlatform();
   return (
@@ -259,7 +272,7 @@ function PermRow({ title, desc: d, state, onAllow, onDeny, onOpen, deniedNote }:
       <div className="flex items-center gap-3.5">
         <span className="flex-1">
           <span className="block font-semibold">{title}</span>
-          <span className="text-xs leading-[17px] text-subtle">{d}</span>
+          <span className="block text-xs leading-[17px] text-subtle">{d}</span>
         </span>
         {state === "allowed" || state === "asked" || state === "not_needed" ? (
           <Chip tone="gold">
@@ -323,7 +336,7 @@ function AudioAccess({ mic, setMic, systemAudio, setSystemAudio }: { mic: Perm; 
       {micRow}
       <PermRow
         title={t("onboarding.systemTitle")}
-        desc={platform.systemAudioDesc}
+        desc={withBold(platform.systemAudioDesc, "{permission}", platform.systemAudioPermission)}
         state={systemAudio}
         onAllow={() => void askSystem()}
         onDeny={() => setSystemAudio("denied")}
@@ -528,7 +541,7 @@ function DownloadRow({ item, onDownload, onCancel, missingNote }: { item: { name
         <span aria-hidden="true" className="h-1.5 flex-1 overflow-hidden rounded-full bg-line">
           <span className="block h-full bg-gold" style={{ width: `${pct}%` }} />
         </span>
-        <Label>{t("onboarding.localDownloading", { pct })}</Label>
+        <Label className="normal-case">{t("onboarding.localDownloading", { pct })}</Label>
         <Button
           ref={cancelRef}
           variant="ghost"
@@ -631,7 +644,7 @@ function AppsStep({ settings: s, update }: StepProps) {
 function ExtrasStep({ settings: s, update, connectionsAfter, setConnectionsAfter }: StepProps & { connectionsAfter: string[]; setConnectionsAfter: (keys: string[]) => void }) {
   const t = useT();
   const connected = (key: string, label: string) => (
-    <Chip key={key} tone="gold">
+    <Chip key={key} tone="gold" className="normal-case">
       <Check size={11} aria-hidden="true" /> {label}
     </Chip>
   );

@@ -26,6 +26,8 @@ export interface PlatformCopy {
   /** Onboarding "Allow two kinds of audio": the intro and the System audio card. */
   audioIntro: string;
   systemAudioDesc: string;
+  /** Mac: the permission's name as the system lists it, shown in bold where `systemAudioDesc` says {permission}. */
+  systemAudioPermission?: string;
 }
 
 export function platformCopy(os: OS, lang: Lang = "en"): PlatformCopy {
@@ -38,6 +40,7 @@ export function platformCopy(os: OS, lang: Lang = "en"): PlatformCopy {
     trayName: w("trayName"),
     audioIntro: w("audioIntro"),
     systemAudioDesc: w("systemAudioDesc"),
+    systemAudioPermission: os === "mac" ? w("systemAudioPermission") : undefined,
   };
 }
 

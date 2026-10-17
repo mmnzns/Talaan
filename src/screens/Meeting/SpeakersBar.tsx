@@ -82,9 +82,20 @@ function RenameChip({ meetingId, speaker, name, className, suggestions }: { meet
                 </div>
               </div>
             )}
-            <Button variant="primary" onClick={() => save(draft)}>
-              {t("meeting.saveName")}
-            </Button>
+            {speaker === "me" && <span className="text-xs leading-[17px] text-subtle">{t("meeting.renameMeHint")}</span>}
+            <div className="flex justify-end gap-2">
+              <Button
+                onClick={() => {
+                  setDraft(name);
+                  close();
+                }}
+              >
+                {t("common.cancel")}
+              </Button>
+              <Button variant="primary" onClick={() => save(draft)}>
+                {t("meeting.saveName")}
+              </Button>
+            </div>
           </div>
         );
       }}

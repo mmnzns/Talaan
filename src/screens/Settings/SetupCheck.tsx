@@ -92,7 +92,7 @@ export function SetupCheck({ children }: { children?: ReactNode }) {
           </div>
         )) ?? <div className="py-4 text-[13px] text-subtle">{t("settings.setup_checking")}</div>}
       </Group>
-      {results && <Label>{problems === 0 ? t("settings.setup_none") : t("settings.setup_problems", { count: problems })}</Label>}
+      {results && <Label className="normal-case">{problems === 0 ? t("settings.setup_none") : t("settings.setup_problems", { count: problems })}</Label>}
       {children}
       <Diagnostics results={results} />
     </div>

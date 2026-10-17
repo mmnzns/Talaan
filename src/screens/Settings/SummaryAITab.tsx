@@ -168,7 +168,7 @@ function LocalPanel({ settings: s, update }: TabProps) {
   return (
     <Group>
       <Row title={t("settings.local_model_title")} desc={t("settings.local_model_desc")}>
-        <Select label={t("settings.local_model_title")} wrapperClassName="w-60" value={s.localModel} onChange={(e) => update({ localModel: e.target.value as "recommended" | "larger" })}>
+        <Select label={t("settings.local_model_title")} wrapperClassName="w-72" value={s.localModel} onChange={(e) => update({ localModel: e.target.value as "recommended" | "larger" })}>
           {s.localModels.map((m) => (
             <option key={m.id} value={m.choice}>
               {t("settings.local_option", { choice: m.choice === "recommended" ? t("settings.local_recommended") : t("settings.local_larger"), name: m.name, size: gb(m.sizeMb) })}

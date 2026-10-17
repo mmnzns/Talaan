@@ -33,7 +33,7 @@ export function Nudge({
       <div className="relative flex gap-4 px-[22px] py-5">
         <Logo size={40} />
         <div className="flex min-w-0 flex-1 flex-col gap-1.5">
-          <Label>{t("recording.nudgeLabel", { app })}</Label>
+          <Label className="normal-case">{t("recording.nudgeLabel", { app })}</Label>
           <span className="font-display text-xl font-bold leading-6 tracking-[-0.02em]">{t("recording.nudgeTitle")}</span>
           <span className="text-xs leading-[17px] text-subtle">{t("recording.nudgeBody")}</span>
           <div className="mt-2.5 flex gap-2">
@@ -68,7 +68,7 @@ export function AlwaysBanner({ app = "Zoom", elapsedMs, onStop, onChangeRule }: 
       <div className="relative flex flex-col gap-2 px-[22px] py-5">
         <div className="flex items-center gap-2.5">
           <span className="size-[9px] flex-none animate-pulse rounded-full bg-red shadow-[0_0_0_4px_color-mix(in_srgb,var(--t-red)_20%,transparent)]" />
-          <Label>{t("recording.bannerLabel", { app })}</Label>
+          <Label className="normal-case">{t("recording.bannerLabel", { app })}</Label>
           <span className="ml-auto font-mono text-[13px]">{formatTime(elapsed)}</span>
         </div>
         <span className="font-display text-xl font-bold leading-6 tracking-[-0.02em]">{t("recording.bannerTitle")}</span>
@@ -124,8 +124,8 @@ export function CallEndedPrompt({
     <div role="alertdialog" aria-label={t("recording.endedAria")} className={card}>
       <SunCorner size={96} className="absolute right-0 top-0" />
       <div className="relative flex flex-col gap-2 px-[22px] py-5">
-      <Label>
-        {t("recording.endedLabel", { app: app.toLowerCase(), time: formatTime(recordedMs) })}
+      <Label className="normal-case">
+        {t("recording.endedLabel", { app, time: formatTime(recordedMs) })}
       </Label>
       <span className="font-display text-xl font-bold leading-6 tracking-[-0.02em]">{t("recording.endedTitle")}</span>
       <div className="mt-0.5 flex items-center gap-2.5" role="timer" aria-label={t("recording.stopsInAria", { count: left })}>

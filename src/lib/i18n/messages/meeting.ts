@@ -171,6 +171,7 @@ export const meeting = area({
     emailIntro: "Here is the summary from {title}.",
     // V-gaps
     renameMe: "your name in this meeting",
+    renameMeHint: "To change it in every meeting: Settings › General › Your name.",
     retranscribeMenu: "Transcribe again…",
     retranscribeTitle: "Transcribe again",
     retranscribeBody: "Runs a speech model on this call’s audio again, for example a more accurate one.",
@@ -389,6 +390,7 @@ export const meeting = area({
     emailIntro: "Voici le résumé de {title}.",
     // V-gaps
     renameMe: "votre nom dans cette réunion",
+    renameMeHint: "Pour le changer dans toutes les réunions : Paramètres › Général › Votre nom.",
     retranscribeMenu: "Retranscrire…",
     retranscribeTitle: "Retranscrire",
     retranscribeBody: "Relance un modèle vocal sur l’audio de cet appel, par exemple un modèle plus précis.",
@@ -607,6 +609,7 @@ export const meeting = area({
     emailIntro: "Aquí está el resumen de {title}.",
     // V-gaps
     renameMe: "tu nombre en esta reunión",
+    renameMeHint: "Para cambiarlo en todas las reuniones: Ajustes › General › Tu nombre.",
     retranscribeMenu: "Volver a transcribir…",
     retranscribeTitle: "Volver a transcribir",
     retranscribeBody: "Vuelve a pasar un modelo de voz por el audio de esta llamada, por ejemplo uno más preciso.",

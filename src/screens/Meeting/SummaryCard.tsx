@@ -189,7 +189,7 @@ export function SummaryCard({ meeting, activeAt, editing, onJump }: Props) {
         {summary && notes}
         {summary ? (
           <div className="-mt-3">
-            <Label>{t("meeting.writtenBy", { engine: summary.engine })}</Label>
+            <Label className="normal-case">{t("meeting.writtenBy", { engine: summary.engine })}</Label>
           </div>
         ) : busy ? (
           <Progress label={status === "summarizing" ? t("meeting.writingSummary") : t("meeting.transcribingAudio")} value={meeting.progress} eta={meeting.eta} />
