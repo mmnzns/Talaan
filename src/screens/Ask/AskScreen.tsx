@@ -73,7 +73,7 @@ export function AskScreen({ meetingId }: { meetingId?: string }) {
         <Button size="md" className="h-7" onClick={() => navigate(meetingId ? routes.meeting(meetingId) : routes.meetings())}>
           <ArrowLeft size={14} aria-hidden="true" /> {meetingId ? t("shell.backToMeeting") : t("shell.backToMeetings")}
         </Button>
-        <Chip>{local ? t("shell.askLocalChip") : t("shell.askByokChip")}</Chip>
+        <Chip className="whitespace-normal font-sans text-xs normal-case">{local ? t("shell.askLocalChip") : t("shell.askByokChip")}</Chip>
       </div>
 
       <div className="relative mx-auto flex w-full max-w-[820px] flex-1 flex-col gap-7 px-8 pb-8 pt-11">
@@ -131,7 +131,7 @@ export function AskScreen({ meetingId }: { meetingId?: string }) {
 
         <div className="flex flex-wrap gap-2">
           {SUGGESTIONS.map((k) => (
-            <Chip key={k} onClick={() => ask(t(k))} className="normal-case">
+            <Chip key={k} onClick={() => ask(t(k))} className="px-3 py-1.5 font-sans text-[13px] normal-case text-ink">
               {t(k)}
             </Chip>
           ))}
