@@ -103,7 +103,7 @@ function gpu(p: Probe): CheckResult[] {
   }
 }
 
-function mic(p: Probe): CheckResult {
+function mic(p: Pick<Probe, "mic">): CheckResult {
   const title = t("settings.setup_mic");
   switch (p.mic) {
     case "granted":
@@ -118,7 +118,7 @@ function mic(p: Probe): CheckResult {
   }
 }
 
-function device(p: Probe): CheckResult {
+function device(p: Pick<Probe, "settings" | "inputs">): CheckResult {
   const title = t("settings.setup_device");
   const chosen = p.settings.microphone !== "default" ? p.settings.microphone : undefined;
   if (!p.inputs) return { id: "device", title, status: "warn", detail: t("settings.setup_device_unknown") };
@@ -207,6 +207,26 @@ function data(p: Probe): CheckResult {
   const title = t("settings.setup_data");
   if ("error" in p.data) return { id: "data", title, status: "fail", detail: t("settings.setup_data_fail", { error: p.data.error }) };
   return { id: "data", title, status: "ok", detail: `${tildePath(p.data.path)} · ${formatBytes(p.data.bytes)}`, fix: { label: t("settings.folder_open"), action: "openData" } };
+}
+
+/** What the Settings button's dot looks at: microphone access, the microphones connected and the speech model
+ *  from settings. Cheap and quiet on purpose: no helper starts (graphics card), no folder is walked (data size,
+ *  auto-save) and nothing goes over the network (a local AI server, the calendar). The full look is `probeSetup`,
+ *  for the Status tab. */
+export type LightProbe = Pick<Probe, "settings" | "mic" | "inputs">;
+
+export async function probeLight(store: Pick<SettingsStore, "get" | "audioInputs">, recorder: Pick<RecorderClient, "microphonePermission">): Promise<LightProbe> {
+  const [settings, mic, inputs] = await Promise.all([
+    store.get(),
+    recorder.microphonePermission().catch(() => "unknown" as const),
+    store.audioInputs().catch(() => undefined),
+  ]);
+  return { settings, mic, inputs };
+}
+
+/** The checks a light look can judge, in Status order. */
+export function lightChecks(p: LightProbe): CheckResult[] {
+  return [mic(p), device(p), speech(p.settings)];
 }
 
 const message = (e: unknown) => (e instanceof Error ? e.message : String(e));

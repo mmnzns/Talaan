@@ -1,30 +1,37 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { recorderClient } from "../../data";
 import { useSettings } from "../../data/hooks";
 import { useSettingsStore } from "../../data/StoreProvider";
-import { checkSetup, needsFixing, probeSetup, type Probe } from "../../lib/setupCheck";
+import { lightChecks, needsFixing, probeLight, type LightProbe } from "../../lib/setupCheck";
+import { throttled } from "../../lib/throttle";
 
-/** How many Status checks stop a call right now (the dot on the Settings button). The computer is looked at when
- *  the window opens or comes to the front; settings changes (a finished download, a new key) are judged against
- *  that look at once, so the dot goes away without waiting. Never prompts: call audio is never tested here. */
+/** A window coming to the front looks again at most this often. */
+const FOCUS_GAP_MS = 30_000;
+
+/** How many checks stop a call right now (the dot on the Settings button). Only the light look (`probeLight`:
+ *  microphone access, microphones, the speech model), never the full Status probe: no helper starts, no folder is
+ *  walked, nothing goes over the network. It looks when the window opens and when it comes to the front (at most
+ *  every 30 s, never twice at once); settings changes (a finished download) are judged against the last look at
+ *  once, so the dot goes away without waiting. */
 export function useSetupProblems(): number {
   const store = useSettingsStore();
   const { settings } = useSettings();
-  const [probe, setProbe] = useState<Probe>();
-  // What the look itself depends on: the local server's address and the calendar and folder rows.
-  const key = settings ? [settings.summaryEngine, settings.ollamaAddress, settings.calendarConnected, settings.autoSaveFolder].join("|") : "";
+  const [probe, setProbe] = useState<LightProbe>();
 
   useEffect(() => {
     let live = true;
-    const look = () => void probeSetup(store, recorderClient).then((p) => live && setProbe(p), () => {});
-    look();
-    window.addEventListener("focus", look);
+    const look = throttled(async () => {
+      const p = await probeLight(store, recorderClient);
+      if (live) setProbe(p);
+    }, FOCUS_GAP_MS);
+    const onFocus = () => void look().catch(() => {});
+    void look(true).catch(() => {});
+    window.addEventListener("focus", onFocus);
     return () => {
       live = false;
-      window.removeEventListener("focus", look);
+      window.removeEventListener("focus", onFocus);
     };
-  }, [store, key]);
+  }, [store]);
 
-  if (!probe || !settings) return 0;
-  return needsFixing(checkSetup({ ...probe, settings })).length;
+  return useMemo(() => (probe && settings ? needsFixing(lightChecks({ ...probe, settings })).length : 0), [probe, settings]);
 }
