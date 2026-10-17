@@ -64,7 +64,7 @@ export class MockSettingsStore implements SettingsStore {
 
   private timers = new Map<string, ReturnType<typeof setInterval>>();
 
-  private setModel(id: string, patch: { state: "not_downloaded" | "downloading" | "downloaded"; progress?: number } | { progress: number }) {
+  private setModel(id: string, patch: { state: "not_downloaded" | "downloading" | "downloaded"; progress?: number; partial?: number; error?: string; cancelled?: boolean } | { progress: number }) {
     this.state = {
       ...this.state,
       speechModels: this.state.speechModels.map((m) => (m.id === id ? { ...m, ...patch } : m)),
@@ -77,11 +77,21 @@ export class MockSettingsStore implements SettingsStore {
 
   async downloadModel(id: string): Promise<void> {
     if (this.timers.has(id)) return;
-    this.setModel(id, { state: "downloading", progress: 0 });
-    let p = 0;
+    const all = [...this.state.speechModels, ...this.state.localModels, this.state.speakerModel, this.state.searchModel];
+    // Resumes from what a cancelled (or failed) download left, like the real one.
+    let p = all.find((m) => m.id === id)?.partial ?? 0;
+    this.setModel(id, { state: "downloading", progress: p, partial: undefined, error: undefined, cancelled: undefined });
+    // `?dl=fail` in the browser preview: downloads stop at 40% with an error.
+    const fail = typeof location !== "undefined" && new URLSearchParams(location.search).get("dl") === "fail";
+    // Big models take longer, like real ones (a 1 GB model takes 5 s here).
+    const step = 0.1 * Math.min(1, 1000 / (all.find((m) => m.id === id)?.sizeMb ?? 1000));
     const timer = setInterval(() => {
-      p += 0.1;
-      if (p >= 1) {
+      p += step;
+      if (fail && p >= 0.4) {
+        clearInterval(timer);
+        this.timers.delete(id);
+        this.setModel(id, { state: "not_downloaded", progress: undefined, partial: p, error: "The download of the model stopped: no data for 30 seconds. Check your connection and try again." });
+      } else if (p >= 1) {
         clearInterval(timer);
         this.timers.delete(id);
         this.setModel(id, { state: "downloaded", progress: undefined });
@@ -95,7 +105,9 @@ export class MockSettingsStore implements SettingsStore {
   async cancelModelDownload(id: string): Promise<void> {
     clearInterval(this.timers.get(id));
     this.timers.delete(id);
-    this.setModel(id, { state: "not_downloaded", progress: undefined });
+    const m = [...this.state.speechModels, ...this.state.localModels].find((x) => x.id === id);
+    // The part already downloaded stays (Download resumes), like the real one.
+    this.setModel(id, { state: "not_downloaded", progress: undefined, partial: m?.progress || undefined, cancelled: true });
   }
 
   async connectNotion(secret: string) {

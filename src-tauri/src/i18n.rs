@@ -354,6 +354,20 @@ const TABLE: &[(&str, &str, &str, &str)] = &[
     ("download.network", "Couldn't download {name}: {error}", "Impossible de télécharger {name} : {error}", "No se pudo descargar {name}: {error}"),
     ("download.corrupt", "{name} was damaged in transit. Try again.", "{name} a été endommagé pendant le téléchargement. Réessayez.", "{name} se dañó durante la descarga. Inténtalo de nuevo."),
     ("download.save_failed", "Couldn't save the model: {error}", "Impossible d’enregistrer le modèle : {error}", "No se pudo guardar el modelo: {error}"),
+    (
+        "download.stalled",
+        "The download of {name} stopped: no data for 30 seconds. Check your connection and try again.",
+        "Le téléchargement de {name} s’est arrêté : aucune donnée depuis 30 secondes. Vérifiez votre connexion et réessayez.",
+        "La descarga de {name} se detuvo: no llegaron datos en 30 segundos. Revisa tu conexión e inténtalo de nuevo.",
+    ),
+    (
+        "download.not_a_model",
+        "Couldn't download {name}: the network sent a web page instead. You may need to sign in to this Wi-Fi in your browser first.",
+        "Impossible de télécharger {name} : le réseau a renvoyé une page Web. Vous devrez peut-être d’abord vous connecter à ce Wi-Fi dans votre navigateur.",
+        "No se pudo descargar {name}: la red envió una página web. Quizás primero debas iniciar sesión en esta red Wi-Fi desde tu navegador.",
+    ),
+    // The guided test recording's title (set when it starts).
+    ("recorder.test_title", "Test recording", "Enregistrement test", "Grabación de prueba"),
 ];
 
 fn pick(lang: Lang, key: &str) -> Option<&'static str> {
