@@ -208,6 +208,7 @@ export const meeting = area({
     rewriteTitle: "Write the summary again?",
     rewriteBody: "Your changes and ticks will be replaced by the new summary.",
     rewriteConfirm: "Replace the summary",
+    followUpWaiting: "Waiting for the summary in progress to finish",
   },
   fr: {
     notFound: "Réunion introuvable",
@@ -405,6 +406,7 @@ export const meeting = area({
     rewriteTitle: "Rédiger le résumé de nouveau ?",
     rewriteBody: "Vos modifications et vos cases cochées seront remplacées par le nouveau résumé.",
     rewriteConfirm: "Remplacer le résumé",
+    followUpWaiting: "En attente de la fin du résumé en cours",
   },
   es: {
     notFound: "Reunión no encontrada",
@@ -602,5 +604,6 @@ export const meeting = area({
     rewriteTitle: "¿Escribir el resumen de nuevo?",
     rewriteBody: "Tus cambios y las casillas marcadas se reemplazarán con el nuevo resumen.",
     rewriteConfirm: "Reemplazar el resumen",
+    followUpWaiting: "Esperando a que termine el resumen en curso",
   },
 });

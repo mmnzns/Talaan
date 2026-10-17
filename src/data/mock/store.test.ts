@@ -193,13 +193,16 @@ describe("notes, meeting types and the follow-up draft", () => {
 
   it("drafts a follow-up email to the invitees, and can be cancelled", async () => {
     const quick = new MockMeetingStore(NOW, { askDelayMs: 0, followUpDelayMs: 0 });
-    const d = await quick.draftFollowUp("m-q4");
+    const d = await quick.draftFollowUp("m-q4", "r1");
     expect(d.to).toEqual(["dana.reyes@example.com", "priya.shah@example.com"]);
     expect(d.body).toContain("- Send onboarding wireframes to design (Me, Fri Oct 17)");
     const slow = new MockMeetingStore(NOW, { askDelayMs: 0, followUpDelayMs: 50 });
-    const pending = slow.draftFollowUp("m-q4");
-    await slow.cancelFollowUp();
+    const pending = slow.draftFollowUp("m-q4", "r2");
+    const other = slow.draftFollowUp("m-q4", "r3");
+    await slow.cancelFollowUp("r2");
     await expect(pending).rejects.toThrow("Cancelled.");
-    await expect(quick.draftFollowUp("m-vendor")).rejects.toThrow();
+    // Cancel is per draft: the other one still arrives.
+    await expect(other).resolves.toMatchObject({ subject: "Follow-up: Q4 roadmap sync" });
+    await expect(quick.draftFollowUp("m-vendor", "r4")).rejects.toThrow();
   });
 });

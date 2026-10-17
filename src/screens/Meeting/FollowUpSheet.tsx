@@ -11,7 +11,7 @@ import { openLink } from "../../lib/windows";
 import { useT } from "../../lib/i18n/I18nProvider";
 import { Button, Label, Sheet } from "../../ui";
 
-type State = { kind: "writing"; eta?: Eta; started: number } | { kind: "done"; draft: FollowUpDraft } | { kind: "failed"; message: string };
+type State = { kind: "writing"; eta?: Eta; waiting?: boolean; started: number } | { kind: "done"; draft: FollowUpDraft } | { kind: "failed"; message: string };
 
 /**
  * Draft follow-up email: written by the summary AI from the summary (not the transcript, so it's quick), shown for
@@ -25,15 +25,24 @@ export function FollowUpSheet({ meeting, open, onClose }: { meeting: Meeting; op
   const run = useRef(0);
   const now = useNow(1_000);
 
+  const request = useRef("");
   const start = useCallback(() => {
     const mine = ++run.current;
+    request.current = `${meeting.id}-${Date.now()}-${mine}`;
     setCopied(false);
     setState({ kind: "writing", started: Date.now() });
-    store.followUpEta(meeting.id).then(
-      (eta) => run.current === mine && setState((s) => (s.kind === "writing" ? { ...s, eta } : s)),
-      () => {},
-    );
-    store.draftFollowUp(meeting.id).then(
+    // While it waits for a summary in progress, ask again now and then: the time left moves when that ends.
+    const poll = () =>
+      store.followUpEta(meeting.id).then(
+        ({ waiting, ...eta }) => {
+          if (run.current !== mine) return;
+          setState((s) => (s.kind === "writing" ? { ...s, eta, waiting } : s));
+          if (waiting) setTimeout(poll, 5_000);
+        },
+        () => {},
+      );
+    void poll();
+    store.draftFollowUp(meeting.id, request.current).then(
       (draft) => run.current === mine && setState({ kind: "done", draft }),
       (e) => run.current === mine && setState({ kind: "failed", message: describeError(e) }),
     );
@@ -47,7 +56,7 @@ export function FollowUpSheet({ meeting, open, onClose }: { meeting: Meeting; op
   const writing = useRef(false);
   writing.current = state.kind === "writing";
   const close = useCallback(() => {
-    if (writing.current) void store.cancelFollowUp();
+    if (writing.current) void store.cancelFollowUp(request.current);
     run.current++;
     onClose();
   }, [store, onClose]);
@@ -64,7 +73,7 @@ export function FollowUpSheet({ meeting, open, onClose }: { meeting: Meeting; op
 
         {state.kind === "writing" && (
           <div role="status" className="flex flex-col gap-2 py-2">
-            <span className="text-[13px] font-semibold">{t("meeting.followUpWriting")}…</span>
+            <span className="text-[13px] font-semibold">{state.waiting ? t("meeting.followUpWaiting") : t("meeting.followUpWriting")}…</span>
             <span className="h-[3px] overflow-hidden rounded-full bg-line">
               <span className="block h-full animate-pulse bg-gold" style={{ width: `${progress(state, now)}%` }} />
             </span>

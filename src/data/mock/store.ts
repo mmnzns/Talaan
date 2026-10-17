@@ -42,7 +42,9 @@ export class MockMeetingStore implements MeetingStore {
   private listeners = new Set<() => void>();
   private askDelayMs: number;
   private followUpDelayMs: number;
-  private followUpCancelled = false;
+  private followUpCancelled = new Set<string>();
+  /** Simulated summaries in progress: a follow-up waits for them, like the local AI does. */
+  private running = 0;
   private yourName: () => string | undefined;
 
   constructor(
@@ -146,10 +148,12 @@ export class MockMeetingStore implements MeetingStore {
       m.eta = { finishAt: new Date(Date.now() + 2400).toISOString(), onCpu: true };
     });
     let p = 0;
+    if (status === "summarizing") this.running++;
     const timer = setInterval(() => {
       p += 0.25;
       if (p >= 1 || !this.meetings.has(id)) {
         clearInterval(timer);
+        if (status === "summarizing") this.running--;
         this.mutate(id, (m) => {
           done(m);
           m.progress = undefined;
@@ -227,20 +231,22 @@ export class MockMeetingStore implements MeetingStore {
   }
 
   async followUpEta(_id: MeetingId) {
-    return { finishAt: new Date(Date.now() + this.followUpDelayMs).toISOString(), onCpu: true };
+    const waiting = this.running > 0;
+    return { finishAt: new Date(Date.now() + this.followUpDelayMs * (waiting ? 2 : 1)).toISOString(), onCpu: true, waiting };
   }
 
-  async draftFollowUp(id: MeetingId): Promise<FollowUpDraft> {
-    this.followUpCancelled = false;
+  async draftFollowUp(id: MeetingId, request: string): Promise<FollowUpDraft> {
+    while (this.running > 0 && !this.followUpCancelled.has(request)) await new Promise((r) => setTimeout(r, 200));
     await new Promise((r) => setTimeout(r, this.followUpDelayMs));
-    if (this.followUpCancelled) throw new Error("Cancelled.");
+    const cancelled = this.followUpCancelled.delete(request);
+    if (cancelled) throw new Error("Cancelled.");
     const m = this.meetings.get(id);
     if (!m?.summary) throw new Error("Write the summary first, then draft the follow-up.");
     return sampleFollowUp(m);
   }
 
-  async cancelFollowUp() {
-    this.followUpCancelled = true;
+  async cancelFollowUp(request: string) {
+    this.followUpCancelled.add(request);
   }
 
   async renameSpeaker(id: MeetingId, speaker: Speaker, name: string) {

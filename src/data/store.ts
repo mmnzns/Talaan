@@ -11,6 +11,12 @@ import type {
   Summary,
 } from "./types";
 
+export interface FollowUpEta {
+  finishAt: string;
+  onCpu: boolean;
+  waiting: boolean;
+}
+
 export interface FollowUpDraft {
   subject: string;
   body: string;
@@ -47,12 +53,13 @@ export interface MeetingStore {
   summarizeAs(id: MeetingId, template: string): Promise<void>;
   /** The user's notes (marks with a note), edited in the meeting view. Marked moments stay. Not while recording. */
   setNotes(id: MeetingId, notes: Mark[]): Promise<void>;
-  /** When a follow-up draft for this meeting should be done. */
-  followUpEta(id: MeetingId): Promise<{ finishAt: string; onCpu: boolean }>;
-  /** Draft follow-up email from the summary: subject, plain-text body, and the invitees' addresses when known. */
-  draftFollowUp(id: MeetingId): Promise<FollowUpDraft>;
-  /** Stops a follow-up draft that is being written. */
-  cancelFollowUp(): Promise<void>;
+  /** When a follow-up draft for this meeting should be done; `waiting`: the local AI finishes a summary first. */
+  followUpEta(id: MeetingId): Promise<FollowUpEta>;
+  /** Draft follow-up email from the summary: subject, plain-text body, and the invitees' addresses when known.
+   *  `request` names this draft for `cancelFollowUp`. */
+  draftFollowUp(id: MeetingId, request: string): Promise<FollowUpDraft>;
+  /** Stops that follow-up draft, waiting or being written. */
+  cancelFollowUp(request: string): Promise<void>;
   /** A URL to play the meeting's audio (both sides mixed), or undefined when there is none (or in the browser). */
   playbackUrl(id: MeetingId): Promise<string | undefined>;
   /** Deletes the audio now; transcript and summary stay. */

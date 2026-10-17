@@ -1,5 +1,5 @@
 import type { NotionDestination } from "../settings";
-import type { FollowUpDraft, MeetingFilter, MeetingStore } from "../store";
+import type { FollowUpDraft, FollowUpEta, MeetingFilter, MeetingStore } from "../store";
 import type { AskAnswer, AskScope, Folder, Mark, Meeting, MeetingId, MeetingListItem, Speaker, Summary } from "../types";
 import { call, onEvent } from "./invoke";
 
@@ -66,15 +66,15 @@ export class TauriMeetingStore implements MeetingStore {
   }
 
   followUpEta(id: MeetingId) {
-    return call<{ finishAt: string; onCpu: boolean }>("meetings_followup_eta", { id });
+    return call<FollowUpEta>("meetings_followup_eta", { id });
   }
 
-  draftFollowUp(id: MeetingId) {
-    return call<FollowUpDraft>("meetings_draft_followup", { id });
+  draftFollowUp(id: MeetingId, request: string) {
+    return call<FollowUpDraft>("meetings_draft_followup", { id, request });
   }
 
-  cancelFollowUp() {
-    return call<void>("meetings_cancel_followup");
+  cancelFollowUp(request: string) {
+    return call<void>("meetings_cancel_followup", { request });
   }
 
   async playbackUrl(id: MeetingId) {
