@@ -1,19 +1,21 @@
 //! Talaan's log file: what the app did and what went wrong, never what was said.
 //!
-//! Where: `~/Library/Logs/Talaan/` on the Mac and `%LOCALAPPDATA%\com.craftconceptsdigital.talaan\logs\` on Windows
-//! (Tauri's `app_log_dir`), or `<data>/logs` when `TALAAN_DATA_DIR` is set, so dev runs never write into the real
-//! log. Not `%LOCALAPPDATA%\Talaan`: that is the installer's `$INSTDIR` (program files; the uninstaller deletes its
-//! own files there and would leave a log behind). Tauri's NSIS uninstaller deletes `$LOCALAPPDATA\<bundle id>` only when "Delete the application data" is
-//! ticked, and never during an update. `talaan.log` rotates at 2 MB into
-//! `talaan.1.log` .. `talaan.4.log` (about 10 MB at most).
+//! Where: `~/Library/Logs/Talaan/` on the Mac (the system's log folder, named like the app; Tauri's `app_log_dir`
+//! would use the bundle id) and `%LOCALAPPDATA%\com.craftconceptsdigital.talaan\logs\` on Windows (what Tauri's
+//! `app_log_dir` gives), or `<data>/logs` when `TALAAN_DATA_DIR` is set, so dev runs never write into the real log.
+//! Not `%LOCALAPPDATA%\Talaan` on Windows: that is the installer's `$INSTDIR` (program files; the uninstaller
+//! deletes its own files there and would leave a log behind). Tauri's NSIS uninstaller deletes
+//! `$LOCALAPPDATA\<bundle id>` only when "Delete the application data" is ticked, and never during an update.
+//! `talaan.log` rotates at 2 MB into `talaan.1.log` .. `talaan.4.log` (about 10 MB at most).
 //!
 //! What: startup (version, OS, CPU, GPU plan), recorder start/stop/pause and device changes, call detection
 //! decisions, transcription and summary jobs, update checks, and every error the app shows. Only Talaan's own
-//! `log::` records are written (a library's could carry a request URL). Never logged: transcript text, summaries,
-//! prompts, meeting titles, names or emails of people, API keys, the calendar address, the Notion secret.
-//! Two guards: every line goes through `redact` (URLs cut to their host, emails, key-shaped tokens, quoted text and
-//! the home folder), and a test reads every `log::` call in the source and refuses the fields that could carry
-//! such content.
+//! records are written (`talaan_lib`, `talaan`, and the `talaan_stt` speech crate, which logs nothing today but would
+//! go through the same scrubbing); a library's could carry a request URL. Never logged: transcript text,
+//! summaries, prompts, meeting titles, names or emails of people, API keys, the calendar address, the Notion secret.
+//! Three guards: errors and other free text go through `text` (an app message is logged as its key only), every
+//! line goes through `redact` (URLs, emails, key-shaped tokens, quoted text, profile folders), and `log_scan` reads
+//! every log call in the source and refuses the ones that could carry such content.
 
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, Write};
@@ -91,8 +93,12 @@ impl RotatingFile {
                 let _ = fs::rename(&from, numbered(&self.dir, i + 1));
             }
         }
-        // A rename that failed (the file held open elsewhere) leaves talaan.log in place: start it over.
-        self.file = OpenOptions::new().create(true).write(true).truncate(true).open(self.dir.join(FILE))?;
+        // A rename that failed (the file held open elsewhere) leaves talaan.log in place: start it over. If even
+        // that fails, keep writing to the file we have and count from zero, so the next try is another 2 MB away
+        // (not on every line).
+        if let Ok(f) = OpenOptions::new().create(true).write(true).truncate(true).open(self.dir.join(FILE)) {
+            self.file = f;
+        }
         self.size = 0;
         Ok(())
     }
@@ -131,14 +137,32 @@ struct FileLogger {
     echo: bool,
 }
 
-/// Only Talaan's own records (`talaan_lib::…`, `talaan::…`), at Info and above (Debug in debug builds).
+/// Talaan's own crates: the app, its binary and the speech crate (`log_scan` checks their calls).
+const OWN: &[&str] = &["talaan_lib", "talaan", "talaan_stt"];
+
+/// Only Talaan's own records, at Info and above (Debug in debug builds).
 fn wanted(target: &str, level: log::Level) -> bool {
     let max = if cfg!(debug_assertions) { log::Level::Debug } else { log::Level::Info };
-    (target == "talaan_lib" || target.starts_with("talaan_lib::") || target == "talaan" || target.starts_with("talaan::")) && level <= max
+    let crate_name = target.split("::").next().unwrap_or("");
+    OWN.contains(&crate_name) && level <= max
 }
 
 fn short_target(target: &str) -> &str {
     target.strip_prefix("talaan_lib::").or_else(|| target.strip_prefix("talaan::")).unwrap_or(target)
+}
+
+/// A panic's source file without the build machine's folders: a dependency's path from its crate folder on
+/// (`log-0.4.34/src/lib.rs`), Talaan's own as written (`src\lib.rs`).
+pub fn panic_location(file: &str) -> String {
+    let f = file.replace('\\', "/");
+    for marker in ["/registry/src/", "/git/checkouts/", "/rustc/"] {
+        if let Some(i) = f.find(marker) {
+            let rest = &f[i + marker.len()..];
+            // registry/src/<index>/<crate>/…, git/checkouts/<repo>/<rev>/…, rustc/<hash>/library/…: drop the first part.
+            return rest.split_once('/').map(|(_, r)| r).unwrap_or(rest).to_string();
+        }
+    }
+    redact(file)
 }
 
 /// One log line: time, level, where, and the redacted message.
@@ -186,7 +210,7 @@ pub fn init(dir: &Path) {
     // A panic's location (and its message, redacted) before the release build aborts.
     let previous = std::panic::take_hook();
     std::panic::set_hook(Box::new(move |info| {
-        let at = info.location().map(|l| format!("{}:{}", l.file(), l.line())).unwrap_or_default();
+        let at = info.location().map(|l| format!("{}:{}", panic_location(l.file()), l.line())).unwrap_or_default();
         let msg = info.payload().downcast_ref::<&str>().map(|s| s.to_string()).or_else(|| info.payload().downcast_ref::<String>().cloned()).unwrap_or_default();
         log::error!("panic at {at}: {}", text(&msg));
         previous(info);
@@ -399,19 +423,43 @@ fn known_host(authority: &str) -> bool {
     KNOWN_HOSTS.iter().any(|k| host == *k || host.ends_with(&format!(".{k}")))
 }
 
-/// `https://user@host:443/path?q` → `https://host:443/…`.
+/// A host written without a scheme at the start of `s` (`outlook.office365.com/owa/…`): its length, when what
+/// follows is a path. Needs a dot and a letters-only last label, so `log-0.4.34/src` and `src/lib.rs` aren't hosts.
+fn bare_host(s: &str) -> Option<usize> {
+    let end = s.find(|c: char| !(c.is_ascii_alphanumeric() || c == '.' || c == '-' || c == ':'))?;
+    if !s[end..].starts_with('/') {
+        return None;
+    }
+    let host = s[..end].split(':').next().unwrap_or("");
+    let last = host.rsplit('.').next().unwrap_or("");
+    (host.contains('.') && last.len() >= 2 && last.chars().all(|c| c.is_ascii_alphabetic())).then_some(end)
+}
+
+/// `https://user@host:443/path?q` → `https://host:443/…`; a host without a scheme the same way; `file://…` loses
+/// its whole path. Hosts that aren't this computer or a known service become `[host]`.
 fn cut_urls(s: &str) -> String {
     let lower = s.to_ascii_lowercase();
     let mut out = String::with_capacity(s.len());
     let mut i = 0;
     while i < s.len() {
         let rest = &lower[i..];
-        let scheme = ["https://", "http://", "webcal://", "webcals://"].into_iter().find(|p| rest.starts_with(p));
-        let Some(scheme) = scheme else {
-            let c = s[i..].chars().next().unwrap();
-            out.push(c);
-            i += c.len_utf8();
+        let at_word = i == 0 || !s[..i].ends_with(|c: char| c.is_ascii_alphanumeric() || matches!(c, '.' | '-' | '@' | '/' | '\\' | '_'));
+        if rest.starts_with("file://") {
+            let end = s[i..].find(url_end).map(|e| i + e).unwrap_or(s.len());
+            out.push_str("file://…");
+            i = end;
             continue;
+        }
+        let scheme = ["https://", "http://", "webcal://", "webcals://"].into_iter().find(|p| rest.starts_with(p));
+        let scheme = match scheme {
+            Some(p) => p,
+            None if at_word && bare_host(&s[i..]).is_some() => "",
+            None => {
+                let c = s[i..].chars().next().unwrap();
+                out.push(c);
+                i += c.len_utf8();
+                continue;
+            }
         };
         let start = i + scheme.len();
         let end = s[start..].find(url_end).map(|e| start + e).unwrap_or(s.len());
@@ -433,7 +481,7 @@ fn cut_urls(s: &str) -> String {
 const KEY_PREFIXES: &[&str] = &["sk-", "sk_", "gsk_", "ntn_", "secret_", "aiza", "xai-", "csk-", "pplx-", "sk-or-"];
 
 fn token_char(c: char) -> bool {
-    c.is_ascii_alphanumeric() || matches!(c, '_' | '-' | '.' | '+' | '@' | '%')
+    c.is_ascii_alphanumeric() || matches!(c, '_' | '-' | '.' | '+' | '@' | '%' | '/' | '=')
 }
 
 fn is_email(t: &str) -> bool {
@@ -447,25 +495,52 @@ fn is_secret(t: &str) -> bool {
     if t.len() >= 16 && KEY_PREFIXES.iter().any(|p| lower.starts_with(p)) {
         return true;
     }
-    // Long random-looking tokens: upper, lower and digits all present, no dots (a Windows package name like
-    // `Microsoft.SkypeApp_kzf8qxf38zg5c` has them; keys don't).
-    t.len() >= 32 && !t.contains('.') && t.chars().any(|c| c.is_ascii_uppercase()) && t.chars().any(|c| c.is_ascii_lowercase()) && t.chars().any(|c| c.is_ascii_digit())
+    // Long random-looking tokens, 32 characters or more with no dots (a Windows package name like
+    // `Microsoft.SkypeApp_kzf8qxf38zg5c` has them; keys don't), and not a path (one `/` per dozen characters at most):
+    // hex in any case, base64, or upper, lower and digits mixed. Long model names with many `-` stay.
+    let t = t.trim_end_matches('=');
+    if t.len() < 32 || t.contains('.') || t.matches('/').count() * 12 > t.len() {
+        return false;
+    }
+    let digit = t.chars().any(|c| c.is_ascii_digit());
+    let letter = t.chars().any(|c| c.is_ascii_alphabetic());
+    let hex = t.chars().all(|c| c.is_ascii_hexdigit());
+    let mixed = t.chars().any(|c| c.is_ascii_uppercase()) && t.chars().any(|c| c.is_ascii_lowercase()) && digit;
+    let separators = t.matches(['-', '_']).count();
+    hex || mixed || (digit && letter && separators <= 2)
+}
+
+/// `[email]` for an address (sentence punctuation after it isn't part of it; `%40` is an encoded `@`).
+fn email_or_word(piece: &str) -> String {
+    let core = piece.trim_end_matches(['.', '-', '+', '%']);
+    if is_email(&replace_ignore_case(core, "%40", "@")) { format!("[email]{}", &piece[core.len()..]) } else { piece.to_string() }
 }
 
 fn replace_words(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
     let mut word = String::new();
-    let flush = |word: &mut String, out: &mut String| {
-        // Sentence punctuation after an address isn't part of it; `%40` is an encoded `@`.
-        let core = word.trim_end_matches(['.', '-', '+', '%']);
-        let decoded = replace_ignore_case(core, "%40", "@");
-        if is_email(&decoded) {
-            out.push_str("[email]");
-            out.push_str(&word[core.len()..]);
-        } else if is_secret(word) {
+    // The word before: whatever follows `Bearer` or `Basic` is a credential, however it looks.
+    let mut previous = String::new();
+    let mut flush = |word: &mut String, out: &mut String| {
+        if word.is_empty() {
+            return;
+        }
+        let after_scheme = previous.eq_ignore_ascii_case("bearer") || previous.eq_ignore_ascii_case("basic");
+        previous = word.clone();
+        if after_scheme {
+            out.push_str("[secret]");
+            word.clear();
+            return;
+        }
+        if is_secret(word) {
             out.push_str("[secret]");
         } else {
-            out.push_str(word);
+            // Emails between `=` and `/` (a query value, a path) are found piece by piece.
+            for piece in word.split_inclusive(['=', '/']) {
+                let body = piece.strip_suffix(['=', '/']).unwrap_or(piece);
+                out.push_str(&email_or_word(body));
+                out.push_str(&piece[body.len()..]);
+            }
         }
         word.clear();
     };
@@ -556,8 +631,8 @@ mod tests {
     fn ordinary_words_ids_and_model_names_stay() {
         let line = "transcriber: meeting 2026-10-16_1430_ab12 done with whisper-large-v3-turbo-q5_0 in 42.1s (exit code 5, 0xC0000135)";
         assert_eq!(redact_with(line, None), line);
-        let sha = "sha256 3f2a9d8c1b0e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a";
-        assert_eq!(redact_with(sha, None), sha, "lowercase hex is not a secret");
+        assert_eq!(redact_with("model whisper-large-v3-turbo-q5_0-ggml-model-q8_0-extra-long-name ok", None), "model whisper-large-v3-turbo-q5_0-ggml-model-q8_0-extra-long-name ok");
+        assert_eq!(redact_with("read ~/Library/Application Support/Talaan/models/parakeet/encoder-model", None), "read ~/Library/Application Support/Talaan/models/parakeet/encoder-model");
         assert_eq!(redact_with("Qwen3.5 4B on NVIDIA GeForce RTX 5070 Ti", None), "Qwen3.5 4B on NVIDIA GeForce RTX 5070 Ti");
         assert_eq!(redact_with("mic users: Microsoft.SkypeApp_kzf8qxf38zg5c, us.zoom.xos", None), "mic users: Microsoft.SkypeApp_kzf8qxf38zg5c, us.zoom.xos");
     }
@@ -606,6 +681,56 @@ mod tests {
         assert_eq!(ask.for_log(), "(message not logged)");
         assert_eq!(crate::storage::StorageError::Refused(crate::i18n::tr("error.no_log")).for_log(), "[error.no_log]");
         assert_eq!(crate::storage::StorageError::NotFound("2026-10-16_1430_ab12".into()).for_log(), "not found: 2026-10-16_1430_ab12");
+    }
+
+    #[test]
+    fn hex_base64_and_bearer_credentials_are_hidden() {
+        assert_eq!(redact_with("sha256 3f2a9d8c1b0e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a done", None), "sha256 [secret] done");
+        assert_eq!(redact_with("key 0123456789abcdef0123456789abcdef", None), "key [secret]");
+        assert_eq!(redact_with("token dGhpcyBpcyBhIHNlY3JldCB0b2tlbiB2YWx1ZQ== ok", None), "token [secret] ok");
+        assert_eq!(redact_with("token abcdefghij0123456789abcdefghij0123/xyz+ab ok", None), "token [secret] ok");
+        assert_eq!(redact_with("Authorization: Bearer short-1 and Basic YWxhZGRpbjpvcGVu", None), "Authorization: Bearer [secret] and Basic [secret]");
+        assert_eq!(redact_with("bearer x", None), "bearer [secret]");
+    }
+
+    #[test]
+    fn hosts_without_a_scheme_and_file_urls_are_cut() {
+        assert_eq!(redact_with("GET outlook.office365.com/owa/calendar/abc/def/calendar.ics failed", None), "GET outlook.office365.com/… failed");
+        assert_eq!(redact_with("at llm.acme.internal:8443/v1/chat", None), "at [host]/…");
+        assert_eq!(redact_with("open file:///C:/Users/ana/Documents/notes.txt now", None), "open file://… now");
+        // Not hosts.
+        assert_eq!(redact_with("in log-0.4.34/src/lib.rs:10 and src/commands/recorder.rs:5", None), "in log-0.4.34/src/lib.rs:10 and src/commands/recorder.rs:5");
+        assert_eq!(redact_with("models/whisper.cpp/ggml-small.bin", None), "models/whisper.cpp/ggml-small.bin");
+    }
+
+    #[test]
+    fn panic_locations_drop_the_build_machines_folders() {
+        assert_eq!(panic_location(r"C:\Users\ana\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\log-0.4.34\src\lib.rs"), "log-0.4.34/src/lib.rs");
+        assert_eq!(panic_location("/Users/ana/.cargo/git/checkouts/whisper-rs-abc/1a2b3c/src/lib.rs"), "1a2b3c/src/lib.rs");
+        assert_eq!(panic_location("/rustc/90b35a6239c3d8bdabc530a6a0816f7ff89a0aaf/library/core/src/str/mod.rs"), "library/core/src/str/mod.rs");
+        assert_eq!(panic_location(r"src\commands\recorder.rs"), r"src\commands\recorder.rs");
+    }
+
+    #[test]
+    fn a_failed_rotation_does_not_retry_on_every_line() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut f = RotatingFile::open(dir.path(), 64, 3).unwrap();
+        // Rotation can't rename or reopen in a folder that is gone; writing carries on into the open file.
+        f.write_line("first line, long enough to fill up").unwrap();
+        f.dir = dir.path().join("gone");
+        f.write_line("second line, long enough to rotate").unwrap();
+        assert_eq!(f.size, "second line, long enough to rotate".len() as u64 + 1, "counting restarted from zero");
+        f.write_line("third").unwrap();
+        assert!(f.size < 64, "no rotation attempt on the next line");
+        assert_eq!(tail(dir.path(), 3), ["first line, long enough to fill up", "second line, long enough to rotate", "third"]);
+    }
+
+    #[test]
+    fn talaans_crates_are_logged_and_libraries_are_not() {
+        assert!(wanted("talaan_stt::engine", log::Level::Warn));
+        assert!(wanted("talaan", log::Level::Info));
+        assert!(!wanted("talaan_stt_extra", log::Level::Warn));
+        assert!(!wanted("hyper::client", log::Level::Error));
     }
 
     #[test]
