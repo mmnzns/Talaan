@@ -464,10 +464,30 @@ fn replace_words(s: &str) -> String {
     out
 }
 
+/// Devices people name after themselves, for the apostrophe-less genitive ("Miguels AirPods").
+const PERSONAL_DEVICES: &[&str] = &["airpods", "iphone", "ipad", "macbook", "imac", "mac", "galaxy", "pixel", "buds", "beats", "headset", "headphones", "kopfhörer", "mikrofon", "telefon", "handy"];
+
 /// A device name without a person's name in it: "Miguel's AirPods Pro" → "…'s AirPods Pro",
 /// "AirPods de Miguel" → "AirPods de …".
 pub fn device(name: &str) -> String {
     let name = name.trim();
+    // Windows wraps the device: "Micrófono (AirPods de Miguel)". Clean the part in brackets, keep the rest.
+    if let Some(open) = name.find('(').filter(|_| name.ends_with(')')) {
+        let inner = &name[open + 1..name.len() - 1];
+        let clean = device(inner);
+        if clean != inner.trim() {
+            return format!("{}({clean})", &name[..open]);
+        }
+    }
+    // German genitive without an apostrophe: "Miguels AirPods".
+    let mut words = name.splitn(2, ' ');
+    if let (Some(first), Some(rest)) = (words.next(), words.next()) {
+        let next = rest.split(' ').next().unwrap_or("").to_lowercase();
+        let owner = first.len() > 2 && first.ends_with('s') && !first.contains(['\'', '’']) && first.chars().next().is_some_and(char::is_uppercase);
+        if owner && PERSONAL_DEVICES.iter().any(|d| next.starts_with(d)) {
+            return format!("… {rest}");
+        }
+    }
     for apostrophe in ["'s ", "’s "] {
         if let Some(i) = name.find(apostrophe) {
             return format!("…{}", &name[i..]);
@@ -609,6 +629,14 @@ mod tests {
         assert_eq!(device("AirPods de Miguel"), "AirPods de …");
         assert_eq!(device("Microphone (Realtek(R) Audio)"), "Microphone (Realtek(R) Audio)");
         assert_eq!(device("MacBook Pro Microphone"), "MacBook Pro Microphone");
+        // Windows: the owner's name inside "Microphone (…)", the rest kept.
+        assert_eq!(device("Micrófono (AirPods de Miguel)"), "Micrófono (AirPods de …)");
+        assert_eq!(device("Microphone (AirPods von Ana)"), "Microphone (AirPods von …)");
+        assert_eq!(device("Kopfhörer (Miguels AirPods)"), "Kopfhörer (… AirPods)");
+        assert_eq!(device("Microphone (Ana’s AirPods)"), "Microphone (…’s AirPods)");
+        assert_eq!(device("Miguels AirPods Pro"), "… AirPods Pro");
+        assert_eq!(device("Headset (Plantronics Blackwire 3220)"), "Headset (Plantronics Blackwire 3220)");
+        assert_eq!(device("Microphone Array (Intel® Smart Sound Technology)"), "Microphone Array (Intel® Smart Sound Technology)");
     }
 
     #[test]
