@@ -590,10 +590,10 @@ function SummaryStep({ settings: s, update }: StepProps) {
       <h1 className={h1}>{t("onboarding.summaryTitle")}</h1>
       <p className={desc}>{t("onboarding.summaryDesc")}</p>
       <div role="radiogroup" aria-label={t("onboarding.summaryGroup")} className="flex flex-col gap-2">
-        <Option on={local} title={t("onboarding.localTitle")} tag={t("onboarding.defaultTag")} onClick={() => update({ summaryEngine: "local" })}>
+        <Option on={local} title={t("onboarding.localTitle")} tag={t("settings.engine_local_tag")} onClick={() => update({ summaryEngine: "local" })}>
           {model ? t("onboarding.localDesc", { size: gb(model.sizeMb) }) : t("onboarding.localDescNoSize")}
         </Option>
-        <Option on={s.summaryEngine === "byok"} title={t("onboarding.byokTitle")} onClick={() => update({ summaryEngine: "byok" })}>
+        <Option on={s.summaryEngine === "byok"} title={t("onboarding.byokTitle")} tag={t("settings.engine_byok_tag")} onClick={() => update({ summaryEngine: "byok" })}>
           {t("onboarding.byokDesc")}
         </Option>
       </div>
