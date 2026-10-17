@@ -1,20 +1,25 @@
-import { Pencil } from "lucide-react";
+import { Pencil, Sparkles } from "lucide-react";
 import { useState } from "react";
+import { useSettings } from "../../data/hooks";
 import { useStore } from "../../data/StoreProvider";
 import type { Meeting, Speaker } from "../../data/types";
+import { speakerSuggestions } from "../../lib/speakerSuggest";
 import { speakerName } from "../../lib/transcript";
 import { useT } from "../../lib/i18n/I18nProvider";
 import { Button, Field, Label, Popover, cn, toneFor } from "../../ui";
 
-/** Speaker chips. Anyone can be renamed (Me, Them, Speaker 1, 2, 3); every line and action item updates. */
+/** Speaker chips. Anyone can be renamed (Me, Them, Speaker 1, 2, 3); every line and action item updates. With
+ *  calendar attendees, their names are one-click suggestions (never applied by themselves). */
 export function SpeakersBar({ meeting }: { meeting: Meeting }) {
   const t = useT();
+  const store = useStore();
+  const { settings } = useSettings();
   // Everyone in the transcript (or the stored names before there is one), Me first, then Speaker 1, 2, 3.
   const ids = new Set<Speaker>(meeting.transcript.length ? meeting.transcript.map((l) => l.speaker) : (Object.keys(meeting.speakers) as Speaker[]));
   const rank = (s: Speaker) => (s === "me" ? -1 : Number(s.slice(5)) || 0);
   const speakers = [...ids].sort((a, b) => rank(a) - rank(b));
-  const taken = new Set(Object.values(meeting.speakers));
-  const suggestions = (meeting.calendarEvent?.attendees ?? []).filter((n) => n !== "You" && !taken.has(n));
+  const offer = settings?.suggestSpeakerNames ?? true;
+  const { names: suggestions, probably } = offer ? speakerSuggestions(meeting, settings?.yourName ?? "") : { names: [], probably: undefined };
 
   return (
     <div className="flex flex-wrap items-center gap-1.5 border-b border-line px-6 py-2.5">
@@ -26,6 +31,17 @@ export function SpeakersBar({ meeting }: { meeting: Meeting }) {
           <RenameChip key={s} meetingId={meeting.id} speaker={s} name={name} className={chip} suggestions={s === "me" ? [] : suggestions} />
         );
       })}
+      {probably && (
+        <button
+          type="button"
+          onClick={() => store.renameSpeaker(meeting.id, probably.speaker, probably.name)}
+          aria-label={t("meeting.probablyAria", { speaker: speakerName(meeting, probably.speaker), name: probably.name })}
+          className="inline-flex cursor-pointer items-center gap-1 rounded-full border border-dashed border-edge bg-gold-soft px-2 py-[3px] font-mono text-[11px] leading-[14px] text-gold-ink hover:border-gold"
+        >
+          <Sparkles size={10} aria-hidden="true" />
+          {t("meeting.probablyThem", { speaker: speakerName(meeting, probably.speaker), name: probably.name })}
+        </button>
+      )}
       {suggestions.length > 0 && <Label className="ml-auto">{t("meeting.namesFromCalendar")}</Label>}
     </div>
   );
@@ -56,12 +72,15 @@ function RenameChip({ meetingId, speaker, name, className, suggestions }: { meet
             <Label>{speaker === "me" ? t("meeting.renameMe") : t("meeting.renameSpeaker")}</Label>
             <Field label={t("meeting.speakerNameLabel")} autoFocus value={draft} onChange={(e) => setDraft(e.target.value)} onKeyDown={(e) => e.key === "Enter" && save(draft)} />
             {suggestions.length > 0 && (
-              <div className="flex flex-wrap gap-1.5">
-                {suggestions.map((n) => (
-                  <button key={n} type="button" onClick={() => save(n)} className="cursor-pointer rounded-full border border-line bg-surface px-2 py-[3px] font-mono text-[11px] text-ink hover:border-edge">
-                    {n}
-                  </button>
-                ))}
+              <div className="flex flex-col gap-1.5">
+                <Label>{t("meeting.fromInvite")}</Label>
+                <div className="flex flex-wrap gap-1.5">
+                  {suggestions.map((n) => (
+                    <button key={n} type="button" onClick={() => save(n)} className="cursor-pointer rounded-full border border-line bg-surface px-2 py-[3px] font-mono text-[11px] text-ink hover:border-edge">
+                      {n}
+                    </button>
+                  ))}
+                </div>
               </div>
             )}
             <Button variant="primary" onClick={() => save(draft)}>
