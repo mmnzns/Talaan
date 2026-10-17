@@ -156,6 +156,7 @@ export function MeetingHeader({ meeting, editing, canRevert, onToggleEdit, onRev
               {copied === "text" ? t("meeting.copied") : t("meeting.copyText")}
             </Button>
             <Popover
+              className="max-h-[50vh] w-64 overflow-y-auto"
               trigger={({ toggle }) => (
                 <Button size="icon" aria-label={t("meeting.moreActions")} onClick={toggle}>
                   <MoreHorizontal size={16} aria-hidden="true" />
