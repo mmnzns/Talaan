@@ -263,7 +263,11 @@ fn start(slot: &mut Option<Process<Event>>, exe: &Path, env: &[(String, String)]
     // Generous: the first launch after an install or update waits on macOS checking the new binary.
     match p.recv_timeout(Duration::from_secs(60)) {
         Ok(Event::Ready { backend }) => {
-            log::info!("local AI helper started on {} ({}, {} MB)", backend.backend, backend.device.as_deref().unwrap_or("no GPU"), backend.vram_mb);
+            // Metal (Apple GPUs share the computer's memory) reports no device name and 0 MB: say only what's known.
+            match backend.device.as_deref() {
+                Some(device) => log::info!("local AI helper started on {} ({device}, {} MB)", backend.backend, backend.vram_mb),
+                None => log::info!("local AI helper started on {}", backend.backend),
+            }
             *slot = Some(p);
             Ok(Some(backend))
         }

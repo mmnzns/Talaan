@@ -41,7 +41,9 @@ export function MeetingHeader({ meeting, editing, canRevert, onToggleEdit, onRev
   const folders = useFolders();
   const [addingTag, setAddingTag] = useState(false);
   const [tagDraft, setTagDraft] = useState("");
-  const [title, setTitle] = useState(meeting.title);
+  // A draft only while the title is being edited; otherwise the stored title shows, so a rename from the summary or
+  // another window appears right away.
+  const [draft, setDraft] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [retranscribing, setRetranscribing] = useState(false);
   const [summarizingAs, setSummarizingAs] = useState(false);
@@ -52,9 +54,9 @@ export function MeetingHeader({ meeting, editing, canRevert, onToggleEdit, onRev
   const ready = meeting.status === "ready";
 
   const commitTitle = () => {
-    const next = title.trim();
+    const next = (draft ?? "").trim();
     if (next && next !== meeting.title) store.renameMeeting(meeting.id, next);
-    else setTitle(meeting.title);
+    setDraft(null);
   };
 
   const commitTag = () => {
@@ -82,13 +84,14 @@ export function MeetingHeader({ meeting, editing, canRevert, onToggleEdit, onRev
           </Label>
           <input
             aria-label={t("meeting.titleLabel")}
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
+            value={draft ?? meeting.title}
+            onFocus={() => setDraft(meeting.title)}
+            onChange={(e) => setDraft(e.target.value)}
             onBlur={commitTitle}
             onKeyDown={(e) => {
               if (e.key === "Enter") e.currentTarget.blur();
               if (e.key === "Escape") {
-                setTitle(meeting.title);
+                setDraft(meeting.title);
                 e.currentTarget.blur();
               }
             }}

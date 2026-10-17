@@ -46,9 +46,10 @@ fn render_summary(s: &Summary) -> String {
     if !s.action_items.is_empty() {
         out.push_str("Action items:\n");
         for a in &s.action_items {
-            let owner = a.owner.as_deref().map(|o| o.trim()).filter(|o| !o.is_empty()).map(|o| format!(" | owner: {o}")).unwrap_or_default();
-            let due = a.due.as_deref().map(|d| d.trim()).filter(|d| !d.is_empty()).map(|d| format!(" | due: {d}")).unwrap_or_default();
-            out.push_str(&format!("- {}{owner}{due}\n", a.text.trim()));
+            // Written the way the email should read: small models copy "| owner: X" labels into the email.
+            let owner = a.owner.as_deref().map(|o| o.trim()).filter(|o| !o.is_empty()).map(|o| format!("{o}: ")).unwrap_or_default();
+            let due = a.due.as_deref().map(|d| d.trim()).filter(|d| !d.is_empty()).map(|d| format!(" (by {d})")).unwrap_or_default();
+            out.push_str(&format!("- {owner}{}{due}\n", a.text.trim()));
         }
     }
     if !s.open_questions.is_empty() {
@@ -74,11 +75,13 @@ pub fn prompt(meeting: &Meeting, summary: &Summary, language: &str) -> Prompt {
         "You write a short follow-up email after a meeting, from the user (\"{me}\") to the other people who were on it. Reply with JSON only: subject and body.
 
 - subject: under 10 words, naming the meeting.
-- body: plain text, no Markdown, no placeholders like [Name]. A one-line thank-you; the decisions under the heading \"{decisions}:\"{translate}; the action items under \"{actions}:\"{translate}, each with its owner and due date when the summary gives them; then a one-line closing{sign}.
+- body: plain text, no Markdown, no placeholders like [Name]. A one-line thank-you; the decisions under the heading \"{decisions}:\"{translate}; the action items under \"{actions}:\"{translate}, one natural line each naming its owner and due date when the summary gives them (\"Dana: send the design files by Friday.\"), never field labels like \"owner:\" or \"|\";{open} then a one-line closing{sign}.
 - Leave out a heading whose list would be empty. Lists use \"- \" at the start of each line.
 - Use only what is in the summary. Never invent decisions, owners, dates, numbers or names.
 - Under 200 words.
 - Write everything in {lang}.",
+        // Asked for only when there are some: small models otherwise write "Open questions: None."
+        open = if summary.open_questions.is_empty() { "" } else { " one line saying what is still open;" },
         sign = if me != "Me" { format!(" signed \"{me}\"") } else { String::new() },
         lang = language_name(language),
     );
@@ -200,9 +203,20 @@ mod tests {
         let p = prompt(&m, &summary(), "en");
         assert!(p.user.contains("Meeting: Q4 roadmap, 2026-10-14."));
         assert!(p.user.contains("Invited: Dana Reyes."));
-        assert!(p.user.contains("- Send wireframes | owner: Me | due: Friday"));
+        assert!(p.user.contains("- Me: Send wireframes (by Friday)"));
+        assert!(!p.user.contains("| owner"));
         assert!(!p.user.contains("SECRET"));
         assert!(p.system.contains("\"Decisions:\"") && p.system.contains("Never invent"));
+    }
+
+    #[test]
+    fn open_questions_are_asked_for_only_when_there_are_some() {
+        let m = meeting(vec![]);
+        let mut s = summary();
+        s.open_questions.clear();
+        assert!(!prompt(&m, &s, "en").system.contains("still open"));
+        s.open_questions.push(s.decisions[0].clone());
+        assert!(prompt(&m, &s, "en").system.contains("still open"));
     }
 
     #[test]

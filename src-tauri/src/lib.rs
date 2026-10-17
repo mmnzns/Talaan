@@ -68,6 +68,11 @@ pub fn run() {
         .setup(|app| {
             logging::init(&logging::resolve_dir(std::env::var("TALAAN_DATA_DIR").ok(), dirs::home_dir(), dirs::data_local_dir()));
             let root = commands::resolve_data_dir(std::env::var("TALAAN_DATA_DIR").ok(), dirs::data_dir());
+            // Playback reads meeting audio through the asset protocol, whose static scope is the usual data folder;
+            // a TALAAN_DATA_DIR run (tests, a second profile) allows its own meetings folder too.
+            if std::env::var("TALAAN_DATA_DIR").is_ok_and(|s| !s.trim().is_empty()) {
+                let _ = app.asset_protocol_scope().allow_directory(root.join("meetings"), true);
+            }
             // Windows: models (gigabytes) live in %LOCALAPPDATA%, out of the roaming profile. Renames happen now,
             // before any worker can open a model; what needs copying is copied after setup, in the background,
             // and the old folder is read until then. A TALAAN_DATA_DIR run keeps models inside that folder.

@@ -286,7 +286,7 @@ pub fn diagnostics_report(app: AppHandle, setup: Vec<String>) -> String {
     let f = facts(&app);
     let settings = app.state::<AppState>().lock().settings_get().ok().flatten();
     let log = logging::dir().map(|d| logging::tail(d, TAIL_LINES)).unwrap_or_default();
-    log::info!("diagnostics copied ({} log lines)", log.len());
+    log::info!("diagnostics prepared ({} log lines)", log.len());
     report(&f, &setup, settings.as_ref(), &crate::recorder::mic::input_devices(), &log)
 }
 
