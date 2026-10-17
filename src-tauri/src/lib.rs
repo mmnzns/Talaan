@@ -62,6 +62,21 @@ pub fn run() {
         .plugin(tauri_plugin_autostart::init(tauri_plugin_autostart::MacosLauncher::LaunchAgent, None))
         .setup(|app| {
             let root = commands::resolve_data_dir(std::env::var("TALAAN_DATA_DIR").ok(), dirs::data_dir());
+            // Windows: models (gigabytes) live in %LOCALAPPDATA%, out of the roaming profile; the old folder is
+            // moved in the background and read until then. A TALAAN_DATA_DIR run keeps them inside that folder.
+            #[cfg(target_os = "windows")]
+            if std::env::var("TALAAN_DATA_DIR").map_or(true, |s| s.trim().is_empty()) {
+                if let Some(local) = dirs::data_local_dir() {
+                    let new = transcriber::models::local_models_root(&local, &app.config().identifier);
+                    transcriber::models::set_models_root(new.clone());
+                    let old = root.join("models");
+                    std::thread::spawn(move || match transcriber::relocate::move_models(&old, &new) {
+                        Ok(m) if m.left > 0 => eprintln!("models move: {} item(s) left for next launch", m.left),
+                        Ok(_) => {}
+                        Err(e) => eprintln!("models move failed: {e}"),
+                    });
+                }
+            }
             let mut store = storage::Storage::new(root.clone())?;
             store.load_policy()?;
             commands::calendar::remove_legacy_address(&mut store);

@@ -262,9 +262,11 @@ pub fn models_cancel(app: AppHandle, t: State<TranscriberState>, id: String) -> 
 #[tauri::command]
 pub fn models_delete(app: AppHandle, t: State<TranscriberState>, id: String) -> CmdResult<()> {
     let model = find_any(&id).ok_or_else(|| err(format!("No model called {id}")))?;
-    let dir = ModelStore::new(&t.data_dir, false).own_dir(model);
-    if dir.exists() {
-        std::fs::remove_dir_all(&dir).map_err(|e| err(crate::i18n::tr_err("error.delete_model", e)))?;
+    // The current folder and, while the Windows move isn't finished, the old one.
+    for dir in ModelStore::new(&t.data_dir, false).own_dirs(model) {
+        if dir.exists() {
+            std::fs::remove_dir_all(&dir).map_err(|e| err(crate::i18n::tr_err("error.delete_model", e)))?;
+        }
     }
     let _ = app.emit(MODELS_CHANGED, ());
     Ok(())

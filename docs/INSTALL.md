@@ -196,7 +196,7 @@ Meetings are plain files (transcript, summary, audio) in Talaan's data folder:
 
 ### Models download once
 
-Speech, summary, speaker and search models download only when you click Download (in setup or Settings), then stay on your computer. They live in the same data folder. You can switch or delete them in **Settings › Speech models** and **Settings › Summary AI**. If another speech app already downloaded the same model, Talaan can reuse it read-only (**Reuse models already on this computer**).
+Speech, summary, speaker and search models download only when you click Download (in setup or Settings), then stay on your computer. On the Mac they live in the same data folder. On Windows they live in `%LOCALAPPDATA%\com.craftconceptsdigital.talaan\models`, so a company PC with a roaming profile doesn't copy gigabytes at every sign-in (Talaan 1.1 moves models from the old `%APPDATA%\Talaan\models` by itself). You can switch or delete them in **Settings › Speech models** and **Settings › Summary AI**. If another speech app already downloaded the same model, Talaan can reuse it read-only (**Reuse models already on this computer**).
 
 #### Which speech model
 
@@ -299,7 +299,7 @@ If you can't open Talaan any more, skip this and remove the folders by hand as s
 2. Open **Windows Settings › Apps › Installed apps**, find **Talaan**, click **...** › **Uninstall**.
 3. In the uninstaller, tick **Delete the application data** if you want, then **Uninstall**.
 
-Ticking **Delete the application data** removes everything Talaan stored: your meetings, audio, models and settings (`%APPDATA%\Talaan`), the app's window data, saved API keys, the Notion secret and the calendar address. Leave it unticked to keep your meetings for a later reinstall. The startup entry (**Open at login**) is removed on every uninstall, ticked or not.
+Ticking **Delete the application data** removes everything Talaan stored: your meetings, audio and settings (`%APPDATA%\Talaan`), the models (`%LOCALAPPDATA%\com.craftconceptsdigital.talaan\models`), the app's window data, saved API keys, the Notion secret and the calendar address. Leave it unticked to keep your meetings for a later reinstall. The startup entry (**Open at login**) and the `talaan://` link Talaan's notifications use are removed on every uninstall, ticked or not.
 
 Talaan has no setting to keep meetings in another folder: they're always in `%APPDATA%\Talaan`. If you started it with the `TALAAN_DATA_DIR` environment variable (testing only), the uninstaller doesn't know about that folder; delete it by hand. Files you exported, and models Talaan was reusing from another app, are never touched.
 
@@ -308,8 +308,9 @@ If you uninstalled without it and want everything gone, delete these by hand:
 | What | Where |
 |---|---|
 | Program files | `%LOCALAPPDATA%\Talaan` (removed by the uninstaller) |
-| Meetings, audio, models, settings | `%APPDATA%\Talaan` |
-| App window data | `%LOCALAPPDATA%\com.craftconceptsdigital.talaan` and `%APPDATA%\com.craftconceptsdigital.talaan` |
+| Meetings, audio, settings | `%APPDATA%\Talaan` |
+| Models, app window data | `%LOCALAPPDATA%\com.craftconceptsdigital.talaan` and `%APPDATA%\com.craftconceptsdigital.talaan` |
+| Notification link | `HKEY_CURRENT_USER\Software\Classes\talaan` (removed by the uninstaller) |
 | Saved API keys | **Control Panel › Credential Manager › Windows Credentials**, under Generic Credentials: `claude.Talaan`, `openai.Talaan`, `gemini.Talaan`, `compatible.Talaan`, `notion.Talaan`, `calendar-ics.Talaan` |
 
 Or paste this into PowerShell:
@@ -318,6 +319,7 @@ Or paste this into PowerShell:
 Remove-Item -Recurse -Force "$env:APPDATA\Talaan", "$env:APPDATA\com.craftconceptsdigital.talaan", "$env:LOCALAPPDATA\com.craftconceptsdigital.talaan" -ErrorAction SilentlyContinue
 "claude","openai","gemini","compatible","notion","calendar-ics" | ForEach-Object { cmdkey /delete:"$_.Talaan" }
 Remove-ItemProperty HKCU:\Software\Microsoft\Windows\CurrentVersion\Run -Name Talaan -ErrorAction SilentlyContinue
+Remove-Item -Recurse HKCU:\Software\Classes\talaan -ErrorAction SilentlyContinue
 ```
 
 (`cmdkey` says "Element not found" for keys you never saved. That's fine.)

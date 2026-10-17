@@ -67,6 +67,21 @@ claude:// and codex://, have a protected `UrlAssociations` entry; adding `Applic
 choice wasn't made (that would write a protected per-user default). Hand check with the installed build:
 docs/TESTING.md. If the picker shows every time, the fallback is a COM activator.
 
+**Models out of Roaming (v1.1, W2).** Models (several GB) moved from `%APPDATA%\Talaan\models` (Roaming: copied at
+every sign-in on a roaming profile) to `%LOCALAPPDATA%\com.craftconceptsdigital.talaan\models`, the bundle-id folder
+Tauri already creates for WebView data. Not `%LOCALAPPDATA%\Talaan`: that is the per-user install folder. Tauri's
+uninstaller deletes its own files there one by one and then `RMDir "$INSTDIR"` (not recursive), and with "Delete the
+application data" ticked (never on `/UPDATE`) it runs `RmDir /r "$LOCALAPPDATA\${BUNDLEID}"`; our hook also removes
+`...\models` and `%APPDATA%\Talaan` (where models may still be). Meetings and settings stay in `%APPDATA%\Talaan`.
+`lib.rs` sets the folder (`models::set_models_root`) unless `TALAAN_DATA_DIR` is set (then models stay inside it,
+as before), and moves the old folder in a background thread (`transcriber/relocate.rs`): one rename when possible,
+else per model folder, else file by file (copy to `<name>.talaan-move`, sync, rename into place); an old file is
+deleted only when the new folder has one of the same name and size, nothing new is ever overwritten, and what's in use
+stays for the next launch. Until then `ModelStore` reads the old folder as Talaan's own (`legacy_root`), downloads go
+to the new one, Delete removes both, Delete everything removes the new folder too, and the Privacy tab's size counts
+it. Tested with temp folders only (including a file held open without delete sharing, copied and left for the next
+pass).
+
 **Dev note:** the single-instance guard is Windows only. On Windows, `npm run tauri dev` exits immediately if the installed
 Talaan is running; quit it first.
 
@@ -200,7 +215,7 @@ themselves (no Vulkan SDK on the PC by decision); CI builds them. Hand checks: d
 Everything outside `src-tauri/src/platform/macos/` is cross-platform by design: storage, the transcriber
 pipeline (VAD, Parakeet/Whisper, echo, merge, diarization), the summarizer and its helper protocol, Ask, call
 rules and tab classification, calendar event picking, Notion, the whole React UI. Models download at runtime
-(`~/AppData/Roaming/Talaan` via `dirs::data_dir()`), so nothing big lives in the repo. Fonts are bundled.
+(Windows: `%LOCALAPPDATA%\com.craftconceptsdigital.talaan\models` since v1.1, see below), so nothing big lives in the repo. Fonts are bundled.
 `keyring`, the updater and autostart plugins all support Windows.
 
 ## What has to be written (`src-tauri/src/platform/windows/`, plus one `cfg` line in `platform/mod.rs`)
