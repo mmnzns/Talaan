@@ -1,0 +1,254 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Talaan: meeting notes that stay on your computer</title>
+  <meta name="description" content="Talaan is a free, open-source meeting recorder for Mac and Windows. It takes notes without a bot joining your call, and your recordings stay on your computer.">
+  <meta name="color-scheme" content="light dark">
+  <meta name="theme-color" content="#FAFAF7" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#0E1016" media="(prefers-color-scheme: dark)">
+  <link rel="icon" href="assets/icon.svg" type="image/svg+xml">
+  <link rel="preload" href="assets/fonts/instrument-sans-latin-wght-normal.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="assets/fonts/syne-latin-wght-normal.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <a class="skip" href="#main">Skip to content</a>
+
+  <header class="top">
+    <div class="wrap top-row">
+      <a class="brand" href="#main" aria-label="Talaan, back to top">
+        <img src="assets/icon.svg" alt="" width="32" height="32">
+        <span>talaan</span>
+      </a>
+      <nav aria-label="Sections">
+        <ul class="nav">
+          <li><a href="#how">How it works</a></li>
+          <li><a href="#privacy">Privacy</a></li>
+          <li><a href="#faq">Questions</a></li>
+          <li><a class="btn btn-strong btn-sm" href="#download">Download</a></li>
+        </ul>
+      </nav>
+    </div>
+  </header>
+
+  <main id="main" tabindex="-1">
+    <section class="hero" aria-labelledby="hero-title">
+<svg class="sun" aria-hidden="true" focusable="false" viewBox="0 0 100 100">
+<circle cx="100" cy="0" r="27.28"/>
+<polygon points="97.36,-26.35 95.04,-51.15 100.00,-56.58 104.96,-51.15 102.64,-26.35"/>
+<polygon points="93.61,-26.39 88.39,-45.90 90.68,-47.93 93.57,-46.91 96.04,-26.86"/>
+<polygon points="103.96,-26.86 106.43,-46.91 109.32,-47.93 111.61,-45.90 106.39,-26.39"/>
+<polygon points="116.77,-20.50 132.66,-39.68 140.00,-40.00 139.68,-32.66 120.50,-16.77"/>
+<polygon points="114.14,-23.18 124.25,-40.67 127.30,-40.48 128.62,-37.72 116.20,-21.79"/>
+<polygon points="121.79,-16.20 137.72,-28.62 140.48,-27.30 140.67,-24.25 123.18,-14.14"/>
+<polygon points="126.35,-2.64 151.15,-4.96 156.57,-0.00 151.15,4.96 126.35,2.63"/>
+<polygon points="126.39,-6.39 145.90,-11.61 147.93,-9.32 146.91,-6.43 126.86,-3.96"/>
+<polygon points="126.86,3.96 146.91,6.43 147.93,9.32 145.90,11.61 126.39,6.39"/>
+<polygon points="120.50,16.77 139.68,32.66 140.00,40.00 132.66,39.68 116.77,20.50"/>
+<polygon points="123.18,14.14 140.67,24.25 140.48,27.30 137.72,28.62 121.79,16.20"/>
+<polygon points="116.20,21.79 128.62,37.72 127.30,40.48 124.25,40.67 114.14,23.18"/>
+<polygon points="102.64,26.35 104.96,51.15 100.00,56.58 95.04,51.15 97.36,26.35"/>
+<polygon points="106.39,26.39 111.61,45.90 109.32,47.93 106.43,46.91 103.96,26.86"/>
+<polygon points="96.04,26.86 93.57,46.91 90.68,47.93 88.39,45.90 93.61,26.39"/>
+<polygon points="83.23,20.50 67.34,39.68 60.00,40.00 60.32,32.66 79.50,16.77"/>
+<polygon points="85.86,23.18 75.75,40.67 72.70,40.48 71.38,37.72 83.80,21.79"/>
+<polygon points="78.21,16.20 62.28,28.62 59.52,27.30 59.33,24.25 76.82,14.14"/>
+<polygon points="73.65,2.64 48.85,4.96 43.42,0.00 48.85,-4.96 73.65,-2.63"/>
+<polygon points="73.61,6.39 54.10,11.61 52.07,9.32 53.09,6.43 73.14,3.96"/>
+<polygon points="73.14,-3.96 53.09,-6.43 52.07,-9.32 54.10,-11.61 73.61,-6.39"/>
+<polygon points="79.50,-16.77 60.32,-32.66 60.00,-40.00 67.34,-39.68 83.23,-20.50"/>
+<polygon points="76.82,-14.14 59.33,-24.25 59.52,-27.30 62.28,-28.62 78.21,-16.20"/>
+<polygon points="83.80,-21.79 71.38,-37.72 72.70,-40.48 75.75,-40.67 85.86,-23.18"/>
+<polygon points="28.72,4.22 30.83,7.41 34.44,6.44 32.03,9.37 34.17,12.67 30.63,11.34 28.22,14.26 28.42,10.33 24.88,9.01 28.49,8.04"/>
+<polygon points="52.00,47.05 53.21,50.68 56.95,50.68 53.87,52.88 55.08,56.62 52.00,54.42 48.92,56.62 50.13,52.88 47.05,50.68 50.79,50.68"/>
+<polygon points="92.28,66.22 92.51,70.04 96.12,71.01 92.58,72.33 92.78,76.26 90.37,73.34 86.83,74.67 88.97,71.37 86.56,68.44 90.17,69.41"/>
+</svg>      <div class="wrap">
+        <p class="eyebrow">free · open source · mac and windows</p>
+        <h1 id="hero-title">Meeting notes that stay on your computer.</h1>
+        <p class="lede">Talaan records your calls and writes the notes for you, without a bot joining the meeting. Your recordings and transcripts never leave your computer, and the summaries can be written there too.</p>
+        <div class="cta" data-downloads>
+          <a class="btn btn-strong" data-os="mac" href="https://github.com/mmnzns/Talaan/releases/latest">Download for Mac</a>
+          <a class="btn" data-os="windows" href="https://github.com/mmnzns/Talaan/releases/latest">Download for Windows</a>
+        </div>
+        <p class="fine">No account. No subscription. Works with Zoom, Google Meet, Microsoft Teams, Slack, Discord, WhatsApp and more.</p>
+
+        <figure class="shot">
+          <picture>
+            <source srcset="assets/meeting-dark.webp" media="(prefers-color-scheme: dark)">
+            <img src="assets/meeting-light.webp" width="1600" height="1000" alt="The Talaan window showing a meeting called Q4 roadmap sync. On the left is a list of past meetings. In the middle is a summary with decisions and action items, each with a time you can click. On the right is the transcript, with each line labeled by who spoke.">
+          </picture>
+        </figure>
+      </div>
+    </section>
+
+    <section id="how" class="band" aria-labelledby="how-title">
+      <div class="wrap">
+        <p class="eyebrow">how it works</p>
+        <h2 id="how-title">Three steps, and the first one is just your call.</h2>
+        <ol class="steps">
+          <li class="card">
+            <span class="step-num" aria-hidden="true">1</span>
+            <h3>Join your call as usual</h3>
+            <p>Use Zoom, Google Meet, Teams, Slack or whatever you already use. Nothing to install in the call, and nobody gets an invite from a bot.</p>
+          </li>
+          <li class="card">
+            <span class="step-num" aria-hidden="true">2</span>
+            <h3>Talaan notices and records both sides</h3>
+            <p>When a call app starts using your microphone, Talaan asks if you want to record. It records you and the other people on the call.</p>
+            <div class="prompt" aria-hidden="true">
+              <p class="mono">zoom is using your mic</p>
+              <p class="prompt-title">Record this call?</p>
+              <p class="prompt-body">Everything stays on your computer.</p>
+              <div class="prompt-actions"><span class="chip chip-strong">Record</span><span class="chip chip-plain">Not now</span></div>
+            </div>
+          </li>
+          <li class="card">
+            <span class="step-num" aria-hidden="true">3</span>
+            <h3>Get a transcript and a summary</h3>
+            <p>When the call ends, you get the full transcript and a short summary: what was decided, who does what by when, and what's still open. Click any line to hear that moment again.</p>
+          </li>
+        </ol>
+      </div>
+    </section>
+
+    <section class="wrap features" aria-labelledby="features-title">
+      <p class="eyebrow">what you get</p>
+      <h2 id="features-title">Notes you can actually use.</h2>
+      <ul class="feature-list">
+        <li><h3>Who said what</h3><p>Your voice is "Me", the call is "Them". Talaan can also tell speakers apart, and you rename them once.</p></li>
+        <li><h3>Decisions and to-dos</h3><p>Each summary lists decisions with the time they were made, and action items with an owner and a due date.</p></li>
+        <li><h3>Ask your meetings</h3><p>Ask a question across all your meetings and get an answer with links to the exact moment.</p></li>
+        <li><h3>Share it your way</h3><p>Copy the notes as text, save a PDF, or send them to Notion. Fix a word in the transcript any time.</p></li>
+      </ul>
+    </section>
+
+    <section id="privacy" class="band band-dark" aria-labelledby="privacy-title">
+      <div class="wrap privacy">
+        <div>
+          <p class="eyebrow">privacy</p>
+          <h2 id="privacy-title">Your meetings are yours.</h2>
+          <p class="lede">Talaan works on your computer, even with Wi-Fi off once it's set up. Nothing about your meetings leaves your computer unless you choose to send it.</p>
+        </div>
+        <ul class="checks">
+          <li><strong>Local by default.</strong> Recording, the transcript and the summary all happen on your computer.</li>
+          <li><strong>No account.</strong> There's nothing to sign up for and nothing to log in to.</li>
+          <li><strong>No bot.</strong> Nobody joins your call. Talaan gives you a short message you can paste in the chat to let people know.</li>
+          <li><strong>You choose the cloud.</strong> If you want, you can have summaries written by a cloud AI service such as Claude, OpenAI or Gemini, using your own key. Only the transcript text is sent, never the audio.</li>
+          <li><strong>No tracking.</strong> Talaan doesn't collect usage data or analytics.</li>
+        </ul>
+      </div>
+    </section>
+
+    <section id="download" class="wrap" aria-labelledby="download-title">
+      <p class="eyebrow">download</p>
+      <h2 id="download-title">Get Talaan. It's free.</h2>
+      <div class="downloads" data-downloads>
+        <article class="card dl" data-os="mac" aria-labelledby="dl-mac">
+          <h3 id="dl-mac">Mac</h3>
+          <ul class="reqs">
+            <li>macOS 14.4 (Sonoma) or later</li>
+            <li>A Mac with Apple silicon (M1 or newer). Intel Macs aren't supported.</li>
+            <li>About 3 to 4 GB of free space, plus room for your meetings</li>
+            <li>Internet the first time, to download the speech and summary models</li>
+          </ul>
+          <a class="btn btn-strong" href="https://github.com/mmnzns/Talaan/releases/latest">Download for Mac</a>
+          <p class="fine">Pick the file ending in <code>.dmg</code>.</p>
+        </article>
+        <article class="card dl" data-os="windows" aria-labelledby="dl-win">
+          <h3 id="dl-win">Windows</h3>
+          <ul class="reqs">
+            <li>Windows 11, or Windows 10 version 2004 or later</li>
+            <li>A 64-bit Intel or AMD PC</li>
+            <li>About 3 to 4 GB of free space, plus room for your meetings</li>
+            <li>Internet the first time, to download the speech and summary models</li>
+          </ul>
+          <a class="btn btn-strong" href="https://github.com/mmnzns/Talaan/releases/latest">Download for Windows</a>
+          <p class="fine">Pick the file ending in <code>x64-setup.exe</code>.</p>
+        </article>
+      </div>
+
+      <div class="note" id="warning" role="note" aria-labelledby="warning-title">
+        <h3 id="warning-title">Your computer will probably warn you. That's expected.</h3>
+        <p>Talaan is free and made by one person. It isn't signed with a paid Apple or Microsoft certificate yet, so your computer can't vouch for it and asks you first. Everything is built from the <a href="https://github.com/mmnzns/Talaan">public source code</a>, which anyone can read.</p>
+        <div class="note-cols">
+          <div>
+            <h4>On Windows</h4>
+            <ol>
+              <li>If your browser says the file isn't commonly downloaded, choose <b>Keep</b>. In Edge: <b>...</b> › <b>Keep</b> › <b>Show more</b> › <b>Keep anyway</b>.</li>
+              <li>Double-click the installer. If you see <b>Windows protected your PC</b>, click <b>More info</b>, then <b>Run anyway</b>.</li>
+              <li>The publisher shows as Unknown publisher. That's expected, and it only happens once.</li>
+            </ol>
+          </div>
+          <div>
+            <h4>On a Mac</h4>
+            <p>macOS blocks Talaan twice: once when you open the <code>.dmg</code>, and once the first time you open the app. Each time:</p>
+            <ol>
+              <li>Click <b>Done</b>. Not <b>Move to Trash</b>.</li>
+              <li>Open <b>System Settings</b> › <b>Privacy &amp; Security</b>, scroll down and click <b>Open Anyway</b>.</li>
+              <li>Enter your Mac password, then click <b>Open Anyway</b> again.</li>
+            </ol>
+            <p>You only do this once. Updates open normally.</p>
+          </div>
+        </div>
+        <p class="fine">Full step-by-step guide: <a href="https://github.com/mmnzns/Talaan/blob/main/docs/INSTALL.md">installing Talaan</a>.</p>
+      </div>
+    </section>
+
+    <section id="faq" class="band" aria-labelledby="faq-title">
+      <div class="wrap narrow">
+        <p class="eyebrow">questions</p>
+        <h2 id="faq-title">Good questions.</h2>
+        <div class="faq">
+          <details>
+            <summary>Is Talaan really free?</summary>
+            <p>Yes. Talaan is free and open source, with no account, no trial and no subscription. The only thing that could cost money is optional: if you choose to use a cloud AI for summaries with your own key, that company may charge you for it.</p>
+          </details>
+          <details>
+            <summary>Do the other people on the call know I'm recording?</summary>
+            <p>No bot joins, so they won't see one. When you record, Talaan gives you a short notice you can paste in the call chat with one click. It's good manners to tell people, and in some places the law requires it.</p>
+          </details>
+          <details>
+            <summary>Which call apps does it work with?</summary>
+            <p>Any app that uses your microphone for calls, including Zoom, Google Meet, Microsoft Teams, Slack huddles, Webex, Discord, WhatsApp and FaceTime on the Mac. You can set each app to ask first, always record or never record. Dictation apps never trigger it.</p>
+          </details>
+          <details>
+            <summary>Does it work without internet?</summary>
+            <p>Yes, once it's set up. The first time, Talaan downloads its speech and summary models (only when you click Download). After that, recording, transcripts and summaries all work offline.</p>
+          </details>
+          <details>
+            <summary>What languages does it understand?</summary>
+            <p>The most accurate speech model understands 99 languages, including Filipino. A faster one, recommended on Windows, covers 25 European languages. You can switch any time in Settings.</p>
+          </details>
+          <details>
+            <summary>Where are my meetings saved, and can I delete them?</summary>
+            <p>Meetings are plain files in a folder on your computer, readable even without Talaan. Audio is kept for 7 days by default, then deleted (you can change this, or pin a meeting to keep it). <b>Settings › Privacy › Delete all Talaan data</b> removes everything.</p>
+          </details>
+          <details>
+            <summary>Why does my computer warn me when I install it?</summary>
+            <p>Talaan isn't signed with a paid certificate yet. <a href="#warning">Here's what to click</a> on Windows and on a Mac.</p>
+          </details>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="foot">
+    <div class="wrap foot-row">
+      <div class="foot-brand">
+        <img src="assets/icon.svg" alt="" width="28" height="28">
+        <p><b>Talaan</b> is Tagalog for "record". The logo is "ta" in Baybayin, the native Filipino script.</p>
+      </div>
+      <ul class="foot-links">
+        <li><a href="https://github.com/mmnzns/Talaan">Source code on GitHub</a></li>
+        <li><a href="https://github.com/mmnzns/Talaan/issues">Report a problem</a></li>
+        <li><a href="https://github.com/mmnzns/Talaan/blob/main/LICENSE">MIT License</a></li>
+      </ul>
+      <p class="fine foot-copy">© 2026 Miguel Monzones. Free and open source under the MIT License.</p>
+    </div>
+  </footer>
+
+  <script src="main.js" defer></script>
+</body>
+</html>

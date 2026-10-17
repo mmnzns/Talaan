@@ -29,7 +29,8 @@ export const IDLE: RecorderState = { state: "idle", elapsedMs: 0, marks: 0, note
 /** The recorder as the UI sees it. Tauri in the app, a simulation in the browser and on the Screens stage. */
 export interface RecorderClient {
   status(): Promise<RecorderState>;
-  start(app?: { id: string; label: string }): Promise<RecorderState>;
+  /** `test`: the guided test recording (microphone only, titled and tagged as a test, stops itself after `maxMs`). */
+  start(app?: { id: string; label: string }, test?: { maxMs: number }): Promise<RecorderState>;
   pause(): Promise<void>;
   resume(): Promise<void>;
   mark(note?: string): Promise<void>;
@@ -57,8 +58,8 @@ export class TauriRecorderClient implements RecorderClient {
   status() {
     return call<RecorderState>("recorder_status");
   }
-  start(app?: { id: string; label: string }) {
-    return call<RecorderState>("recorder_start", { appId: app?.id ?? null, appLabel: app?.label ?? null });
+  start(app?: { id: string; label: string }, test?: { maxMs: number }) {
+    return call<RecorderState>("recorder_start", { appId: app?.id ?? null, appLabel: app?.label ?? null, test: test ?? null });
   }
   pause() {
     return call<void>("recorder_pause");
@@ -106,7 +107,16 @@ export class MockRecorderClient implements RecorderClient {
   private noticeCbs = new Set<(n: RecorderNotice) => void>();
   private timers: ReturnType<typeof setInterval>[] = [];
 
-  constructor(private opts: { startAtMs?: number; speakers?: boolean } = {}) {}
+  private test?: { maxMs: number };
+
+  /** `meetings`: the preview's meeting store, so Start creates a meeting and Stop saves it, as in the app. */
+  constructor(
+    private opts: {
+      startAtMs?: number;
+      speakers?: boolean;
+      meetings?: { start(test: boolean): string; stop(id: string, durationMs: number): void; discard(id: string): void };
+    } = {},
+  ) {}
 
   private emit() {
     const snapshot = { ...this.s };
@@ -122,14 +132,18 @@ export class MockRecorderClient implements RecorderClient {
     return { ...this.s };
   }
 
-  async start() {
+  async start(_app?: { id: string; label: string }, test?: { maxMs: number }) {
     this.clear();
-    this.s = { state: "recording", meetingId: "", elapsedMs: this.opts.startAtMs ?? 0, marks: 0, notes: 0, micName: "AirPods Pro", systemAudio: true, onBuiltInSpeakers: this.opts.speakers ?? true };
+    this.test = test;
+    const meetingId = this.opts.meetings?.start(Boolean(test)) ?? "";
+    this.s = { state: "recording", meetingId, elapsedMs: this.opts.startAtMs ?? 0, marks: 0, notes: 0, micName: "AirPods Pro", systemAudio: true, onBuiltInSpeakers: this.opts.speakers ?? true };
     this.timers.push(
       setInterval(() => {
         if (this.s.state === "recording") {
           this.s.elapsedMs += 1000;
           this.emit();
+          // The test stops itself, as the app's recorder does.
+          if (this.test && this.s.elapsedMs >= this.test.maxMs) void this.stop();
         }
       }, 1000),
       setInterval(() => {
@@ -161,21 +175,35 @@ export class MockRecorderClient implements RecorderClient {
   async stop() {
     this.clear();
     const id = this.s.meetingId ?? "";
+    const elapsed = this.s.elapsedMs;
     this.s = { ...IDLE };
+    this.test = undefined;
+    if (id) this.opts.meetings?.stop(id, elapsed);
     this.emit();
     return id;
   }
 
   async discard() {
-    await this.stop();
+    const id = this.s.meetingId ?? "";
+    this.clear();
+    this.s = { ...IDLE };
+    this.test = undefined;
+    if (id) this.opts.meetings?.discard(id);
+    this.emit();
+  }
+
+  /** `?mic=denied` or `?mic=ask` in the browser preview shows those states. */
+  private micParam() {
+    return typeof location === "undefined" ? null : new URLSearchParams(location.search).get("mic");
   }
 
   async microphonePermission() {
-    return "granted" as const;
+    const p = this.micParam();
+    return p === "denied" ? ("denied" as const) : p === "ask" ? ("undetermined" as const) : ("granted" as const);
   }
 
   async requestMicrophone() {
-    return true;
+    return this.micParam() !== "denied";
   }
 
   async requestSystemAudio() {

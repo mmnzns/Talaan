@@ -27,7 +27,7 @@ export const defaultSettings: Settings = {
   warnOnSpeakers: true,
   notifySummaryReady: true,
   callApps: [
-    { id: "zoom", name: "Zoom", note: "zoom.us app", rule: "always" },
+    { id: "zoom", name: "Zoom", note: "zoom.us app", rule: "ask" },
     { id: "slack", name: "Slack", note: "Huddles and calls", rule: "ask" },
     { id: "teams", name: "Microsoft Teams", note: "Teams app", rule: "ask" },
     {

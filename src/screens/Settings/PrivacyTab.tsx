@@ -5,10 +5,9 @@ import { useSettingsStore, useStore } from "../../data/StoreProvider";
 import { exportAll } from "../../lib/exportAll";
 import type { RetentionChoice, TranscriptRetention } from "../../data/settings";
 import { formatBytes, tildePath } from "../../lib/format";
-import { onWindows } from "../../lib/platform";
 import { useT } from "../../lib/i18n/I18nProvider";
-import type { MessageKey } from "../../lib/i18n";
-import { Button, Label, Select, Sheet, useToast } from "../../ui";
+import { Button, Select, Sheet, useToast } from "../../ui";
+import { LeavesTable } from "./LeavesTable";
 import { Group, Row } from "./parts";
 import type { TabProps } from "./tabProps";
 
@@ -27,31 +26,10 @@ export function PrivacyTab({ settings: s, update }: TabProps) {
     store.dataInfo().then(setInfo, () => setInfo(undefined));
   }, [store, meetings.length]);
 
-  const flows: [MessageKey, MessageKey][] = [
-    ["settings.flow_audio", "settings.when_never"],
-    ["settings.flow_transcripts", "settings.when_never"],
-    ["settings.flow_byok", s.summaryEngine === "byok" ? "settings.when_on" : "settings.when_off"],
-    ["settings.flow_notion", s.notion.connected ? "settings.when_export" : "settings.when_not_connected"],
-    ["settings.flow_update", s.checkUpdates ? "settings.when_launch" : "settings.when_off"],
-    ...(onWindows && s.calendarConnected ? [["settings.flow_calendar_windows", "settings.when_recording_start"] as [MessageKey, MessageKey]] : []),
-    ["settings.flow_log", "settings.when_you_send"],
-    ["settings.flow_analytics", "settings.when_never_collected"],
-  ];
-
   return (
     <div className="flex flex-col gap-3">
       <Group>
-        <div className="flex flex-col gap-2.5 py-4">
-          <Label>{t("settings.leaves_label")}</Label>
-          <div className="grid grid-cols-[1fr_auto] gap-x-4 gap-y-1.5 text-[13px]">
-            {flows.map(([what, when]) => (
-              <div key={what} className="contents">
-                <span>{t(what)}</span>
-                <span className={when === "settings.when_on" ? "font-bold text-danger" : "font-mono text-xs text-subtle"}>{t(when)}</span>
-              </div>
-            ))}
-          </div>
-        </div>
+        <LeavesTable settings={s} />
         <Row title={t("settings.audio_title")} desc={t("settings.audio_desc")}>
           <Select label={t("settings.audio_title")} wrapperClassName="w-40" value={s.retention} onChange={(e) => update({ retention: e.target.value as RetentionChoice })}>
             <option value="1d">{t("settings.keep_1d")}</option>

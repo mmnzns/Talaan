@@ -25,3 +25,14 @@ describe("withDefaults", () => {
     expect(s.theme).toBe("dark");
   });
 });
+
+describe("call app rules", () => {
+  it("ask before recording every app on a new install (FaceTime is never)", () => {
+    for (const a of defaultSettings.callApps) expect(a.rule, a.id).toBe(a.id === "facetime" ? "never" : "ask");
+  });
+
+  it("keep a stored rule (no migration flips Always back to Ask)", () => {
+    const s = withDefaults({ callApps: [{ id: "zoom", name: "Zoom", note: "zoom.us app", rule: "always" }] });
+    expect(s.callApps.find((a) => a.id === "zoom")?.rule).toBe("always");
+  });
+});
