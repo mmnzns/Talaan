@@ -77,6 +77,10 @@ export const recording = area({
     less: "Less",
     noticeCopied: "Notice copied. Paste it in the meeting chat.",
     showNotice: "Show notice",
+    // notes and meeting type while recording
+    notesToggle: "Your notes",
+    notesHint: "The summary keeps your points and fills in the rest.",
+    meetingTypeDesc: "The summary is shaped for this kind of call.",
   },
   fr: {
     nudgeAria: "Enregistrer cet appel ?",
@@ -151,6 +155,10 @@ export const recording = area({
     less: "Moins",
     noticeCopied: "Avis copié. Collez-le dans le clavardage de la réunion.",
     showNotice: "Afficher l’avis",
+    // notes and meeting type while recording
+    notesToggle: "Vos notes",
+    notesHint: "Le résumé garde vos points et complète le reste.",
+    meetingTypeDesc: "Le résumé s’adapte à ce genre d’appel.",
   },
   es: {
     nudgeAria: "¿Grabar esta llamada?",
@@ -225,5 +233,9 @@ export const recording = area({
     less: "Menos",
     noticeCopied: "Aviso copiado. Pégalo en el chat de la reunión.",
     showNotice: "Mostrar aviso",
+    // notes and meeting type while recording
+    notesToggle: "Tus notas",
+    notesHint: "El resumen conserva tus puntos y completa el resto.",
+    meetingTypeDesc: "El resumen se adapta a este tipo de llamada.",
   },
 });

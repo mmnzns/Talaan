@@ -16,6 +16,8 @@ pub struct Event {
     pub all_day: bool,
     /// Other people invited (the user's own entry is left out).
     pub attendees: Vec<String>,
+    /// Their email addresses, where the calendar has them (the Windows calendar file does; macOS leaves it empty).
+    pub emails: Vec<String>,
 }
 
 /// How early a call may start before its event and still belong to it.
@@ -37,7 +39,7 @@ mod tests {
     const MIN: i64 = 60_000;
 
     fn ev(title: &str, start_min: i64, end_min: i64) -> Event {
-        Event { title: title.into(), start_ms: start_min * MIN, end_ms: end_min * MIN, all_day: false, attendees: vec![] }
+        Event { title: title.into(), start_ms: start_min * MIN, end_ms: end_min * MIN, all_day: false, attendees: vec![], emails: vec![] }
     }
 
     #[test]

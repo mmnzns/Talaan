@@ -22,6 +22,9 @@ pub enum MeetingStatus {
 pub struct CalendarEvent {
     pub title: String,
     pub attendees: Vec<String>,
+    /// Invitees' email addresses, when the calendar gives them (for Draft follow-up › Open in mail app).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub emails: Vec<String>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
@@ -29,8 +32,19 @@ pub struct CalendarEvent {
 pub struct Mark {
     pub id: String,
     pub at: u64,
+    /// A mark with text is one of the user's notes; without text it is a marked moment (a summary highlight).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub note: Option<String>,
+    /// A note written after the call, in the meeting view: it has no moment, so `at` means nothing.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub later: bool,
+}
+
+impl Mark {
+    /// The note's text, when this mark is a note.
+    pub fn note_text(&self) -> Option<&str> {
+        self.note.as_deref().map(str::trim).filter(|n| !n.is_empty())
+    }
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
@@ -70,10 +84,27 @@ pub struct Summary {
     pub decisions: Vec<SummaryItem>,
     pub action_items: Vec<ActionItem>,
     pub open_questions: Vec<SummaryItem>,
+    /// The meeting type's own parts ("Strengths", "Blockers"); empty for General.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub sections: Vec<SummarySection>,
+    /// One per marked moment: its time and what was said around it.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub highlights: Vec<SummaryItem>,
+    /// The meeting type it was written as (`summarizer::templates`); none for summaries from before meeting types.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub template: Option<String>,
     pub engine: String,
     /// Computed on read (true when `summary.edited.json` exists). Never trust it from disk.
     #[serde(default)]
     pub edited: bool,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct SummarySection {
+    pub id: String,
+    pub title: String,
+    pub items: Vec<SummaryItem>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
@@ -143,6 +174,9 @@ pub struct MeetingFile {
     /// Keep this meeting transcript-only until the user asks for a summary (set from the recording controls).
     #[serde(default, skip_serializing_if = "is_false")]
     pub transcript_only: bool,
+    /// The meeting type to summarize it as (`summarizer::templates`); none = the Settings default.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub template: Option<String>,
     /// "Transcribe again" with this speech model; cleared once the new transcript is saved.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub retranscribe_model: Option<String>,
@@ -240,6 +274,9 @@ pub struct Meeting {
     pub transcription: Option<TranscriptionInfo>,
     #[serde(default, skip_serializing_if = "is_false")]
     pub transcript_only: bool,
+    /// The meeting type chosen for this meeting, when one was (otherwise the Settings default applies).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub template: Option<String>,
 }
 
 #[cfg(test)]

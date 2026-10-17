@@ -1,7 +1,9 @@
 //! The background summarizer: one thread, one meeting at a time, queue rebuilt from `summarizing` at launch.
 //! A meeting enters `summarizing` and leaves `ready`, with a summary or with `summary_error` saying why not.
 
+use super::prompt::Options;
 use super::summarize::{summarize, too_short, EngineError, SummarizeError, SummaryEngine};
+use super::templates;
 use crate::eta::{self, Device, Profile};
 use crate::storage::model::{MeetingStatus, ProcessingError};
 use crate::storage::speed::set_eta;
@@ -26,6 +28,10 @@ pub struct Config {
     pub engine: String,
     /// "meeting" = the meeting's language, or an ISO code.
     pub language: String,
+    /// Settings › Summary AI › Default meeting type (a `templates` id).
+    pub template: String,
+    /// Settings › Summary AI › Custom instructions.
+    pub instructions: String,
     pub settings: Value,
 }
 
@@ -35,12 +41,21 @@ impl Config {
         Config {
             engine: v["summaryEngine"].as_str().unwrap_or("local").to_string(),
             language: v["summaryLanguage"].as_str().filter(|l| !l.is_empty()).unwrap_or("meeting").to_string(),
+            template: v["summaryTemplate"].as_str().filter(|t| templates::exists(t)).unwrap_or(templates::GENERAL).to_string(),
+            instructions: v["summaryInstructions"].as_str().unwrap_or("").to_string(),
             settings: v,
         }
     }
 
     pub fn language_for(&self, meeting_language: &str) -> String {
         if self.language == "meeting" { meeting_language.to_string() } else { self.language.clone() }
+    }
+
+    /// How a meeting is written: its own meeting type when one was chosen for it, else the default, and the
+    /// custom instructions.
+    pub fn options_for(&self, meeting_template: Option<&str>) -> Options {
+        let template = meeting_template.filter(|t| templates::exists(t)).unwrap_or(&self.template).to_string();
+        Options { template, instructions: self.instructions.clone() }
     }
 }
 
@@ -60,10 +75,16 @@ pub struct Deps {
     pub profile: Box<dyn Fn(&Config) -> Profile + Send + Sync>,
 }
 
+/// Other work that needs the local AI (a follow-up draft): run on this thread between summaries, so only one
+/// model is ever loaded.
+pub type Job = Box<dyn FnOnce() + Send>;
+
 #[derive(Default)]
 struct Queue {
     /// Meeting id, and whether it came straight from the transcriber (nobody asked for it on screen).
     ids: VecDeque<(String, bool)>,
+    /// Short jobs go before the next summary.
+    jobs: VecDeque<Job>,
     current: Option<String>,
 }
 
@@ -107,6 +128,18 @@ impl Worker {
         }
     }
 
+    /// Runs `job` on the summarizer thread once the summary in progress (if any) is done, before the next one.
+    pub fn run_between(&self, job: Job) {
+        let (lock, cv) = &*self.queue;
+        lock.lock().unwrap_or_else(|e| e.into_inner()).jobs.push_back(job);
+        cv.notify_one();
+    }
+
+    /// The meeting whose summary is being written right now.
+    pub fn current(&self) -> Option<String> {
+        self.queue.0.lock().unwrap_or_else(|e| e.into_inner()).current.clone()
+    }
+
     pub fn cancel_if_running(&self, id: &str) {
         let (lock, _) = &*self.queue;
         let mut q = lock.lock().unwrap_or_else(|e| e.into_inner());
@@ -126,16 +159,30 @@ impl Worker {
 fn worker_loop(deps: Deps, queue: Arc<(Mutex<Queue>, Condvar)>, cancel: Arc<AtomicBool>) {
     let (lock, cv) = &*queue;
     loop {
-        let (id, auto) = {
+        enum Next {
+            Job(Job),
+            Summary(String, bool),
+        }
+        let next = {
             let mut q = lock.lock().unwrap_or_else(|e| e.into_inner());
             q.current = None;
             loop {
+                if let Some(job) = q.jobs.pop_front() {
+                    break Next::Job(job);
+                }
                 if let Some((id, auto)) = q.ids.pop_front() {
                     q.current = Some(id.clone());
-                    break (id, auto);
+                    break Next::Summary(id, auto);
                 }
                 q = cv.wait(q).unwrap_or_else(|e| e.into_inner());
             }
+        };
+        let (id, auto) = match next {
+            Next::Job(job) => {
+                job();
+                continue;
+            }
+            Next::Summary(id, auto) => (id, auto),
         };
         cancel.store(false, Ordering::Relaxed);
         process(&deps, &id, auto, &cancel);
@@ -208,6 +255,7 @@ fn process(deps: &Deps, id: &str, auto: bool, cancel: &AtomicBool) {
     log::info!("summary engine ready in {:.1}s: {}", job.elapsed().as_secs_f32(), engine.label());
 
     let language = config.language_for(&meeting.language);
+    let opts = config.options_for(meeting.template.as_deref());
     let mut last_report = Instant::now() - Duration::from_secs(10);
     let mut first_report: Option<Instant> = None;
     let mut report = |p: f32| {
@@ -226,7 +274,7 @@ fn process(deps: &Deps, id: &str, auto: bool, cancel: &AtomicBool) {
         }
     };
 
-    match summarize(&meeting, engine.as_mut(), &language, cancel, &mut report) {
+    match summarize(&meeting, engine.as_mut(), &language, &opts, cancel, &mut report) {
         Ok(out) => {
             log::info!("summarized meeting {id} in {:.1}s ({} parts)", job.elapsed().as_secs_f32(), out.parts);
             let s = lock(&deps.storage);
@@ -490,6 +538,87 @@ mod tests {
         assert_eq!(m.summary_error.unwrap().code, TOO_SHORT);
         assert!(m.item.title.starts_with("Call, Zoom"));
         assert!(done.lock().unwrap().iter().all(|d| d.starts_with("transcript: ")));
+    }
+
+    #[test]
+    fn a_job_waits_for_the_summary_in_progress_and_never_runs_beside_it() {
+        // An engine that holds the summary until told, and notes when it runs.
+        struct Held(Arc<Mutex<bool>>, Arc<Mutex<Vec<&'static str>>>);
+        impl SummaryEngine for Held {
+            fn complete(&mut self, _p: &crate::summarizer::prompt::Prompt, _s: &str, _m: u32, _c: &AtomicBool) -> Result<String, EngineError> {
+                self.1.lock().unwrap().push("summary starts");
+                while !*self.0.lock().unwrap() {
+                    std::thread::sleep(Duration::from_millis(5));
+                }
+                self.1.lock().unwrap().push("summary ends");
+                Ok(reply("Plan", "R."))
+            }
+            fn context_tokens(&self) -> usize {
+                16_384
+            }
+            fn label(&self) -> String {
+                "Held".into()
+            }
+        }
+        let go = Arc::new(Mutex::new(false));
+        let log: Arc<Mutex<Vec<&'static str>>> = Arc::default();
+        let (g, l) = (go.clone(), log.clone());
+        let (_d, _storage, id, w, _) = setup(Box::new(move |_| Ok(Box::new(Held(g.clone(), l.clone())))));
+        w.enqueue(&id);
+        let t = Instant::now();
+        while log.lock().unwrap().is_empty() {
+            assert!(t.elapsed() < Duration::from_secs(5));
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        assert_eq!(w.current().as_deref(), Some(id.as_str()));
+        let l = log.clone();
+        let (tx, rx) = std::sync::mpsc::channel();
+        w.run_between(Box::new(move || {
+            l.lock().unwrap().push("job");
+            tx.send(()).unwrap();
+        }));
+        std::thread::sleep(Duration::from_millis(50));
+        assert_eq!(*log.lock().unwrap(), vec!["summary starts"], "the job waits");
+        *go.lock().unwrap() = true;
+        rx.recv_timeout(Duration::from_secs(5)).unwrap();
+        assert_eq!(*log.lock().unwrap(), vec!["summary starts", "summary ends", "job"]);
+        wait(&w);
+        assert_eq!(w.current(), None);
+    }
+
+    #[test]
+    fn the_meetings_own_type_wins_over_the_default() {
+        let c = Config::from_settings(Some(&json!({ "summaryTemplate": "standup", "summaryInstructions": "Mention budgets." })));
+        assert_eq!(c.options_for(None), Options { template: "standup".into(), instructions: "Mention budgets.".into() });
+        assert_eq!(c.options_for(Some("interview")).template, "interview");
+        assert_eq!(c.options_for(Some("from_the_future")).template, "standup");
+        let d = Config::from_settings(Some(&json!({ "summaryTemplate": "nope" })));
+        assert_eq!(d.options_for(None), Options { template: "general".into(), instructions: String::new() });
+    }
+
+    #[test]
+    fn a_new_summary_replaces_the_old_ones_edits_and_is_written_as_the_chosen_type() {
+        let (_d, storage, id, w, _) = setup(Box::new(|_| Ok(Box::new(Scripted { replies: vec![Ok(reply("Plan", "Second."))], prompts: vec![], context: 16_384 }))));
+        {
+            let s = storage.lock().unwrap();
+            let mut first = crate::storage::store::tests::summary("First.");
+            first.action_items[0].done = true;
+            s.save_summary(&id, &first).unwrap();
+            let mut edited = first.clone();
+            edited.recap = "Edited.".into();
+            s.update_summary(&id, &edited).unwrap();
+            assert!(s.get_meeting(&id).unwrap().summary.unwrap().edited);
+            s.update_meeting_file(&id, |f| {
+                f.template = Some("interview".into());
+                f.status = MeetingStatus::Summarizing;
+            })
+            .unwrap();
+        }
+        w.enqueue(&id);
+        wait(&w);
+        let s = storage.lock().unwrap().get_meeting(&id).unwrap().summary.unwrap();
+        assert_eq!((s.recap.as_str(), s.edited, s.template.as_deref()), ("Second.", false, Some("interview")));
+        assert!(s.action_items.iter().all(|a| !a.done));
     }
 
     #[test]

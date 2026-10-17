@@ -1,6 +1,6 @@
 //! The `Storage` type: create, read and list meetings on disk.
 
-use super::io::{read_json, read_json_opt, write_json_atomic};
+use super::io::{read_json, read_json_opt, remove_if_exists, write_json_atomic};
 use super::model::*;
 use super::paths::{self, *};
 use super::retention::{AudioPolicy, Policy};
@@ -89,6 +89,7 @@ impl Storage {
                         transcription: None,
                         summary_error: None,
                         transcript_only: false,
+                        template: None,
                         retranscribe_model: None,
                         extra: Default::default(),
                     };
@@ -198,6 +199,7 @@ impl Storage {
             summary_error: file.summary_error.clone(),
             transcription: file.transcription.clone(),
             transcript_only: file.transcript_only,
+            template: file.template.clone(),
             item: list_item(&file),
         })
     }
@@ -239,10 +241,13 @@ impl Storage {
         self.regenerate_markdown(id)
     }
 
-    /// Writes the summary the summarizer produced.
+    /// Writes the summary the summarizer produced. A new summary (Generate again, Summarize as…) replaces the old
+    /// one's edits and ticks: they belong to items that are gone.
     pub fn save_summary(&self, id: &str, summary: &Summary) -> Result<()> {
         let dir = self.dir(id)?;
         write_json_atomic(&dir.join(SUMMARY), summary)?;
+        remove_if_exists(&dir.join(SUMMARY_EDITED))?;
+        remove_if_exists(&dir.join(SUMMARY_DONE))?;
         self.regenerate_markdown(id)
     }
 
@@ -369,6 +374,9 @@ pub(crate) mod tests {
             decisions: vec![SummaryItem { id: "d0".into(), text: "Ship onboarding first".into(), at: Some(21_000) }],
             action_items: vec![ActionItem { id: "a0".into(), text: "Send wireframes".into(), at: None, owner: Some("Me".into()), due: None, done: false }],
             open_questions: vec![],
+            sections: vec![],
+            highlights: vec![],
+            template: None,
             engine: "Local AI".into(),
             edited: false,
         }

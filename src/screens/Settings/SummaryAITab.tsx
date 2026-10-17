@@ -8,6 +8,10 @@ import { messageOr, type MessageKey } from "../../lib/i18n";
 import { Button, Chip, Field, Label, Select, Switch, cn, useToast } from "../../ui";
 import { Group, Row, SectionIntro } from "./parts";
 import type { TabProps } from "./tabProps";
+import { TEMPLATES, isTemplate, templateName } from "../../lib/templates";
+
+/** The longest custom instructions Rust uses (summarizer/prompt.rs MAX_INSTRUCTIONS). */
+const MAX_INSTRUCTIONS = 1000;
 
 const ENGINES: { id: SummaryEngineKind; name: MessageKey; tag: MessageKey; note: MessageKey }[] = [
   { id: "local", name: "settings.engine_local", tag: "settings.engine_local_tag", note: "settings.engine_local_note" },
@@ -90,9 +94,47 @@ export function SummaryAITab({ settings: s, update }: TabProps) {
               <option value="pt">{t("settings.lang_pt")}</option>
             </Select>
           </Row>
+          <Row title={t("settings.default_type")} desc={t("settings.default_type_desc")}>
+            <Select
+              label={t("settings.default_type")}
+              wrapperClassName="w-52"
+              value={isTemplate(s.summaryTemplate) ? s.summaryTemplate : "general"}
+              onChange={(e) => update({ summaryTemplate: e.target.value })}
+            >
+              {TEMPLATES.map((id) => (
+                <option key={id} value={id}>
+                  {t(templateName(id))}
+                </option>
+              ))}
+            </Select>
+          </Row>
+          <Instructions value={s.summaryInstructions ?? ""} onSave={(v) => update({ summaryInstructions: v })} />
         </Group>
       </div>
     </div>
+  );
+}
+
+/** Custom instructions, saved when the box loses focus (not on every key). */
+function Instructions({ value, onSave }: { value: string; onSave: (v: string) => void }) {
+  const t = useT();
+  const [draft, setDraft] = useState<string>();
+  return (
+    <Row stack title={t("settings.instructions_title")} desc={t("settings.instructions_desc")}>
+      <textarea
+        aria-label={t("settings.instructions_title")}
+        rows={3}
+        maxLength={MAX_INSTRUCTIONS}
+        value={draft ?? value}
+        placeholder={t("settings.instructions_placeholder")}
+        onChange={(e) => setDraft(e.target.value)}
+        onBlur={() => {
+          if (draft !== undefined && draft.trim() !== value.trim()) onSave(draft.trim());
+          setDraft(undefined);
+        }}
+        className="min-h-[68px] resize-y rounded-control border border-input bg-paper px-3 py-2 font-[inherit] text-[13px] leading-[19px] text-ink outline-none placeholder:text-faint focus:border-edge"
+      />
+    </Row>
   );
 }
 

@@ -38,6 +38,7 @@ pub struct Calendar {
 struct Item {
     title: String,
     attendees: Vec<String>,
+    emails: Vec<String>,
     start: DateTime<Tz>,
     all_day: bool,
     length: Length,
@@ -169,7 +170,7 @@ impl Calendar {
             };
             for (s, e) in occurrences {
                 if s < to_ms && e > from_ms {
-                    out.push(Event { title: it.title.clone(), start_ms: s, end_ms: e, all_day: it.all_day, attendees: it.attendees.clone() });
+                    out.push(Event { title: it.title.clone(), start_ms: s, end_ms: e, all_day: it.all_day, attendees: it.attendees.clone(), emails: it.emails.clone() });
                 }
             }
         }
@@ -213,6 +214,7 @@ fn item(ev: &Block, zones: &HashMap<String, Tz>, me: &[String], series: bool) ->
     Some(Item {
         title: ev.value("SUMMARY").map(|s| unescape(s).trim().to_string()).unwrap_or_default(),
         attendees: attendees(ev, me),
+        emails: emails(ev, me),
         start: start.at,
         all_day: start.all_day,
         length,
@@ -579,6 +581,22 @@ fn attendees(ev: &Block, me: &[String]) -> Vec<String> {
     names
 }
 
+/// The invitees' email addresses, for a follow-up email. Same people as `attendees` (no declines, rooms or the user).
+fn emails(ev: &Block, me: &[String]) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    for l in ev.0.iter().filter(|l| l.name.eq_ignore_ascii_case("ATTENDEE")) {
+        if param(l, "PARTSTAT").is_some_and(|p| p.eq_ignore_ascii_case("DECLINED")) || param(l, "CUTYPE").is_some_and(|t| t.eq_ignore_ascii_case("ROOM") || t.eq_ignore_ascii_case("RESOURCE")) {
+            continue;
+        }
+        let value = l.value.trim();
+        let Some(addr) = value.get(..7).filter(|p| p.eq_ignore_ascii_case("mailto:")).map(|_| value[7..].trim()) else { continue };
+        if addr.contains('@') && !me.iter().any(|m| m.trim().eq_ignore_ascii_case(addr)) && !out.iter().any(|o| o.eq_ignore_ascii_case(addr)) {
+            out.push(addr.to_string());
+        }
+    }
+    out
+}
+
 /// Windows time zone names (as Outlook writes them in TZID) → IANA, from CLDR's windowsZones.xml (the "001"
 /// territory). The common zones only; an unknown name falls back to local time.
 const WINDOWS_ZONES: &[(&str, &str)] = &[
@@ -891,6 +909,7 @@ mod tests {
             END:VEVENT");
         let e = parse(&ics, utc(2026, 10, 20, 0, 0), utc(2026, 10, 21, 0, 0), &["miguel@example.com".to_string()]);
         assert_eq!(e[0].attendees, vec!["Ana Reyes", "Lee, Sam", "jordan.k"]);
+        assert_eq!(e[0].emails, vec!["ana@example.com", "sam@example.com", "jordan.k@example.com"]);
     }
 
     #[test]
