@@ -16,9 +16,8 @@ use crate::summarizer::worker::{Config, Deps, Worker, NO_ENGINE};
 use std::sync::atomic::{AtomicBool, Ordering};
 use crate::transcriber::models::{Location, ModelStore};
 use serde::Serialize;
-use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use tauri::{AppHandle, Emitter, Manager, State};
 
 pub const SUMMARY_READY: &str = "summary-ready";
@@ -27,7 +26,7 @@ pub struct SummarizerState {
     worker: Worker,
     data_dir: PathBuf,
     /// Follow-up drafts in progress, by the request id the screen gave, with the flag its Cancel sets.
-    followups: Mutex<HashMap<String, Arc<AtomicBool>>>,
+    followups: followup::Cancels,
 }
 
 impl SummarizerState {
@@ -159,7 +158,7 @@ pub fn setup(app: &AppHandle, data_dir: PathBuf) {
         worker.enqueue(&id);
     }
     drop(storage);
-    app.manage(SummarizerState { worker, data_dir: state_dir, followups: Mutex::default() });
+    app.manage(SummarizerState { worker, data_dir: state_dir, followups: Default::default() });
 }
 
 pub const OPEN_MEETING: &str = "open-meeting";
@@ -324,26 +323,32 @@ fn run_followup(cfg: &Config, data_dir: &Path, meeting: &crate::storage::model::
 /// ever loaded; a cloud service or local server answers straight away. `request`: the screen's id for Cancel.
 #[tauri::command(async)]
 pub fn meetings_draft_followup(state: State<AppState>, s: State<SummarizerState>, id: String, request: String) -> CmdResult<FollowUpDraft> {
+    // Registered before anything that can wait (the storage lock), so a quick Cancel finds it.
+    let cancel = s.followups.register(&request);
+    let result = draft_followup(&state, &s, &id, &request, cancel);
+    s.followups.finish(&request);
+    result
+}
+
+fn draft_followup(state: &State<AppState>, s: &State<SummarizerState>, id: &str, request: &str, cancel: Arc<AtomicBool>) -> CmdResult<FollowUpDraft> {
     let (meeting, cfg) = {
         let storage = state.lock();
-        (storage.get_meeting(&id)?, Config::from_settings(storage.settings_get().ok().flatten().as_ref()))
+        (storage.get_meeting(id)?, Config::from_settings(storage.settings_get().ok().flatten().as_ref()))
     };
     let summary = meeting.summary.clone().ok_or_else(|| refused(tr("error.no_summary_for_followup")))?;
-    let cancel = Arc::new(AtomicBool::new(false));
-    s.followups.lock().unwrap_or_else(|e| e.into_inner()).insert(request.clone(), cancel.clone());
     let to = meeting.calendar_event.as_ref().map(|e| e.emails.clone()).unwrap_or_default();
     let result = if cfg.engine == "local" {
         let (tx, rx) = std::sync::mpsc::channel();
         let data_dir = s.data_dir.clone();
         let flag = cancel.clone();
-        s.worker.run_between(&request, Box::new(move || {
+        s.worker.run_between(request, Box::new(move || {
             let _ = tx.send(run_followup(&cfg, &data_dir, &meeting, &summary, &flag));
         }));
         match followup::wait_for(&rx, &cancel, std::time::Duration::from_millis(150)) {
             followup::Waited::Done(r) => r,
             followup::Waited::Cancelled => {
                 // Not started yet: it never will. Already running: it sees the flag and stops.
-                s.worker.drop_job(&request);
+                s.worker.drop_job(request);
                 Err(FollowUpError::Engine(EngineError::Cancelled))
             }
             followup::Waited::Lost => Err(FollowUpError::Engine(EngineError::Failed(tr("error.followup_internal")))),
@@ -351,7 +356,6 @@ pub fn meetings_draft_followup(state: State<AppState>, s: State<SummarizerState>
     } else {
         run_followup(&cfg, &s.data_dir, &meeting, &summary, &cancel)
     };
-    s.followups.lock().unwrap_or_else(|e| e.into_inner()).remove(&request);
     let f = result.map_err(followup_error)?;
     Ok(FollowUpDraft { subject: f.subject, body: f.body, to })
 }
@@ -359,9 +363,7 @@ pub fn meetings_draft_followup(state: State<AppState>, s: State<SummarizerState>
 /// Cancel on a follow-up draft: stops that request (waiting or running), not anyone else's.
 #[tauri::command]
 pub fn meetings_cancel_followup(s: State<SummarizerState>, request: String) {
-    if let Some(flag) = s.followups.lock().unwrap_or_else(|e| e.into_inner()).get(&request) {
-        flag.store(true, Ordering::Relaxed);
-    }
+    s.followups.cancel(&request);
 }
 
 #[derive(Serialize)]

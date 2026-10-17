@@ -116,6 +116,31 @@ pub fn draft(meeting: &Meeting, summary: &Summary, engine: &mut dyn SummaryEngin
     parse(&second).ok_or(FollowUpError::BadOutput)
 }
 
+/// The Cancel flag of each draft, by the request id the screen gave. Cancel may arrive before the draft has
+/// registered (the two calls race): it is remembered, and the draft starts already cancelled.
+#[derive(Default)]
+pub struct Cancels(std::sync::Mutex<std::collections::HashMap<String, std::sync::Arc<AtomicBool>>>);
+
+impl Cancels {
+    fn map(&self) -> std::sync::MutexGuard<'_, std::collections::HashMap<String, std::sync::Arc<AtomicBool>>> {
+        self.0.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
+    /// The flag for a draft that is starting (set already when Cancel came first).
+    pub fn register(&self, request: &str) -> std::sync::Arc<AtomicBool> {
+        self.map().entry(request.to_string()).or_default().clone()
+    }
+
+    pub fn cancel(&self, request: &str) {
+        self.map().entry(request.to_string()).or_default().store(true, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    /// The draft is over (done, failed or cancelled).
+    pub fn finish(&self, request: &str) {
+        self.map().remove(request);
+    }
+}
+
 /// How waiting for a queued draft ended.
 #[derive(Debug, PartialEq)]
 pub enum Waited<T> {
@@ -203,6 +228,20 @@ mod tests {
         assert_eq!(e.prompts.len(), 2);
         let mut bad = Scripted { replies: vec![Ok("no".into()), Ok("{\"subject\":\"x\",\"body\":\" \"}".into())], prompts: vec![], context: 16_384 };
         assert_eq!(draft(&meeting(vec![]), &summary(), &mut bad, "en", &AtomicBool::new(false)), Err(FollowUpError::BadOutput));
+    }
+
+    #[test]
+    fn a_cancel_before_the_draft_registers_is_not_lost() {
+        use std::sync::atomic::Ordering;
+        let c = Cancels::default();
+        c.cancel("early");
+        assert!(c.register("early").load(Ordering::Relaxed));
+        let late = c.register("late");
+        assert!(!late.load(Ordering::Relaxed));
+        c.cancel("late");
+        assert!(late.load(Ordering::Relaxed));
+        c.finish("early");
+        assert!(!c.register("early").load(Ordering::Relaxed), "a finished draft's id starts fresh");
     }
 
     #[test]
