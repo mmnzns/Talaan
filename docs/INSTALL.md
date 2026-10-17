@@ -273,7 +273,15 @@ Open **Settings › Speech models** and choose **Parakeet**. It is the fastest m
 
 ### Reporting a problem
 
-Talaan doesn't keep a log file. If something goes wrong, take a screenshot of **Settings › General › Check setup** and open an issue at https://github.com/mmnzns/Talaan/issues with what you were doing.
+If something goes wrong, send the diagnostics:
+
+1. Open **Settings › General › Check setup** and scroll to **Something not working?**
+2. Click **Copy diagnostics**. Talaan shows the report first, so you can read it, then **Copy** puts it on the clipboard. It has the app version, your system, the Check setup results, your settings with names, addresses and keys removed, and the last 200 lines of Talaan's log (meeting ids are replaced by short codes, and other apps and private servers aren't named).
+3. Click **Report a problem** (it opens a new issue at https://github.com/mmnzns/Talaan/issues), paste the report, and say what you were doing.
+
+The report never contains meeting content: no transcripts, summaries, titles, attendee names or keys. You can read it before you paste it.
+
+Talaan keeps a small log file of what it did and any errors (never what was said): `~/Library/Logs/Talaan/` on a Mac and `%LOCALAPPDATA%\com.craftconceptsdigital.talaan\logs\` on Windows. **Open log folder** shows it. It keeps about 10 MB at most (five files of 2 MB) and is removed by **Delete all Talaan data**. On Windows, uninstalling also removes it when you tick **Delete the application data**; updates keep it.
 
 ---
 

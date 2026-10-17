@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { defaultSettings } from "../data/defaultSettings";
-import type { Settings } from "../data/settings";
+import type { AutoSaveStatus, Settings } from "../data/settings";
+import { setupLines } from "./diagnostics";
 import { checkSetup, type Probe } from "./setupCheck";
 
 const settings = (patch: Partial<Settings> = {}): Settings => ({ ...structuredClone(defaultSettings), ...patch });
@@ -128,6 +129,19 @@ describe("checkSetup: folder copies that failed", () => {
     expect(r).toMatchObject({ status: "warn", fix: { action: "retryAutoSave" } });
     expect(r.detail).toContain("Access is denied.");
     expect(r.detail).toContain("1 meeting is waiting");
+  });
+
+  it("never puts the folder or the error's text in the diagnostics", () => {
+    const s = settings({ autoSaveFolder: "/Users/miguel/Clients/Acme" });
+    for (const autoSave of [
+      { reachable: true, pending: [] },
+      { reachable: false, pending: [{ id: "a", kind: "missing" }] },
+      { reachable: true, pending: [{ id: "a", kind: "failed", error: "Access is denied: /Users/miguel/Clients/Acme/Budget.md" }] },
+    ] as AutoSaveStatus[]) {
+      const [line] = setupLines([find(probe({ settings: s, autoSave }), "autoSave")]);
+      expect(line).toContain("[folder]");
+      expect(line).not.toMatch(/Acme|miguel|Budget/);
+    }
   });
 
   it("doesn't count copies that are just on their way", () => {

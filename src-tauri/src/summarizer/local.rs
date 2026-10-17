@@ -263,6 +263,7 @@ fn start(slot: &mut Option<Process<Event>>, exe: &Path, env: &[(String, String)]
     // Generous: the first launch after an install or update waits on macOS checking the new binary.
     match p.recv_timeout(Duration::from_secs(60)) {
         Ok(Event::Ready { backend }) => {
+            log::info!("local AI helper started on {} ({}, {} MB)", backend.backend, backend.device.as_deref().unwrap_or("no GPU"), backend.vram_mb);
             *slot = Some(p);
             Ok(Some(backend))
         }

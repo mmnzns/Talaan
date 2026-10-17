@@ -159,6 +159,7 @@ impl Gpu {
 
     /// Remembers that the GPU failed for this kind of job (the processor then did it).
     pub fn record(&self, kind: Kind, reason: &str) {
+        log::warn!("the GPU failed for {} jobs; the processor is used until Try again or a driver update: {}", kind.helper(), crate::logging::text(reason));
         let _g = WRITE.lock().unwrap_or_else(|e| e.into_inner());
         let mut m = self.marker().unwrap_or_else(|| Marker { app_version: self.app_version.clone(), driver: self.driver.clone(), failures: BTreeMap::new() });
         let mut cut = reason.len().min(REASON_BYTES);
@@ -186,6 +187,17 @@ impl Gpu {
     }
 }
 
+/// What a plan runs on, in a few words, for the log and the diagnostics.
+pub fn describe(plan: &Plan) -> String {
+    match plan {
+        Plan::Gpu { exe, .. } => format!("GPU helper ({})", exe.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default()),
+        Plan::Cpu(Skip::Off) => "processor (GPU turned off)".into(),
+        Plan::Cpu(Skip::NoVulkan) => "processor (no Vulkan driver)".into(),
+        Plan::Cpu(Skip::NoHelper) => "processor (no GPU helper in this build)".into(),
+        Plan::Cpu(Skip::Failed(r)) => format!("processor (the GPU failed before: {})", r.lines().next().unwrap_or("").trim()),
+    }
+}
+
 /// The environment a Vulkan helper starts with: implicit layers off. Anything set already (for example
 /// `GGML_VK_VISIBLE_DEVICES` or `TALAAN_GPU=fail` for a test) is inherited as usual.
 pub fn helper_env() -> Vec<(String, String)> {
@@ -201,7 +213,7 @@ pub fn fingerprint(mut adapters: Vec<(String, String)>) -> String {
 }
 
 #[cfg(windows)]
-fn driver_fingerprint() -> String {
+pub fn driver_fingerprint() -> String {
     use winreg::enums::HKEY_LOCAL_MACHINE;
     use winreg::RegKey;
     // The display adapter device class.
@@ -221,7 +233,7 @@ fn driver_fingerprint() -> String {
 }
 
 #[cfg(not(windows))]
-fn driver_fingerprint() -> String {
+pub fn driver_fingerprint() -> String {
     String::new()
 }
 

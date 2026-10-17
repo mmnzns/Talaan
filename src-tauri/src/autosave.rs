@@ -119,7 +119,9 @@ pub fn write(folder: &Path, name: &str, previous: Option<&Copy>, contents: &str,
     if let Some(p) = previous.filter(|p| !same_name(p, &target)) {
         // The title changed: the old copy (ours, unchanged) goes to the bin, so the folder keeps one file per meeting.
         if let Err(e) = trash(p) {
-            eprintln!("talaan: couldn't move the old copy to the bin, left it: {e}");
+            // The io error's kind only: its text can hold the copy's path, and the file name is the meeting's title.
+            let kind = e.kind();
+            log::warn!("autosave: couldn't move the old copy to the bin, left it ({kind})");
         }
     }
     Ok(Outcome::Written(Copy::of(target, contents)))

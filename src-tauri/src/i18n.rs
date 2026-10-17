@@ -144,6 +144,12 @@ const TABLE: &[(&str, &str, &str, &str)] = &[
     // technical detail and stays in English.
     ("error.cancelled", "Cancelled.", "Annulé.", "Cancelado."),
     ("error.open_folder", "Couldn't open the folder: {error}", "Impossible d’ouvrir le dossier : {error}", "No se pudo abrir la carpeta: {error}"),
+    (
+        "error.no_log",
+        "Talaan couldn't write its log file on this computer, so there is no log folder to open.",
+        "Talaan n’a pas pu écrire son fichier journal sur cet ordinateur, donc il n’y a pas de dossier de journal à ouvrir.",
+        "Talaan no pudo escribir su archivo de registro en esta computadora, así que no hay carpeta de registro que abrir.",
+    ),
     ("error.save_file", "Couldn't save the file: {error}", "Impossible d’enregistrer le fichier : {error}", "No se pudo guardar el archivo: {error}"),
     ("error.wait_meeting", "Wait for this meeting to finish first.", "Attendez d’abord que cette réunion soit terminée.", "Primero espera a que termine esta reunión."),
     (
@@ -425,6 +431,49 @@ pub fn decimal(n: f64) -> String {
 /// Like `tr`, with the technical detail of an error (left in English) in `{error}`.
 pub fn tr_err(key: &str, error: impl std::fmt::Display) -> String {
     tr_with(key, &[("error", &error.to_string())])
+}
+
+/// Which message a finished string came from, in any language: the key whose template matches it with every
+/// `{placeholder}` standing for any text. The log records this key instead of the message, because placeholders
+/// can carry what a provider, Notion or a model said. None for text that isn't from the table.
+pub fn key_for(message: &str) -> Option<&'static str> {
+    let message = message.trim();
+    TABLE.iter().find(|r| [r.1, r.2, r.3].iter().any(|t| matches_template(t, message))).map(|r| r.0)
+}
+
+fn matches_template(template: &str, message: &str) -> bool {
+    // Literal pieces between placeholders, trimmed (an empty `{detail}` leaves its spaces behind, then gets trimmed).
+    let mut pieces = vec![];
+    let mut rest = template;
+    while let Some(open) = rest.find('{') {
+        let Some(close) = rest[open..].find('}') else { break };
+        pieces.push(rest[..open].trim());
+        rest = &rest[open + close + 1..];
+    }
+    pieces.push(rest.trim());
+    let literal: usize = pieces.iter().map(|p| p.len()).sum();
+    if literal < 8 {
+        return false; // too little fixed text to tell messages apart
+    }
+    let (first, last) = (pieces[0], pieces[pieces.len() - 1]);
+    if pieces.len() == 1 {
+        return message == first;
+    }
+    if !message.starts_with(first) || !message.ends_with(last) || message.len() < first.len() + last.len() {
+        return false;
+    }
+    let mut at = first.len();
+    let end = message.len() - last.len();
+    for p in &pieces[1..pieces.len() - 1] {
+        if at > end {
+            return false;
+        }
+        match message[at..end].find(p) {
+            Some(i) => at += i + p.len(),
+            None => return false,
+        }
+    }
+    true
 }
 
 pub fn tr_in(lang: Lang, key: &str, vars: &[(&str, &str)]) -> String {

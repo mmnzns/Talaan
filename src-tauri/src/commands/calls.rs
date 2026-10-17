@@ -185,14 +185,41 @@ fn rules_from(settings: &Value) -> (bool, Vec<(String, Rule)>, Vec<String>) {
     (enabled, rules, ignored)
 }
 
+/// One log line per decision: what the rules said, for which app and rule.
+fn describe(action: &Action, rule: &dyn Fn(&str) -> Rule) -> String {
+    match action {
+        Action::Nudge { app } => format!("ask whether to record {app} (rule {:?})", rule(app)),
+        Action::CloseNudge => "close the question (the app let go of the mic)".into(),
+        Action::AutoStart { app } => format!("record {app} automatically (rule {:?})", rule(app)),
+        Action::CallEnded { app } => format!("{app} let go of the mic: call ended?"),
+        Action::ClosePrompt => "close the prompt".into(),
+        Action::AutoStop => "stop recording (the call ended)".into(),
+    }
+}
+
+/// A mic user as the log names it: the call app it is ("zoom", "browser"), or "other app". Which other apps a
+/// person runs is nobody's business, and the diagnostics can end up in a public issue.
+fn mic_user_for_log(bundle_id: &str, path: &str) -> String {
+    call_app_ids([(bundle_id, path)], &[]).first().map(|a| a.to_string()).unwrap_or_else(|| "other app".into())
+}
+
+/// What the mic users and call apps were last time, so only changes are logged.
+#[derive(Default, PartialEq)]
+struct Seen {
+    enabled: bool,
+    users: Vec<String>,
+    apps: Vec<String>,
+}
+
 fn run(app: &AppHandle, action: Action) {
     match action {
         Action::Nudge { app: id } => show_prompt(app, Prompt { kind: "nudge", label: label_of(&id), app: id, deadline: None }),
         Action::CloseNudge | Action::ClosePrompt => hide_prompt(app),
         Action::AutoStart { app: id } => {
             let label = label_of(&id);
-            if start_recording(app, &id, &label).is_ok() {
-                show_prompt(app, Prompt { kind: "banner", app: id, label, deadline: None });
+            match start_recording(app, &id, &label) {
+                Ok(_) => show_prompt(app, Prompt { kind: "banner", app: id, label, deadline: None }),
+                Err(e) => log::warn!("couldn't start recording {id} automatically: {}", e.for_log()),
             }
         }
         Action::CallEnded { app: id } => show_prompt(app, Prompt { kind: "ended", label: label_of(&id), app: id, deadline: Some(epoch_ms() + COUNTDOWN_MS) }),
@@ -212,6 +239,7 @@ pub fn setup(app: &AppHandle) {
             .spawn(move || {
                 let started = Instant::now();
                 let mut tab_cache = TabCache::default();
+                let mut seen = Seen::default();
                 loop {
                     std::thread::sleep(Duration::from_secs(1));
                     let settings = app.state::<AppState>().lock().settings_get().ok().flatten().unwrap_or(Value::Null);
@@ -234,6 +262,13 @@ pub fn setup(app: &AppHandle) {
                         let a = if a == BROWSER_CALL { "browser" } else { a };
                         rules.iter().find(|(id, _)| id == a).map(|(_, r)| *r).unwrap_or(Rule::Ask)
                     };
+                    let mut now = Seen { enabled, users: users.iter().map(|u| mic_user_for_log(&u.bundle_id, &u.path)).collect(), apps: apps.iter().map(|a| format!("{a}={:?}", rule(a))).collect() };
+                    now.users.sort();
+                    now.users.dedup();
+                    if now != seen {
+                        log::info!("detection {}; mic in use by [{}]; call apps [{}]", if now.enabled { "on" } else { "off" }, now.users.join(", "), now.apps.join(", "));
+                        seen = now;
+                    }
                     let recording = is_recording(&app);
                     let actions = app.state::<CallsState>().detector.lock().unwrap_or_else(|e| e.into_inner()).tick(
                         started.elapsed().as_millis() as u64,
@@ -242,6 +277,7 @@ pub fn setup(app: &AppHandle) {
                         &Settings { enabled, rule: &rule },
                     );
                     for a in actions {
+                        log::info!("call detection: {}", describe(&a, &rule));
                         run(&app, a);
                     }
                 }
@@ -335,6 +371,7 @@ pub fn calls_prompt(state: State<CallsState>) -> Option<Prompt> {
 #[tauri::command(async)]
 pub fn calls_accept(app: AppHandle, state: State<CallsState>, app_id: String) -> CmdResult<()> {
     state.detector.lock().unwrap_or_else(|e| e.into_inner()).accepted(&app_id);
+    log::info!("call detection: the user chose Record for {app_id}");
     let label = label_of(&app_id);
     start_recording(&app, &app_id, &label)?;
     show_prompt(&app, Prompt { kind: "banner", app: app_id, label, deadline: None });
@@ -345,6 +382,7 @@ pub fn calls_accept(app: AppHandle, state: State<CallsState>, app_id: String) ->
 #[tauri::command]
 pub fn calls_dismiss(app: AppHandle, state: State<CallsState>, app_id: String) {
     state.detector.lock().unwrap_or_else(|e| e.into_inner()).dismissed(&app_id);
+    log::info!("call detection: the user chose Not now for {app_id}");
     hide_prompt(&app);
 }
 
@@ -352,6 +390,7 @@ pub fn calls_dismiss(app: AppHandle, state: State<CallsState>, app_id: String) {
 #[tauri::command]
 pub fn calls_keep(app: AppHandle, state: State<CallsState>) {
     state.detector.lock().unwrap_or_else(|e| e.into_inner()).keep_recording();
+    log::info!("call detection: the user chose Keep recording");
     hide_prompt(&app);
 }
 
@@ -407,6 +446,13 @@ mod tests {
         assert_eq!(rules, vec![("zoom".to_string(), Rule::Always), ("facetime".to_string(), Rule::Never)]);
         assert_eq!(ignored, vec!["VoiceInk".to_string()]);
         assert!(rules_from(&Value::Null).0, "detection is on by default");
+    }
+
+    #[test]
+    fn the_log_names_only_call_apps() {
+        assert_eq!(mic_user_for_log("us.zoom.xos", ""), "zoom");
+        assert_eq!(mic_user_for_log("com.example.SecretDiary", "/Applications/Secret Diary.app"), "other app");
+        assert_eq!(mic_user_for_log("com.electron.wispr-flow", ""), "other app");
     }
 
     #[test]

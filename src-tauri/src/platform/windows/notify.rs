@@ -47,7 +47,7 @@ pub fn allowed() -> Option<bool> {
 /// Shows a toast; a click calls the `setup` callback with `id`. Never fails the caller.
 pub fn post(id: &str, title: &str, body: &str) {
     if let Err(e) = show(id, title, body) {
-        eprintln!("toast failed: {e}");
+        log::warn!("notification failed: {}", crate::logging::text(&e));
     }
 }
 

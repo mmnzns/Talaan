@@ -180,6 +180,14 @@ fn start_with(app: &AppHandle, app_id: &str, app_label: &str, test_max_ms: Optio
         .start(&storage, app_id, app_label, Box::new(MicSource::with_device(&mic)), system, platform::host_now_ns(), started_at)
         .map_err(err)?;
     let st = engine.status(platform::host_now_ns());
+    log::info!(
+        "recording started: meeting {}, app {app_id}, microphone {}, call audio {}, built-in speakers {}, sound enhancer {}",
+        st.meeting_id.as_deref().unwrap_or("?"),
+        crate::logging::device(&st.mic_name),
+        if st.system_audio { "on" } else { "off" },
+        on_speakers.0,
+        on_speakers.1.unwrap_or("none"), // a known product's name (relay_name), never the device's own
+    );
     if let Some(id) = &st.meeting_id {
         if test_max_ms.is_some() {
             let _ = storage.rename_meeting(id, &crate::i18n::tr("recorder.test_title"));
@@ -201,6 +209,7 @@ fn start_with(app: &AppHandle, app_id: &str, app_label: &str, test_max_ms: Optio
             }
         }
         if !st.system_audio {
+            log::warn!("shown: {NO_SYSTEM_AUDIO}");
             notice(app, crate::i18n::tr(NO_SYSTEM_AUDIO), "warning", Some("system-audio"));
         }
     }
@@ -228,6 +237,7 @@ pub fn audio_inputs() -> Vec<String> {
 #[tauri::command]
 pub fn recorder_pause(app: AppHandle, rec: State<RecorderState>) -> CmdResult<()> {
     rec.lock().pause(platform::host_now_ns());
+    log::info!("recording paused");
     rec.auto_paused.store(false, Ordering::Relaxed);
     emit_state(&app);
     Ok(())
@@ -236,6 +246,7 @@ pub fn recorder_pause(app: AppHandle, rec: State<RecorderState>) -> CmdResult<()
 #[tauri::command]
 pub fn recorder_resume(app: AppHandle, rec: State<RecorderState>) -> CmdResult<()> {
     rec.lock().resume(platform::host_now_ns());
+    log::info!("recording resumed");
     emit_state(&app);
     Ok(())
 }
@@ -259,11 +270,13 @@ pub fn stop_recording(app: &AppHandle) -> CmdResult<String> {
     let rec = app.state::<RecorderState>();
     let mut engine = rec.lock();
     let storage = state.lock();
+    let elapsed = engine.status(platform::host_now_ns()).elapsed_ms;
     let id = engine.stop(&storage, platform::host_now_ns()).map_err(err)?;
     drop(engine);
     let transcriber = app.state::<super::transcriber::TranscriberState>();
     transcriber.stamp_estimate(&storage, &id);
     drop(storage);
+    log::info!("recording stopped: meeting {id}, {}s recorded", elapsed / 1000);
     let was_test = rec.test.lock().unwrap_or_else(|e| e.into_inner()).take().is_some_and(|t| t.meeting_id == id);
     // A second chance at the calendar event (and, after an offline start on Windows, a few more). The test
     // recording is never a calendar event.
@@ -289,6 +302,7 @@ pub fn recorder_discard(app: AppHandle, state: State<AppState>, rec: State<Recor
     drop(storage);
     drop(engine);
     *rec.test.lock().unwrap_or_else(|e| e.into_inner()) = None;
+    log::info!("recording discarded");
     notify(&app, MEETINGS_CHANGED);
     emit_state(&app);
     Ok(())
@@ -348,6 +362,7 @@ pub fn permissions_open_settings(pane: String) -> CmdResult<()> {
 /// Recover an interrupted recording: repair the audio files and make the meeting usable.
 #[tauri::command]
 pub fn meetings_recover(app: AppHandle, state: State<AppState>, id: String) -> CmdResult<()> {
+    log::info!("recovering interrupted meeting {id}");
     crate::recorder::recovery::recover(&state.lock(), &id)?;
     app.state::<super::transcriber::TranscriberState>().enqueue(&id);
     notify(&app, MEETINGS_CHANGED);
@@ -379,6 +394,11 @@ fn restart_later(app: AppHandle, flag: Arc<AtomicBool>, mic: bool) {
         }
         let result = if mic { engine.restart_mic() } else { engine.restart_system() };
         drop(engine);
+        let which = if mic { "microphone" } else { "call audio" };
+        match &result {
+            Ok(device_name) => log::info!("{which} switched to {}", crate::logging::device(device_name)),
+            Err(e) => log::warn!("{which} couldn't follow the device change: {}", crate::logging::text(e)),
+        }
         match (mic, result) {
             (true, Ok(name)) => notice(&app, crate::i18n::tr_with("notice.mic_switched", &[("name", name.as_str())]), "info", None),
             (false, Ok(name)) => notice(&app, crate::i18n::tr_with("notice.output_switched", &[("name", name.as_str())]), "info", None),
@@ -389,7 +409,7 @@ fn restart_later(app: AppHandle, flag: Arc<AtomicBool>, mic: bool) {
     });
     if let Err(e) = spawned {
         // No thread, no restart: log it and let the next device change try again.
-        eprintln!("talaan: couldn't start the device restart thread: {e}");
+        log::error!("couldn't start the device restart thread: {}", crate::logging::text(&e));
         reset.store(false, Ordering::Release);
     }
 }
@@ -402,8 +422,14 @@ pub fn setup(app: &AppHandle) {
     let rec = app.state::<RecorderState>();
     let (a1, mic_flag, out_flag) = (app.clone(), rec.restarting_mic.clone(), rec.restarting_output.clone());
     let devices = DeviceWatcher::new(move |e| match e {
-        DeviceEvent::InputChanged => restart_later(a1.clone(), mic_flag.clone(), true),
-        DeviceEvent::OutputChanged => restart_later(a1.clone(), out_flag.clone(), false),
+        DeviceEvent::InputChanged => {
+            log::info!("the default microphone changed");
+            restart_later(a1.clone(), mic_flag.clone(), true)
+        }
+        DeviceEvent::OutputChanged => {
+            log::info!("the default speakers or headset changed");
+            restart_later(a1.clone(), out_flag.clone(), false)
+        }
     });
     let a2 = app.clone();
     let sleep = SleepWatcher::new(move |sleeping| {
@@ -412,15 +438,18 @@ pub fn setup(app: &AppHandle) {
         if sleeping {
             if engine.pause(platform::host_now_ns()) {
                 rec.auto_paused.store(true, Ordering::Relaxed);
+                log::info!("the computer is going to sleep: recording paused");
             }
         } else if rec.auto_paused.swap(false, Ordering::Relaxed) {
             engine.resume(platform::host_now_ns());
+            log::info!("the computer woke up: recording resumed");
         }
         drop(engine);
         emit_state(&a2);
     });
-    if let Ok(devices) = devices {
-        *rec.watchers.lock().unwrap() = Some((devices, sleep));
+    match devices {
+        Ok(devices) => *rec.watchers.lock().unwrap() = Some((devices, sleep)),
+        Err(e) => log::warn!("device watcher unavailable: {}", crate::logging::text(&e)),
     }
 
     let app = app.clone();
@@ -464,6 +493,7 @@ pub fn setup(app: &AppHandle) {
 
             if system_failed && !warned_lost {
                 warned_lost = true;
+                log::warn!("shown: notice.call_audio_lost");
                 notice(&app, crate::i18n::tr("notice.call_audio_lost"), "warning", None);
             } else if !system_failed {
                 // Back (an output switch restarted it): a later failure warns again.
@@ -486,6 +516,7 @@ pub fn setup(app: &AppHandle) {
                 let (expected, after) = (call_sound.playing(Instant::now(), || platform::devices::apps_playing(&super::calls::call_app_exes())), Duration::from_secs(60));
                 if silence_watch(&mut silent_since, Instant::now(), them == 0.0 && expected && !paused, after) && !warned {
                     warned = true;
+                    log::warn!("shown: {NO_CALL_AUDIO} (only silence from the call audio while it should play)");
                     notice(&app, crate::i18n::tr(NO_CALL_AUDIO), "warning", NO_CALL_AUDIO_PANE);
                 }
             }
@@ -542,7 +573,8 @@ pub fn stop_on_exit(app: &AppHandle) {
     let mut engine = rec.lock();
     if engine.is_active() {
         let state = app.state::<AppState>();
-        let _ = engine.stop(&state.lock(), platform::host_now_ns());
+        let saved = engine.stop(&state.lock(), platform::host_now_ns());
+        log::info!("quitting while recording: saved {}", saved.as_deref().unwrap_or("nothing"));
     }
 }
 

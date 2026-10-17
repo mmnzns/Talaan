@@ -5,6 +5,7 @@ pub mod autosave;
 pub mod calendar;
 pub mod calls;
 pub mod dev;
+pub mod diagnostics;
 pub mod gpu;
 pub mod import;
 pub mod meetings;
@@ -84,6 +85,7 @@ mod tests {
             ("updates.rs", include_str!("updates.rs")),
             ("ask.rs", include_str!("ask.rs")),
             ("dev.rs", include_str!("dev.rs")),
+            ("diagnostics.rs", include_str!("diagnostics.rs")),
         ];
         let builds = ["WebviewWindowBuilder", "show_prompt(", "toggle_popover(", "popover("];
         let mut checked = 0;
