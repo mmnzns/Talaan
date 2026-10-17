@@ -5,7 +5,7 @@
 
 use super::{AppState, CmdResult};
 use crate::autosave::{self, Outcome};
-use crate::storage::model::MeetingStatus;
+use crate::storage::model::{ExportedCopy, MeetingStatus};
 use crate::storage::StorageError;
 use serde::Serialize;
 use std::collections::BTreeSet;
@@ -52,17 +52,17 @@ fn write_one(app: &AppHandle, dir: &Path, id: &str, contents: &str, finished: bo
         return Ok("not_ready");
     }
     let was_skipped = skipped().contains(id);
-    if !finished && !was_skipped && file.exported_path.is_none() {
+    if !finished && !was_skipped && file.exported_copy.is_none() {
         return Ok("not_saved");
     }
     let name = autosave::file_name(&file.started_at, &file.title);
-    let previous = file.exported_path.as_deref().map(Path::new);
-    match autosave::write(dir, &name, previous, contents) {
-        Ok(Outcome::Written(path)) => {
+    let previous = file.exported_copy.as_ref().map(|c| autosave::Copy { path: PathBuf::from(&c.path), sha256: c.sha256.clone(), size: c.size });
+    match autosave::write(dir, &name, previous.as_ref(), contents, &crate::platform::trash::to_trash) {
+        Ok(Outcome::Written(copy)) => {
             skipped().remove(id);
-            let path = path.to_string_lossy().into_owned();
-            if file.exported_path.as_deref() != Some(path.as_str()) {
-                state.lock().update_meeting_file(id, |f| f.exported_path = Some(path))?;
+            let copy = ExportedCopy { path: copy.path.to_string_lossy().into_owned(), sha256: copy.sha256, size: copy.size };
+            if file.exported_copy.as_ref() != Some(&copy) {
+                state.lock().update_meeting_file(id, |f| f.exported_copy = Some(copy))?;
             }
             Ok("written")
         }

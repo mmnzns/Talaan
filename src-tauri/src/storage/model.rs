@@ -92,6 +92,16 @@ pub struct TranscriptLine {
     pub edited: bool,
 }
 
+/// A meeting's copy in the auto-save folder as Talaan last wrote it.
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct ExportedCopy {
+    pub path: String,
+    /// SHA-256 of what was written, lowercase hex.
+    pub sha256: String,
+    pub size: u64,
+}
+
 /// What lives in `meeting.json`. Unknown fields are kept so newer builds' data survives older builds.
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 #[serde(rename_all = "camelCase")]
@@ -149,10 +159,10 @@ pub struct MeetingFile {
     /// "Transcribe again" with this speech model; cleared once the new transcript is saved.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub retranscribe_model: Option<String>,
-    /// The copy written by "Also save each meeting to a folder" (`autosave.rs`): rewritten in place, and the only file
-    /// Talaan ever replaces in that folder.
+    /// The copy written by "Also save each meeting to a folder" (`autosave.rs`): the only file Talaan ever replaces in
+    /// that folder, and only while it still matches this.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub exported_path: Option<String>,
+    pub exported_copy: Option<ExportedCopy>,
     #[serde(flatten)]
     pub extra: Map<String, Value>,
 }
