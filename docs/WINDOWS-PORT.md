@@ -86,13 +86,20 @@ uninstaller deletes its own files there one by one and then `RMDir "$INSTDIR"` (
 application data" ticked (never on `/UPDATE`) it runs `RmDir /r "$LOCALAPPDATA\${BUNDLEID}"`; our hook also removes
 `...\models` and `%APPDATA%\Talaan` (where models may still be). Meetings and settings stay in `%APPDATA%\Talaan`.
 `lib.rs` sets the folder (`models::set_models_root`) unless `TALAAN_DATA_DIR` is set (then models stay inside it,
-as before), and moves the old folder in a background thread (`transcriber/relocate.rs`): one rename when possible,
-else per model folder, else file by file (copy to `<name>.talaan-move`, sync, rename into place); an old file is
-deleted only when the new folder has one of the same name and size, nothing new is ever overwritten, and what's in use
-stays for the next launch. Until then `ModelStore` reads the old folder as Talaan's own (`legacy_root`), downloads go
-to the new one, Delete removes both, Delete everything removes the new folder too, and the Privacy tab's size counts
-it. Tested with temp folders only (including a file held open without delete sharing, copied and left for the next
-pass).
+as before), and moves the old folder (`transcriber/relocate.rs`) in two steps. `prepare` runs during setup, before
+any worker or helper can open a model: it renames the whole folder, or each model folder, into place (instant on one
+volume), and removes old model folders an earlier launch already copied in full. What can't be renamed (another
+volume, a file in use) is copied after setup in a background thread (`copy_rest`): each model folder whole into
+`.talaan-move-<id>` in the new place, then renamed into place in one step, so a model is never half in each folder;
+the old folder stays for the rest of the session (a summary helper may have been given its path) and goes at the next
+launch. A model is copied only when the new volume has room for it plus 1 GB; a failed or cancelled copy removes its
+temp folder; nothing in the new folder is ever replaced. When something was copied, meetings that failed for lack of a
+model and summaries waiting for the local AI are queued again and Settings refreshes (`models_moved`). Delete model
+runs under the copy's lock (`relocate::forget`), so a copy can't put a deleted model back; Delete everything stops
+the copy and waits for it to let go (`relocate::stop`). `ModelStore` reads the old folder as Talaan's own
+(`legacy_root`) until the new copy is complete; downloads go to the new one, Delete removes both, Delete everything
+removes the new folder too, and the Privacy tab's size counts it. Tested with temp folders only (a file held open
+without delete sharing is copied instead of renamed; a file nobody may open makes the copy fail cleanly).
 
 **Dev note:** the single-instance guard is Windows only. On Windows, `npm run tauri dev` exits immediately if the installed
 Talaan is running; quit it first.

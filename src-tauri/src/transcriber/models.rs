@@ -358,7 +358,7 @@ pub fn models_root(data_dir: &Path) -> PathBuf {
 pub struct ModelStore {
     pub root: PathBuf,
     /// The folder models were in before (`<data>/models`, Windows before v1.1), still read as Talaan's own copy
-    /// until `relocate::move_models` has emptied it.
+    /// until the move (`relocate`) has emptied it.
     pub legacy_root: Option<PathBuf>,
     pub reuse_roots: Vec<PathBuf>,
     pub reuse: bool,
@@ -501,7 +501,7 @@ mod tests {
         assert_eq!(store.locate(m), Location::Own(old.clone()));
         assert_eq!(store.own_dirs(m), vec![store.own_dir(m), old.clone()]);
         // Downloads go to the new place; once the move is done the new copy is used.
-        crate::transcriber::relocate::move_models(&data.path().join("models"), &store.root).unwrap();
+        crate::transcriber::relocate::prepare(&data.path().join("models"), &store.root).unwrap();
         assert_eq!(store.locate(m), Location::Own(store.own_dir(m)));
         assert!(!old.exists());
     }

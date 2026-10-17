@@ -63,21 +63,27 @@ pub fn run() {
         .plugin(tauri_plugin_autostart::init(tauri_plugin_autostart::MacosLauncher::LaunchAgent, None))
         .setup(|app| {
             let root = commands::resolve_data_dir(std::env::var("TALAAN_DATA_DIR").ok(), dirs::data_dir());
-            // Windows: models (gigabytes) live in %LOCALAPPDATA%, out of the roaming profile; the old folder is
-            // moved in the background and read until then. A TALAAN_DATA_DIR run keeps them inside that folder.
+            // Windows: models (gigabytes) live in %LOCALAPPDATA%, out of the roaming profile. Renames happen now,
+            // before any worker can open a model; what needs copying is copied after setup, in the background,
+            // and the old folder is read until then. A TALAAN_DATA_DIR run keeps models inside that folder.
             #[cfg(target_os = "windows")]
-            if std::env::var("TALAAN_DATA_DIR").map_or(true, |s| s.trim().is_empty()) {
-                if let Some(local) = dirs::data_local_dir() {
+            let models_to_copy = if std::env::var("TALAAN_DATA_DIR").map_or(true, |s| s.trim().is_empty()) {
+                dirs::data_local_dir().map(|local| {
                     let new = transcriber::models::local_models_root(&local, &app.config().identifier);
                     transcriber::models::set_models_root(new.clone());
                     let old = root.join("models");
-                    std::thread::spawn(move || match transcriber::relocate::move_models(&old, &new) {
-                        Ok(m) if m.left > 0 => eprintln!("models move: {} item(s) left for next launch", m.left),
-                        Ok(_) => {}
-                        Err(e) => eprintln!("models move failed: {e}"),
-                    });
-                }
-            }
+                    let left = match transcriber::relocate::prepare(&old, &new) {
+                        Ok(m) => m.left,
+                        Err(e) => {
+                            eprintln!("models move failed: {e}");
+                            vec![]
+                        }
+                    };
+                    (old, new, left)
+                })
+            } else {
+                None
+            };
             let mut store = storage::Storage::new(root.clone())?;
             store.load_policy()?;
             commands::calendar::remove_legacy_address(&mut store);
@@ -97,6 +103,19 @@ pub fn run() {
             commands::updates::apply_login_item(app.handle());
             commands::updates::check_at_launch(app.handle());
             commands::tray::setup(app.handle())?;
+            #[cfg(target_os = "windows")]
+            if let Some((old, new, left)) = models_to_copy.filter(|(_, _, left)| !left.is_empty()) {
+                let handle = app.handle().clone();
+                std::thread::spawn(move || {
+                    let r = transcriber::relocate::copy_rest(&old, &new, &left, transcriber::relocate::free_bytes);
+                    if !r.left.is_empty() {
+                        eprintln!("models move: {} model(s) left for the next launch", r.left.len());
+                    }
+                    if r.moved > 0 {
+                        commands::transcriber::models_moved(&handle);
+                    }
+                });
+            }
             // Started by a toast click while Talaan wasn't running: open that meeting once the window loads.
             #[cfg(target_os = "windows")]
             if let Some(id) = deeplink::meeting_in_args(&std::env::args().collect::<Vec<_>>()) {

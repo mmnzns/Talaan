@@ -31,6 +31,8 @@ pub fn settings_set(app: AppHandle, state: State<AppState>, value: Value) -> Cmd
 #[tauri::command]
 pub fn data_delete_all(app: AppHandle, state: State<AppState>) -> CmdResult<()> {
     super::recorder::discard_for_wipe(&app);
+    // A models copy still running (Windows) lets go of its files first, and makes nothing afterwards.
+    crate::transcriber::relocate::stop(std::time::Duration::from_secs(10));
     let models = {
         let mut storage = state.lock();
         storage.delete_all_data()?;
