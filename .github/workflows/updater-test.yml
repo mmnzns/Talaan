@@ -15,10 +15,6 @@ name: Updater test
 # builds trust only the throwaway key, so nothing they make could install on a real user's Talaan or vice versa.
 
 on:
-  # Also runs on pushes to its own branch, so it can be tried before the file reaches main (GitHub only offers
-  # Run workflow for files on the default branch).
-  push:
-    branches: [v11/p0-updater]
   workflow_dispatch:
     inputs:
       macos:
@@ -113,7 +109,7 @@ jobs:
           if-no-files-found: warn
 
   macos:
-    if: github.event_name == 'push' || inputs.macos
+    if: inputs.macos
     runs-on: macos-latest
     timeout-minutes: 150
     steps:
