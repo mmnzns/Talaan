@@ -11,6 +11,7 @@ import { navigate, routes } from "../../lib/router";
 import { useT } from "../../lib/i18n/I18nProvider";
 import { Button, Chip, cn } from "../../ui";
 import { useSetupProblems } from "./useSetupProblems";
+import { privacyChip } from "../../lib/privacyChip";
 
 interface Props {
   onImport: () => void;
@@ -24,7 +25,6 @@ export function Toolbar({ onImport, onRecord, recording }: Props) {
   // A newer version found by the launch check (the app only; nothing is downloaded until Update now).
   const [update, setUpdate] = useState<string>();
   useEffect(() => (inTauri() ? onEvent<{ version: string }>("update-available", (u) => setUpdate(u.version)) : undefined), []);
-  const local = !settings || settings.summaryEngine !== "byok";
   // Something in Settings › Status stops a call: a dot on the button, which then opens Status.
   const problems = useSetupProblems();
 
@@ -41,7 +41,7 @@ export function Toolbar({ onImport, onRecord, recording }: Props) {
       {/* The privacy promise in plain words; opens the Privacy tab's "what leaves this computer". */}
       <Chip className="font-sans text-xs normal-case" onClick={() => void openSettings("privacy")} title={t("shell.privacyChipTitle")}>
         <span aria-hidden="true" className="size-[7px] rounded-full bg-gold shadow-[0_0_0_3px_color-mix(in_srgb,var(--t-gold)_30%,transparent)]" />
-        {local ? t("shell.offlineLocal") : t("shell.cloudOn")}
+        {t(privacyChip(settings))}
       </Chip>
       {update && (
         <Chip tone="gold" onClick={() => void openSettings("general")} title={t("shell.updateReadyTitle", { version: update })}>

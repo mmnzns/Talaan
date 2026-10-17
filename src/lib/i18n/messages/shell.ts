@@ -6,6 +6,8 @@ export const shell = area({
     // Toolbar
     offlineLocal: "Private: everything stays on this computer",
     cloudOn: "Summaries use your online AI account",
+    summariesLocal: "Summaries are written on this computer",
+    summariesServer: "Summaries use your own AI server",
     privacyChipTitle: "What leaves this computer (Settings › Privacy)",
     updateReady: "update ready",
     updateReadyTitle: "Talaan {version} is ready",
@@ -105,6 +107,8 @@ export const shell = area({
   fr: {
     offlineLocal: "Privé : tout reste sur cet ordinateur",
     cloudOn: "Les résumés utilisent votre compte d’IA en ligne",
+    summariesLocal: "Les résumés sont rédigés sur cet ordinateur",
+    summariesServer: "Les résumés utilisent votre propre serveur d’IA",
     privacyChipTitle: "Ce qui quitte cet ordinateur (Paramètres › Confidentialité)",
     updateReady: "mise à jour prête",
     updateReadyTitle: "Talaan {version} est prêt",
@@ -198,6 +202,8 @@ export const shell = area({
   es: {
     offlineLocal: "Privado: todo se queda en esta computadora",
     cloudOn: "Los resúmenes usan tu cuenta de IA en línea",
+    summariesLocal: "Los resúmenes se escriben en esta computadora",
+    summariesServer: "Los resúmenes usan tu propio servidor de IA",
     privacyChipTitle: "Qué sale de esta computadora (Ajustes › Privacidad)",
     updateReady: "actualización lista",
     updateReadyTitle: "Talaan {version} está listo",
