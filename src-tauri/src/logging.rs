@@ -382,6 +382,23 @@ fn url_end(c: char) -> bool {
     c.is_whitespace() || matches!(c, '"' | '\'' | '`' | '<' | '>' | ')' | ']' | '}' | ',')
 }
 
+/// Hosts a log line may name: this computer, and the public services Talaan talks to (updates, models, the AI
+/// providers, Notion, the big calendar services). Any other host (a company's AI server, a private calendar host)
+/// becomes `[host]`.
+const KNOWN_HOSTS: &[&str] = &[
+    "github.com", "githubusercontent.com", "huggingface.co", "hf.co", "anthropic.com", "openai.com", "googleapis.com", "groq.com", "cerebras.ai",
+    "mistral.ai", "openrouter.ai", "notion.com", "office365.com", "outlook.com", "live.com", "google.com", "icloud.com",
+];
+
+fn known_host(authority: &str) -> bool {
+    let host = authority.rsplit_once(':').filter(|(_, port)| port.chars().all(|c| c.is_ascii_digit())).map(|(h, _)| h).unwrap_or(authority);
+    let host = host.trim_matches(['[', ']']).to_ascii_lowercase();
+    if matches!(host.as_str(), "localhost" | "127.0.0.1" | "::1" | "0.0.0.0") || host.ends_with(".localhost") {
+        return true;
+    }
+    KNOWN_HOSTS.iter().any(|k| host == *k || host.ends_with(&format!(".{k}")))
+}
+
 /// `https://user@host:443/path?q` → `https://host:443/…`.
 fn cut_urls(s: &str) -> String {
     let lower = s.to_ascii_lowercase();
@@ -402,7 +419,7 @@ fn cut_urls(s: &str) -> String {
         let authority = body.split(['/', '?', '#']).next().unwrap_or("");
         let host = authority.rsplit('@').next().unwrap_or("");
         out.push_str(&s[i..start]);
-        out.push_str(host);
+        out.push_str(if known_host(host) { host } else { "[host]" });
         if body.len() > authority.len() {
             out.push_str("/…");
         }
@@ -514,7 +531,11 @@ mod tests {
         assert_eq!(redact_with(line, None), "calendar: couldn't reach https://outlook.office365.com/… (timeout)");
         assert_eq!(redact_with("webcal://p01-caldav.icloud.com/published/2/MTIz", None), "webcal://p01-caldav.icloud.com/…");
         assert_eq!(redact_with("http://user:pw@localhost:11434", None), "http://localhost:11434");
-        assert_eq!(redact_with("HTTPS://API.EXAMPLE.COM/v1?key=AIzaSyA1b2C3d4E5f6G7h8I9j0", None), "HTTPS://API.EXAMPLE.COM/…");
+        assert_eq!(redact_with("HTTPS://GENERATIVELANGUAGE.GOOGLEAPIS.COM/v1?key=AIzaSyA1b2C3d4E5f6G7h8I9j0", None), "HTTPS://GENERATIVELANGUAGE.GOOGLEAPIS.COM/…");
+        // A host that isn't this computer or a known public service (a company's AI server) isn't named.
+        assert_eq!(redact_with("can't reach https://llm.acme.internal:8443/v1/chat", None), "can't reach https://[host]/…");
+        assert_eq!(redact_with("http://192.168.1.20:11434", None), "http://[host]");
+        assert_eq!(redact_with("http://localhost:1234/v1", None), "http://localhost:1234/…");
     }
 
     #[test]
@@ -661,7 +682,7 @@ mod tests {
         logger.flush();
         let lines = tail(dir.path(), 10);
         assert_eq!(lines.len(), 1, "{lines:?}");
-        assert!(lines[0].ends_with("WARN  commands::calendar: calendar download failed: https://calendar.example.com/… for [email]"), "{}", lines[0]);
+        assert!(lines[0].ends_with("WARN  commands::calendar: calendar download failed: https://[host]/… for [email]"), "{}", lines[0]);
     }
 
     #[test]

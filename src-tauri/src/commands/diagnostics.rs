@@ -99,6 +99,37 @@ pub struct Facts {
     pub log_dir: String,
 }
 
+/// Meeting ids (`2026-10-16_1430_ab12`) become `m-3f2a9d`: the same id gives the same hash within one report, so
+/// lines about one meeting still match up, but the report doesn't say when anyone met. `salt` is new per report.
+pub fn hash_ids(line: &str, salt: &[u8]) -> String {
+    use sha2::{Digest, Sha256};
+    let b = line.as_bytes();
+    let shape = |w: &[u8]| {
+        w.len() == 20
+            && w.iter().enumerate().all(|(i, c)| match i {
+                4 | 7 => *c == b'-',
+                10 | 15 => *c == b'_',
+                16..=19 => c.is_ascii_lowercase() || c.is_ascii_digit(),
+                _ => c.is_ascii_digit(),
+            })
+    };
+    let mut out = String::with_capacity(line.len());
+    let mut i = 0;
+    while i < b.len() {
+        if i + 20 <= b.len() && shape(&b[i..i + 20]) && (i + 20 == b.len() || !b[i + 20].is_ascii_alphanumeric()) {
+            let digest = Sha256::new().chain_update(salt).chain_update(&b[i..i + 20]).finalize();
+            out.push_str("m-");
+            out.extend(digest[..3].iter().map(|x| format!("{x:02x}")));
+            i += 20;
+        } else {
+            let c = line[i..].chars().next().unwrap();
+            out.push(c);
+            i += c.len_utf8();
+        }
+    }
+    out
+}
+
 /// A line with every known device name replaced by its owner-free form (`logging::device`), longest names first.
 pub fn scrub_devices(line: &str, devices: &[String]) -> String {
     let mut names: Vec<&String> = devices.iter().filter(|d| !d.trim().is_empty()).collect();
@@ -116,6 +147,7 @@ pub fn scrub_devices(line: &str, devices: &[String]) -> String {
 /// `devices`: the connected microphones' names; the chosen one from the settings is added here. Check setup lines
 /// name them ("Miguel's AirPods isn't connected"), so they lose their owner's name.
 pub fn report(facts: &Facts, setup: &[String], settings: Option<&Value>, devices: &[String], log: &[String]) -> String {
+    let salt = rand::random::<u64>().to_le_bytes();
     let mut devices = devices.to_vec();
     if let Some(m) = settings.and_then(|s| s["microphone"].as_str()) {
         devices.push(m.to_string());
@@ -133,7 +165,7 @@ pub fn report(facts: &Facts, setup: &[String], settings: Option<&Value>, devices
         s.push_str("(not run)\n");
     }
     for line in setup {
-        s.push_str(&logging::redact(&scrub_devices(line, &devices)));
+        s.push_str(&hash_ids(&logging::redact(&scrub_devices(line, &devices)), &salt));
         s.push('\n');
     }
     s.push_str("\n== Settings (personal values removed) ==\n");
@@ -144,7 +176,7 @@ pub fn report(facts: &Facts, setup: &[String], settings: Option<&Value>, devices
     s.push_str(&format!("\n\n== Last {} log lines ==\n", log.len()));
     for line in log {
         // Written redacted already; again in case the file came from an older build.
-        s.push_str(&logging::redact(line));
+        s.push_str(&hash_ids(&logging::redact(line), &salt));
         s.push('\n');
     }
     s
@@ -281,6 +313,24 @@ mod tests {
             assert!(!r.contains(leak), "{leak} leaked:\n{r}");
         }
         assert!(report(&facts, &[], None, &[], &[]).contains("(not run)"));
+    }
+
+    #[test]
+    fn meeting_ids_are_hashed_but_still_match_up() {
+        let line = "transcribing meeting 2026-10-16_1430_ab12; later 2026-10-16_1430_ab12 and 2026-10-17_0900_zz99.";
+        let out = hash_ids(line, b"salt");
+        assert!(!out.contains("2026-10"), "{out}");
+        let ids: Vec<&str> = out.split(|c: char| c == ' ' || c == '.' || c == ';').filter(|w| w.starts_with("m-")).collect();
+        assert_eq!(ids.len(), 3, "{out}");
+        assert_eq!(ids[0], ids[1]);
+        assert_ne!(ids[0], ids[2]);
+        assert_eq!(ids[0].len(), 8);
+        assert_ne!(hash_ids("2026-10-16_1430_ab12", b"other"), hash_ids("2026-10-16_1430_ab12", b"salt"), "a new salt per report");
+        assert_eq!(hash_ids("model 2026-10-16 v3 and 2026-10-16_1430_ab12x", b"s"), "model 2026-10-16 v3 and 2026-10-16_1430_ab12x");
+        // In the report.
+        let facts = Facts { version: "1".into(), os: "x".into(), cpu: "x".into(), graphics: "x".into(), log_dir: "x".into() };
+        let r = report(&facts, &[], None, &[], &["2026-10-16T14:30:00.000-04:00 INFO  commands::recorder: recording stopped: meeting 2026-10-16_1430_ab12".to_string()]);
+        assert!(r.contains("recording stopped: meeting m-") && !r.contains("1430_ab12"), "{r}");
     }
 
     #[test]

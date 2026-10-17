@@ -174,6 +174,12 @@ fn describe(action: &Action, rule: &dyn Fn(&str) -> Rule) -> String {
     }
 }
 
+/// A mic user as the log names it: the call app it is ("zoom", "browser"), or "other app". Which other apps a
+/// person runs is nobody's business, and the diagnostics can end up in a public issue.
+fn mic_user_for_log(bundle_id: &str, path: &str) -> String {
+    call_app_ids([(bundle_id, path)], &[]).first().map(|a| a.to_string()).unwrap_or_else(|| "other app".into())
+}
+
 /// What the mic users and call apps were last time, so only changes are logged.
 #[derive(Default, PartialEq)]
 struct Seen {
@@ -232,7 +238,7 @@ pub fn setup(app: &AppHandle) {
                         let a = if a == BROWSER_CALL { "browser" } else { a };
                         rules.iter().find(|(id, _)| id == a).map(|(_, r)| *r).unwrap_or(Rule::Ask)
                     };
-                    let mut now = Seen { enabled, users: users.iter().map(|u| u.bundle_id.clone()).collect(), apps: apps.iter().map(|a| format!("{a}={:?}", rule(a))).collect() };
+                    let mut now = Seen { enabled, users: users.iter().map(|u| mic_user_for_log(&u.bundle_id, &u.path)).collect(), apps: apps.iter().map(|a| format!("{a}={:?}", rule(a))).collect() };
                     now.users.sort();
                     now.users.dedup();
                     if now != seen {
@@ -416,6 +422,13 @@ mod tests {
         assert_eq!(rules, vec![("zoom".to_string(), Rule::Always), ("facetime".to_string(), Rule::Never)]);
         assert_eq!(ignored, vec!["VoiceInk".to_string()]);
         assert!(rules_from(&Value::Null).0, "detection is on by default");
+    }
+
+    #[test]
+    fn the_log_names_only_call_apps() {
+        assert_eq!(mic_user_for_log("us.zoom.xos", ""), "zoom");
+        assert_eq!(mic_user_for_log("com.example.SecretDiary", "/Applications/Secret Diary.app"), "other app");
+        assert_eq!(mic_user_for_log("com.electron.wispr-flow", ""), "other app");
     }
 
     #[test]
