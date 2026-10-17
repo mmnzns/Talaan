@@ -4,6 +4,7 @@ use super::{notify, AppState, MEETINGS_CHANGED};
 use crate::calendar::{pick, EARLY_MS};
 use crate::platform::calendar::{self as system, Access};
 use crate::storage::model::CalendarEvent;
+use std::time::{Duration, Instant};
 use tauri::{AppHandle, Manager};
 
 fn name(a: Access) -> &'static str {
@@ -77,21 +78,22 @@ fn enabled(app: &AppHandle) -> bool {
 
 /// Looks up the event for a meeting, in the background, and saves it on the meeting. The event title replaces
 /// the placeholder title. Does nothing when the calendar is off, not allowed, or the meeting already has one.
-/// Called when a recording starts. Windows: if the calendar couldn't be downloaded then (offline), the meeting is
-/// remembered so `link_after_stop` keeps trying.
+/// Called when a recording starts. If the recording stops before this lookup is done (it can take a minute when
+/// the download fails), this thread does the after-stop tries itself (`Linking`).
 pub fn link_soon(app: &AppHandle, meeting_id: &str) {
     if !enabled(app) {
         return;
     }
     let (app, id) = (app.clone(), meeting_id.to_string());
+    linking().start(&id, Instant::now());
     std::thread::spawn(move || {
         let outcome = link(&app, &id);
-        #[cfg(target_os = "windows")]
-        if outcome == (Outcome::NotFound { offline: true }) {
-            offline_at_start().push(id);
+        let offline = outcome == (Outcome::NotFound { offline: true });
+        if let AfterStart::Stopped = linking().start_done(&id, offline, Instant::now()) {
+            if outcome != Outcome::Linked {
+                after_stop(&app, &id, offline);
+            }
         }
-        #[cfg(not(target_os = "windows"))]
-        let _ = outcome;
     });
 }
 
@@ -103,37 +105,107 @@ pub fn link_after_stop(app: &AppHandle, meeting_id: &str) {
         return;
     }
     let (app, id) = (app.clone(), meeting_id.to_string());
-    std::thread::spawn(move || {
-        #[cfg(target_os = "windows")]
-        let offline = {
-            let mut list = offline_at_start();
-            let was = list.contains(&id);
-            list.retain(|m| *m != id);
-            was
-        };
-        #[cfg(not(target_os = "windows"))]
-        let offline = false;
-        if link(&app, &id) == Outcome::Linked || !offline {
+    let offline = match linking().stop(&id, Instant::now()) {
+        AtStop::StartStillRunning => return, // its thread carries on (see link_soon)
+        AtStop::Tried { offline } => offline,
+    };
+    std::thread::spawn(move || after_stop(&app, &id, offline));
+}
+
+/// One try now; after an offline start (Windows only: the Mac reads its calendar locally), more later.
+fn after_stop(app: &AppHandle, id: &str, offline_at_start: bool) {
+    if link(app, id) == Outcome::Linked || !(cfg!(target_os = "windows") && offline_at_start) {
+        return;
+    }
+    for wait in RELINK_WAITS {
+        std::thread::sleep(wait);
+        let wanted = app.state::<AppState>().lock().read_meeting_file(id).is_ok_and(|f| wants_link(&f));
+        if !wanted || !enabled(app) || link(app, id) == Outcome::Linked {
             return;
         }
-        for wait in RELINK_WAITS {
-            std::thread::sleep(wait);
-            let wanted = app.state::<AppState>().lock().read_meeting_file(&id).is_ok_and(|f| wants_link(&f));
-            if !wanted || !enabled(&app) || link(&app, &id) == Outcome::Linked {
-                return;
-            }
-        }
-    });
+    }
 }
 
 /// Waits between the tries after a stop: 5 minutes after it, then 30 (B3).
 pub const RELINK_WAITS: [std::time::Duration; 2] = [std::time::Duration::from_secs(5 * 60), std::time::Duration::from_secs(25 * 60)];
 
-/// Meetings whose start found no event because the calendar couldn't be downloaded.
-#[cfg(target_os = "windows")]
-fn offline_at_start() -> std::sync::MutexGuard<'static, Vec<String>> {
-    static LIST: std::sync::Mutex<Vec<String>> = std::sync::Mutex::new(Vec::new());
-    LIST.lock().unwrap_or_else(|e| e.into_inner())
+/// Where each recording's start lookup is, so Stop knows whether it found the calendar offline, or is still
+/// running. Entries go at Stop (or when the start lookup ends after it), and any older than a day are dropped
+/// (a recording discarded instead of stopped).
+#[derive(Default)]
+struct Linking {
+    meetings: std::collections::HashMap<String, (Track, Instant)>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum Track {
+    StartRunning,
+    StopWaiting,
+    Offline,
+}
+
+#[derive(Debug, PartialEq)]
+enum AfterStart {
+    /// Still recording, or nothing to remember.
+    Recording,
+    /// The recording stopped meanwhile: the start thread does the after-stop tries.
+    Stopped,
+}
+
+#[derive(Debug, PartialEq)]
+enum AtStop {
+    StartStillRunning,
+    Tried { offline: bool },
+}
+
+const FORGET_AFTER: Duration = Duration::from_secs(24 * 3600);
+
+impl Linking {
+    fn prune(&mut self, now: Instant) {
+        self.meetings.retain(|_, (_, at)| now.duration_since(*at) < FORGET_AFTER);
+    }
+
+    fn start(&mut self, id: &str, now: Instant) {
+        self.prune(now);
+        self.meetings.insert(id.to_string(), (Track::StartRunning, now));
+    }
+
+    fn start_done(&mut self, id: &str, offline: bool, now: Instant) -> AfterStart {
+        match self.meetings.get(id).map(|(t, _)| *t) {
+            Some(Track::StopWaiting) => {
+                self.meetings.remove(id);
+                AfterStart::Stopped
+            }
+            Some(_) if offline => {
+                self.meetings.insert(id.to_string(), (Track::Offline, now));
+                AfterStart::Recording
+            }
+            _ => {
+                self.meetings.remove(id);
+                AfterStart::Recording
+            }
+        }
+    }
+
+    fn stop(&mut self, id: &str, now: Instant) -> AtStop {
+        self.prune(now);
+        match self.meetings.get(id).map(|(t, _)| *t) {
+            Some(Track::StartRunning) => {
+                self.meetings.insert(id.to_string(), (Track::StopWaiting, now));
+                AtStop::StartStillRunning
+            }
+            Some(Track::Offline) => {
+                self.meetings.remove(id);
+                AtStop::Tried { offline: true }
+            }
+            _ => AtStop::Tried { offline: false },
+        }
+    }
+}
+
+fn linking() -> std::sync::MutexGuard<'static, Linking> {
+    static STATE: std::sync::LazyLock<std::sync::Mutex<Linking>> = std::sync::LazyLock::new(Default::default);
+    STATE.lock().unwrap_or_else(|e| e.into_inner())
 }
 
 /// A meeting still worth linking: no event yet, and the title is still the placeholder.
@@ -194,6 +266,41 @@ fn link(app: &AppHandle, id: &str) -> Outcome {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_start_lookup_still_running_at_stop_finishes_the_job() {
+        let t0 = Instant::now();
+        let mut l = Linking::default();
+        l.start("m", t0);
+        assert_eq!(l.stop("m", t0), AtStop::StartStillRunning);
+        assert_eq!(l.start_done("m", true, t0), AfterStart::Stopped, "the start thread does the after-stop tries");
+        assert!(l.meetings.is_empty());
+    }
+
+    #[test]
+    fn an_offline_start_is_remembered_until_stop() {
+        let t0 = Instant::now();
+        let mut l = Linking::default();
+        l.start("m", t0);
+        assert_eq!(l.start_done("m", true, t0), AfterStart::Recording);
+        assert_eq!(l.stop("m", t0), AtStop::Tried { offline: true });
+        assert!(l.meetings.is_empty());
+        // Online start: nothing kept.
+        l.start("n", t0);
+        l.start_done("n", false, t0);
+        assert!(l.meetings.is_empty());
+        assert_eq!(l.stop("n", t0), AtStop::Tried { offline: false });
+    }
+
+    #[test]
+    fn meetings_never_stopped_are_forgotten_after_a_day() {
+        let t0 = Instant::now();
+        let mut l = Linking::default();
+        l.start("discarded", t0);
+        l.start_done("discarded", true, t0);
+        l.start("next", t0 + FORGET_AFTER);
+        assert!(!l.meetings.contains_key("discarded"));
+    }
 
     #[test]
     fn retries_come_5_and_30_minutes_after_the_stop() {

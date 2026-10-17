@@ -118,7 +118,7 @@ computer lists the download. `calendar/fetch.rs`
 downloads it (15 s in all, 20 MB cap, `webcal://` accepted; checked when a recording starts, at most every 15 minutes; a failed download keeps the old
 copy, and the recording tries once more a minute later). Since v1.1 (B3), when that download had failed at the start,
 `link_after_stop` tries again when the recording stops, then 5 and 30 minutes after the stop, while the meeting has no
-event and still has its placeholder title (a summary title ends it; the list is in memory, so a restart ends it too). `calendar/ics.rs` reads it once per download and expands recurrences per window: RRULE, EXDATE,
+event and still has its placeholder title (a summary title ends it; the list is in memory, so a restart ends it too). When Stop comes while the start lookup is still running (a failed download waits a minute), the start thread does these tries itself; entries are dropped at Stop, or after a day for a discarded recording. `calendar/ics.rs` reads it once per download and expands recurrences per window: RRULE, EXDATE,
 RECURRENCE-ID overrides, IANA and Windows time zone names (Outlook's "Eastern Standard Time"), floating and all-day times,
 at most 1,000 occurrences per event. Reading is tolerant: a bad event is skipped and the rest are kept. The user's own
 address (from a Google address) and declined attendees are left out. The public Google holidays feed reads as 433 events.
