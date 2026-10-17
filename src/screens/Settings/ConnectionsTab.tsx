@@ -8,6 +8,7 @@ import { Button, Chip, Field, Select, Switch, useToast } from "../../ui";
 import { Group, Row, SectionIntro } from "./parts";
 import type { TabProps } from "./tabProps";
 import { onWindows, usePlatform } from "../../lib/platform";
+import { tildePath } from "../../lib/format";
 import { useT } from "../../lib/i18n/I18nProvider";
 import type { MessageKey } from "../../lib/i18n";
 
@@ -81,6 +82,7 @@ export function ConnectionsTab({ settings: s, update }: TabProps) {
           )}
         </Row>
         <NotionRow settings={s} update={update} />
+        <AutoSaveRow settings={s} update={update} />
         <Row title={t("settings.speaker_names_title")} desc={t("settings.speaker_names_desc")}>
           <Switch aria-label={t("settings.speaker_names_aria")} checked={s.suggestSpeakerNames} onChange={(v) => update({ suggestSpeakerNames: v })} />
         </Row>
@@ -254,6 +256,50 @@ function NotionRow({ settings: s, update }: TabProps) {
         <Button onClick={() => void store.disconnectNotion()}>{t("settings.notion_disconnect")}</Button>
       </div>
       {error && <span className="basis-full text-xs text-warn-fg">{error}</span>}
+    </Row>
+  );
+}
+
+/**
+ * "Also save each meeting to a folder". It lives in Connections beside Notion because it's another place meetings
+ * go, and it's where someone looks to send notes to Obsidian; Privacy lists it in "what leaves this computer".
+ */
+function AutoSaveRow({ settings: s, update }: TabProps) {
+  const store = useSettingsStore();
+  const toast = useToast();
+  const t = useT();
+  const on = Boolean(s.autoSaveFolder);
+
+  const choose = async () => {
+    try {
+      const folder = await store.pickFolder(t("settings.autosave_picker"));
+      if (folder) await update({ autoSaveFolder: folder });
+    } catch (e) {
+      toast(describeError(e));
+    }
+  };
+
+  return (
+    <Row title={t("settings.autosave_title")} desc={t("settings.autosave_desc")}>
+      <Switch aria-label={t("settings.autosave_title")} checked={on} onChange={(v) => void (v ? choose() : update({ autoSaveFolder: "" }))} />
+      {on && (
+        <div className="flex basis-full flex-col gap-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="min-w-0 flex-1 basis-48 truncate font-mono text-xs text-subtle" title={s.autoSaveFolder}>
+              {t("settings.autosave_saving_to", { path: tildePath(s.autoSaveFolder) })}
+            </span>
+            <Button onClick={() => void store.revealAutoSaveFolder().catch((e) => toast(describeError(e)))}>{t("settings.folder_open")}</Button>
+            <Button onClick={() => void choose()}>{t("settings.autosave_change")}</Button>
+          </div>
+          <div className="flex items-center justify-between gap-5">
+            <div>
+              <div className="text-[13px] font-semibold">{t("settings.autosave_transcript")}</div>
+              <div className="text-xs text-subtle">{t("settings.autosave_transcript_desc")}</div>
+            </div>
+            <Switch aria-label={t("settings.autosave_transcript")} checked={s.autoSaveTranscript} onChange={(v) => update({ autoSaveTranscript: v })} />
+          </div>
+        </div>
+      )}
     </Row>
   );
 }

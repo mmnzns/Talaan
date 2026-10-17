@@ -1,15 +1,15 @@
 import type { RecorderClient } from "../data/recorder";
-import { hasByokKey, type CalendarAccess, type GpuStatus, type Settings, type SettingsStore } from "../data/settings";
+import { hasByokKey, type AutoSaveStatus, type CalendarAccess, type GpuStatus, type Settings, type SettingsStore } from "../data/settings";
 import { formatBytes, tildePath } from "./format";
 import { currentLang, t } from "./i18n";
 import { onWindows, os, platformCopy } from "./platform";
 
 /** `unknown`: can't be told without a test (call audio has no permission to read). */
 export type CheckStatus = "ok" | "warn" | "fail" | "unknown";
-export type FixAction = "allowMic" | "micSettings" | "testSystemAudio" | "systemAudioSettings" | "speechModels" | "summaryAI" | "connections" | "openData" | "retryGpu";
+export type FixAction = "allowMic" | "micSettings" | "testSystemAudio" | "systemAudioSettings" | "speechModels" | "summaryAI" | "connections" | "openData" | "retryGpu" | "retryAutoSave";
 
 export interface CheckResult {
-  id: "mic" | "device" | "systemAudio" | "relay" | "speech" | "speakers" | "gpu" | "summary" | "calendar" | "data";
+  id: "mic" | "device" | "systemAudio" | "relay" | "speech" | "speakers" | "gpu" | "summary" | "calendar" | "data" | "autoSave";
   title: string;
   status: CheckStatus;
   detail: string;
@@ -35,6 +35,8 @@ export interface Probe {
   gpu?: GpuStatus;
   /** Windows: the sound enhancer the default output goes through ("FxSound"). None = no row. */
   soundRelay?: string | null;
+  /** "Also save each meeting to a folder", when a folder is chosen. Undefined = no row. */
+  autoSave?: AutoSaveStatus;
 }
 
 const READY = new Set(["downloaded", "on_this_mac"]);
@@ -44,7 +46,7 @@ const pct = (p?: number) => Math.round((p ?? 0) * 100);
 /** One line per thing a call needs, in the order a call uses them, each with what to do about it. */
 export function checkSetup(p: Probe): CheckResult[] {
   const s = p.settings;
-  return [mic(p), device(p), systemAudio(p), ...relay(p), speech(s), speakers(s), ...gpu(p), summary(p), ...calendar(p), data(p)];
+  return [mic(p), device(p), systemAudio(p), ...relay(p), speech(s), speakers(s), ...gpu(p), summary(p), ...calendar(p), data(p), ...autoSave(p)];
 }
 
 /** Windows: a sound enhancer or mixer replays everything, Talaan's own sounds included, under its own program. */
@@ -167,6 +169,27 @@ function summary(p: Probe): CheckResult {
   return r("fail", t("settings.setup_summary_nolocal", { name: model?.name ?? "?" }));
 }
 
+/** The folder copies: a quiet notice when the folder can't be reached (a disconnected drive), never an error. */
+function autoSave(p: Probe): CheckResult[] {
+  const a = p.autoSave;
+  if (!a) return [];
+  const title = t("settings.setup_autosave");
+  const path = tildePath(p.settings.autoSaveFolder);
+  // "waiting" copies are on their way; only ones that didn't make it are a problem.
+  const stuck = a.pending.filter((p) => p.kind !== "waiting");
+  if (a.reachable && stuck.length === 0) return [{ id: "autoSave", title, status: "ok", detail: t("settings.setup_autosave_ok", { path }) }];
+  const failed = stuck.find((p) => p.kind === "failed");
+  const count = a.reachable ? stuck.length : a.pending.length;
+  const waiting = count ? ` ${t("settings.setup_autosave_skipped", { count })}` : "";
+  const why = !a.reachable
+    ? t("settings.setup_autosave_missing", { path })
+    : failed
+      ? t("settings.setup_autosave_failed", { path, error: failed.error ?? "?" })
+      : t("settings.setup_autosave_ok", { path });
+  const detail = why + waiting;
+  return [{ id: "autoSave", title, status: "warn", detail, fix: { label: t("settings.setup_autosave_retry"), action: "retryAutoSave" } }];
+}
+
 function data(p: Probe): CheckResult {
   const title = t("settings.setup_data");
   if ("error" in p.data) return { id: "data", title, status: "fail", detail: t("settings.setup_data_fail", { error: p.data.error }) };
@@ -194,5 +217,6 @@ export async function probeSetup(store: SettingsStore, recorder: RecorderClient,
   const calendar = onWindows && settings.calendarConnected ? await store.calendarAccess().catch(() => undefined) : undefined;
   const gpu = await (retryGpu ? store.retryGpu() : store.gpuStatus()).catch(() => undefined);
   const soundRelay = await recorder.soundRelay().catch(() => null);
-  return { settings, mic, inputs, data, localServer, systemAudio, systemAudioNeedsPermission: os === "mac", calendar, gpu, soundRelay };
+  const autoSave = settings.autoSaveFolder ? ((await store.autoSaveStatus().catch(() => null)) ?? undefined) : undefined;
+  return { settings, mic, inputs, data, localServer, systemAudio, systemAudioNeedsPermission: os === "mac", calendar, gpu, soundRelay, autoSave };
 }

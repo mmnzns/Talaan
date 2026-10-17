@@ -132,7 +132,8 @@ export function seedMeetings(now: Date = new Date()): Meeting[] {
     language: "en",
     audioKeptUntil: inDays(now, 6),
     pinned: true,
-    speakers: { me: "Me", "them:1": "Jordan Lee" },
+    calendarEvent: { title: "Weekly 1:1", attendees: ["Jordan Lee"], emails: ["jordan.lee@example.com"] },
+    speakers: { me: "Me", "them:0": "Them" },
     template: "one_on_one",
     summary: {
       recap:
@@ -153,10 +154,10 @@ export function seedMeetings(now: Date = new Date()): Meeting[] {
       edited: false,
     },
     transcript: lines("o", [
-      ["00:00", "them:1", "How did the week go on your side?"],
+      ["00:00", "them:0", "How did the week go on your side?"],
       ["00:08", "me", "Busy, but the onboarding work is on track."],
       ["12:05", "me", "I will share the Q1 pricing brief with design after the onboarding launch."],
-      ["20:40", "them:1", "I will draft the request for a data analyst today."],
+      ["20:40", "them:0", "I will draft the request for a data analyst today."],
     ]),
     marks: [{ id: "o-n0", at: mmss("20:41"), note: "Jordan short on data help" }],
     pauses: [],
@@ -239,7 +240,8 @@ export function seedMeetings(now: Date = new Date()): Meeting[] {
     peopleCount: 4,
     language: "en",
     pinned: false,
-    speakers: { me: "Me", "them:1": "Priya Shah", "them:2": "Sam Okafor" },
+    calendarEvent: { title: "Website launch retro", attendees: ["Priya Shah", "Sam Okafor", "Lee Wong"], emails: ["priya.shah@example.com", "sam.okafor@example.com", "lee.wong@example.com"] },
+    speakers: { me: "Me" },
     summary: {
       recap:
         "The launch landed on time. Page speed regressed on mobile and the legal review started too late. Both get a checklist item for the next launch.",

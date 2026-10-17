@@ -1,4 +1,5 @@
 mod ask;
+mod autosave;
 mod calendar;
 mod calls;
 mod commands;
@@ -166,6 +167,10 @@ pub fn run() {
             meetings::meetings_delete_audio,
             meetings::meetings_reveal,
             meetings::export_write,
+            commands::autosave::autosave_write,
+            commands::autosave::autosave_status,
+            commands::autosave::autosave_reveal,
+            commands::calendar::calendar_next,
             commands::import::meetings_import,
             commands::import::import_extensions,
             rec_cmd::meetings_recover,

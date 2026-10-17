@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { MockRecorderClient } from "../../data/recorder";
+import type { NextMeeting } from "../../data/settings";
 import { useRecorder } from "../../data/useRecorder";
 import { navigate, routes } from "../../lib/router";
 import { openSettings } from "../../lib/windows";
@@ -26,11 +27,39 @@ function Frame({ label, children }: { label: string; children: ReactNode }) {
   );
 }
 
+/** A sample calendar meeting starting `inMin` minutes from now (negative: already started). */
+function sampleNext(inMin: number): NextMeeting {
+  const start = Date.now() + inMin * 60_000 - 30_000;
+  return {
+    title: "Design review: onboarding",
+    startMs: start,
+    endMs: start + 30 * 60_000,
+    attendees: ["Ana Reyes", "Sam Okafor"],
+    emails: ["ana.reyes@example.com", "sam.okafor@example.com"],
+    joinUrl: "https://us02web.zoom.us/j/81234567890",
+    appId: "zoom",
+    appLabel: "Zoom",
+  };
+}
+
 export function MenuBarStage() {
   return (
     <div>
-      <Caption title="Menu bar" note="What opens from the Talaan icon in the menu bar when nothing is recording." />
-      <MenuBarPopover onStart={() => navigate(routes.screens("recording"))} />
+      <Caption
+        title="Menu bar"
+        note="What opens from the Talaan icon in the menu bar when nothing is recording: with the calendar's next meeting (soon, in progress) and without one."
+      />
+      <div className="flex flex-wrap items-start gap-8">
+        <Frame label="next meeting soon">
+          <MenuBarPopover next={sampleNext(12)} onStart={() => navigate(routes.screens("recording"))} />
+        </Frame>
+        <Frame label="meeting in progress">
+          <MenuBarPopover next={sampleNext(-5)} onStart={() => navigate(routes.screens("recording"))} />
+        </Frame>
+        <Frame label="no calendar or nothing coming up">
+          <MenuBarPopover next={null} onStart={() => navigate(routes.screens("recording"))} />
+        </Frame>
+      </div>
     </div>
   );
 }

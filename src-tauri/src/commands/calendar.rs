@@ -5,6 +5,7 @@ use crate::calendar::{pick, EARLY_MS};
 use crate::platform::calendar::{self as system, Access};
 use crate::storage::model::CalendarEvent;
 use std::time::{Duration, Instant};
+use serde::Serialize;
 use tauri::{AppHandle, Manager};
 
 fn name(a: Access) -> &'static str {
@@ -74,6 +75,75 @@ pub fn calendar_disconnect() -> Result<(), String> {
 fn enabled(app: &AppHandle) -> bool {
     let s = app.state::<AppState>().lock().settings_get().ok().flatten();
     s.as_ref().and_then(|s| s["calendarConnected"].as_bool()).unwrap_or(false) && system::access() == Access::Allowed
+}
+
+/// The meeting the menu bar offers to record (in progress, or starting within the hour).
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NextMeeting {
+    title: String,
+    start_ms: i64,
+    end_ms: i64,
+    attendees: Vec<String>,
+    emails: Vec<String>,
+    join_url: Option<String>,
+    /// The call app the link opens ("zoom", "teams", or "browser" for Google Meet) and its name.
+    app_id: Option<&'static str>,
+    app_label: Option<&'static str>,
+}
+
+/// For the menu bar popover. `None` when the calendar is off or nothing is coming up. Async: on Windows it may
+/// download the calendar first.
+#[tauri::command]
+pub async fn calendar_next(app: AppHandle) -> Option<NextMeeting> {
+    if !enabled(&app) {
+        return None;
+    }
+    tauri::async_runtime::spawn_blocking(move || {
+        let now = chrono::Utc::now().timestamp_millis();
+        // Recordings already linked to an event (the last day is plenty), so their event isn't offered again.
+        let recorded: Vec<(i64, String)> = {
+            let state = app.state::<AppState>();
+            let storage = state.lock();
+            let recent = storage.list_meetings(&Default::default()).unwrap_or_default().into_iter().filter_map(|m| {
+                let started = chrono::DateTime::parse_from_rfc3339(&m.started_at).ok()?.timestamp_millis();
+                (now - started < 86_400_000).then_some((m.id, started))
+            });
+            recent.filter_map(|(id, started)| Some((started, storage.read_meeting_file(&id).ok()?.calendar_event?.title))).collect()
+        };
+        let recorded: Vec<_> = recorded.iter().map(|(started_ms, title)| crate::calendar::Recorded { started_ms: *started_ms, event_title: title }).collect();
+        let events = system::events(now, now + crate::calendar::NEXT_MS);
+        let e = crate::calendar::upcoming(&events, now, &recorded)?;
+        let app = e.join_url.as_deref().and_then(crate::calendar::meeting_app);
+        Some(NextMeeting {
+            title: e.title.trim().to_string(),
+            start_ms: e.start_ms,
+            end_ms: e.end_ms,
+            attendees: e.attendees.clone(),
+            emails: e.emails.clone(),
+            join_url: e.join_url.clone(),
+            app_id: app.map(|a| a.0),
+            app_label: app.map(|a| a.1),
+        })
+    })
+    .await
+    .ok()
+    .flatten()
+}
+
+/// Recording started from the menu bar's next meeting: the event is known, so it's saved right away.
+pub fn link_now(app: &AppHandle, meeting_id: &str, event: CalendarEvent) {
+    let title = event.title.trim().to_string();
+    let saved = app.state::<AppState>().lock().update_meeting_file(meeting_id, |f| {
+        if f.title_is_placeholder && !title.is_empty() {
+            f.title = title.clone();
+            f.title_is_placeholder = false;
+        }
+        f.calendar_event = Some(CalendarEvent { title, ..event });
+    });
+    if saved.is_ok() {
+        notify(app, MEETINGS_CHANGED);
+    }
 }
 
 /// Looks up the event for a meeting, in the background, and saves it on the meeting. The event title replaces
