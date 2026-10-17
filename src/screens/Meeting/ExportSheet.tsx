@@ -174,7 +174,7 @@ export function ExportSheet({ open, meeting, onClose, initialFormat, startTooLon
         </div>
       ) : (
         <>
-          <div role="radiogroup" aria-label={t("meeting.formatLabel")} className="relative flex flex-col gap-2.5 px-[26px] pb-[18px] pt-1">
+          <div role="radiogroup" aria-label={t("meeting.formatLabel")} className="relative grid grid-cols-1 gap-2.5 px-[26px] pb-[18px] pt-1 min-[560px]:grid-cols-2">
             {FORMATS.map((f) => {
               const on = f.id === format;
               return (
