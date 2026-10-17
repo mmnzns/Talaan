@@ -65,8 +65,8 @@ export class TauriMeetingStore implements MeetingStore {
     return call<void>("meetings_set_notes", { id, notes });
   }
 
-  followUpEta(id: MeetingId) {
-    return call<FollowUpEta>("meetings_followup_eta", { id });
+  followUpEta(id: MeetingId, request?: string) {
+    return call<FollowUpEta>("meetings_followup_eta", { id, request: request ?? null });
   }
 
   draftFollowUp(id: MeetingId, request: string) {

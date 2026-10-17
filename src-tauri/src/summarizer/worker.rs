@@ -83,9 +83,26 @@ pub type Job = Box<dyn FnOnce() + Send>;
 struct Queue {
     /// Meeting id, and whether it came straight from the transcriber (nobody asked for it on screen).
     ids: VecDeque<(String, bool)>,
-    /// Short jobs go before the next summary.
-    jobs: VecDeque<Job>,
+    /// Short jobs go before the next summary, each with its caller's tag (a follow-up's request id).
+    jobs: VecDeque<(String, Job)>,
     current: Option<String>,
+    /// The tag of the job running now.
+    running_job: Option<String>,
+}
+
+/// What a job with a given tag waits for.
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct Ahead {
+    /// The meeting whose summary is being written.
+    pub summary: Option<String>,
+    /// Other jobs running or queued before it.
+    pub jobs: usize,
+}
+
+impl Ahead {
+    pub fn waiting(&self) -> bool {
+        self.summary.is_some() || self.jobs > 0
+    }
 }
 
 pub struct Worker {
@@ -129,13 +146,25 @@ impl Worker {
     }
 
     /// Runs `job` on the summarizer thread once the summary in progress (if any) is done, before the next one.
-    pub fn run_between(&self, job: Job) {
+    pub fn run_between(&self, tag: &str, job: Job) {
         let (lock, cv) = &*self.queue;
-        lock.lock().unwrap_or_else(|e| e.into_inner()).jobs.push_back(job);
+        lock.lock().unwrap_or_else(|e| e.into_inner()).jobs.push_back((tag.to_string(), job));
         cv.notify_one();
     }
 
+    /// What the job tagged `tag` waits for now (or would, queued now): the summary being written, the job running
+    /// and the jobs queued before it.
+    pub fn ahead_of(&self, tag: &str) -> Ahead {
+        let q = self.queue.0.lock().unwrap_or_else(|e| e.into_inner());
+        if q.running_job.as_deref() == Some(tag) {
+            return Ahead::default();
+        }
+        let before = q.jobs.iter().position(|(t, _)| t == tag).unwrap_or(q.jobs.len());
+        Ahead { summary: q.current.clone(), jobs: before + usize::from(q.running_job.is_some()) }
+    }
+
     /// The meeting whose summary is being written right now.
+    #[cfg(test)]
     pub fn current(&self) -> Option<String> {
         self.queue.0.lock().unwrap_or_else(|e| e.into_inner()).current.clone()
     }
@@ -166,8 +195,10 @@ fn worker_loop(deps: Deps, queue: Arc<(Mutex<Queue>, Condvar)>, cancel: Arc<Atom
         let next = {
             let mut q = lock.lock().unwrap_or_else(|e| e.into_inner());
             q.current = None;
+            q.running_job = None;
             loop {
-                if let Some(job) = q.jobs.pop_front() {
+                if let Some((tag, job)) = q.jobs.pop_front() {
+                    q.running_job = Some(tag);
                     break Next::Job(job);
                 }
                 if let Some((id, auto)) = q.ids.pop_front() {
@@ -537,6 +568,25 @@ mod tests {
     }
 
     #[test]
+    fn a_running_job_counts_as_ahead_of_the_next_one() {
+        let (_d, _storage, _id, w, _) = setup(Box::new(|_| Ok(Box::new(Scripted { replies: vec![], prompts: vec![], context: 16_384 }))));
+        let go = Arc::new(Mutex::new(false));
+        let g = go.clone();
+        let (tx, rx) = std::sync::mpsc::channel();
+        w.run_between("one", Box::new(move || {
+            tx.send(()).unwrap();
+            while !*g.lock().unwrap() {
+                std::thread::sleep(Duration::from_millis(5));
+            }
+        }));
+        rx.recv_timeout(Duration::from_secs(5)).unwrap();
+        assert_eq!(w.ahead_of("one"), Ahead::default());
+        let two = w.ahead_of("two");
+        assert!(two.waiting() && two.summary.is_none() && two.jobs == 1);
+        *go.lock().unwrap() = true;
+    }
+
+    #[test]
     fn a_panic_in_a_job_or_a_summary_leaves_the_worker_running() {
         struct Panics;
         impl SummaryEngine for Panics {
@@ -551,7 +601,7 @@ mod tests {
             }
         }
         let (_d, storage, id, w, _) = setup(Box::new(|_| Ok(Box::new(Panics))));
-        w.run_between(Box::new(|| panic!("a bug in a draft")));
+        w.run_between("a", Box::new(|| panic!("a bug in a draft")));
         w.enqueue(&id);
         wait(&w);
         let m = storage.lock().unwrap().get_meeting(&id).unwrap();
@@ -559,7 +609,7 @@ mod tests {
         assert_eq!(m.summary_error.unwrap().code, FAILED);
         // Still working afterwards.
         let (tx, rx) = std::sync::mpsc::channel();
-        w.run_between(Box::new(move || tx.send(()).unwrap()));
+        w.run_between("b", Box::new(move || tx.send(()).unwrap()));
         rx.recv_timeout(Duration::from_secs(5)).unwrap();
     }
 
@@ -596,12 +646,15 @@ mod tests {
         assert_eq!(w.current().as_deref(), Some(id.as_str()));
         let l = log.clone();
         let (tx, rx) = std::sync::mpsc::channel();
-        w.run_between(Box::new(move || {
+        w.run_between("first", Box::new(move || {
             l.lock().unwrap().push("job");
             tx.send(()).unwrap();
         }));
         std::thread::sleep(Duration::from_millis(50));
         assert_eq!(*log.lock().unwrap(), vec!["summary starts"], "the job waits");
+        // Each job knows what is ahead of it: the summary, and for the second, the first job too.
+        assert_eq!(w.ahead_of("first"), Ahead { summary: Some(id.clone()), jobs: 0 });
+        assert_eq!(w.ahead_of("second"), Ahead { summary: Some(id.clone()), jobs: 1 });
         *go.lock().unwrap() = true;
         rx.recv_timeout(Duration::from_secs(5)).unwrap();
         assert_eq!(*log.lock().unwrap(), vec!["summary starts", "summary ends", "job"]);

@@ -272,21 +272,23 @@ pub struct FollowUpDraft {
 pub struct FollowUpEta {
     finish_at: String,
     on_cpu: bool,
-    /// The local AI is busy with a summary; the draft starts when it's done.
+    /// The local AI is busy with a summary or another draft; this one starts when they're done.
     waiting: bool,
 }
 
 /// When a follow-up draft for this meeting should be done (the screen asks again while it waits). With the local AI
-/// it waits for a summary in progress, so that summary's time left comes first.
+/// it waits for a summary in progress and for drafts ahead of it, so their time comes first. `request`: the draft's id.
 #[tauri::command(async)]
-pub fn meetings_followup_eta(state: State<AppState>, s: State<SummarizerState>, id: String) -> CmdResult<FollowUpEta> {
+pub fn meetings_followup_eta(state: State<AppState>, s: State<SummarizerState>, id: String, request: Option<String>) -> CmdResult<FollowUpEta> {
     let storage = state.lock();
     let summary = storage.get_meeting(&id)?.summary.ok_or_else(|| refused(tr("error.no_summary_for_followup")))?;
     let cfg = Config::from_settings(storage.settings_get().ok().flatten().as_ref());
     let profile = summary_profile(&cfg, &Gpu::shared(&s.data_dir));
-    let mut secs = followup::estimate(&profile, storage.speed_rate(&profile.key), &summary);
-    let busy = if cfg.engine == "local" { s.worker.current() } else { None };
-    if let Some(other) = &busy {
+    let one = followup::estimate(&profile, storage.speed_rate(&profile.key), &summary);
+    let ahead = if cfg.engine == "local" { s.worker.ahead_of(request.as_deref().unwrap_or("")) } else { Default::default() };
+    // Drafts ahead are about as long as this one.
+    let mut secs = one * (1 + ahead.jobs) as f64;
+    if let Some(other) = &ahead.summary {
         let left = storage
             .read_meeting_file(other)
             .ok()
@@ -297,7 +299,7 @@ pub fn meetings_followup_eta(state: State<AppState>, s: State<SummarizerState>, 
         secs += left;
     }
     let eta = crate::storage::speed::eta_in(secs, profile.device == crate::eta::Device::Cpu);
-    Ok(FollowUpEta { finish_at: eta.finish_at, on_cpu: eta.on_cpu, waiting: busy.is_some() })
+    Ok(FollowUpEta { finish_at: eta.finish_at, on_cpu: eta.on_cpu, waiting: ahead.waiting() })
 }
 
 fn followup_error(e: FollowUpError) -> StorageError {
@@ -334,7 +336,7 @@ pub fn meetings_draft_followup(state: State<AppState>, s: State<SummarizerState>
         let (tx, rx) = std::sync::mpsc::channel();
         let data_dir = s.data_dir.clone();
         let flag = cancel.clone();
-        s.worker.run_between(Box::new(move || {
+        s.worker.run_between(&request, Box::new(move || {
             let _ = tx.send(run_followup(&cfg, &data_dir, &meeting, &summary, &flag));
         }));
         // The channel closes without an answer only when the draft panicked.
