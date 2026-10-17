@@ -8,7 +8,7 @@ import { ownerName } from "../../lib/transcript";
 import { meetingNotes } from "../../lib/share";
 import { templateName } from "../../lib/templates";
 import { useT } from "../../lib/i18n/I18nProvider";
-import { etaText, useNow, type Eta } from "../../lib/eta";
+import { etaText, useNotificationsAllowed, useNow, type Eta } from "../../lib/eta";
 import { useSettings } from "../../data/hooks";
 import { Button, Checkbox, Chip, Editable, Label, SectionLabel, Timestamp, cn, useToast } from "../../ui";
 import { Clamp } from "./Clamp";
@@ -211,8 +211,11 @@ export function Progress({ label, value, eta }: { label: string; value?: number;
   const t = useT();
   const now = useNow();
   const { settings } = useSettings();
+  // Promise a notification only when one will show: the setting is on and the OS hasn't turned them off.
+  const osAllows = useNotificationsAllowed();
+  const notifies = settings?.notifySummaryReady !== false && osAllows !== false;
   const pct = Math.round((value ?? 0) * 100);
-  const left = etaText(t, eta, now);
+  const left = etaText(t, eta, now, value);
   return (
     <div className="flex flex-col gap-2 py-2" role="status">
       <span className="text-[13px] font-semibold">{label}…</span>
@@ -225,7 +228,7 @@ export function Progress({ label, value, eta }: { label: string; value?: number;
       {left && <span className="text-[13px]">{left}</span>}
       <span className="text-xs leading-[17px] text-subtle">
         {eta?.onCpu && <>{t("meeting.onCpu")} </>}
-        {settings?.notifySummaryReady === false ? t("meeting.keepUsing") : t("meeting.keepUsingNotify")}
+        {notifies ? t("meeting.keepUsingNotify") : t("meeting.keepUsing")}
       </span>
     </div>
   );

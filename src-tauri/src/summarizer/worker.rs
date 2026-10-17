@@ -77,7 +77,8 @@ pub struct Deps {
 
 #[derive(Default)]
 struct Queue {
-    ids: VecDeque<String>,
+    /// Meeting id, and whether it came straight from the transcriber (nobody asked for it on screen).
+    ids: VecDeque<(String, bool)>,
     current: Option<String>,
 }
 
@@ -101,11 +102,22 @@ impl Worker {
         w
     }
 
+    /// Someone asked for this summary (Generate summary, a model finished downloading, a restart).
     pub fn enqueue(&self, id: &str) {
+        self.push(id, false);
+    }
+
+    /// The transcriber handed this meeting over by itself: when it ends without a summary, "Transcript ready"
+    /// says the work is done. A summary someone asked for that fails shows its reason on screen instead.
+    pub fn enqueue_auto(&self, id: &str) {
+        self.push(id, true);
+    }
+
+    fn push(&self, id: &str, auto: bool) {
         let (lock, cv) = &*self.queue;
         let mut q = lock.lock().unwrap_or_else(|e| e.into_inner());
-        if q.current.as_deref() != Some(id) && !q.ids.iter().any(|i| i == id) {
-            q.ids.push_back(id.to_string());
+        if q.current.as_deref() != Some(id) && !q.ids.iter().any(|(i, _)| i == id) {
+            q.ids.push_back((id.to_string(), auto));
             cv.notify_one();
         }
     }
@@ -113,7 +125,7 @@ impl Worker {
     pub fn cancel_if_running(&self, id: &str) {
         let (lock, _) = &*self.queue;
         let mut q = lock.lock().unwrap_or_else(|e| e.into_inner());
-        q.ids.retain(|i| i != id);
+        q.ids.retain(|(i, _)| i != id);
         if q.current.as_deref() == Some(id) {
             self.cancel.store(true, Ordering::Relaxed);
         }
@@ -129,19 +141,19 @@ impl Worker {
 fn worker_loop(deps: Deps, queue: Arc<(Mutex<Queue>, Condvar)>, cancel: Arc<AtomicBool>) {
     let (lock, cv) = &*queue;
     loop {
-        let id = {
+        let (id, auto) = {
             let mut q = lock.lock().unwrap_or_else(|e| e.into_inner());
             q.current = None;
             loop {
-                if let Some(id) = q.ids.pop_front() {
+                if let Some((id, auto)) = q.ids.pop_front() {
                     q.current = Some(id.clone());
-                    break id;
+                    break (id, auto);
                 }
                 q = cv.wait(q).unwrap_or_else(|e| e.into_inner());
             }
         };
         cancel.store(false, Ordering::Relaxed);
-        process(&deps, &id, &cancel);
+        process(&deps, &id, auto, &cancel);
         (deps.changed)();
     }
 }
@@ -150,12 +162,12 @@ fn lock(storage: &Mutex<Storage>) -> std::sync::MutexGuard<'_, Storage> {
     storage.lock().unwrap_or_else(|e| e.into_inner())
 }
 
-/// Leaves the meeting transcript-only, saying why.
-fn without_summary(deps: &Deps, id: &str, code: &str, message: String) {
-    without_summary_detail(deps, id, code, message, None)
+/// Leaves the meeting transcript-only, saying why. `auto`: the job came from the transcriber (see `enqueue_auto`).
+fn without_summary(deps: &Deps, id: &str, auto: bool, code: &str, message: String) {
+    without_summary_detail(deps, id, auto, code, message, None)
 }
 
-fn without_summary_detail(deps: &Deps, id: &str, code: &str, message: String, detail: Option<String>) {
+fn without_summary_detail(deps: &Deps, id: &str, auto: bool, code: &str, message: String, detail: Option<String>) {
     let mut title = String::new();
     let saved = lock(&deps.storage).update_meeting_file(id, |f| {
         f.status = MeetingStatus::Ready;
@@ -164,12 +176,12 @@ fn without_summary_detail(deps: &Deps, id: &str, code: &str, message: String, de
         f.summary_error = Some(ProcessingError { code: code.into(), message, detail });
         title = f.title.clone();
     });
-    if saved.is_ok() {
+    if saved.is_ok() && auto {
         (deps.unsummarized)(id, &title);
     }
 }
 
-fn process(deps: &Deps, id: &str, cancel: &AtomicBool) {
+fn process(deps: &Deps, id: &str, auto: bool, cancel: &AtomicBool) {
     let (meeting, config, speech) = {
         let s = lock(&deps.storage);
         let Ok(file) = s.read_meeting_file(id) else { return };
@@ -184,7 +196,7 @@ fn process(deps: &Deps, id: &str, cancel: &AtomicBool) {
 
     // Checked before the engine, so a test call doesn't wait on (or fail for) a model it never needed.
     if too_short(&meeting.transcript) {
-        return without_summary(deps, id, TOO_SHORT, SummarizeError::TooShort.message());
+        return without_summary(deps, id, auto, TOO_SHORT, SummarizeError::TooShort.message());
     }
     let profile = (deps.profile)(&config);
     let on_cpu = profile.device == Device::Cpu;
@@ -198,8 +210,8 @@ fn process(deps: &Deps, id: &str, cancel: &AtomicBool) {
     (deps.changed)();
     let mut engine = match (deps.make_engine)(&config) {
         Ok(e) => e,
-        Err(EngineError::Unavailable(m)) => return without_summary(deps, id, NO_ENGINE, m),
-        Err(EngineError::Failed(m)) => return without_summary(deps, id, FAILED, m),
+        Err(EngineError::Unavailable(m)) => return without_summary(deps, id, auto, NO_ENGINE, m),
+        Err(EngineError::Failed(m)) => return without_summary(deps, id, auto, FAILED, m),
         Err(EngineError::Cancelled) => return,
     };
 
@@ -208,6 +220,9 @@ fn process(deps: &Deps, id: &str, cancel: &AtomicBool) {
     let mut last_report = Instant::now() - Duration::from_secs(10);
     let mut first_report: Option<Instant> = None;
     let mut report = |p: f32| {
+        if cancel.load(Ordering::Relaxed) {
+            return;
+        }
         let running = first_report.get_or_insert_with(Instant::now).elapsed().as_secs_f64();
         if last_report.elapsed() >= Duration::from_secs(1) || p >= 1.0 {
             last_report = Instant::now();
@@ -225,10 +240,16 @@ fn process(deps: &Deps, id: &str, cancel: &AtomicBool) {
             let s = lock(&deps.storage);
             if s.save_summary(id, &out.summary).is_err() {
                 drop(s);
-                return without_summary(deps, id, FAILED, crate::i18n::tr("error.save_summary"));
+                return without_summary(deps, id, auto, FAILED, crate::i18n::tr("error.save_summary"));
             }
-            // The start-up cost is part of the estimate, not of the pace.
-            s.learn_speed(&profile.key, (job.elapsed().as_secs_f64() - profile.overhead).max(0.0), speech);
+            // The start-up cost is part of the estimate, not of the pace (but a job quicker than the start-up
+            // estimate still counts half its time, so fast engines are learned too). A local summary that fell back from the
+            // graphics chip to the processor has moved the GPU plan (gpu.json), so the profile worked out again
+            // differs: that run's time belongs to neither device, and isn't learned.
+            if (deps.profile)(&config).key == profile.key {
+                let took = job.elapsed().as_secs_f64();
+                s.learn_speed(&profile.key, (took - profile.overhead).max(took / 2.0), speech);
+            }
             let mut title = String::new();
             let _ = s.update_meeting_file(id, |f| {
                 f.status = MeetingStatus::Ready;
@@ -247,9 +268,9 @@ fn process(deps: &Deps, id: &str, cancel: &AtomicBool) {
             (deps.summarized)(id, &title);
         }
         Err(SummarizeError::Engine(EngineError::Cancelled)) => {}
-        Err(e @ SummarizeError::TooShort) => without_summary(deps, id, TOO_SHORT, e.message()),
-        Err(SummarizeError::Engine(EngineError::Unavailable(m))) => without_summary(deps, id, NO_ENGINE, m),
-        Err(e) => without_summary_detail(deps, id, FAILED, e.message(), engine.failure_detail()),
+        Err(e @ SummarizeError::TooShort) => without_summary(deps, id, auto, TOO_SHORT, e.message()),
+        Err(SummarizeError::Engine(EngineError::Unavailable(m))) => without_summary(deps, id, auto, NO_ENGINE, m),
+        Err(e) => without_summary_detail(deps, id, auto, FAILED, e.message(), engine.failure_detail()),
     }
 }
 
@@ -261,6 +282,10 @@ mod tests {
     use serde_json::json;
 
     fn setup(make: Box<EngineFactory>) -> (tempfile::TempDir, Arc<Mutex<Storage>>, String, Worker, Arc<Mutex<Vec<String>>>) {
+        setup_profile(make, Box::new(|c| eta::summary_profile(&c.engine, "test", false)))
+    }
+
+    fn setup_profile(make: Box<EngineFactory>, profile: Box<dyn Fn(&Config) -> Profile + Send + Sync>) -> (tempfile::TempDir, Arc<Mutex<Storage>>, String, Worker, Arc<Mutex<Vec<String>>>) {
         let dir = tempfile::tempdir().unwrap();
         let mut storage = Storage::new(dir.path().to_path_buf()).unwrap();
         let f = storage.create_meeting("zoom", "Zoom", chrono::DateTime::parse_from_rfc3339("2026-10-14T14:30:00-07:00").unwrap()).unwrap();
@@ -279,7 +304,7 @@ mod tests {
             summarized: Arc::new(move |_, t| d2.lock().unwrap().push(t.to_string())),
             // "Transcript ready" is told apart from "Summary ready" by a prefix.
             unsummarized: Arc::new(move |_, t| d3.lock().unwrap().push(format!("transcript: {t}"))),
-            profile: Box::new(|c| eta::summary_profile(&c.engine, "test", false)),
+            profile,
         });
         (dir, storage, f.id, worker, done)
     }
@@ -306,6 +331,41 @@ mod tests {
         assert_eq!(*done.lock().unwrap(), vec!["Onboarding plan".to_string()]);
         let f = storage.lock().unwrap().read_meeting_file(&id).unwrap();
         assert_eq!(f.eta, None, "the estimate goes once the summary is there");
+    }
+
+    #[test]
+    fn a_fallback_to_the_processor_mid_summary_teaches_neither_speed() {
+        // The engine "falls back" while it works, as the local AI does when the GPU helper fails.
+        struct FallsBack(Arc<AtomicBool>);
+        impl SummaryEngine for FallsBack {
+            fn complete(&mut self, _p: &crate::summarizer::prompt::Prompt, _s: &str, _m: u32, _c: &AtomicBool) -> Result<String, EngineError> {
+                self.0.store(false, Ordering::Relaxed);
+                Ok(reply("Plan", "R."))
+            }
+            fn context_tokens(&self) -> usize {
+                16_384
+            }
+            fn label(&self) -> String {
+                "FallsBack".into()
+            }
+        }
+        for falls_back in [true, false] {
+            let gpu = Arc::new(AtomicBool::new(true));
+            let g1 = gpu.clone();
+            let (_d, storage, id, w, _) = setup_profile(
+                Box::new(move |_| Ok(Box::new(FallsBack(if falls_back { g1.clone() } else { Arc::new(AtomicBool::new(true)) })))),
+                Box::new(move |c| eta::summary_profile(&c.engine, "qwen3.5-4b", gpu.load(Ordering::Relaxed))),
+            );
+            storage.lock().unwrap().update_meeting_file(&id, |f| {
+                f.transcription = Some(crate::storage::model::TranscriptionInfo { model: "whisper-turbo".into(), echo_lines_removed: 0, speech_ms: 600_000, took_ms: 1, finished_at: String::new() });
+            }).unwrap();
+            w.enqueue(&id);
+            wait(&w);
+            let s = storage.lock().unwrap();
+            assert!(s.get_meeting(&id).unwrap().summary.is_some());
+            assert_eq!(s.speed_rate("summary:local:qwen3.5-4b:cpu"), None);
+            assert_eq!(s.speed_rate("summary:local:qwen3.5-4b:gpu").is_some(), !falls_back, "falls back: {falls_back}");
+        }
     }
 
     #[test]
@@ -364,7 +424,7 @@ mod tests {
     #[test]
     fn no_engine_leaves_a_transcript_only_meeting_with_the_reason() {
         let (_d, storage, id, w, done) = setup(Box::new(|_| Err(EngineError::Unavailable("Download the local AI model in Settings › Summary AI.".into()))));
-        w.enqueue(&id);
+        w.enqueue_auto(&id);
         wait(&w);
         let m = storage.lock().unwrap().get_meeting(&id).unwrap();
         assert_eq!(m.item.status, MeetingStatus::Ready);
@@ -375,6 +435,15 @@ mod tests {
         let done = done.lock().unwrap();
         assert_eq!(done.len(), 1);
         assert!(done[0].starts_with("transcript: Call, Zoom"), "{done:?}");
+    }
+
+    #[test]
+    fn a_failed_summary_someone_asked_for_posts_nothing() {
+        let (_d, storage, id, w, done) = setup(Box::new(|_| Ok(Box::new(Dies))));
+        w.enqueue(&id);
+        wait(&w);
+        assert_eq!(storage.lock().unwrap().get_meeting(&id).unwrap().summary_error.unwrap().code, FAILED);
+        assert!(done.lock().unwrap().is_empty(), "the reason is on screen; no notification");
     }
 
     /// An engine that fails the way the local AI does when its helper dies.

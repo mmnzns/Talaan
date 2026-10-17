@@ -9,6 +9,7 @@ export const common = area({
     etaMin_other: "About {count} min left",
     etaSoon: "Less than a minute left",
     etaAlmost: "Almost done",
+    etaFinishing: "Finishing up",
     // meeting types (src/lib/templates.ts)
     meetingType: "Meeting type",
     template_general: "General",
@@ -26,6 +27,7 @@ export const common = area({
     etaMin_other: "Environ {count} min restantes",
     etaSoon: "Moins d’une minute restante",
     etaAlmost: "Presque terminé",
+    etaFinishing: "Finalisation en cours",
     // meeting types (src/lib/templates.ts)
     meetingType: "Type de réunion",
     template_general: "Général",
@@ -43,6 +45,7 @@ export const common = area({
     etaMin_other: "Faltan aproximadamente {count} min",
     etaSoon: "Falta menos de un minuto",
     etaAlmost: "Ya casi termina",
+    etaFinishing: "Terminando",
     // meeting types (src/lib/templates.ts)
     meetingType: "Tipo de reunión",
     template_general: "General",

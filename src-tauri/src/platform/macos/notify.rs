@@ -11,7 +11,20 @@ use objc2_user_notifications::{
     UNAuthorizationOptions, UNMutableNotificationContent, UNNotification, UNNotificationPresentationOptions, UNNotificationRequest, UNNotificationResponse,
     UNNotificationSound, UNUserNotificationCenter, UNUserNotificationCenterDelegate,
 };
+use std::sync::atomic::{AtomicU8, Ordering};
 use std::sync::OnceLock;
+
+/// What the last permission request answered: 0 not asked yet, 1 allowed, 2 denied.
+static PERMISSION: AtomicU8 = AtomicU8::new(0);
+
+/// Whether notifications will show: None until the first one has asked (macOS asks then), and outside a bundle.
+pub fn allowed() -> Option<bool> {
+    match PERMISSION.load(Ordering::Relaxed) {
+        1 => Some(true),
+        2 => Some(false),
+        _ => None,
+    }
+}
 
 type OnClick = Box<dyn Fn(String) + Send + Sync>;
 static ON_CLICK: OnceLock<OnClick> = OnceLock::new();
@@ -75,6 +88,7 @@ pub fn post(id: &str, title: &str, body: &str) {
     let center = UNUserNotificationCenter::currentNotificationCenter();
     let (id, title, body) = (id.to_string(), title.to_string(), body.to_string());
     let after_permission = RcBlock::new(move |granted: Bool, _err: *mut NSError| {
+        PERMISSION.store(if granted.as_bool() { 1 } else { 2 }, Ordering::Relaxed);
         if !granted.as_bool() {
             return;
         }

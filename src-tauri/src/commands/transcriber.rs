@@ -85,7 +85,7 @@ pub fn setup(app: &AppHandle, data_dir: PathBuf) {
         reuse_roots: None,
         transcribed: {
             let app = app.clone();
-            Arc::new(move |id: &str| app.state::<super::summarizer::SummarizerState>().enqueue(id))
+            Arc::new(move |id: &str| app.state::<super::summarizer::SummarizerState>().enqueue_auto(id))
         },
         transcript_ready: {
             let app = app.clone();
@@ -93,10 +93,13 @@ pub fn setup(app: &AppHandle, data_dir: PathBuf) {
         },
         on_gpu: on_gpu.clone(),
     });
-    let waiting = state.lock().ids_with_status(MeetingStatus::Transcribing).unwrap_or_default();
-    for id in &waiting {
-        worker.enqueue(id);
+    let storage = state.lock();
+    for id in storage.ids_with_status(MeetingStatus::Transcribing).unwrap_or_default() {
+        // An estimate from before the restart means nothing now (and would push back the next Stop's estimate).
+        let _ = storage.update_meeting_file(&id, |f| f.eta = None);
+        worker.enqueue(&id);
     }
+    drop(storage);
     app.manage(TranscriberState { worker, data_dir, on_gpu, downloads: Mutex::default() });
 }
 
