@@ -329,6 +329,11 @@ pub fn meetings_recover(app: AppHandle, state: State<AppState>, id: String) -> C
     Ok(())
 }
 
+/// An output change during the mic-only test recording leaves it alone: there's no system audio to rebuild.
+fn output_restart_skipped(mic: bool, test_running: bool) -> bool {
+    !mic && test_running
+}
+
 /// Rebuilds a source after a device change. Coalesces bursts (AirPods fire several changes) and runs off the Core Audio thread.
 fn restart_later(app: AppHandle, flag: Arc<AtomicBool>, mic: bool) {
     if flag.swap(true, Ordering::AcqRel) {
@@ -341,6 +346,10 @@ fn restart_later(app: AppHandle, flag: Arc<AtomicBool>, mic: bool) {
         let rec = app.state::<RecorderState>();
         let mut engine = rec.lock();
         if !engine.is_active() {
+            return;
+        }
+        // The test recording has no system audio to move to the new output (MicOnly would only fail).
+        if output_restart_skipped(mic, rec.test.lock().unwrap_or_else(|e| e.into_inner()).is_some()) {
             return;
         }
         let result = if mic { engine.restart_mic() } else { engine.restart_system() };
@@ -501,6 +510,13 @@ mod tests {
         assert!(test_limit_reached(Some(&run), &status("m1", 60_000)));
         assert!(!test_limit_reached(Some(&run), &status("m2", 90_000)));
         assert!(!test_limit_reached(None, &status("m1", 90_000)));
+    }
+
+    #[test]
+    fn an_output_change_leaves_the_mic_only_test_alone() {
+        assert!(super::output_restart_skipped(false, true));
+        assert!(!super::output_restart_skipped(true, true)); // a new microphone is still picked up
+        assert!(!super::output_restart_skipped(false, false));
     }
 
     #[test]
