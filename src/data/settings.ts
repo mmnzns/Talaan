@@ -57,6 +57,8 @@ export interface SpeechModel {
   partial?: number;
   /** Why the last download failed, until the next try. */
   error?: string;
+  /** The partial download was stopped with Cancel: it waits for a click (never resumed at launch). */
+  cancelled?: boolean;
 }
 
 /** A local summary AI model (downloaded once, runs on this computer). */
@@ -72,6 +74,8 @@ export interface LocalModel {
   partial?: number;
   /** Why the last download failed, until the next try. */
   error?: string;
+  /** The partial download was stopped with Cancel: it waits for a click (never resumed at launch). */
+  cancelled?: boolean;
 }
 
 export interface Settings {

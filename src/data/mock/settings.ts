@@ -64,7 +64,7 @@ export class MockSettingsStore implements SettingsStore {
 
   private timers = new Map<string, ReturnType<typeof setInterval>>();
 
-  private setModel(id: string, patch: { state: "not_downloaded" | "downloading" | "downloaded"; progress?: number; partial?: number; error?: string } | { progress: number }) {
+  private setModel(id: string, patch: { state: "not_downloaded" | "downloading" | "downloaded"; progress?: number; partial?: number; error?: string; cancelled?: boolean } | { progress: number }) {
     this.state = {
       ...this.state,
       speechModels: this.state.speechModels.map((m) => (m.id === id ? { ...m, ...patch } : m)),
@@ -80,7 +80,7 @@ export class MockSettingsStore implements SettingsStore {
     const all = [...this.state.speechModels, ...this.state.localModels, this.state.speakerModel, this.state.searchModel];
     // Resumes from what a cancelled (or failed) download left, like the real one.
     let p = all.find((m) => m.id === id)?.partial ?? 0;
-    this.setModel(id, { state: "downloading", progress: p, partial: undefined, error: undefined });
+    this.setModel(id, { state: "downloading", progress: p, partial: undefined, error: undefined, cancelled: undefined });
     // `?dl=fail` in the browser preview: downloads stop at 40% with an error.
     const fail = typeof location !== "undefined" && new URLSearchParams(location.search).get("dl") === "fail";
     // Big models take longer, like real ones (a 1 GB model takes 5 s here).
@@ -107,7 +107,7 @@ export class MockSettingsStore implements SettingsStore {
     this.timers.delete(id);
     const m = [...this.state.speechModels, ...this.state.localModels].find((x) => x.id === id);
     // The part already downloaded stays (Download resumes), like the real one.
-    this.setModel(id, { state: "not_downloaded", progress: undefined, partial: m?.progress || undefined });
+    this.setModel(id, { state: "not_downloaded", progress: undefined, partial: m?.progress || undefined, cancelled: true });
   }
 
   async connectNotion(secret: string) {

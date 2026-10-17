@@ -76,7 +76,7 @@ export function ScreensStage({ which }: { which?: string }) {
                 {!usingRealStorage && settings && (
                   <Button
                     onClick={async () => {
-                      const none = <T extends { state: string; progress?: number }>(m: T): T => ({ ...m, state: "not_downloaded", progress: undefined, partial: undefined, error: undefined });
+                      const none = <T extends { state: string; progress?: number }>(m: T): T => ({ ...m, state: "not_downloaded", progress: undefined, partial: undefined, error: undefined, cancelled: undefined });
                       await update({
                         onboardingDone: false,
                         showTrayTip: false,

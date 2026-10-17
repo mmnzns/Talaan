@@ -3,7 +3,7 @@ import { useSettings } from "../../data/hooks";
 import { useSettingsStore } from "../../data/StoreProvider";
 import type { Settings } from "../../data/settings";
 import { useT } from "../../lib/i18n/I18nProvider";
-import { batchView, gb, isReady, joinBatch, milestone, missingMb, neededItems, setupItems, type BatchView, type DownloadItem } from "../../lib/setupDownload";
+import { batchView, cancelledPartials, gb, isReady, joinBatch, milestone, missingMb, neededItems, setupItems, toResume, type BatchView, type DownloadItem } from "../../lib/setupDownload";
 import { Button, cn } from "../../ui";
 
 const allModels = (s: Settings): DownloadItem[] => [...s.speechModels, ...s.localModels];
@@ -96,8 +96,11 @@ export function SetupProgress({ fraction, minutesLeft, failed, className }: { fr
   );
 }
 
-/** Resumes, once per launch, the needed models an earlier session left half-downloaded (quietly: the card shows). */
+/** Resumes, once per launch, the needed models a quit or a crash left half-downloaded (quietly: the card shows).
+ *  One the person cancelled waits for "Download the rest". */
 let resumed = false;
+/** "Not now" on "Download the rest": hidden until the next launch. */
+let restDismissed = false;
 
 /** After onboarding: the download's progress (or its failure, with Try again), small, in the corner of the main
  *  pane, clear of the meeting list. */
@@ -111,7 +114,7 @@ export function SetupDownloadPill() {
   useEffect(() => {
     if (resumed || !settings?.onboardingDone) return;
     resumed = true;
-    const todo = neededItems(settings).filter((m) => m.state === "not_downloaded" && (m.partial ?? 0) > 0 && !m.error);
+    const todo = toResume(neededItems(settings));
     if (todo.length === 0) return;
     joinBatch(
       todo.map((m) => m.id),
@@ -120,13 +123,53 @@ export function SetupDownloadPill() {
     for (const m of todo) void store.downloadModel(m.id);
   }, [settings?.onboardingDone]);
 
-  if (!view.active && view.failed.length === 0) return null;
+  const [, hide] = useState(0);
+  const card = "fixed bottom-4 left-[326px] z-30 flex w-[280px] flex-col gap-1.5 rounded-card border border-line bg-raised px-3.5 py-2.5 shadow-[var(--t-shadow-lg)]";
+  if (!view.active && view.failed.length === 0) {
+    // A download the person cancelled: offered, never resumed by itself.
+    const rest = settings && !restDismissed ? cancelledPartials(neededItems(settings)) : [];
+    if (rest.length === 0) return null;
+    const pct = Math.floor(combinedFraction(rest) * 100);
+    return (
+      <div className={card}>
+        <span className="text-xs font-semibold">{t("onboarding.dlRestTitle", { pct })}</span>
+        <div className="flex flex-wrap gap-2">
+          <Button
+            onClick={() => {
+              joinBatch(
+                rest.map((m) => m.id),
+                allModels(settings!),
+              );
+              for (const m of rest) void store.downloadModel(m.id);
+            }}
+          >
+            {t("onboarding.dlRestButton", { size: gb(missingMb(rest)) })}
+          </Button>
+          <Button
+            variant="ghost"
+            onClick={() => {
+              restDismissed = true;
+              hide((n) => n + 1);
+            }}
+          >
+            {t("onboarding.dlRestLater")}
+          </Button>
+        </div>
+      </div>
+    );
+  }
   const failed = !view.active && view.failed.length > 0;
   const pct = Math.floor(view.fraction * 100);
+  // Name only what is still coming: the speech model, the summary model, or both.
+  const pending = view.items.filter((i) => !isReady(i));
+  const speechIds = new Set(settings?.speechModels.map((m) => m.id));
+  const hasSpeech = pending.some((i) => speechIds.has(i.id));
+  const hasSummary = pending.some((i) => !speechIds.has(i.id));
+  const title = hasSpeech && hasSummary ? t("onboarding.dlPillTitle") : hasSpeech ? t("onboarding.dlPillTitleSpeech") : t("onboarding.dlPillTitleSummary");
   return (
     <div
-      title={t("onboarding.dlPillTitle")}
-      className="fixed bottom-4 left-[326px] z-30 flex w-[280px] flex-col gap-1.5 rounded-card border border-line bg-raised px-3.5 py-2.5 shadow-[var(--t-shadow-lg)]"
+      title={title}
+      className={card}
     >
       <DownloadAnnouncer view={view} />
       <span className="text-xs font-semibold">{failed ? t("onboarding.dlPillFailed", { pct }) : t("onboarding.dlPill", { pct })}</span>
@@ -148,5 +191,10 @@ export function SetupDownloadPill() {
     </div>
   );
 }
+
+const combinedFraction = (items: DownloadItem[]) => {
+  const total = items.reduce((n, i) => n + i.sizeMb, 0);
+  return total > 0 ? items.reduce((n, i) => n + i.sizeMb * (i.partial ?? 0), 0) / total : 0;
+};
 
 export { gb };

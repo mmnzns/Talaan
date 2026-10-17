@@ -3,7 +3,7 @@
 use super::{notify, AppState, CmdResult, MEETINGS_CHANGED};
 use crate::storage::model::MeetingStatus;
 use crate::storage::StorageError;
-use crate::transcriber::download::{download_model, partial_fraction, DownloadError};
+use crate::transcriber::download::{clear_cancelled, download_model, mark_cancelled, partial_fraction, was_cancelled, DownloadError};
 use crate::transcriber::models::{find, EngineKind, Location, ModelInfo, ModelStore, CATALOG, VAD};
 use crate::transcriber::pipeline::Detector;
 use crate::transcriber::vad::Vad;
@@ -190,6 +190,9 @@ pub struct ModelRow {
     /// Why the last download failed, until the next try.
     #[serde(skip_serializing_if = "Option::is_none")]
     error: Option<String>,
+    /// The partial download was stopped with Cancel (not by a quit or a crash): it waits for a click.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    cancelled: bool,
 }
 
 /// The catalog with what is on disk right now.
@@ -228,6 +231,7 @@ pub fn models_list(state: State<AppState>, t: State<TranscriberState>) -> CmdRes
                 state,
                 progress,
                 partial: if state == "not_downloaded" { partial_fraction(m, &store.own_dir(m)) } else { None },
+                cancelled: state == "not_downloaded" && was_cancelled(&store.own_dir(m)),
                 error: failed.get(m.id).cloned(),
             }
         })
@@ -264,6 +268,7 @@ pub fn models_download(app: AppHandle, t: State<TranscriberState>, id: String) -
         d.insert(id.clone(), (cancel.clone(), 0.0));
     }
     t.failed.lock().unwrap_or_else(|e| e.into_inner()).remove(&id);
+    clear_cancelled(&ModelStore::new(&t.data_dir, false).own_dir(model));
     let _ = app.emit(MODELS_CHANGED, ());
     let data_dir = t.data_dir.clone();
     std::thread::spawn(move || {
@@ -314,6 +319,9 @@ pub fn models_download(app: AppHandle, t: State<TranscriberState>, id: String) -
 pub fn models_cancel(app: AppHandle, t: State<TranscriberState>, id: String) -> CmdResult<()> {
     if let Some((flag, _)) = t.downloads.lock().unwrap_or_else(|e| e.into_inner()).get(&id) {
         flag.store(true, Ordering::Relaxed);
+        if let Some(m) = find_any(&id) {
+            mark_cancelled(&ModelStore::new(&t.data_dir, false).own_dir(m));
+        }
     }
     let _ = app.emit(MODELS_CHANGED, ());
     Ok(())

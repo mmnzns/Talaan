@@ -20,6 +20,21 @@ export interface DownloadItem {
   partial?: number;
   /** Why the last download failed. */
   error?: string;
+  /** Stopped with Cancel: waits for a click. */
+  cancelled?: boolean;
+}
+
+/**
+ * At launch, the needed models to resume by themselves: ones a quit or a crash interrupted. Never one the person
+ * cancelled (it waits for "Download the rest") or one that failed (it waits for Try again).
+ */
+export function toResume(needed: DownloadItem[]): DownloadItem[] {
+  return needed.filter((m) => m.state === "not_downloaded" && (m.partial ?? 0) > 0 && !m.error && !m.cancelled);
+}
+
+/** The needed models a Cancel left half-downloaded: offered as "Download the rest". */
+export function cancelledPartials(needed: DownloadItem[]): DownloadItem[] {
+  return needed.filter((m) => m.state === "not_downloaded" && (m.partial ?? 0) > 0 && m.cancelled && !m.error);
 }
 
 export const isReady = (i: DownloadItem) => i.state === "downloaded" || i.state === "on_this_mac";

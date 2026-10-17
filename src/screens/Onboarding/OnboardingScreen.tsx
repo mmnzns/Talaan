@@ -384,7 +384,7 @@ function SetupStep({ settings: s, onChooseIndividually }: { settings: Settings; 
     <StepBody>
       <DownloadAnnouncer view={view} />
       <h1 className={h1}>{t("onboarding.setupTitle")}</h1>
-      <p className={desc}>{t(summary ? "onboarding.setupDesc" : "onboarding.setupDescSpeech")}</p>
+      <p className={desc}>{t(summary ? "onboarding.setupDesc" : s.summaryEngine === "ollama" ? "onboarding.setupDescSpeechServer" : "onboarding.setupDescSpeech")}</p>
       <div className="flex flex-col rounded-card border border-line bg-surface px-[18px] py-1.5 shadow-card">
         {row(t("onboarding.setupSpeech"), speech)}
         {row(t("onboarding.setupSummary"), summary)}

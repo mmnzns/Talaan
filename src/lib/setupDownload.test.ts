@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { defaultSettings } from "../data/defaultSettings";
 import type { Settings } from "../data/settings";
-import { SpeedMeter, batchView, combined, joinBatch, milestone, minutesFor, missingMb, neededItems, resetBatchForTests, setupItems, type DownloadItem } from "./setupDownload";
+import { SpeedMeter, batchView, cancelledPartials, combined, joinBatch, milestone, minutesFor, missingMb, neededItems, resetBatchForTests, setupItems, toResume, type DownloadItem } from "./setupDownload";
 
 const item = (id: string, sizeMb: number, state: string, more: Partial<DownloadItem> = {}): DownloadItem => ({ id, name: id, sizeMb, state, ...more });
 const none = <T extends { state: string }>(m: T): T => ({ ...m, state: "not_downloaded" });
@@ -107,5 +107,20 @@ describe("the batch", () => {
   it("picks up a needed model downloading elsewhere (Settings)", () => {
     const speech = item("s", 600, "downloading", { progress: 0.2 });
     expect(batchView([speech], [speech]).active).toBe(true);
+  });
+});
+
+describe("resuming at launch", () => {
+  const quit = item("a", 1000, "not_downloaded", { partial: 0.3 });
+  const cancelled = item("b", 1000, "not_downloaded", { partial: 0.3, cancelled: true });
+  const failed = item("c", 1000, "not_downloaded", { partial: 0.3, error: "stalled" });
+  const fresh = item("d", 1000, "not_downloaded");
+
+  it("resumes only what a quit or a crash interrupted", () => {
+    expect(toResume([quit, cancelled, failed, fresh]).map((i) => i.id)).toEqual(["a"]);
+  });
+
+  it("offers a cancelled one as Download the rest, waiting for a click", () => {
+    expect(cancelledPartials([quit, cancelled, failed, fresh]).map((i) => i.id)).toEqual(["b"]);
   });
 });

@@ -90,6 +90,24 @@ pub fn partial_fraction(model: &ModelInfo, dir: &Path) -> Option<f32> {
     (any_part && have > 0).then(|| (have as f64 / model.size().max(1) as f64) as f32)
 }
 
+/// The marker a Cancel leaves beside the part files. It survives a relaunch, so the app only resumes downloads
+/// that a quit or a crash interrupted, never one the person stopped; the next Download clears it.
+const CANCELLED: &str = ".cancelled";
+
+pub fn mark_cancelled(dir: &Path) {
+    if fs::create_dir_all(dir).is_ok() {
+        let _ = fs::write(dir.join(CANCELLED), b"");
+    }
+}
+
+pub fn clear_cancelled(dir: &Path) {
+    let _ = fs::remove_file(dir.join(CANCELLED));
+}
+
+pub fn was_cancelled(dir: &Path) -> bool {
+    dir.join(CANCELLED).exists()
+}
+
 fn client() -> reqwest::Client {
     reqwest::Client::builder()
         .user_agent(concat!("Talaan/", env!("CARGO_PKG_VERSION")))
@@ -473,6 +491,17 @@ mod tests {
         let r = download_model_with(m, dir.path(), &AtomicBool::new(false), Duration::from_secs(5), &mut |_| {});
         assert_eq!(r, Err(DownloadError::NotAModel("m.bin".into())));
         assert!(!dir.path().join("m.bin").exists());
+    }
+
+    #[test]
+    fn a_cancel_is_remembered_until_the_next_download() {
+        let dir = tempfile::tempdir().unwrap();
+        let models = dir.path().join("models/x");
+        assert!(!was_cancelled(&models));
+        mark_cancelled(&models);
+        assert!(was_cancelled(&models));
+        clear_cancelled(&models);
+        assert!(!was_cancelled(&models));
     }
 
     #[test]
