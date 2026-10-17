@@ -161,20 +161,20 @@ export class MockMeetingStore implements MeetingStore {
     this.originals.set(m.id, { summary: undefined, lines: new Map(m.transcript.map((l) => [l.id, l.text])) });
   };
 
-  /** The browser preview's stand-in for a finished recording (the guided test): a new meeting that is
-   *  transcribed like a real one would be. Returns its id. */
-  addRecording(title: string, durationMs: number, tags: string[] = []): MeetingId {
+  /** The browser preview's recorder, like Rust's: Start creates the meeting ("recording"), so screens see it
+   *  appear at once. The guided test is titled and tagged as one from the start. Returns its id. */
+  startRecording(test: boolean): MeetingId {
     const id = `m-rec-${Date.now().toString(36)}`;
+    const now = new Date();
     const m: Meeting = {
       id,
-      title,
+      title: test ? "Test recording" : `Call, ${now.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}`,
       app: "other",
-      appLabel: "Talaan",
-      startedAt: new Date(Date.now() - durationMs).toISOString(),
-      durationMs,
-      status: "transcribing",
-      progress: 0,
-      tags: [...tags],
+      appLabel: "Call",
+      startedAt: now.toISOString(),
+      durationMs: 0,
+      status: "recording",
+      tags: test ? ["test"] : [],
       peopleCount: 1,
       pinned: false,
       language: "en",
@@ -186,6 +186,13 @@ export class MockMeetingStore implements MeetingStore {
     };
     this.meetings.set(id, m);
     this.originals.set(id, { summary: undefined, lines: new Map() });
+    this.emit();
+    return id;
+  }
+
+  /** Stop: the recording is saved and transcribed (a short sample transcript). */
+  finishRecording(id: MeetingId, durationMs: number) {
+    this.mutate(id, (m) => (m.durationMs = durationMs));
     this.simulate(id, "transcribing", (done) => {
       done.status = "ready";
       done.transcript = [
@@ -195,7 +202,11 @@ export class MockMeetingStore implements MeetingStore {
       done.summaryError = { code: "too_short", message: "Too little speech to summarize." };
       this.originals.set(id, { summary: undefined, lines: new Map(done.transcript.map((l) => [l.id, l.text])) });
     });
-    return id;
+  }
+
+  /** Discard: the meeting is gone. */
+  discardRecording(id: MeetingId) {
+    void this.deleteMeeting(id);
   }
 
   async recoverMeeting(id: MeetingId) {

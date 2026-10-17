@@ -1,10 +1,12 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { Mic } from "lucide-react";
-import { recorderClient, simulateRecording } from "../../data";
+import { recorderClient } from "../../data";
 import { describeError } from "../../data/errors";
 import { useSettings } from "../../data/hooks";
 import { useStore } from "../../data/StoreProvider";
 import { useRecorder } from "../../data/useRecorder";
+import type { RecorderState } from "../../data/recorder";
+import type { Settings } from "../../data/settings";
 import type { Meeting } from "../../data/types";
 import { formatTime } from "../../lib/format";
 import { useT } from "../../lib/i18n/I18nProvider";
@@ -12,90 +14,85 @@ import { usePlatform } from "../../lib/platform";
 import { navigate, routes } from "../../lib/router";
 import { Button, useToast } from "../../ui";
 
-/** The guided test stops by itself after a minute. */
+/** The guided test stops by itself after a minute (the recorder does it, so it holds whatever screen is open). */
 export const TEST_LIMIT_MS = 60_000;
-/** The tag that marks the test meeting (stored in meeting.json like any tag). */
-export const TEST_TAG = "test";
 
 /** Below this level for the first seconds, the test says it can't hear the person. */
 const QUIET = 0.02;
 
+/** True between pressing Start and the recorder answering with the new meeting (it appears in the list at once,
+ *  so the empty screen would otherwise hide the card for a moment). */
+let starting = false;
+const startingListeners = new Set<() => void>();
+const setStarting = (on: boolean) => {
+  starting = on;
+  startingListeners.forEach((l) => l());
+};
+const useStarting = () =>
+  useSyncExternalStore(
+    (l) => {
+      startingListeners.add(l);
+      return () => startingListeners.delete(l);
+    },
+    () => starting,
+  );
+
+/** The test recording is the one running now. Its meeting id is in settings from the moment it starts. */
+const isTestRunning = (rec: RecorderState, s: Settings | undefined) => rec.state !== "idle" && Boolean(rec.meetingId) && rec.meetingId === s?.testMeetingId;
+
+/** For the empty main screen: keep the card while the test is starting or running (its meeting is in the list). */
+export function useTestRecordingActive(): boolean {
+  const rec = useRecorder(recorderClient);
+  const { settings } = useSettings();
+  return useStarting() || isTestRunning(rec.state, settings);
+}
+
 /**
- * "Try a 1-minute test recording" on the empty main screen: the real recorder and the real pipeline (in the browser
- * preview, a simulated meeting). The meeting is titled and tagged as a test, and its page offers to delete it.
+ * "Try a 1-minute test recording" on the empty main screen: the real recorder and pipeline, microphone only. The
+ * recorder titles and tags the meeting as a test when it starts and stops it after a minute; the card only shows
+ * the state, so it can come and go (TestRecordingWatcher opens the meeting when it ends).
  */
 export function TestRecordingCard() {
   const t = useT();
   const platform = usePlatform();
   const toast = useToast();
-  const store = useStore();
   const { settings, update } = useSettings();
   const rec = useRecorder(recorderClient);
-  const [mine, setMine] = useState(false); // this card started the recording that is running
+  const isStarting = useStarting();
   const [micOff, setMicOff] = useState(false);
   const [heard, setHeard] = useState(false);
-  const meetingId = useRef<string | undefined>(undefined);
-  const stopping = useRef(false);
-
-  const running = mine && rec.state.state !== "idle";
-  if (running && rec.state.meetingId) meetingId.current = rec.state.meetingId;
+  const stopRef = useRef<HTMLButtonElement>(null);
+  const startRef = useRef<HTMLButtonElement>(null);
+  const pressed = useRef(false);
+  const running = isTestRunning(rec.state, settings);
 
   useEffect(() => {
     if (running && rec.levels.me > QUIET) setHeard(true);
   }, [running, rec.levels.me]);
 
-  const finish = async (id: string | undefined, elapsedMs: number) => {
-    setMine(false);
-    // The browser preview's recorder saves nothing: stand in a simulated meeting.
-    const saved = id || simulateRecording?.(t("onboarding.testMeetingTitle"), Math.max(elapsedMs, 5_000), [TEST_TAG]);
-    if (!saved) return;
-    if (id) {
-      await store.renameMeeting(id, t("onboarding.testMeetingTitle")).catch(() => {});
-      await store.setTags(id, [TEST_TAG]).catch(() => {});
-    }
-    await update({ testMeetingId: saved });
-    navigate(routes.meeting(saved));
-  };
-
-  const stop = async () => {
-    if (stopping.current) return;
-    stopping.current = true;
-    const elapsed = rec.state.elapsedMs;
-    try {
-      const id = await recorderClient.stop();
-      await finish(id || meetingId.current, elapsed);
-    } catch (e) {
-      toast(describeError(e));
-    } finally {
-      stopping.current = false;
-    }
-  };
-
-  // Stops by itself at one minute.
+  // Focus moves to the control that replaced the one pressed (Start → Stop, Cancel → Start).
   useEffect(() => {
-    if (running && rec.state.elapsedMs >= TEST_LIMIT_MS) void stop();
-  }, [running, rec.state.elapsedMs]);
-
-  // Stopped somewhere else (the menu bar or tray popover): the meeting is saved the same way.
-  const wasRunning = useRef(false);
-  useEffect(() => {
-    if (wasRunning.current && !running && mine && !stopping.current) void finish(meetingId.current, rec.state.elapsedMs);
-    wasRunning.current = running;
+    if (!pressed.current) return;
+    pressed.current = false;
+    (running ? stopRef : startRef).current?.focus();
   }, [running]);
 
   const start = async () => {
     setMicOff(false);
     setHeard(false);
-    meetingId.current = undefined;
     const perm = await recorderClient.microphonePermission().catch(() => "unknown" as const);
     if (perm === "denied" || perm === "restricted" || (perm === "undetermined" && !(await recorderClient.requestMicrophone().catch(() => false)))) {
       return setMicOff(true);
     }
+    pressed.current = true;
+    setStarting(true);
     try {
-      await recorderClient.start();
-      setMine(true);
+      const st = await recorderClient.start(undefined, { maxMs: TEST_LIMIT_MS });
+      await update({ testMeetingId: st.meetingId || undefined });
     } catch (e) {
       toast(t("onboarding.testFailed", { error: describeError(e) }));
+    } finally {
+      setStarting(false);
     }
   };
 
@@ -112,31 +109,37 @@ export function TestRecordingCard() {
     const left = Math.max(0, TEST_LIMIT_MS - rec.state.elapsedMs);
     const level = Math.min(1, rec.levels.me * 1.6);
     return (
-      <section aria-live="polite" className="flex w-full max-w-[420px] flex-col items-center gap-3 rounded-card border border-gold bg-surface px-6 py-5 shadow-[0_0_0_3px_var(--t-gold-soft)]">
-        <span className="flex items-center gap-2 font-display text-lg font-bold tracking-[-0.02em]">
+      <section aria-labelledby="test-title" className="flex w-full max-w-[420px] flex-col items-center gap-3 rounded-card border border-gold bg-surface px-6 py-5 shadow-[0_0_0_3px_var(--t-gold-soft)]">
+        <span id="test-title" className="flex items-center gap-2 font-display text-lg font-bold tracking-[-0.02em]">
           <span aria-hidden="true" className={rec.state.state === "recording" ? "size-[9px] animate-pulse rounded-full bg-red" : "size-[9px] rounded-full bg-faint"} />
           {t("onboarding.testRecording")}
         </span>
+        {/* Not live: the start and the end are announced once (TestRecordingWatcher), not every second. */}
         <span className="font-mono text-[28px] leading-none">{formatTime(left)}</span>
-        <span className="flex w-full items-center gap-2.5">
-          <Mic size={15} aria-hidden="true" className="flex-none text-subtle" />
-          <span role="meter" aria-label={t("onboarding.testLevel")} aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(level * 100)} className="h-2 flex-1 overflow-hidden rounded-full bg-line">
+        <span aria-hidden="true" className="flex w-full items-center gap-2.5">
+          <Mic size={15} className="flex-none text-subtle" />
+          <span className="h-2 flex-1 overflow-hidden rounded-full bg-line">
             <span className="block h-full rounded-full bg-gold transition-[width] duration-150" style={{ width: `${Math.round(level * 100)}%` }} />
           </span>
         </span>
         <p className="m-0 text-[13px] text-subtle">{t("onboarding.testSay")}</p>
-        {!heard && rec.state.elapsedMs >= 6_000 && <p className="m-0 text-[13px] text-warn-fg">{t("onboarding.testNoSound")}</p>}
+        {!heard && rec.state.elapsedMs >= 6_000 && (
+          <p role="alert" className="m-0 text-[13px] text-warn-fg">
+            {t("onboarding.testNoSound")}
+          </p>
+        )}
         <div className="flex gap-2">
           <Button
             variant="ghost"
             onClick={async () => {
-              setMine(false);
+              pressed.current = true;
               await recorderClient.discard().catch(() => {});
+              await update({ testMeetingId: undefined });
             }}
           >
             {t("onboarding.testDiscard")}
           </Button>
-          <Button variant="primary" raised onClick={() => void stop()}>
+          <Button ref={stopRef} variant="primary" raised onClick={() => void recorderClient.stop().catch((e) => toast(describeError(e)))}>
             <span aria-hidden="true" className="size-[9px] rounded-[2px] bg-red" />
             {t("onboarding.testStop")}
           </Button>
@@ -146,8 +149,10 @@ export function TestRecordingCard() {
   }
 
   return (
-    <section className="flex w-full max-w-[420px] flex-col items-center gap-2.5 rounded-card border border-line bg-surface px-6 py-5 shadow-card">
-      <span className="font-display text-lg font-bold tracking-[-0.02em]">{t("onboarding.testTitle")}</span>
+    <section aria-labelledby="test-title" className="flex w-full max-w-[420px] flex-col items-center gap-2.5 rounded-card border border-line bg-surface px-6 py-5 shadow-card">
+      <span id="test-title" className="font-display text-lg font-bold tracking-[-0.02em]">
+        {t("onboarding.testTitle")}
+      </span>
       <p className="m-0 text-[13px] leading-[19px] text-subtle">{t("onboarding.testBody")}</p>
       {modelNote && <p className="m-0 text-xs leading-[17px] text-subtle">{modelNote}</p>}
       {micOff && (
@@ -156,11 +161,47 @@ export function TestRecordingCard() {
           <Button onClick={() => void recorderClient.openSettings("microphone")}>{platform.openSettings}</Button>
         </div>
       )}
-      <Button variant="primary" raised disabled={rec.state.state !== "idle"} onClick={() => void start()}>
+      <Button ref={startRef} variant="primary" raised disabled={rec.state.state !== "idle" || isStarting} onClick={() => void start()}>
         <Mic size={15} aria-hidden="true" />
         {t("onboarding.testStart")}
       </Button>
     </section>
+  );
+}
+
+/**
+ * In the main window, whatever is open: when the test recording ends (Stop, the one-minute limit, the menu bar or
+ * tray, a quit), open its meeting to watch the transcript appear. Says the start and the end to screen readers.
+ */
+export function TestRecordingWatcher() {
+  const t = useT();
+  const store = useStore();
+  const { settings, update } = useSettings();
+  const rec = useRecorder(recorderClient);
+  const [said, setSaid] = useState("");
+  const was = useRef<string | undefined>(undefined);
+  const running = isTestRunning(rec.state, settings);
+
+  useEffect(() => {
+    if (running) {
+      if (!was.current) setSaid(t("onboarding.testAnnStarted"));
+      was.current = rec.state.meetingId;
+      return;
+    }
+    const id = was.current;
+    if (!id || rec.state.state !== "idle") return;
+    was.current = undefined;
+    void store.getMeeting(id).then((m) => {
+      if (!m) return void update({ testMeetingId: undefined }); // cancelled: nothing to offer
+      setSaid(t("onboarding.testAnnStopped"));
+      navigate(routes.meeting(id));
+    });
+  }, [running, rec.state.state]);
+
+  return (
+    <span className="sr-only" aria-live="polite" role="status">
+      {said}
+    </span>
   );
 }
 
@@ -170,8 +211,8 @@ export function TestMeetingBanner({ meeting }: { meeting: Meeting }) {
   const toast = useToast();
   const store = useStore();
   const { settings, update } = useSettings();
-  if (!settings || settings.testMeetingId !== meeting.id) return null;
-  const busy = meeting.status === "recording" || meeting.status === "transcribing";
+  if (!settings || settings.testMeetingId !== meeting.id || meeting.status === "recording") return null;
+  const busy = meeting.status === "transcribing";
   return (
     <div role="status" className="relative mx-11 mb-4 flex flex-wrap items-center gap-3 rounded-card border border-gold bg-gold-soft px-4 py-3 text-[13px] text-gold-ink">
       <span className="flex-1 basis-72">

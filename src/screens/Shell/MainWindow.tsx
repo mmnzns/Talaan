@@ -12,6 +12,7 @@ import { RecordingContext, useRecording } from "./RecordingPanel";
 import { Toolbar } from "./Toolbar";
 import { SetupDownloadPill } from "../Onboarding/SetupDownload";
 import { TrayTip } from "../Onboarding/TrayTip";
+import { TestRecordingWatcher } from "../Onboarding/TestRecording";
 
 export function MainWindow({ route }: { route: Route }) {
   const [importing, setImporting] = useState(false);
@@ -88,6 +89,7 @@ export function MainWindow({ route }: { route: Route }) {
       />
       {recording.panel}
       <SetupDownloadPill />
+      <TestRecordingWatcher />
     </div>
     </RecordingContext.Provider>
   );

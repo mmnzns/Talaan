@@ -33,6 +33,44 @@ pub struct RecorderState {
     restarting_mic: Arc<AtomicBool>,
     restarting_output: Arc<AtomicBool>,
     watchers: Mutex<Option<(platform::devices::DeviceWatcher, platform::power::SleepWatcher)>>,
+    /// The guided test recording, while it runs: it stops itself after `max_ms`.
+    test: Mutex<Option<TestRun>>,
+}
+
+/// The guided test recording (onboarding's "Try a 1-minute test recording").
+#[derive(Debug, Clone, PartialEq)]
+pub struct TestRun {
+    pub meeting_id: String,
+    pub max_ms: u64,
+}
+
+/// What the frontend asks for when it starts the test.
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TestOptions {
+    max_ms: u64,
+}
+
+/// The tag that marks the test meeting (and the frontend's offer to delete it).
+pub const TEST_TAG: &str = "test";
+
+/// True once the test has recorded for its whole length (paused time doesn't count).
+fn test_limit_reached(run: Option<&TestRun>, status: &Status) -> bool {
+    run.is_some_and(|r| status.meeting_id.as_deref() == Some(r.meeting_id.as_str()) && status.elapsed_ms >= r.max_ms)
+}
+
+/// The test records the microphone only: it's about hearing the person speak, and on the Mac opening system
+/// audio could show a permission prompt in the middle of it. Its "Them" track is silence.
+struct MicOnly;
+
+impl crate::recorder::source::AudioSource for MicOnly {
+    fn start(&mut self, _feed: crate::recorder::source::SharedFeed) -> Result<String, String> {
+        Err("microphone only".into())
+    }
+    fn restart(&mut self) -> Result<String, String> {
+        Err("microphone only".into())
+    }
+    fn stop(&mut self) {}
 }
 
 impl RecorderState {
@@ -96,12 +134,18 @@ fn system_source() -> Box<dyn crate::recorder::source::AudioSource> {
 
 /// `async` (off the main thread): it opens the audio devices, as an auto-start from the calls loop already does.
 #[tauri::command(async)]
-pub fn recorder_start(app: AppHandle, app_id: Option<String>, app_label: Option<String>) -> CmdResult<StatePayload> {
-    start_recording(&app, app_id.as_deref().unwrap_or("other"), app_label.as_deref().unwrap_or("Call"))
+pub fn recorder_start(app: AppHandle, app_id: Option<String>, app_label: Option<String>, test: Option<TestOptions>) -> CmdResult<StatePayload> {
+    start_with(&app, app_id.as_deref().unwrap_or("other"), app_label.as_deref().unwrap_or("Call"), test.map(|t| t.max_ms))
 }
 
 /// Starts a recording (Record button, an accepted nudge, or an app on Always).
 pub fn start_recording(app: &AppHandle, app_id: &str, app_label: &str) -> CmdResult<StatePayload> {
+    start_with(app, app_id, app_label, None)
+}
+
+/// `test_max_ms`: the guided test recording. It is titled and tagged as a test from the start, records the
+/// microphone only, isn't linked to a calendar event, and stops itself after that long.
+fn start_with(app: &AppHandle, app_id: &str, app_label: &str, test_max_ms: Option<u64>) -> CmdResult<StatePayload> {
     let state = app.state::<AppState>();
     let rec = app.state::<RecorderState>();
     let on_speakers = speakers();
@@ -109,21 +153,31 @@ pub fn start_recording(app: &AppHandle, app_id: &str, app_label: &str) -> CmdRes
     let storage = state.lock();
     let started_at = chrono::Local::now().fixed_offset();
     let mic = storage.settings_get().ok().flatten().and_then(|s| s["microphone"].as_str().map(String::from)).unwrap_or_default();
+    let system: Box<dyn crate::recorder::source::AudioSource> = if test_max_ms.is_some() { Box::new(MicOnly) } else { system_source() };
     engine
-        .start(&storage, app_id, app_label, Box::new(MicSource::with_device(&mic)), system_source(), platform::host_now_ns(), started_at)
+        .start(&storage, app_id, app_label, Box::new(MicSource::with_device(&mic)), system, platform::host_now_ns(), started_at)
         .map_err(err)?;
     let st = engine.status(platform::host_now_ns());
     if let Some(id) = &st.meeting_id {
-        if let Some(tag) = auto_tag(storage.settings_get().ok().flatten().as_ref(), app_id, app_label) {
+        if test_max_ms.is_some() {
+            let _ = storage.rename_meeting(id, &crate::i18n::tr("recorder.test_title"));
+            let _ = storage.set_tags(id, &[TEST_TAG.to_string()]);
+        } else if let Some(tag) = auto_tag(storage.settings_get().ok().flatten().as_ref(), app_id, app_label) {
             let _ = storage.set_tags(id, &[tag]);
         }
     }
     drop(storage);
-    if let Some(id) = &st.meeting_id {
-        super::calendar::link_soon(app, id);
-    }
-    if !st.system_audio {
-        notice(app, crate::i18n::tr(NO_SYSTEM_AUDIO), "warning", Some("system-audio"));
+    *rec.test.lock().unwrap_or_else(|e| e.into_inner()) = match (test_max_ms, &st.meeting_id) {
+        (Some(max_ms), Some(id)) => Some(TestRun { meeting_id: id.clone(), max_ms }),
+        _ => None,
+    };
+    if test_max_ms.is_none() {
+        if let Some(id) = &st.meeting_id {
+            super::calendar::link_soon(app, id);
+        }
+        if !st.system_audio {
+            notice(app, crate::i18n::tr(NO_SYSTEM_AUDIO), "warning", Some("system-audio"));
+        }
     }
     rec.auto_paused.store(false, Ordering::Relaxed);
     let p = payload(&engine, on_speakers);
@@ -183,8 +237,12 @@ pub fn stop_recording(app: &AppHandle) -> CmdResult<String> {
     let id = engine.stop(&storage, platform::host_now_ns()).map_err(err)?;
     drop(storage);
     drop(engine);
-    // A call started before its event was on the calendar (or a few minutes early) gets a second chance.
-    super::calendar::link_soon(app, &id);
+    let was_test = rec.test.lock().unwrap_or_else(|e| e.into_inner()).take().is_some_and(|t| t.meeting_id == id);
+    // A call started before its event was on the calendar (or a few minutes early) gets a second chance. The test
+    // recording is never a calendar event.
+    if !was_test {
+        super::calendar::link_soon(app, &id);
+    }
     app.state::<super::transcriber::TranscriberState>().enqueue(&id);
     notify(app, MEETINGS_CHANGED);
     emit_state(app);
@@ -203,6 +261,7 @@ pub fn recorder_discard(app: AppHandle, state: State<AppState>, rec: State<Recor
     engine.discard(&storage, platform::host_now_ns()).map_err(err)?;
     drop(storage);
     drop(engine);
+    *rec.test.lock().unwrap_or_else(|e| e.into_inner()) = None;
     notify(&app, MEETINGS_CHANGED);
     emit_state(&app);
     Ok(())
@@ -349,9 +408,16 @@ pub fn setup(app: &AppHandle) {
                 continue;
             }
             let (me, them) = engine.levels();
-            let paused = engine.status(platform::host_now_ns()).state == "paused";
+            let status = engine.status(platform::host_now_ns());
+            let paused = status.state == "paused";
             let system_failed = engine.system_failed();
             drop(engine);
+            let test = rec.test.lock().unwrap_or_else(|e| e.into_inner()).clone();
+            if test_limit_reached(test.as_ref(), &status) {
+                // The guided test is over: saved and transcribed like any recording.
+                let _ = stop_recording(&app);
+                continue;
+            }
             let _ = app.emit(LEVELS, Levels { me, them });
 
             if system_failed && !warned_lost {
@@ -366,7 +432,8 @@ pub fn setup(app: &AppHandle) {
 
             // Digital silence from the tap since the start while something plays = system audio is blocked.
             // (Apps keep output streams running while quiet, so silence after real sound means nothing.)
-            if !heard_them {
+            // The test records the microphone only, so the other side is silent on purpose.
+            if !heard_them && test.is_none() {
                 let playing = platform::devices::others_playing();
                 if them == 0.0 && playing && !paused {
                     let since = *silent_since.get_or_insert_with(Instant::now);
@@ -416,8 +483,29 @@ pub fn discard_for_wipe(app: &AppHandle) {
 
 #[cfg(test)]
 mod tests {
-    use super::auto_tag;
+    use super::{auto_tag, test_limit_reached, MicOnly, TestRun};
+    use crate::recorder::engine::Status;
+    use crate::recorder::source::AudioSource;
     use serde_json::json;
+
+    fn status(id: &str, elapsed_ms: u64) -> Status {
+        Status { state: "recording", meeting_id: Some(id.into()), elapsed_ms, marks: 0, notes: 0, mic_name: String::new(), system_audio: false }
+    }
+
+    #[test]
+    fn the_test_recording_stops_at_its_limit_and_only_itself() {
+        let run = TestRun { meeting_id: "m1".into(), max_ms: 60_000 };
+        assert!(!test_limit_reached(Some(&run), &status("m1", 59_999)));
+        assert!(test_limit_reached(Some(&run), &status("m1", 60_000)));
+        assert!(!test_limit_reached(Some(&run), &status("m2", 90_000)));
+        assert!(!test_limit_reached(None, &status("m1", 90_000)));
+    }
+
+    #[test]
+    fn the_test_records_the_microphone_only() {
+        let (p, _c) = crate::recorder::feed::feed_with_capacity(10, 2);
+        assert!(MicOnly.start(std::sync::Arc::new(std::sync::Mutex::new(p))).is_err());
+    }
 
     #[test]
     fn calls_are_tagged_by_app_only_when_turned_on() {

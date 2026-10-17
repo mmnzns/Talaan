@@ -13,7 +13,7 @@ import { SummaryCard } from "./SummaryCard";
 import { TranscriptCard } from "./TranscriptCard";
 import { SunCorner } from "../../brand/SunCorner";
 import { useT } from "../../lib/i18n/I18nProvider";
-import { TestMeetingBanner, TestRecordingCard } from "../Onboarding/TestRecording";
+import { TestMeetingBanner, TestRecordingCard, useTestRecordingActive } from "../Onboarding/TestRecording";
 
 export function MeetingPane({ id, jumpTo }: { id?: string; jumpTo?: Ms }) {
   const { meeting, loading } = useMeeting(id);
@@ -38,13 +38,15 @@ function EmptyPane() {
   const { meetings, loading } = useMeetings();
   const startRecording = useStartRecording();
   const t = useT();
+  // The test recording's meeting is in the list while it records: the card stays until it ends.
+  const testing = useTestRecordingActive();
   if (loading) return null;
   const first = meetings.length === 0;
   return (
     <div className="relative grid flex-1 place-items-center overflow-hidden p-8 text-center">
       <SunCorner className="absolute right-0 top-0" />
       <div className="relative flex max-w-[420px] flex-col items-center gap-2">
-        {first && (
+        {(first || testing) && (
           <div className="mb-5 flex w-full justify-center">
             <TestRecordingCard />
           </div>
