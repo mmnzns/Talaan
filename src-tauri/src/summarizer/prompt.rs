@@ -22,9 +22,10 @@ pub const SCHEMA: &str = r#"{
 }"#;
 
 /// The schema for one meeting: the base one, plus `sections` for a meeting type that has them and `highlights`
-/// when the user marked moments. Every property stays required (OpenAI's strict mode needs that).
-pub fn schema(sections: bool, highlights: bool) -> String {
-    if !sections && !highlights {
+/// (at most one per marked moment) when the user marked some. Every property stays required (OpenAI's strict mode
+/// needs that).
+pub fn schema(sections: bool, highlights: usize) -> String {
+    if !sections && highlights == 0 {
         return SCHEMA.to_string();
     }
     let mut v: Value = serde_json::from_str(SCHEMA).expect("schema is valid JSON");
@@ -34,8 +35,8 @@ pub fn schema(sections: bool, highlights: bool) -> String {
         v["properties"]["sections"] = json!({ "type": "array", "maxItems": 6, "items": { "type": "object", "properties": { "title": { "type": "string" }, "items": { "type": "array", "maxItems": 12, "items": timed } }, "required": ["title", "items"], "additionalProperties": false } });
         required.push("sections");
     }
-    if highlights {
-        v["properties"]["highlights"] = json!({ "type": "array", "maxItems": 30, "items": { "type": "object", "properties": { "time": { "type": "string" }, "text": { "type": "string" } }, "required": ["time", "text"], "additionalProperties": false } });
+    if highlights > 0 {
+        v["properties"]["highlights"] = json!({ "type": "array", "maxItems": highlights.min(30), "items": { "type": "object", "properties": { "time": { "type": "string" }, "text": { "type": "string" } }, "required": ["time", "text"], "additionalProperties": false } });
         required.push("highlights");
     }
     if let Some(r) = v["required"].as_array_mut() {
@@ -170,12 +171,41 @@ fn render_notes(notes: &[&Mark]) -> String {
         .join("\n")
 }
 
-fn render_moments(meeting: &Meeting, moments: &[&Mark]) -> String {
+/// Characters of transcript shown around marked moments in all, however many there are.
+pub const AROUND_BUDGET: usize = 6_000;
+
+/// The marked moments. In a one-part call the transcript is all there, so only the times are listed; in a part of
+/// a long call each comes with what was said around it (it may straddle the part's edge), within `AROUND_BUDGET`
+/// for all of them together.
+fn render_moments(meeting: &Meeting, moments: &[&Mark], with_context: bool) -> String {
     let mut out = String::new();
+    let each = AROUND_BUDGET / moments.len().max(1);
+    // So many marks that each would get under a line: the times alone (the part has the transcript anyway).
+    let with_context = with_context && each >= 80;
     for m in moments {
+        if !with_context {
+            out.push_str(&format!("[{}] marked\n", stamp(m.at)));
+            continue;
+        }
         out.push_str(&format!("[{}] marked. Said around it:\n", stamp(m.at)));
-        for l in around(&meeting.transcript, m.at) {
-            out.push_str(&format!("  [{}] {}: {}\n", stamp(l.at), speaker_name(meeting, &l.speaker), l.text.trim()));
+        let mut used = 0;
+        let mut near = around(&meeting.transcript, m.at);
+        near.sort_by_key(|l| l.at.abs_diff(m.at));
+        let mut kept: Vec<String> = vec![];
+        for l in near {
+            let row = format!("  [{}] {}: {}", stamp(l.at), speaker_name(meeting, &l.speaker), l.text.trim());
+            let room = each.saturating_sub(used);
+            if room < 40 {
+                break;
+            }
+            let row: String = if row.chars().count() > room { row.chars().take(room - 1).collect::<String>() + "…" } else { row };
+            used += row.chars().count();
+            kept.push(row);
+        }
+        kept.sort_by(|a, b| a.get(..12).cmp(&b.get(..12)));
+        for row in kept {
+            out.push_str(&row);
+            out.push('\n');
         }
     }
     out
@@ -227,8 +257,8 @@ pub fn summary_prompt(meeting: &Meeting, lines: &[TranscriptLine], language: &st
     }
     let moments: Vec<&Mark> = moments(meeting).into_iter().filter(|m| in_range(m.at)).collect();
     if !moments.is_empty() {
-        user.push_str("\nMoments the user marked during the call:\n");
-        user.push_str(&render_moments(meeting, &moments));
+        user.push_str(if part.is_some() { "\nMoments the user marked during the call:\n" } else { "\nMoments the user marked during the call (what was said 20 s either side is in the transcript below):\n" });
+        user.push_str(&render_moments(meeting, &moments, part.is_some()));
     }
     user.push_str("\nTranscript:\n");
     user.push_str(&render_lines(meeting, lines));
@@ -352,7 +382,7 @@ pub(crate) mod tests {
         let p = summary_prompt(&m, &lines, "en", None, &general());
         assert_eq!(p.system, format!("{}\n- Write everything in English.", RULES.replace("{me}", "Me")));
         assert!(!p.user.contains("notes") && !p.user.contains("marked"));
-        assert_eq!(schema(false, false), SCHEMA);
+        assert_eq!(schema(false, 0), SCHEMA);
         // An unknown type is General too.
         let odd = Options { template: "from_the_future".into(), instructions: "  ".into() };
         assert_eq!(summary_prompt(&m, &lines, "en", None, &odd), p);
@@ -368,14 +398,37 @@ pub(crate) mod tests {
         ];
         let mut m = meeting(lines.clone());
         m.marks = vec![mark("k0", 60_000, None)];
-        let p = summary_prompt(&m, &lines, "en", None, &general());
+        // A part of a long call shows what was said around the moment.
+        let p = summary_prompt(&m, &lines, "en", Some((1, 2)), &general());
         assert!(p.user.contains("Moments the user marked during the call:\n[01:00] marked. Said around it:\n  [00:50] Dana Reyes: So the budget is fifty thousand.\n  [01:02] Me: That works for us.\n"));
         assert!(!p.user.contains("  [00:10]") && !p.user.contains("  [01:40]"));
         assert!(p.system.contains("highlights: one for each marked moment"));
         assert!(!p.system.contains("backbone"));
-        let s: Value = serde_json::from_str(&schema(false, true)).unwrap();
+        // A one-part call has the whole transcript already: just the times.
+        let one = summary_prompt(&m, &lines, "en", None, &general());
+        assert!(one.user.contains("[01:00] marked\n"));
+        assert!(!one.user.contains("Said around it"));
+        let s: Value = serde_json::from_str(&schema(false, 1)).unwrap();
         assert!(s["required"].as_array().unwrap().contains(&json!("highlights")));
+        assert_eq!(s["properties"]["highlights"]["maxItems"], 1);
         assert!(s["properties"].get("sections").is_none());
+    }
+
+    #[test]
+    fn many_marks_keep_their_context_within_one_budget() {
+        let lines: Vec<_> = (0..400).map(|i| line(&format!("l{i}"), i * 5_000, "me", &"A long sentence about the plan and the budget. ".repeat(6))).collect();
+        let mut m = meeting(lines.clone());
+        m.marks = (0..100).map(|i| mark(&format!("k{i}"), i * 20_000, None)).collect();
+        let p = summary_prompt(&m, &[], "en", Some((1, 1)), &general());
+        let context = p.user.len();
+        assert!(context < AROUND_BUDGET + 100 * 40, "{context}");
+        assert_eq!(p.user.matches("] marked
+").count(), 100);
+        // Fewer marks share the same budget, each with some of what was said.
+        m.marks.truncate(20);
+        let p = summary_prompt(&m, &[], "en", Some((1, 1)), &general());
+        assert_eq!(p.user.matches(" marked. Said around it:").count(), 20);
+        assert!(p.user.len() < AROUND_BUDGET + 20 * 60, "{}", p.user.len());
     }
 
     #[test]
@@ -401,7 +454,7 @@ pub(crate) mod tests {
         assert!(p.system.contains("Start every item with the person's name"));
         let de = summary_prompt(&m, &lines, "de", None, &standup);
         assert!(de.system.contains("with these titles (translated into German): \"Yesterday\", \"Today\", \"Blockers\""));
-        let s: Value = serde_json::from_str(&schema(true, false)).unwrap();
+        let s: Value = serde_json::from_str(&schema(true, 0)).unwrap();
         assert!(s["required"].as_array().unwrap().contains(&json!("sections")));
         assert!(merge_prompt(&m, &["{}".into()], "fr", &standup).user.contains("Merge sections that have the same title"));
     }
@@ -462,7 +515,7 @@ pub(crate) mod tests {
     fn the_schema_is_valid_json() {
         let v: serde_json::Value = serde_json::from_str(SCHEMA).unwrap();
         assert_eq!(v["required"].as_array().unwrap().len(), 5);
-        let both: serde_json::Value = serde_json::from_str(&schema(true, true)).unwrap();
+        let both: serde_json::Value = serde_json::from_str(&schema(true, 3)).unwrap();
         assert_eq!(both["required"].as_array().unwrap().len(), 7);
     }
 }

@@ -3,12 +3,19 @@
 
 use super::chunk::{estimate_tokens, split};
 use super::parse::{parse_draft, to_highlights, to_sections, to_summary, usable_title, Draft};
-use super::prompt::{merge_prompt, moments, schema, summary_prompt, Options, Prompt};
+use super::prompt::{merge_prompt, moments, schema, summary_prompt, Options, Prompt, SCHEMA};
 use crate::storage::model::{Meeting, Summary, TranscriptLine};
 use std::sync::atomic::{AtomicBool, Ordering};
 
-/// Room left for the reply in every call.
+/// Room left for the reply of a General summary.
 pub const MAX_OUTPUT_TOKENS: u32 = 1_500;
+
+/// Room for the reply with a meeting type's sections (up to 3 × 12 short items) and one highlight per marked moment,
+/// so a long stand-up isn't cut off mid-JSON.
+pub fn output_tokens(sections: bool, highlights: usize) -> u32 {
+    let extra = if sections { 900 } else { 0 } + 60 * highlights.min(30) as u32;
+    (MAX_OUTPUT_TOKENS + extra).min(4_000)
+}
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum EngineError {
@@ -76,14 +83,17 @@ pub fn summarize(meeting: &Meeting, engine: &mut dyn SummaryEngine, language: &s
         let p = summary_prompt(meeting, &[], language, Some((1, 1)), opts);
         estimate_tokens(&p.system) + estimate_tokens(&p.user) + 64
     };
-    let budget = (engine.context_tokens() * 9 / 10).saturating_sub(overhead + MAX_OUTPUT_TOKENS as usize).max(500);
+    let sections = !opts.template().is_general();
+    let marked = moments(meeting).len();
+    let out = Reply { schema: schema(sections, marked), tokens: output_tokens(sections, marked) };
+    let budget = (engine.context_tokens() * 9 / 10).saturating_sub(overhead + out.tokens as usize).max(500);
     let parts = split(lines, budget);
     let n = parts.len();
-    let schema = schema(!opts.template().is_general(), !moments(meeting).is_empty());
+    let schema = &out;
     progress(0.0);
 
     if n == 1 {
-        let draft = ask(engine, &summary_prompt(meeting, lines, language, None, opts), &schema, cancel)?;
+        let draft = ask(engine, &summary_prompt(meeting, lines, language, None, opts), schema, cancel)?;
         progress(1.0);
         return Ok(finish(&draft, meeting, engine, 1, opts, language));
     }
@@ -93,11 +103,11 @@ pub fn summarize(meeting: &Meeting, engine: &mut dyn SummaryEngine, language: &s
         if cancel.load(Ordering::Relaxed) {
             return Err(SummarizeError::Engine(EngineError::Cancelled));
         }
-        drafts.push(ask(engine, &summary_prompt(meeting, part, language, Some((i + 1, n)), opts), &schema, cancel)?);
+        drafts.push(ask(engine, &summary_prompt(meeting, part, language, Some((i + 1, n)), opts), schema, cancel)?);
         progress((i + 1) as f32 / (n + 1) as f32);
     }
     let parts_json: Vec<String> = drafts.iter().map(|d| serde_json::to_string(d).expect("drafts serialize")).collect();
-    let merged = ask(engine, &merge_prompt(meeting, &parts_json, language, opts), &schema, cancel)?;
+    let merged = ask(engine, &merge_prompt(meeting, &parts_json, language, opts), schema, cancel)?;
     progress(1.0);
     Ok(finish(&merged, meeting, engine, n, opts, language))
 }
@@ -120,14 +130,24 @@ fn finish(draft: &Draft, meeting: &Meeting, engine: &dyn SummaryEngine, parts: u
     Outcome { summary, title: usable_title(&draft.title), parts }
 }
 
-/// One request, with one retry that tells the model what was wrong.
-fn ask(engine: &mut dyn SummaryEngine, prompt: &Prompt, schema: &str, cancel: &AtomicBool) -> Result<Draft, SummarizeError> {
-    let first = engine.complete(prompt, schema, MAX_OUTPUT_TOKENS, cancel).map_err(SummarizeError::Engine)?;
+/// The shape and room asked for in every request of one summary.
+struct Reply {
+    schema: String,
+    tokens: u32,
+}
+
+/// One request, with one retry that tells the model what was wrong. When the first reply asked for sections or
+/// highlights and came back unusable (most often cut off), the retry asks for the base summary only, so the user
+/// still gets one: missing highlights are then filled in from the transcript (`to_highlights`).
+fn ask(engine: &mut dyn SummaryEngine, prompt: &Prompt, reply: &Reply, cancel: &AtomicBool) -> Result<Draft, SummarizeError> {
+    let first = engine.complete(prompt, &reply.schema, reply.tokens, cancel).map_err(SummarizeError::Engine)?;
     let problem = match parse_draft(&first) {
         Ok(d) => return Ok(d),
         Err(e) => e,
     };
-    let retry = Prompt { system: prompt.system.clone(), user: format!("{}\n\nYour previous reply couldn't be used: {problem}. Reply with only the JSON object.", prompt.user) };
+    let extended = reply.schema != SCHEMA;
+    let (schema, ask_less) = if extended { (SCHEMA, " Leave out sections and highlights this time.") } else { (SCHEMA, "") };
+    let retry = Prompt { system: prompt.system.clone(), user: format!("{}\n\nYour previous reply couldn't be used: {problem}. Reply with only the JSON object.{ask_less}", prompt.user) };
     let second = engine.complete(&retry, schema, MAX_OUTPUT_TOKENS, cancel).map_err(SummarizeError::Engine)?;
     parse_draft(&second).map_err(SummarizeError::BadOutput)
 }
@@ -217,6 +237,44 @@ pub(crate) mod tests {
         assert_eq!(e.0[0], crate::summarizer::prompt::SCHEMA);
         assert!(out.summary.sections.is_empty() && out.summary.highlights.is_empty());
         assert_eq!(out.summary.template.as_deref(), Some("general"));
+    }
+
+    #[test]
+    fn a_cut_off_reply_with_sections_is_retried_as_a_plain_summary() {
+        /// Keeps the schema and room of each request.
+        struct Cut(Vec<(String, u32)>);
+        impl SummaryEngine for Cut {
+            fn complete(&mut self, _p: &Prompt, schema: &str, max: u32, _c: &AtomicBool) -> Result<String, EngineError> {
+                self.0.push((schema.to_string(), max));
+                Ok(if self.0.len() == 1 { r#"{"title":"Stand-up","recap":"Round of updates.","sections":[{"title":"Yesterday","items":[{"text":"Dana: fixed"#.into() } else { reply("Stand-up", "Round of updates.") })
+            }
+            fn context_tokens(&self) -> usize {
+                16_384
+            }
+            fn label(&self) -> String {
+                "Cut".into()
+            }
+        }
+        let mut m = short();
+        m.marks = (0..5).map(|i| crate::summarizer::prompt::tests::mark(&format!("k{i}"), 61_000 + i * 1_000, None)).collect();
+        let mut e = Cut(vec![]);
+        let opts = Options { template: "standup".into(), instructions: String::new() };
+        let out = summarize(&m, &mut e, "en", &opts, &AtomicBool::new(false), &mut |_| {}).unwrap();
+        assert_eq!(e.0.len(), 2);
+        assert_eq!(e.0[0].1, output_tokens(true, 5));
+        assert!(e.0[0].1 > MAX_OUTPUT_TOKENS);
+        assert_eq!(e.0[1], (SCHEMA.to_string(), MAX_OUTPUT_TOKENS));
+        assert_eq!(out.summary.recap, "Round of updates.");
+        // The marked moments still get highlights, from the transcript.
+        assert_eq!(out.summary.highlights.len(), 5);
+    }
+
+    #[test]
+    fn the_reply_room_grows_with_sections_and_marks_and_stops_at_a_cap() {
+        assert_eq!(output_tokens(false, 0), MAX_OUTPUT_TOKENS);
+        assert!(output_tokens(true, 0) > MAX_OUTPUT_TOKENS);
+        assert!(output_tokens(false, 10) > output_tokens(false, 1));
+        assert_eq!(output_tokens(true, 500), 4_000);
     }
 
     #[test]
