@@ -167,6 +167,7 @@ pub const OPEN_MEETING: &str = "open-meeting";
 /// The "Summary ready" (or, without a summary, "Transcript ready") notification that says a meeting's work is done,
 /// unless turned off in Settings › General. `heading` is an i18n key.
 pub fn notify_done(app: &AppHandle, id: &str, heading: &str, title: &str) {
+    super::autosave::due(app, id, true);
     let wanted = app.state::<AppState>().lock().settings_get().ok().flatten().and_then(|s| s["notifySummaryReady"].as_bool()).unwrap_or(true);
     if wanted {
         crate::platform::notify::post(id, &crate::i18n::tr(heading), title);

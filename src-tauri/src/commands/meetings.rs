@@ -38,9 +38,19 @@ fn changed<T>(app: &AppHandle, r: CmdResult<T>) -> CmdResult<T> {
     r
 }
 
+/// A change to what a meeting's exported copy shows (title, summary edits and ticked action items, which arrive as
+/// summary updates, transcript edits, names): also refreshes its copy in the auto-save folder.
+fn edited<T>(app: &AppHandle, id: &str, r: CmdResult<T>) -> CmdResult<T> {
+    let r = changed(app, r);
+    if r.is_ok() {
+        super::autosave::due(app, id, false);
+    }
+    r
+}
+
 #[tauri::command]
 pub fn meetings_rename(app: AppHandle, state: State<AppState>, id: String, title: String) -> CmdResult<()> {
-    changed(&app, state.lock().rename_meeting(&id, &title))
+    edited(&app, &id, state.lock().rename_meeting(&id, &title))
 }
 
 #[tauri::command]
@@ -57,22 +67,22 @@ pub fn meetings_delete(app: AppHandle, state: State<AppState>, t: State<super::t
 
 #[tauri::command]
 pub fn meetings_update_transcript_line(app: AppHandle, state: State<AppState>, id: String, line_id: String, text: String) -> CmdResult<()> {
-    changed(&app, state.lock().update_transcript_line(&id, &line_id, &text))
+    edited(&app, &id, state.lock().update_transcript_line(&id, &line_id, &text))
 }
 
 #[tauri::command]
 pub fn meetings_update_summary(app: AppHandle, state: State<AppState>, id: String, summary: Summary) -> CmdResult<()> {
-    changed(&app, state.lock().update_summary(&id, &summary))
+    edited(&app, &id, state.lock().update_summary(&id, &summary))
 }
 
 #[tauri::command]
 pub fn meetings_revert_edits(app: AppHandle, state: State<AppState>, id: String) -> CmdResult<()> {
-    changed(&app, state.lock().revert_edits(&id))
+    edited(&app, &id, state.lock().revert_edits(&id))
 }
 
 #[tauri::command]
 pub fn meetings_rename_speaker(app: AppHandle, state: State<AppState>, id: String, speaker: String, name: String) -> CmdResult<()> {
-    changed(&app, state.lock().rename_speaker(&id, &speaker, &name))
+    edited(&app, &id, state.lock().rename_speaker(&id, &speaker, &name))
 }
 
 #[tauri::command]

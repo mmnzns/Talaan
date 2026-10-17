@@ -96,6 +96,8 @@ export const defaultSettings: Settings = {
   tabDetection: false,
   suggestSpeakerNames: true,
   notion: { connected: false },
+  autoSaveFolder: "",
+  autoSaveTranscript: false,
   retention: "7d",
   transcriptRetention: "forever",
   onboardingDone: true,

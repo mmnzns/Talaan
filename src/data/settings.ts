@@ -14,6 +14,30 @@ export interface NotionDestination {
 
 export type CalendarAccess = "allowed" | "not_asked" | "denied";
 
+/** The meeting the menu bar offers to record (in progress, or starting within the hour), from Rust's `calendar_next`. */
+export interface NextMeeting {
+  title: string;
+  startMs: number;
+  endMs: number;
+  attendees: string[];
+  emails: string[];
+  joinUrl?: string | null;
+  /** The call app the invite's link opens: "zoom", "teams" or "browser" (Google Meet), and its name. */
+  appId?: string | null;
+  appLabel?: string | null;
+}
+
+/** "Also save each meeting to a folder", for Check setup. */
+export interface AutoSaveStatus {
+  /** Whether the folder is there right now (a drive may be disconnected). */
+  reachable: boolean;
+  /** Copies still to be written: `waiting` (asked for), `missing` (the folder wasn't there) or `failed` (with the error). */
+  pending: { id: string; kind: "waiting" | "missing" | "failed"; error?: string }[];
+}
+
+/** What saving a copy did: see `autosave_write` in commands/autosave.rs. */
+export type AutoSaveResult = "written" | "off" | "not_ready" | "missing" | "failed";
+
 /** Check setup › Graphics chip, from Rust (`commands/gpu.rs`). */
 export interface GpuStatus {
   /** `metal`: the Mac's GPU. `unavailable`: see `reason`. `failed`: it failed with this app and driver (Try again). */
@@ -137,6 +161,10 @@ export interface Settings {
   suggestSpeakerNames: boolean;
   /** The secret itself lives in secure key storage, never here. */
   notion: { connected: boolean; workspace?: string; destination?: NotionDestination };
+  /** "Also save each meeting to a folder": where (empty = off). */
+  autoSaveFolder: string;
+  /** Put the transcript in those copies too (meetings without a summary always have it). */
+  autoSaveTranscript: boolean;
   // Privacy
   retention: RetentionChoice;
   transcriptRetention: TranscriptRetention;
@@ -189,6 +217,16 @@ export interface SettingsStore {
   connectCalendar(url: string): Promise<number>;
   /** Windows: forgets the calendar address and turns the calendar off. */
   disconnectCalendar(): Promise<void>;
+  /** The meeting coming up (or in progress) when the calendar is connected; null otherwise. */
+  nextMeeting(): Promise<NextMeeting | null>;
+  /** The folder picker. Undefined when cancelled. */
+  pickFolder(title: string): Promise<string | undefined>;
+  /** Writes a meeting's copy in the auto-save folder (`contents`: the Markdown export). */
+  writeAutoSave(id: string, contents: string, finished: boolean): Promise<AutoSaveResult>;
+  /** Null when no folder is chosen. */
+  autoSaveStatus(): Promise<AutoSaveStatus | null>;
+  /** Shows the auto-save folder in the file manager. */
+  revealAutoSaveFolder(): Promise<void>;
   /** Whether the GPU is used for speech and local summaries, and if not, why. */
   gpuStatus(): Promise<GpuStatus>;
   /** Forgets a remembered GPU failure and checks again. */

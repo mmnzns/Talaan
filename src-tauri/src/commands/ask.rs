@@ -141,7 +141,7 @@ fn ask(app: &AppHandle, question: &str, scope: &Scope) -> CmdResult<AskAnswer> {
 }
 
 /// The test recording whose keep-or-delete offer is still open (`testMeetingId` in settings.json).
-fn pending_test(settings: Option<&serde_json::Value>) -> Option<&str> {
+pub(crate) fn pending_test(settings: Option<&serde_json::Value>) -> Option<&str> {
     settings?.get("testMeetingId")?.as_str().filter(|s| !s.is_empty())
 }
 

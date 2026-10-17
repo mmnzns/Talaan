@@ -11,8 +11,9 @@ export function privacyFlows(s: Settings, windows = onWindows): [MessageKey, Mes
     ["settings.flow_transcripts", "settings.when_never"],
     ["settings.flow_byok", s.summaryEngine === "byok" ? "settings.when_on" : "settings.when_off"],
     ["settings.flow_notion", s.notion.connected ? "settings.when_export" : "settings.when_not_connected"],
+    ["settings.flow_autosave", s.autoSaveFolder ? "settings.when_each_meeting" : "settings.when_off"],
     ["settings.flow_update", s.checkUpdates ? "settings.when_launch" : "settings.when_off"],
-    ...(windows && s.calendarConnected ? [["settings.flow_calendar_windows", "settings.when_recording_start"] as [MessageKey, MessageKey]] : []),
+    ...(windows && s.calendarConnected ? [["settings.flow_calendar_windows", "settings.when_calendar_windows"] as [MessageKey, MessageKey]] : []),
     ["settings.flow_analytics", "settings.when_never_collected"],
   ];
 }
