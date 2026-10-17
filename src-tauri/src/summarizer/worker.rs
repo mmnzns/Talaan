@@ -177,15 +177,19 @@ fn worker_loop(deps: Deps, queue: Arc<(Mutex<Queue>, Condvar)>, cancel: Arc<Atom
                 q = cv.wait(q).unwrap_or_else(|e| e.into_inner());
             }
         };
+        // A bug in one job must not stop every later summary: a panic ends that job only. A job reports its own
+        // failure (its result channel closes); a summary is left transcript-only with a message.
         let (id, auto) = match next {
             Next::Job(job) => {
-                job();
+                let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(job));
                 continue;
             }
             Next::Summary(id, auto) => (id, auto),
         };
         cancel.store(false, Ordering::Relaxed);
-        process(&deps, &id, auto, &cancel);
+        if std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| process(&deps, &id, auto, &cancel))).is_err() {
+            without_summary(&deps, &id, auto, FAILED, crate::i18n::tr("error.summary_internal"));
+        }
         (deps.changed)();
     }
 }
@@ -530,6 +534,33 @@ mod tests {
         assert_eq!(m.summary_error.unwrap().code, TOO_SHORT);
         assert!(m.item.title.starts_with("Call, Zoom"));
         assert!(done.lock().unwrap().iter().all(|d| d.starts_with("transcript: ")));
+    }
+
+    #[test]
+    fn a_panic_in_a_job_or_a_summary_leaves_the_worker_running() {
+        struct Panics;
+        impl SummaryEngine for Panics {
+            fn complete(&mut self, _p: &crate::summarizer::prompt::Prompt, _s: &str, _m: u32, _c: &AtomicBool) -> Result<String, EngineError> {
+                panic!("a bug in an engine");
+            }
+            fn context_tokens(&self) -> usize {
+                16_384
+            }
+            fn label(&self) -> String {
+                "Panics".into()
+            }
+        }
+        let (_d, storage, id, w, _) = setup(Box::new(|_| Ok(Box::new(Panics))));
+        w.run_between(Box::new(|| panic!("a bug in a draft")));
+        w.enqueue(&id);
+        wait(&w);
+        let m = storage.lock().unwrap().get_meeting(&id).unwrap();
+        assert_eq!(m.item.status, MeetingStatus::Ready);
+        assert_eq!(m.summary_error.unwrap().code, FAILED);
+        // Still working afterwards.
+        let (tx, rx) = std::sync::mpsc::channel();
+        w.run_between(Box::new(move || tx.send(()).unwrap()));
+        rx.recv_timeout(Duration::from_secs(5)).unwrap();
     }
 
     #[test]

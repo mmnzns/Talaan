@@ -337,7 +337,11 @@ pub fn meetings_draft_followup(state: State<AppState>, s: State<SummarizerState>
         s.worker.run_between(Box::new(move || {
             let _ = tx.send(run_followup(&cfg, &data_dir, &meeting, &summary, &flag));
         }));
-        rx.recv().unwrap_or(Err(FollowUpError::Engine(EngineError::Cancelled)))
+        // The channel closes without an answer only when the draft panicked.
+        match rx.recv() {
+            Ok(r) => r,
+            Err(_) => Err(FollowUpError::Engine(EngineError::Failed(tr("error.followup_internal")))),
+        }
     } else {
         run_followup(&cfg, &s.data_dir, &meeting, &summary, &cancel)
     };
