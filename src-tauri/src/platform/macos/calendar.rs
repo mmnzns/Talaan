@@ -3,7 +3,7 @@
 use crate::calendar::Event;
 use block2::RcBlock;
 use objc2::runtime::Bool;
-use objc2_event_kit::{EKAuthorizationStatus, EKEntityType, EKEventStatus, EKEventStore, EKParticipantStatus};
+use objc2_event_kit::{EKAuthorizationStatus, EKEntityType, EKEventStatus, EKEventStore, EKParticipantStatus, EKParticipantType};
 use objc2_foundation::{NSDate, NSError};
 use std::sync::mpsc;
 use std::time::Duration;
@@ -59,7 +59,13 @@ pub fn events(from_ms: i64, to_ms: i64) -> Vec<Event> {
             .map(|e| {
                 let everyone: Vec<_> = e.attendees().map(|list| list.iter().collect()).unwrap_or_default();
                 let declined = everyone.iter().any(|p| p.isCurrentUser() && p.participantStatus() == EKParticipantStatus::Declined);
-                let others: Vec<_> = everyone.into_iter().filter(|p| !p.isCurrentUser()).collect();
+                // The other people, as the iCal path reads them: not those who declined, not rooms or equipment.
+                let others: Vec<_> = everyone
+                    .into_iter()
+                    .filter(|p| !p.isCurrentUser())
+                    .filter(|p| p.participantStatus() != EKParticipantStatus::Declined)
+                    .filter(|p| ![EKParticipantType::Room, EKParticipantType::Resource].contains(&p.participantType()))
+                    .collect();
                 // The invite's link, location and notes, where Zoom, Meet and Teams put the join link.
                 let fields: Vec<String> = [e.URL().and_then(|u| u.absoluteString()).map(|s| s.to_string()), e.location().map(|s| s.to_string()), e.notes().map(|s| s.to_string())]
                     .into_iter()
