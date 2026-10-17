@@ -56,6 +56,7 @@ describe("notes, sections and highlights", () => {
     expect(toMarkdown(oneOnOne, false)).toContain("### Support needed\n\n- Jordan needs a data analyst before January. (20:40)");
     expect(toMarkdown(q4, false)).toContain("### Highlights\n\n- You promised design the onboarding wireframes by Friday");
     expect(toShareText(oneOnOne)).toContain("\nFeedback\n• Jordan liked");
+    expect(toShareText(q4)).toContain("\nYour notes\n• onboarding first, pricing waits for Q1 (00:22)");
   });
   it("leaves a meeting without notes or extras as it was", () => {
     const plain = { ...q4, marks: [], summary: { ...q4.summary!, highlights: undefined } };

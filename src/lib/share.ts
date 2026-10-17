@@ -24,6 +24,8 @@ export function toShareText(m: Meeting): string {
   const s = m.summary;
   if (!s) return `${heading(m)}\n(no summary yet)`;
   const out = [heading(m), "", s.recap];
+  const notes = meetingNotes(m);
+  if (notes.length) out.push("", t("meeting.shYourNotes"), ...notes.map((k) => `• ${k.note!.trim()}${noteWhen(k)}`));
   if (s.decisions.length) out.push("", t("meeting.shDecisions"), ...s.decisions.map((d) => `• ${d.text}${when(d.at)}`));
   if (s.actionItems.length)
     out.push("", t("meeting.shActionItems"), ...s.actionItems.map((a) => `• ${a.done ? "✅" : "☐"} ${a.text}${owner(a.owner && ownerName(m, a.owner))}${due(a.due)}`));
