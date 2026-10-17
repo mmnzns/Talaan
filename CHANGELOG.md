@@ -1,6 +1,6 @@
 # Changelog
 
-## 1.1.0 (2026-10-16)
+## 1.1.0 (2026-10-17)
 
 **Easier to start**
 - **Setup in one click:** "Download what Talaan needs" with a time estimate, or choose each model yourself. Nothing downloads until you click. Downloads keep going after setup.
@@ -15,7 +15,7 @@
 - **Time left, not just a percentage,** for transcripts and summaries, learned from your computer's speed.
 
 **Around the meeting**
-- **Next meeting in the menu bar or tray,** with its own Start recording.
+- **Next meeting in the menu bar or tray,** with its own Start recording. Zoom, Google Meet, Teams and FaceTime invite links name the call app.
 - **Suggested speaker names** from the invite. Talaan never renames anyone by itself.
 - **Also save each meeting to a folder** as a Markdown file (an Obsidian vault, Documents, a synced folder). Renamed copies replace the old ones, which go to the Trash.
 - **Email this summary** to the people who were invited.
