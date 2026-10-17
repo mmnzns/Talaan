@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Check, Headphones, MessageSquareText, ShieldCheck } from "lucide-react";
 import { Logo } from "../../brand/Logo";
 import { recorderClient } from "../../data";
@@ -11,8 +11,8 @@ import { onWindows, systemAudioNeedsPermission, usePlatform } from "../../lib/pl
 import { openSettings } from "../../lib/windows";
 import { useT } from "../../lib/i18n/I18nProvider";
 import { LeavesTable } from "../Settings/LeavesTable";
-import { neededItems } from "../../lib/setupDownload";
-import { SetupProgress, gb, useSetupDownload } from "./SetupDownload";
+import { setupItems } from "../../lib/setupDownload";
+import { DownloadAnnouncer, SetupProgress, gb, useSetupDownload } from "./SetupDownload";
 
 /** The steps, in order. "audio" is left out on Windows when the microphone is already allowed (nothing to do);
  *  "speech" and "summary" only show after "Choose individually". */
@@ -45,6 +45,8 @@ export function OnboardingScreen() {
   const [mic, setMic] = useState<Perm>("idle");
   // Windows: a microphone that was allowed before onboarding started means the audio step has nothing to ask.
   const [micAllowedAtStart, setMicAllowedAtStart] = useState(false);
+  // Decided when leaving Welcome, so a late answer can't remove the step the person is on.
+  const [skipAudio, setSkipAudio] = useState(false);
   const [custom, setCustom] = useState(false);
   const [name, setName] = useState<string>();
   const [connectionsAfter, setConnectionsAfter] = useState<string[]>([]);
@@ -63,14 +65,14 @@ export function OnboardingScreen() {
 
   const steps: StepId[] = [
     "welcome",
-    ...(onWindows && micAllowedAtStart ? [] : (["audio"] as const)),
+    ...(skipAudio ? [] : (["audio"] as const)),
     "setup",
     ...(custom ? (["speech", "summary"] as const) : []),
     "apps",
     "extras",
     "done",
   ];
-  const index = Math.max(0, steps.indexOf(at));
+  const index = at === "welcome" ? 0 : Math.max(1, steps.indexOf(at));
   const last = at === "done";
 
   const finish = async () => {
@@ -103,7 +105,15 @@ export function OnboardingScreen() {
               <Welcome />
             </div>
             <div className="relative flex justify-center pb-7 pt-4">
-              <Button variant="primary" className="h-[42px] px-6 text-sm" onClick={next}>
+              <Button
+                variant="primary"
+                className="h-[42px] px-6 text-sm"
+                onClick={() => {
+                  const skip = onWindows && micAllowedAtStart;
+                  setSkipAudio(skip);
+                  setAt(skip ? "setup" : "audio");
+                }}
+              >
                 {t("onboarding.getStarted")}
               </Button>
             </div>
@@ -161,7 +171,10 @@ const ready = (state: string) => state === "downloaded" || state === "on_this_ma
 
 /** The step's Continue reads "Skip for now" while what it offers isn't downloaded (or downloading). */
 function skippable(at: StepId, s: Settings): boolean {
-  if (at === "setup") return neededItems(s).every((m) => m.state === "not_downloaded");
+  if (at === "setup") {
+    const { speech, summary } = setupItems(s);
+    return [speech, summary].every((m) => !m || m.state === "not_downloaded");
+  }
   if (at === "speech") return s.speechModels.find((m) => m.id === s.activeSpeechModel)?.state === "not_downloaded";
   if (at === "summary") return s.summaryEngine === "local" && s.localModels.find((m) => m.choice === (s.localModel ?? "recommended"))?.state === "not_downloaded";
   return false;
@@ -272,6 +285,14 @@ function PermRow({ title, desc: d, state, onAllow, onDeny, onOpen, deniedNote }:
 function AudioAccess({ mic, setMic, systemAudio, setSystemAudio }: { mic: Perm; setMic: (p: Perm) => void; systemAudio: Perm; setSystemAudio: (p: Perm) => void }) {
   const t = useT();
   const platform = usePlatform();
+  // Read again when the step opens and whenever the window comes back (the person may have changed it in the
+  // system settings meanwhile).
+  useEffect(() => {
+    const read = () => void recorderClient.microphonePermission().then((p) => setMic(micState(p)), () => {});
+    read();
+    window.addEventListener("focus", read);
+    return () => window.removeEventListener("focus", read);
+  }, []);
   const askMic = async () => setMic((await recorderClient.requestMicrophone()) ? "allowed" : "denied");
   const askSystem = async () => setSystemAudio((await recorderClient.requestSystemAudio()) ? "asked" : "denied");
   const micRow = (
@@ -326,9 +347,19 @@ function AudioAccess({ mic, setMic, systemAudio, setSystemAudio }: { mic: Perm; 
 /** "Get Talaan ready": one button for the speech model and the summary model, or "Choose individually". */
 function SetupStep({ settings: s, onChooseIndividually }: { settings: Settings; onChooseIndividually: () => void }) {
   const t = useT();
-  const setup = useSetupDownload(s, { probe: true });
+  const setup = useSetupDownload(s);
   const { speech, summary, view } = setup;
   const allReady = setup.missingMb === 0;
+  const failed = !view.active && view.failed.length > 0;
+  // Focus follows the button that replaced the one just pressed (Download → Cancel, Try again → Cancel).
+  const cancelRef = useRef<HTMLButtonElement>(null);
+  const downloadRef = useRef<HTMLButtonElement>(null);
+  const pressed = useRef<"start" | "cancel" | undefined>(undefined);
+  useEffect(() => {
+    if (pressed.current === "start" && view.active) cancelRef.current?.focus();
+    if (pressed.current === "cancel" && !view.active) downloadRef.current?.focus();
+    pressed.current = undefined;
+  }, [view.active]);
 
   const row = (label: string, item: typeof speech) =>
     item && (
@@ -341,8 +372,8 @@ function SetupStep({ settings: s, onChooseIndividually }: { settings: Settings; 
           <Chip tone="gold">
             <Check size={11} aria-hidden="true" /> {t("onboarding.setupItemReady")}
           </Chip>
-        ) : item.state === "downloading" ? (
-          <span className="font-mono text-xs text-subtle">{Math.floor((item.progress ?? 0) * 100)}%</span>
+        ) : item.state === "downloading" || (item.partial ?? 0) > 0 ? (
+          <span className="font-mono text-xs text-subtle">{Math.floor(((item.state === "downloading" ? item.progress : item.partial) ?? 0) * 100)}%</span>
         ) : (
           <span className="font-mono text-xs text-subtle">{gb(item.sizeMb)} GB</span>
         )}
@@ -351,32 +382,59 @@ function SetupStep({ settings: s, onChooseIndividually }: { settings: Settings; 
 
   return (
     <StepBody>
+      <DownloadAnnouncer view={view} />
       <h1 className={h1}>{t("onboarding.setupTitle")}</h1>
-      <p className={desc}>{t("onboarding.setupDesc")}</p>
+      <p className={desc}>{t(summary ? "onboarding.setupDesc" : "onboarding.setupDescSpeech")}</p>
       <div className="flex flex-col rounded-card border border-line bg-surface px-[18px] py-1.5 shadow-card">
         {row(t("onboarding.setupSpeech"), speech)}
         {row(t("onboarding.setupSummary"), summary)}
       </div>
       {allReady ? (
-        <p role="status" className="m-0 text-sm font-semibold">
-          {t("onboarding.setupReady")}
-        </p>
-      ) : view.active ? (
+        <p className="m-0 text-sm font-semibold">{t("onboarding.setupReady")}</p>
+      ) : view.active || failed ? (
         <div className="flex flex-col gap-3">
-          <SetupProgress fraction={view.fraction} minutesLeft={view.minutesLeft} />
-          <div className="flex flex-wrap items-center gap-3">
-            <span className="flex-1 basis-56 text-[13px] text-subtle">{t("onboarding.setupKeepUsing")}</span>
-            <Button variant="ghost" onClick={() => void setup.cancel()}>
-              {t("onboarding.cancelDownload")}
-            </Button>
-          </div>
+          <SetupProgress fraction={view.fraction} minutesLeft={view.minutesLeft} failed={failed} />
+          {failed ? (
+            <div className="flex flex-wrap items-center gap-3 rounded-card bg-warn-bg px-3 py-2.5 text-[13px] text-warn-fg">
+              <span className="flex-1 basis-56">{view.failed[0].error}</span>
+              <Button
+                ref={downloadRef}
+                onClick={() => {
+                  pressed.current = "start";
+                  void setup.retry();
+                }}
+              >
+                {t("onboarding.setupRetry")}
+              </Button>
+            </div>
+          ) : (
+            <div className="flex flex-wrap items-center gap-3">
+              <span className="flex-1 basis-56 text-[13px] text-subtle">{t("onboarding.setupKeepUsing")}</span>
+              <Button
+                ref={cancelRef}
+                variant="ghost"
+                onClick={() => {
+                  pressed.current = "cancel";
+                  void setup.cancel();
+                }}
+              >
+                {t("onboarding.cancelDownload")}
+              </Button>
+            </div>
+          )}
         </div>
       ) : (
         <div className="flex flex-col items-start gap-2.5">
-          <Button variant="primary" size="lg" onClick={() => void setup.start()}>
-            {setup.minutes
-              ? t("onboarding.setupButton", { size: gb(setup.missingMb), time: t("onboarding.aboutMin", { count: setup.minutes }) })
-              : t("onboarding.setupButtonNoTime", { size: gb(setup.missingMb) })}
+          <Button
+            ref={downloadRef}
+            variant="primary"
+            size="lg"
+            onClick={() => {
+              pressed.current = "start";
+              void setup.start();
+            }}
+          >
+            {setup.resumable ? t("onboarding.setupButtonRest", { size: gb(setup.missingMb) }) : t("onboarding.setupButtonNoTime", { size: gb(setup.missingMb) })}
           </Button>
           <span className="text-[13px] text-subtle">
             {t("onboarding.setupKeepUsing")} {t("onboarding.notYet")}
@@ -435,12 +493,31 @@ function ModelStep({ settings: s, update }: StepProps) {
 }
 
 /** The chosen model's download: nothing downloads until the person clicks, and Continue never waits for it. */
-function DownloadRow({ item, onDownload, onCancel, missingNote }: { item: { name: string; state: string; progress?: number; sizeMb: number }; onDownload: () => void; onCancel: () => void; missingNote?: string }) {
+function DownloadRow({ item, onDownload, onCancel, missingNote }: { item: { name: string; state: string; progress?: number; sizeMb: number; error?: string }; onDownload: () => void; onCancel: () => void; missingNote?: string }) {
   const t = useT();
   const pct = Math.round((item.progress ?? 0) * 100);
+  const cancelRef = useRef<HTMLButtonElement>(null);
+  const downloadRef = useRef<HTMLButtonElement>(null);
+  const pressed = useRef(false);
+  useEffect(() => {
+    if (!pressed.current) return;
+    pressed.current = false;
+    (item.state === "downloading" ? cancelRef : downloadRef).current?.focus();
+  }, [item.state]);
+  const announce = (
+    <DownloadAnnouncer
+      view={{
+        active: item.state === "downloading",
+        failed: item.state === "not_downloaded" && item.error ? [{ id: "", name: item.name, sizeMb: item.sizeMb, state: item.state, error: item.error }] : [],
+        fraction: item.progress ?? 0,
+        items: [],
+      }}
+    />
+  );
   if (ready(item.state)) {
     return (
-      <div role="status" className="flex items-center gap-2 text-[13px] font-semibold">
+      <div className="flex items-center gap-2 text-[13px] font-semibold">
+        {announce}
         <Check size={15} aria-hidden="true" className="text-gold-ink" />
         {t("onboarding.readyName", { name: item.name })}
       </div>
@@ -448,12 +525,20 @@ function DownloadRow({ item, onDownload, onCancel, missingNote }: { item: { name
   }
   if (item.state === "downloading") {
     return (
-      <div className="flex items-center gap-2.5" role="status">
+      <div className="flex items-center gap-2.5">
+        {announce}
         <span aria-hidden="true" className="h-1.5 flex-1 overflow-hidden rounded-full bg-line">
           <span className="block h-full bg-gold" style={{ width: `${pct}%` }} />
         </span>
         <Label>{t("onboarding.localDownloading", { pct })}</Label>
-        <Button variant="ghost" onClick={onCancel}>
+        <Button
+          ref={cancelRef}
+          variant="ghost"
+          onClick={() => {
+            pressed.current = true;
+            onCancel();
+          }}
+        >
           {t("onboarding.cancelDownload")}
         </Button>
       </div>
@@ -461,11 +546,23 @@ function DownloadRow({ item, onDownload, onCancel, missingNote }: { item: { name
   }
   return (
     <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
-      <Button variant="primary" onClick={onDownload}>
-        {t("onboarding.downloadName", { name: item.name, size: gb(item.sizeMb) })}
+      {announce}
+      <Button
+        ref={downloadRef}
+        variant="primary"
+        onClick={() => {
+          pressed.current = true;
+          onDownload();
+        }}
+      >
+        {item.error ? t("onboarding.setupRetry") : t("onboarding.downloadName", { name: item.name, size: gb(item.sizeMb) })}
       </Button>
       <span className="flex-1 basis-56 text-[13px] leading-[18px] text-subtle">
-        {missingNote ? <strong className="font-semibold text-ink">{missingNote} </strong> : null}
+        {item.error ? (
+          <strong className="font-semibold text-warn-fg">{item.error} </strong>
+        ) : missingNote ? (
+          <strong className="font-semibold text-ink">{missingNote} </strong>
+        ) : null}
         {t("onboarding.notYet")}
       </span>
     </div>
@@ -540,14 +637,38 @@ function ExtrasStep({ settings: s, update, connectionsAfter, setConnectionsAfter
       <Check size={11} aria-hidden="true" /> {label}
     </Chip>
   );
-  // Calendar (Windows) and Notion are set up in Settings › Connections, which opens when onboarding ends.
-  const setUp = (key: string) =>
+  // Calendar (Windows) and Notion are set up in Settings › Connections, which opens when onboarding ends. Focus
+  // moves to whichever control replaced the one pressed.
+  const toFocus = useRef<string | undefined>(undefined);
+  useEffect(() => {
+    if (toFocus.current) document.getElementById(`setup-${toFocus.current}`)?.focus();
+    toFocus.current = undefined;
+  }, [connectionsAfter]);
+  const setUp = (key: string, name: string) =>
     connectionsAfter.includes(key) ? (
-      <Chip key={key} tone="gold" onClick={() => setConnectionsAfter(connectionsAfter.filter((k) => k !== key))}>
+      <Chip
+        key={key}
+        id={`setup-${key}`}
+        tone="gold"
+        aria-pressed={true}
+        aria-label={t("onboarding.setUpUndo", { name })}
+        onClick={() => {
+          toFocus.current = key;
+          setConnectionsAfter(connectionsAfter.filter((k) => k !== key));
+        }}
+      >
         <Check size={11} aria-hidden="true" /> {t("onboarding.setUpAfter")}
       </Chip>
     ) : (
-      <Button key={key} onClick={() => setConnectionsAfter([...connectionsAfter, key])}>
+      <Button
+        key={key}
+        id={`setup-${key}`}
+        aria-label={t("onboarding.setUpRow", { name })}
+        onClick={() => {
+          toFocus.current = key;
+          setConnectionsAfter([...connectionsAfter, key]);
+        }}
+      >
         {t("onboarding.setUp")}
       </Button>
     );
@@ -556,10 +677,10 @@ function ExtrasStep({ settings: s, update, connectionsAfter, setConnectionsAfter
       t("onboarding.calendarTitle"),
       t("onboarding.calendarDesc"),
       // Windows reads the calendar's iCal address, which is pasted (and disconnected) in Settings: no toggle here.
-      onWindows ? (s.calendarConnected ? connected("c", t("onboarding.calendarConnected")) : setUp("c")) : <CalendarSwitch key="c" settings={s} update={update} />,
+      onWindows ? (s.calendarConnected ? connected("c", t("onboarding.calendarConnected")) : setUp("c", t("onboarding.calendarTitle"))) : <CalendarSwitch key="c" settings={s} update={update} />,
     ],
     [t("onboarding.browserTitle"), t("onboarding.browserDesc"), <Switch key="b" aria-label={t("onboarding.browserTitle")} checked={s.tabDetection} onChange={(v) => update({ tabDetection: v })} />],
-    [t("onboarding.notionTitle"), t("onboarding.notionDesc"), s.notion.connected ? connected("n", t("onboarding.connected")) : setUp("n")],
+    [t("onboarding.notionTitle"), t("onboarding.notionDesc"), s.notion.connected ? connected("n", t("onboarding.connected")) : setUp("n", t("onboarding.notionTitle"))],
   ];
   return (
     <StepBody>

@@ -53,6 +53,10 @@ export interface SpeechModel {
   languages: string; // "English only" | "25 European languages" ...
   state: "not_downloaded" | "downloading" | "downloaded" | "on_this_mac";
   progress?: number; // 0..1 while downloading
+  /** What an interrupted download left on disk (0..1), while not downloading; Download resumes from it. */
+  partial?: number;
+  /** Why the last download failed, until the next try. */
+  error?: string;
 }
 
 /** A local summary AI model (downloaded once, runs on this computer). */
@@ -64,6 +68,10 @@ export interface LocalModel {
   sizeMb: number;
   state: "not_downloaded" | "downloading" | "downloaded";
   progress?: number;
+  /** What an interrupted download left on disk (0..1), while not downloading; Download resumes from it. */
+  partial?: number;
+  /** Why the last download failed, until the next try. */
+  error?: string;
 }
 
 export interface Settings {
@@ -139,8 +147,6 @@ export interface SettingsStore {
   downloadModel(id: string): Promise<void>;
   /** Stops a download. The part already downloaded is kept, so Download resumes. */
   cancelModelDownload(id: string): Promise<void>;
-  /** Measured download speed in bytes per second (reads a few MB, saves nothing). Undefined when offline. */
-  downloadSpeed(): Promise<number | undefined>;
   /** Deletes Talaan's own copy of a model (models reused from another app are never touched). */
   deleteModel(id: string): Promise<void>;
   /** Checks an API key with the provider and, if it works, saves it in the Keychain (never in settings). */

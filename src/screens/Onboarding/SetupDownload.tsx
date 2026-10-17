@@ -1,103 +1,150 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useSettings } from "../../data/hooks";
 import { useSettingsStore } from "../../data/StoreProvider";
 import type { Settings } from "../../data/settings";
 import { useT } from "../../lib/i18n/I18nProvider";
-import {
-  batchView,
-  gb,
-  joinBatch,
-  knownSpeed,
-  minutesFor,
-  missingMb,
-  neededItems,
-  probeSpeed,
-  recommendedItems,
-  type DownloadItem,
-} from "../../lib/setupDownload";
-import { cn } from "../../ui";
+import { batchView, gb, isReady, joinBatch, milestone, missingMb, neededItems, setupItems, type BatchView, type DownloadItem } from "../../lib/setupDownload";
+import { Button, cn } from "../../ui";
+
+const allModels = (s: Settings): DownloadItem[] => [...s.speechModels, ...s.localModels];
 
 /**
- * The recommended setup: the speech model and the local summary model, downloaded together. The downloads run in
- * the background (Rust), so they keep going after onboarding and on every screen; this hook adds them up.
+ * The recommended setup: the speech model and (when summaries are written on this computer) the local summary
+ * model, downloaded together. The downloads run in the background (Rust), so they keep going after onboarding and
+ * on every screen; this hook adds them up. Nothing is contacted before `start`.
  */
-export function useSetupDownload(s: Settings | undefined, { probe = false }: { probe?: boolean } = {}) {
+export function useSetupDownload(s: Settings | undefined) {
   const store = useSettingsStore();
-  const [speed, setSpeed] = useState(knownSpeed);
-  const { speech, summary } = s ? recommendedItems(s) : {};
+  const { speech, summary } = s ? setupItems(s) : {};
   const items = [speech, summary].filter((m): m is DownloadItem => Boolean(m));
-  const missing = missingMb(items);
-  const view = s ? batchView([...s.speechModels, ...s.localModels], neededItems(s)) : { active: false, fraction: 0, items: [] };
+  const view: BatchView = s ? batchView(allModels(s), neededItems(s)) : { active: false, failed: [], fraction: 0, items: [] };
 
-  // On the setup step only: measure the line once (a few MB from the model host, nothing saved), so the button can
-  // say how long it takes before anything starts.
-  useEffect(() => {
-    if (probe && missing > 0) void probeSpeed(() => store.downloadSpeed()).then((v) => v && setSpeed(v));
-  }, [probe, missing > 0, store]);
-
-  const start = async () => {
-    if (!s || !speech) return;
-    // The recommended choices: this speech model, summaries written on this computer by the recommended model.
-    await store.update({ activeSpeechModel: speech.id, summaryEngine: "local", localModel: "recommended" });
-    const todo = items.filter((i) => i.state === "not_downloaded");
-    joinBatch(todo.map((i) => i.id));
+  const fetch = async (todo: DownloadItem[]) => {
+    if (!s) return;
+    joinBatch(
+      todo.map((i) => i.id),
+      allModels(s),
+    );
     await Promise.all(todo.map((i) => store.downloadModel(i.id)));
   };
 
+  const start = async () => {
+    if (!s || !speech) return;
+    // The speech model becomes the active one; the summary engine is left as chosen (online AI stays online).
+    if (s.activeSpeechModel !== speech.id) await store.update({ activeSpeechModel: speech.id });
+    await fetch(items.filter((i) => i.state === "not_downloaded"));
+  };
+
+  const retry = () => fetch(view.failed);
   const cancel = () => Promise.all(view.items.filter((i) => i.state === "downloading").map((i) => store.cancelModelDownload(i.id)));
 
   return {
     speech,
     summary,
-    missingMb: missing,
-    /** Minutes for the whole recommended download at the measured speed (before it starts). */
-    minutes: minutesFor(missing * 1_000_000, speed),
+    /** Megabytes still to fetch (less what an interrupted download left). */
+    missingMb: missingMb(items),
+    /** Part of it is already on disk from an earlier try. */
+    resumable: items.some((i) => !isReady(i) && (i.partial ?? 0) > 0),
     view,
     start,
+    retry,
     cancel,
   };
 }
 
-/** One bar for both downloads, with the percentage and the time left. */
-export function SetupProgress({ fraction, minutesLeft, className }: { fraction: number; minutesLeft?: number; className?: string }) {
+/** What a screen reader hears about a download: started, every 25%, done, failed. Visually hidden; the bar and
+ *  the percentage on screen are not live, so nothing is read out every second. */
+export function DownloadAnnouncer({ view }: { view: BatchView }) {
+  const t = useT();
+  const [text, setText] = useState("");
+  const last = useRef<string>("");
+  const was = useRef(false);
+  useEffect(() => {
+    let next = "";
+    if (view.failed.length > 0) next = t("onboarding.annFailed", { error: view.failed[0].error ?? "" });
+    else if (view.active) {
+      const m = milestone(view.fraction);
+      next = m === 0 ? t("onboarding.annStarted") : t("onboarding.annProgress", { pct: m });
+    } else if (was.current) next = t("onboarding.annDone");
+    was.current = view.active;
+    if (next && next !== last.current) {
+      last.current = next;
+      setText(next);
+    }
+  }, [view.active, view.failed.length, milestone(view.fraction)]);
+  return (
+    <span className="sr-only" aria-live="polite" role="status">
+      {text}
+    </span>
+  );
+}
+
+/** One bar for both downloads, with the percentage and the time left (not live: see DownloadAnnouncer). */
+export function SetupProgress({ fraction, minutesLeft, failed, className }: { fraction: number; minutesLeft?: number; failed?: boolean; className?: string }) {
   const t = useT();
   const pct = Math.floor(fraction * 100);
   return (
-    <div className={cn("flex flex-col gap-1.5", className)} role="status">
-      <span
-        aria-hidden="true"
-        className="h-2 overflow-hidden rounded-full bg-line"
-      >
-        <span className="block h-full rounded-full bg-gold transition-[width] duration-500" style={{ width: `${pct}%` }} />
+    <div className={cn("flex flex-col gap-1.5", className)}>
+      <span aria-hidden="true" className="h-2 overflow-hidden rounded-full bg-line">
+        <span className={cn("block h-full rounded-full transition-[width] duration-500", failed ? "bg-faint" : "bg-gold")} style={{ width: `${pct}%` }} />
       </span>
       <span className="flex flex-wrap justify-between gap-2 text-[13px]">
-        <span className="font-semibold">{t("onboarding.setupDownloading", { pct })}</span>
-        <span className="text-subtle">{minutesLeft ? t("onboarding.minLeft", { count: minutesLeft }) : t("onboarding.measuring")}</span>
+        <span className="font-semibold">{failed ? t("onboarding.setupStopped", { pct }) : t("onboarding.setupDownloading", { pct })}</span>
+        {!failed && <span className="text-subtle">{minutesLeft ? t("onboarding.minLeft", { count: minutesLeft }) : t("onboarding.measuring")}</span>}
       </span>
     </div>
   );
 }
 
-/** After onboarding: the recommended download's progress, small, in a corner of the main window. */
+/** Resumes, once per launch, the needed models an earlier session left half-downloaded (quietly: the card shows). */
+let resumed = false;
+
+/** After onboarding: the download's progress (or its failure, with Try again), small, in the corner of the main
+ *  pane, clear of the meeting list. */
 export function SetupDownloadPill() {
   const t = useT();
+  const store = useSettingsStore();
   const { settings } = useSettings();
-  const { view } = useSetupDownload(settings);
-  if (!view.active) return null;
+  const setup = useSetupDownload(settings);
+  const { view } = setup;
+
+  useEffect(() => {
+    if (resumed || !settings?.onboardingDone) return;
+    resumed = true;
+    const todo = neededItems(settings).filter((m) => m.state === "not_downloaded" && (m.partial ?? 0) > 0 && !m.error);
+    if (todo.length === 0) return;
+    joinBatch(
+      todo.map((m) => m.id),
+      allModels(settings),
+    );
+    for (const m of todo) void store.downloadModel(m.id);
+  }, [settings?.onboardingDone]);
+
+  if (!view.active && view.failed.length === 0) return null;
+  const failed = !view.active && view.failed.length > 0;
   const pct = Math.floor(view.fraction * 100);
   return (
     <div
-      role="status"
       title={t("onboarding.dlPillTitle")}
-      className="fixed bottom-4 left-4 z-30 flex w-[280px] flex-col gap-1.5 rounded-card border border-line bg-raised px-3.5 py-2.5 shadow-[var(--t-shadow-lg)]"
+      className="fixed bottom-4 left-[326px] z-30 flex w-[280px] flex-col gap-1.5 rounded-card border border-line bg-raised px-3.5 py-2.5 shadow-[var(--t-shadow-lg)]"
     >
-      <span className="text-xs font-semibold">{t("onboarding.dlPill", { pct })}</span>
+      <DownloadAnnouncer view={view} />
+      <span className="text-xs font-semibold">{failed ? t("onboarding.dlPillFailed", { pct }) : t("onboarding.dlPill", { pct })}</span>
       <span aria-hidden="true" className="h-1.5 overflow-hidden rounded-full bg-line">
-        <span className="block h-full rounded-full bg-gold transition-[width] duration-500" style={{ width: `${pct}%` }} />
+        <span className={cn("block h-full rounded-full transition-[width] duration-500", failed ? "bg-faint" : "bg-gold")} style={{ width: `${pct}%` }} />
       </span>
-      <span className="text-xs text-subtle">
-        {view.minutesLeft ? t("onboarding.minLeft", { count: view.minutesLeft }) : t("onboarding.measuring")} · {t("onboarding.setupKeepUsing")}
-      </span>
+      {failed ? (
+        <>
+          <span className="text-xs leading-[17px] text-warn-fg">{view.failed[0].error}</span>
+          <Button className="self-start" onClick={() => void setup.retry()}>
+            {t("onboarding.setupRetry")}
+          </Button>
+        </>
+      ) : (
+        <span className="text-xs text-subtle">
+          {view.minutesLeft ? t("onboarding.minLeft", { count: view.minutesLeft }) : t("onboarding.measuring")} · {t("onboarding.setupKeepUsing")}
+        </span>
+      )}
     </div>
   );
 }
