@@ -7,6 +7,8 @@
 //! A file with the same name that Talaan didn't write is never touched either: the new one gets " (2)" instead.
 //! When Talaan does retire its own unchanged copy (the title changed), it goes to the Recycle Bin or Trash.
 
+use crate::storage::model::{ExportedCopy, MeetingStatus, PendingCopy};
+use crate::storage::Storage;
 use sha2::{Digest, Sha256};
 use std::fs;
 use std::io;
@@ -127,6 +129,71 @@ fn write_atomic(target: &Path, contents: &str) -> io::Result<()> {
     fs::rename(&tmp, target).inspect_err(|_| {
         let _ = fs::remove_file(&tmp);
     })
+}
+
+// ---- Bookkeeping in meeting.json (the commands hold the storage lock only around these, never during file work) ----
+
+const WAITING: &str = "waiting";
+const MISSING: &str = "missing";
+const FAILED: &str = "failed";
+
+/// A copy asked for: `finished` when the summary (or transcript-only result) was just saved, otherwise a change to a
+/// meeting that has a copy (or one still waiting). Marks it pending, so it survives a quit before it's written.
+/// Returns whether a copy is due.
+pub fn mark_due(s: &Storage, id: &str, finished: bool) -> crate::storage::Result<bool> {
+    s.update_meeting_file(id, |f| {
+        let due = f.status == MeetingStatus::Ready && (finished || f.exported_copy.is_some() || f.autosave_pending.is_some());
+        if due && f.autosave_pending.is_none() {
+            f.autosave_pending = Some(PendingCopy { kind: WAITING.into(), error: None });
+        }
+        due
+    })
+}
+
+/// What to write for a meeting, or `None` when nothing is due (not finished yet, or never saved and not asked for).
+pub struct Plan {
+    pub name: String,
+    pub previous: Option<Copy>,
+}
+
+pub fn plan(s: &Storage, id: &str, finished: bool) -> crate::storage::Result<Option<Plan>> {
+    let f = s.read_meeting_file(id)?;
+    if f.status != MeetingStatus::Ready || !(finished || f.exported_copy.is_some() || f.autosave_pending.is_some()) {
+        return Ok(None);
+    }
+    let previous = f.exported_copy.map(|c| Copy { path: PathBuf::from(c.path), sha256: c.sha256, size: c.size });
+    Ok(Some(Plan { name: file_name(&f.started_at, &f.title), previous }))
+}
+
+/// Saves what happened: the new copy (and nothing pending), or why it's still pending. Answers "written", "missing"
+/// or "failed".
+pub fn record(s: &Storage, id: &str, result: &io::Result<Outcome>) -> crate::storage::Result<&'static str> {
+    s.update_meeting_file(id, |f| match result {
+        Ok(Outcome::Written(c)) => {
+            f.exported_copy = Some(ExportedCopy { path: c.path.to_string_lossy().into_owned(), sha256: c.sha256.clone(), size: c.size });
+            f.autosave_pending = None;
+            "written"
+        }
+        Ok(Outcome::FolderMissing) => {
+            f.autosave_pending = Some(PendingCopy { kind: MISSING.into(), error: None });
+            MISSING
+        }
+        Err(e) => {
+            f.autosave_pending = Some(PendingCopy { kind: FAILED.into(), error: Some(e.to_string()) });
+            FAILED
+        }
+    })
+}
+
+/// Every meeting whose copy is still to be written, with why.
+pub fn pending(s: &Storage) -> crate::storage::Result<Vec<(String, PendingCopy)>> {
+    let mut out = vec![];
+    for item in s.list_meetings(&Default::default())? {
+        if let Ok(Some(p)) = s.read_meeting_file(&item.id).map(|f| f.autosave_pending) {
+            out.push((item.id, p));
+        }
+    }
+    Ok(out)
 }
 
 #[cfg(test)]
@@ -271,5 +338,58 @@ mod tests {
         let broken = |_: &Path| Err(io::Error::other("no bin here"));
         write(dir.path(), "b.md", Some(&old), "two", &broken).unwrap();
         assert_eq!(names(dir.path()), vec!["a.md", "b.md"]);
+    }
+
+    mod bookkeeping {
+        use super::super::*;
+        use crate::storage::store::tests::{at, storage};
+
+        fn ready(s: &Storage) -> String {
+            let id = s.create_meeting("zoom", "Zoom", at("2026-10-14T14:30:00-07:00")).unwrap().id;
+            s.update_meeting_file(&id, |f| f.status = MeetingStatus::Ready).unwrap();
+            id
+        }
+
+        #[test]
+        fn a_finished_meeting_stays_pending_until_its_copy_is_written() {
+            let (_d, s) = storage();
+            let id = ready(&s);
+            assert!(mark_due(&s, &id, true).unwrap());
+            assert_eq!(pending(&s).unwrap()[0].1.kind, "waiting", "survives a quit before it's written");
+            let dir = tempfile::tempdir().unwrap();
+            let plan = plan(&s, &id, false).unwrap().expect("pending copies are due even for a change");
+            let result = write(dir.path(), &plan.name, plan.previous.as_ref(), "one", &|_| Ok(()));
+            assert_eq!(record(&s, &id, &result).unwrap(), "written");
+            assert!(pending(&s).unwrap().is_empty());
+            assert!(s.read_meeting_file(&id).unwrap().exported_copy.is_some());
+        }
+
+        #[test]
+        fn a_change_to_a_meeting_without_a_copy_is_not_due() {
+            let (_d, s) = storage();
+            let id = ready(&s);
+            assert!(!mark_due(&s, &id, false).unwrap());
+            assert!(plan(&s, &id, false).unwrap().is_none());
+            assert!(pending(&s).unwrap().is_empty());
+        }
+
+        #[test]
+        fn failures_are_kept_with_their_reason() {
+            let (_d, s) = storage();
+            let id = ready(&s);
+            mark_due(&s, &id, true).unwrap();
+            assert_eq!(record(&s, &id, &Ok(Outcome::FolderMissing)).unwrap(), "missing");
+            assert_eq!(pending(&s).unwrap()[0].1, PendingCopy { kind: "missing".into(), error: None });
+            assert_eq!(record(&s, &id, &Err(io::Error::other("disk full"))).unwrap(), "failed");
+            assert_eq!(pending(&s).unwrap()[0].1, PendingCopy { kind: "failed".into(), error: Some("disk full".into()) });
+        }
+
+        #[test]
+        fn meetings_still_processing_are_not_due() {
+            let (_d, s) = storage();
+            let id = s.create_meeting("zoom", "Zoom", at("2026-10-14T14:30:00-07:00")).unwrap().id;
+            assert!(!mark_due(&s, &id, true).unwrap());
+            assert!(plan(&s, &id, true).unwrap().is_none());
+        }
     }
 }

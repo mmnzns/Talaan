@@ -92,6 +92,17 @@ pub struct TranscriptLine {
     pub edited: bool,
 }
 
+/// Why a meeting's copy is still to be written.
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct PendingCopy {
+    /// "waiting" (asked for, not written yet), "missing" (the folder wasn't there) or "failed" (writing failed).
+    pub kind: String,
+    /// For "failed": what went wrong (English, from the system).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+}
+
 /// A meeting's copy in the auto-save folder as Talaan last wrote it.
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 #[serde(rename_all = "camelCase")]
@@ -163,6 +174,10 @@ pub struct MeetingFile {
     /// that folder, and only while it still matches this.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub exported_copy: Option<ExportedCopy>,
+    /// A copy that is due but not written yet (`autosave.rs`): retried at launch, after the next copy that works, and
+    /// with Try again in Check setup.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub autosave_pending: Option<PendingCopy>,
     #[serde(flatten)]
     pub extra: Map<String, Value>,
 }

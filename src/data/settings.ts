@@ -31,12 +31,12 @@ export interface NextMeeting {
 export interface AutoSaveStatus {
   /** Whether the folder is there right now (a drive may be disconnected). */
   reachable: boolean;
-  /** Meetings not saved because it wasn't. */
-  skipped: string[];
+  /** Copies still to be written: `waiting` (asked for), `missing` (the folder wasn't there) or `failed` (with the error). */
+  pending: { id: string; kind: "waiting" | "missing" | "failed"; error?: string }[];
 }
 
 /** What saving a copy did: see `autosave_write` in commands/autosave.rs. */
-export type AutoSaveResult = "written" | "off" | "not_ready" | "not_saved" | "missing";
+export type AutoSaveResult = "written" | "off" | "not_ready" | "missing" | "failed";
 
 /** Check setup › Graphics chip, from Rust (`commands/gpu.rs`). */
 export interface GpuStatus {

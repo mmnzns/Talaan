@@ -3,13 +3,13 @@ import { defaultSettings } from "../data/defaultSettings";
 import { seedMeetings } from "../data/mock/seed";
 import type { AutoSaveStatus, Settings } from "../data/settings";
 import type { Meeting } from "../data/types";
-import { retrySkipped, saveCopy, startAutoSave } from "./autoSave";
+import { retryPending, saveCopy, startAutoSave } from "./autoSave";
 import { toMarkdown } from "./share";
 
 const meetings = seedMeetings(new Date("2026-10-14T20:00:00"));
 const q4 = meetings.find((m) => m.id === "m-q4")!;
 
-function fakes(patch: Partial<Settings> = {}, status: AutoSaveStatus | null = { reachable: true, skipped: [] }) {
+function fakes(patch: Partial<Settings> = {}, status: AutoSaveStatus | null = { reachable: true, pending: [] }) {
   const all = new Map<string, Meeting>(meetings.map((m) => [m.id, m]));
   const written: { id: string; contents: string; finished: boolean }[] = [];
   const store = { getMeeting: vi.fn(async (id: string) => all.get(id)) };
@@ -52,16 +52,16 @@ describe("saveCopy", () => {
   });
 });
 
-describe("retrySkipped", () => {
-  it("catches up on skipped meetings once the folder is back", async () => {
-    const f = fakes({}, { reachable: true, skipped: ["m-q4", "m-1on1"] });
-    expect(await retrySkipped(f.store, f.settings)).toBe(2);
+describe("retryPending", () => {
+  it("catches up on pending copies once the folder is back", async () => {
+    const f = fakes({}, { reachable: true, pending: [{ id: "m-q4", kind: "missing" }, { id: "m-1on1", kind: "failed", error: "disk full" }] });
+    expect(await retryPending(f.store, f.settings)).toBe(2);
     expect(f.written.map((w) => w.id)).toEqual(["m-q4", "m-1on1"]);
   });
 
   it("waits while the folder is still away", async () => {
-    const f = fakes({}, { reachable: false, skipped: ["m-q4"] });
-    expect(await retrySkipped(f.store, f.settings)).toBe(0);
+    const f = fakes({}, { reachable: false, pending: [{ id: "m-q4", kind: "missing" }] });
+    expect(await retryPending(f.store, f.settings)).toBe(0);
     expect(f.written).toEqual([]);
   });
 });
@@ -80,5 +80,14 @@ describe("startAutoSave", () => {
     await vi.waitFor(() => expect(f.written.map((w) => [w.id, w.finished])).toEqual([["m-q4", true], ["m-1on1", false]]));
     stop();
     expect(off).toHaveBeenCalled();
+  });
+});
+
+describe("startAutoSave at launch", () => {
+  it("writes the copies still pending from before", async () => {
+    const f = fakes({}, { reachable: true, pending: [{ id: "m-q4", kind: "waiting" }] });
+    const stop = startAutoSave(f.store, f.settings, () => () => {});
+    await vi.waitFor(() => expect(f.written.map((w) => w.id)).toEqual(["m-q4"]));
+    stop();
   });
 });

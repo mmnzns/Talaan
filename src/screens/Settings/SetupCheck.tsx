@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { recorderClient } from "../../data";
 import { describeError } from "../../data/errors";
 import { useSettingsStore, useStore } from "../../data/StoreProvider";
-import { retrySkipped } from "../../lib/autoSave";
+import { retryPending } from "../../lib/autoSave";
 import type { MessageKey } from "../../lib/i18n";
 import { useLang, useT } from "../../lib/i18n/I18nProvider";
 import { navigate, routes } from "../../lib/router";
@@ -55,7 +55,7 @@ export function SetupCheck() {
       if (action === "summaryAI") return navigate(routes.settings("ai"));
       if (action === "connections") return navigate(routes.settings("connections"));
       if (action === "openData") return await store.revealData();
-      if (action === "retryAutoSave") await retrySkipped(meetingStore, store);
+      if (action === "retryAutoSave") await retryPending(meetingStore, store);
       await run(action === "testSystemAudio", action === "retryGpu");
     } catch (e) {
       toast(describeError(e));

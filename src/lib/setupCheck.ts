@@ -167,9 +167,18 @@ function autoSave(p: Probe): CheckResult[] {
   if (!a) return [];
   const title = t("settings.setup_autosave");
   const path = tildePath(p.settings.autoSaveFolder);
-  if (a.reachable && a.skipped.length === 0) return [{ id: "autoSave", title, status: "ok", detail: t("settings.setup_autosave_ok", { path }) }];
-  const waiting = a.skipped.length ? ` ${t("settings.setup_autosave_skipped", { count: a.skipped.length })}` : "";
-  const detail = (a.reachable ? t("settings.setup_autosave_ok", { path }) : t("settings.setup_autosave_missing", { path })) + waiting;
+  // "waiting" copies are on their way; only ones that didn't make it are a problem.
+  const stuck = a.pending.filter((p) => p.kind !== "waiting");
+  if (a.reachable && stuck.length === 0) return [{ id: "autoSave", title, status: "ok", detail: t("settings.setup_autosave_ok", { path }) }];
+  const failed = stuck.find((p) => p.kind === "failed");
+  const count = a.reachable ? stuck.length : a.pending.length;
+  const waiting = count ? ` ${t("settings.setup_autosave_skipped", { count })}` : "";
+  const why = !a.reachable
+    ? t("settings.setup_autosave_missing", { path })
+    : failed
+      ? t("settings.setup_autosave_failed", { path, error: failed.error ?? "?" })
+      : t("settings.setup_autosave_ok", { path });
+  const detail = why + waiting;
   return [{ id: "autoSave", title, status: "warn", detail, fix: { label: t("settings.setup_autosave_retry"), action: "retryAutoSave" } }];
 }
 

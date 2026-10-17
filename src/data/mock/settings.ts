@@ -199,7 +199,7 @@ export class MockSettingsStore implements SettingsStore {
   async autoSaveStatus(): Promise<AutoSaveStatus | null> {
     if (!this.state.autoSaveFolder) return null;
     const reachable = !/offline|unplugged/i.test(this.state.autoSaveFolder);
-    return { reachable, skipped: reachable ? [] : ["m-q4", "m-1on1"] };
+    return { reachable, pending: reachable ? [] : [{ id: "m-q4", kind: "missing" as const }, { id: "m-1on1", kind: "missing" as const }] };
   }
 
   async revealAutoSaveFolder() {}
