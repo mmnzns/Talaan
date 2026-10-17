@@ -110,6 +110,41 @@ fn is_web_page(resp: &reqwest::Response) -> bool {
 }
 
 fn download_file(file: &ModelFile, dir: &Path, cancel: &AtomicBool, idle: Duration, progress: &mut dyn FnMut(u64)) -> Result<(), DownloadError> {
+    // A server that refuses to resume (416: the part file doesn't fit the file it has now) gets one fresh start.
+    let first = fetch_file(file, dir, cancel, idle, progress);
+    let result = match first {
+        Err(Fetch::Restart) => {
+            let _ = fs::remove_file(dir.join(format!("{}.part", file.name)));
+            fetch_file(file, dir, cancel, idle, progress)
+        }
+        other => other,
+    };
+    match result {
+        Ok(()) => Ok(()),
+        Err(Fetch::Failed(e)) => Err(e),
+        Err(Fetch::Restart) => Err(DownloadError::Network(file.name.into(), "HTTP 416".into())),
+    }
+}
+
+/// Why `fetch_file` stopped: start over without the part file, or a real failure.
+enum Fetch {
+    Restart,
+    Failed(DownloadError),
+}
+
+impl From<DownloadError> for Fetch {
+    fn from(e: DownloadError) -> Self {
+        Fetch::Failed(e)
+    }
+}
+
+impl From<std::io::Error> for Fetch {
+    fn from(e: std::io::Error) -> Self {
+        Fetch::Failed(e.into())
+    }
+}
+
+fn fetch_file(file: &ModelFile, dir: &Path, cancel: &AtomicBool, idle: Duration, progress: &mut dyn FnMut(u64)) -> Result<(), Fetch> {
     let part = dir.join(format!("{}.part", file.name));
     let mut have = fs::metadata(&part).map(|m| m.len()).unwrap_or(0);
     if have > file.size {
@@ -117,12 +152,16 @@ fn download_file(file: &ModelFile, dir: &Path, cancel: &AtomicBool, idle: Durati
         have = 0;
     }
 
-    // Hash what is already there so the final check covers the whole file.
+    // Hash what is already there so the final check covers the whole file. A large part file takes a while:
+    // Cancel is looked at between chunks.
     let mut hasher = Sha256::new();
     if have > 0 {
         let mut f = File::open(&part)?;
         let mut buf = vec![0u8; 1 << 20];
         loop {
+            if cancel.load(Ordering::Relaxed) {
+                return Err(DownloadError::Cancelled.into());
+            }
             let n = f.read(&mut buf)?;
             if n == 0 {
                 break;
@@ -147,26 +186,31 @@ fn download_file(file: &ModelFile, dir: &Path, cancel: &AtomicBool, idle: Durati
             let mut resp = loop {
                 match tokio::time::timeout(POLL, &mut send).await {
                     Ok(r) => break r.map_err(|e| net(e.to_string()))?,
-                    Err(_) if cancel.load(Ordering::Relaxed) => return Err(DownloadError::Cancelled),
+                    Err(_) if cancel.load(Ordering::Relaxed) => return Err(DownloadError::Cancelled.into()),
                     Err(_) => {
                         waited += POLL;
                         if waited >= idle {
-                            return Err(DownloadError::Stalled(file.name.into()));
+                            return Err(DownloadError::Stalled(file.name.into()).into());
                         }
                     }
                 }
             };
             let status = resp.status();
+            // The status first: an error page (404, 5xx) is an HTTP error, not a Wi-Fi sign-in page.
+            if have > 0 && status == reqwest::StatusCode::RANGE_NOT_SATISFIABLE {
+                return Err(Fetch::Restart);
+            }
+            if !status.is_success() {
+                return Err(net(format!("HTTP {status}")).into());
+            }
             if is_web_page(&resp) {
-                return Err(DownloadError::NotAModel(file.name.into()));
+                return Err(DownloadError::NotAModel(file.name.into()).into());
             }
             if have > 0 && status == reqwest::StatusCode::OK {
                 // Server ignored the range: start over.
                 have = 0;
                 hasher = Sha256::new();
                 File::create(&part)?;
-            } else if !status.is_success() {
-                return Err(net(format!("HTTP {status}")));
             }
             let mut out = OpenOptions::new().create(true).append(true).open(&part)?;
             let mut since_report = 0usize;
@@ -174,7 +218,7 @@ fn download_file(file: &ModelFile, dir: &Path, cancel: &AtomicBool, idle: Durati
             loop {
                 if cancel.load(Ordering::Relaxed) {
                     out.flush()?;
-                    return Err(DownloadError::Cancelled);
+                    return Err(DownloadError::Cancelled.into());
                 }
                 let chunk = match tokio::time::timeout(POLL, resp.chunk()).await {
                     Ok(c) => c.map_err(|e| net(e.to_string()))?,
@@ -182,7 +226,7 @@ fn download_file(file: &ModelFile, dir: &Path, cancel: &AtomicBool, idle: Durati
                         quiet += POLL;
                         if quiet >= idle {
                             out.flush()?;
-                            return Err(DownloadError::Stalled(file.name.into()));
+                            return Err(DownloadError::Stalled(file.name.into()).into());
                         }
                         continue;
                     }
@@ -206,7 +250,7 @@ fn download_file(file: &ModelFile, dir: &Path, cancel: &AtomicBool, idle: Durati
     let hash = format!("{:x}", hasher.finalize());
     if have != file.size || hash != file.sha256 {
         let _ = fs::remove_file(&part);
-        return Err(DownloadError::Corrupt(file.name.into()));
+        return Err(DownloadError::Corrupt(file.name.into()).into());
     }
     fs::rename(&part, dir.join(file.name))?;
     progress(have);
@@ -339,6 +383,56 @@ mod tests {
             }
         });
         url
+    }
+
+    /// Answers a Range request with `range_code` and anything else with the whole body (200). With `html`, every
+    /// answer is a web page with that code instead.
+    fn serve_codes(body: Vec<u8>, range_code: u16, html: Option<u16>) -> String {
+        let server = tiny_http::Server::http("127.0.0.1:0").unwrap();
+        let url = format!("http://{}/", server.server_addr().to_ip().unwrap());
+        thread::spawn(move || {
+            for req in server.incoming_requests() {
+                if let Some(code) = html {
+                    let h = tiny_http::Header::from_bytes("Content-Type", "text/html").unwrap();
+                    let _ = req.respond(tiny_http::Response::from_string("<html>Not found</html>").with_status_code(code).with_header(h));
+                    continue;
+                }
+                let ranged = req.headers().iter().any(|h| h.field.equiv("Range"));
+                let r = if ranged { tiny_http::Response::from_data(vec![]).with_status_code(range_code) } else { tiny_http::Response::from_data(body.clone()) };
+                let _ = req.respond(r);
+            }
+        });
+        url
+    }
+
+    #[test]
+    fn an_error_page_is_an_http_error_not_a_sign_in_page() {
+        let body = body();
+        let m = model_for(&serve_codes(body.clone(), 206, Some(404)), &body);
+        let dir = tempfile::tempdir().unwrap();
+        let r = download_model_with(m, dir.path(), &AtomicBool::new(false), Duration::from_secs(5), &mut |_| {});
+        assert!(matches!(&r, Err(DownloadError::Network(_, e)) if e.contains("404")), "{r:?}");
+    }
+
+    #[test]
+    fn a_refused_resume_starts_over() {
+        let body = body();
+        let m = model_for(&serve_codes(body.clone(), 416, None), &body);
+        let dir = tempfile::tempdir().unwrap();
+        fs::write(dir.path().join("m.bin.part"), &body[..1_000_000]).unwrap();
+        download_model_with(m, dir.path(), &AtomicBool::new(false), Duration::from_secs(5), &mut |_| {}).unwrap();
+        assert_eq!(fs::read(dir.path().join("m.bin")).unwrap(), body);
+    }
+
+    #[test]
+    fn cancel_is_seen_while_the_part_file_is_checked() {
+        let body = body();
+        let m = model_for("http://127.0.0.1:9/", &body);
+        let dir = tempfile::tempdir().unwrap();
+        fs::write(dir.path().join("m.bin.part"), &body[..2_500_000]).unwrap();
+        let r = download_model_with(m, dir.path(), &AtomicBool::new(true), Duration::from_secs(5), &mut |_| {});
+        assert_eq!(r, Err(DownloadError::Cancelled));
+        assert!(dir.path().join("m.bin.part").exists());
     }
 
     #[test]
