@@ -257,7 +257,7 @@ Talaan hears every app's sound except its own, whichever speakers or headset the
 
 ### Mac: the other people are missing
 
-System audio permission is off. Open **System Settings › Privacy & Security › Screen & System Audio Recording**, find Talaan under the system audio section and turn it on. Then restart Talaan.
+System audio permission is off. Open **System Settings › Privacy & Security › Screen & System Audio Recording** (on macOS 14: **Screen Recording**), find Talaan under the system audio section and turn it on. Then restart Talaan.
 
 ### No "Record this call?" when a call starts
 

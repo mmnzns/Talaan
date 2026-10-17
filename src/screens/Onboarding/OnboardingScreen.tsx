@@ -7,7 +7,8 @@ import { useSettingsStore } from "../../data/StoreProvider";
 import type { Settings } from "../../data/settings";
 import { Button, Chip, Field, Label, Radio, Switch, cn, useToast } from "../../ui";
 import { SunCorner } from "../../brand/SunCorner";
-import { onWindows, systemAudioNeedsPermission, usePlatform } from "../../lib/platform";
+import { onWindows, os, systemAudioNeedsPermission, systemAudioPermissionName, usePlatform } from "../../lib/platform";
+import { useMacMajor } from "../../lib/macVersion";
 import { openSettings } from "../../lib/windows";
 import { useLang, useT } from "../../lib/i18n/I18nProvider";
 import { modelNote, splitByTier, tierOf } from "../../lib/modelTiers";
@@ -298,7 +299,9 @@ function PermRow({ title, desc: d, state, onAllow, onDeny, onOpen, deniedNote }:
 
 function AudioAccess({ mic, setMic, systemAudio, setSystemAudio }: { mic: Perm; setMic: (p: Perm) => void; systemAudio: Perm; setSystemAudio: (p: Perm) => void }) {
   const t = useT();
+  const lang = useLang();
   const platform = usePlatform();
+  const macMajor = useMacMajor();
   // Read again when the step opens and whenever the window comes back (the person may have changed it in the
   // system settings meanwhile).
   useEffect(() => {
@@ -336,7 +339,7 @@ function AudioAccess({ mic, setMic, systemAudio, setSystemAudio }: { mic: Perm; 
       {micRow}
       <PermRow
         title={t("onboarding.systemTitle")}
-        desc={withBold(platform.systemAudioDesc, "{permission}", platform.systemAudioPermission)}
+        desc={withBold(platform.systemAudioDesc, "{permission}", os === "mac" ? systemAudioPermissionName(lang, macMajor) : undefined)}
         state={systemAudio}
         onAllow={() => void askSystem()}
         onDeny={() => setSystemAudio("denied")}

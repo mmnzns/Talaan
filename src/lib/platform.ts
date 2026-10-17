@@ -26,8 +26,6 @@ export interface PlatformCopy {
   /** Onboarding "Allow two kinds of audio": the intro and the System audio card. */
   audioIntro: string;
   systemAudioDesc: string;
-  /** Mac: the permission's name as the system lists it, shown in bold where `systemAudioDesc` says {permission}. */
-  systemAudioPermission?: string;
 }
 
 export function platformCopy(os: OS, lang: Lang = "en"): PlatformCopy {
@@ -40,8 +38,15 @@ export function platformCopy(os: OS, lang: Lang = "en"): PlatformCopy {
     trayName: w("trayName"),
     audioIntro: w("audioIntro"),
     systemAudioDesc: w("systemAudioDesc"),
-    systemAudioPermission: os === "mac" ? w("systemAudioPermission") : undefined,
   };
+}
+
+/** The Mac's system audio permission as System Settings lists it, shown in bold where `systemAudioDesc` says
+ *  {permission}: "Screen Recording" on macOS 14, "Screen & System Audio Recording" from macOS 15. An unknown
+ *  version gets the newer name. */
+export function systemAudioPermissionName(lang: Lang, macMajor?: number | null): string {
+  const old = typeof macMajor === "number" && macMajor < 15;
+  return messageOr(lang, old ? "platform.mac_systemAudioPermission14" : "platform.mac_systemAudioPermission", "");
 }
 
 /** The browser preview (no Tauri) can show the other platform's words: `?os=mac` or `?os=windows` in the URL. */
