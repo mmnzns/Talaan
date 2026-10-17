@@ -8,7 +8,15 @@ export const MAILTO_MAX = 1_800;
 
 /** A mailto: link with the invitees, subject and body, or undefined when it would be too long to open safely. */
 export function mailtoUrl(d: FollowUpDraft, max = MAILTO_MAX): string | undefined {
-  const to = d.to.filter((a) => /^[^\s@,;?&]+@[^\s@,;?&]+$/.test(a.trim())).map((a) => encodeURIComponent(a.trim()));
+  // Each address keeps its literal @ (some mail apps don't read %40 in the address part); the parts around it are
+  // escaped on their own.
+  const to = d.to
+    .map((a) => a.trim())
+    .filter((a) => /^[^\s@,;?&]+@[^\s@,;?&]+$/.test(a))
+    .map((a) => {
+      const [local, domain] = a.split("@");
+      return `${encodeURIComponent(local)}@${encodeURIComponent(domain)}`;
+    });
   // Line breaks as CRLF, which RFC 6068 asks for and every mail app reads.
   const body = d.body.replace(/\r?\n/g, "\r\n");
   const url = `mailto:${to.join(",")}?subject=${encodeURIComponent(d.subject)}&body=${encodeURIComponent(body)}`;
