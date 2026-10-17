@@ -18,7 +18,7 @@ pub struct Event {
     pub attendees: Vec<String>,
     /// The email addresses of those people, when the calendar has them (for "Email this summary").
     pub emails: Vec<String>,
-    /// The Zoom, Google Meet or Microsoft Teams link in the invite, if any.
+    /// The Zoom, Google Meet, Microsoft Teams or FaceTime link in the invite, if any.
     pub join_url: Option<String>,
     /// The event was cancelled (EventKit keeps cancelled events; iCal feeds drop them when read).
     pub cancelled: bool,
@@ -73,10 +73,14 @@ pub fn meeting_app(url: &str) -> Option<(&'static str, &'static str)> {
     if host == "teams.microsoft.com" || host == "teams.live.com" || host == "teams.cloud.microsoft" {
         return (path.starts_with("l/meetup-join") || path.starts_with("meet/")).then_some(("teams", "Microsoft Teams"));
     }
+    // FaceTime links from the Calendar or FaceTime app: facetime.apple.com/join#v=1&p=...
+    if host == "facetime.apple.com" {
+        return path.starts_with("join").then_some(("facetime", "FaceTime"));
+    }
     None
 }
 
-/// The first Zoom, Meet or Teams link in an invite's fields (its URL, location, notes), in the order given.
+/// The first Zoom, Meet, Teams or FaceTime link in an invite's fields (its URL, location, notes), in the order given.
 pub fn join_link(fields: &[&str]) -> Option<String> {
     for text in fields {
         let mut rest = *text;
@@ -178,6 +182,8 @@ mod tests {
         assert_eq!(meeting_app("https://meet.google.com/abc-defg-hij"), Some(("browser", "Google Meet")));
         assert_eq!(meeting_app("https://teams.microsoft.com/l/meetup-join/19%3ameeting_x/0?context=y"), Some(("teams", "Microsoft Teams")));
         assert_eq!(meeting_app("https://teams.live.com/meet/9876543210"), Some(("teams", "Microsoft Teams")));
+        assert_eq!(meeting_app("https://facetime.apple.com/join#v=1&p=AbCdEf123&k=xyz"), Some(("facetime", "FaceTime")));
+        assert_eq!(meeting_app("https://facetime.apple.com/"), None);
         for other in ["https://zoom.us/signin", "https://meet.google.com/", "https://evilzoom.us/j/1", "https://teams.microsoft.com/v2/", "https://example.com/j/1", "zoom.us/j/1"] {
             assert_eq!(meeting_app(other), None, "{other}");
         }
