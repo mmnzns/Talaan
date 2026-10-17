@@ -205,6 +205,9 @@ export const meeting = area({
     shYourNotes: "Your notes",
     shHighlights: "Highlights",
     shAfterCall: "after the call",
+    rewriteTitle: "Write the summary again?",
+    rewriteBody: "Your changes and ticks will be replaced by the new summary.",
+    rewriteConfirm: "Replace the summary",
   },
   fr: {
     notFound: "Réunion introuvable",
@@ -399,6 +402,9 @@ export const meeting = area({
     shYourNotes: "Vos notes",
     shHighlights: "Moments clés",
     shAfterCall: "après l’appel",
+    rewriteTitle: "Rédiger le résumé de nouveau ?",
+    rewriteBody: "Vos modifications et vos cases cochées seront remplacées par le nouveau résumé.",
+    rewriteConfirm: "Remplacer le résumé",
   },
   es: {
     notFound: "Reunión no encontrada",
@@ -593,5 +599,8 @@ export const meeting = area({
     shYourNotes: "Tus notas",
     shHighlights: "Momentos destacados",
     shAfterCall: "después de la llamada",
+    rewriteTitle: "¿Escribir el resumen de nuevo?",
+    rewriteBody: "Tus cambios y las casillas marcadas se reemplazarán con el nuevo resumen.",
+    rewriteConfirm: "Reemplazar el resumen",
   },
 });

@@ -14,6 +14,7 @@ import { Button, Checkbox, Chip, Editable, Label, SectionLabel, Timestamp, cn, u
 import { Clamp } from "./Clamp";
 import { FollowUpSheet } from "./FollowUpSheet";
 import { NotesSection } from "./NotesSection";
+import { useConfirmRewrite } from "./ConfirmRewrite";
 
 interface Props {
   meeting: Meeting;
@@ -38,10 +39,12 @@ export function SummaryCard({ meeting, activeAt, editing, onJump }: Props) {
 
   const save = (next: Summary) => store.updateSummary(meeting.id, { ...next, edited: true });
   const set = <K extends keyof Summary>(key: K, value: Summary[K]) => save({ ...summary!, [key]: value });
-  const summarizeAgain = () => {
-    setNotesChanged(false);
-    store.generateSummary(meeting.id).catch((e) => toast(describeError(e)));
-  };
+  const rewrite = useConfirmRewrite(summary);
+  const summarizeAgain = () =>
+    rewrite.ask(() => {
+      setNotesChanged(false);
+      store.generateSummary(meeting.id).catch((e) => toast(describeError(e)));
+    });
 
   // After the summary when there is one (the summary reads first), else on top.
   const notes = showNotes && (
@@ -193,6 +196,7 @@ export function SummaryCard({ meeting, activeAt, editing, onJump }: Props) {
         )}
       </div>
       {summary && <FollowUpSheet meeting={meeting} open={followUp} onClose={closeFollowUp} />}
+      {rewrite.sheet}
     </section>
   );
 }

@@ -6,6 +6,7 @@ import { describeError } from "../../data/errors";
 import { TEMPLATES, isTemplate, templateName } from "../../lib/templates";
 import { useT } from "../../lib/i18n/I18nProvider";
 import { Button, Label, Radio, Sheet, cn, useToast } from "../../ui";
+import { summaryHasChanges } from "../../lib/summary";
 
 /** The meeting type this meeting's summary was (or will be) written as. */
 export function currentTemplate(meeting: Meeting, fallback?: string): string {
@@ -35,6 +36,11 @@ export function SummarizeAsSheet({ meeting, open, onClose }: { meeting: Meeting;
       <div className="flex flex-col gap-3 p-5">
         <h2 className="m-0 font-display text-xl font-bold tracking-[-0.02em]">{t("meeting.summarizeAsTitle")}</h2>
         <p className="m-0 text-[13px] text-subtle">{t("meeting.summarizeAsDesc")}</p>
+        {summaryHasChanges(meeting.summary) && (
+          <p role="note" className="m-0 rounded-control bg-warn-bg px-3 py-2 text-[13px] font-semibold text-warn-fg">
+            {t("meeting.rewriteBody")}
+          </p>
+        )}
         <div role="radiogroup" aria-label={t("common.meetingType")} className="grid grid-cols-1 gap-1.5 min-[420px]:grid-cols-2">
           {TEMPLATES.map((id) => (
             <button
