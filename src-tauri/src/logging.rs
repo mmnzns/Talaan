@@ -207,7 +207,7 @@ pub fn init(dir: &Path) {
     if log::set_logger(logger).is_ok() {
         log::set_max_level(if cfg!(debug_assertions) { log::LevelFilter::Debug } else { log::LevelFilter::Info });
     }
-    // A panic's location (and its message, redacted) before the release build aborts.
+    // A panic's location (and its message, redacted); the panic then unwinds (releases no longer abort).
     let previous = std::panic::take_hook();
     std::panic::set_hook(Box::new(move |info| {
         let at = info.location().map(|l| format!("{}:{}", panic_location(l.file()), l.line())).unwrap_or_default();
