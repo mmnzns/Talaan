@@ -45,5 +45,7 @@ changes. A PC without a GPU driver (Windows Sandbox, a VM) starts and works exac
 7. Build scripts and installer: GPU helpers in `build-llm-helper.ps1`, release checks, NSIS hooks.
 8. CI: Vulkan SDK 1.4.363.0 (pinned, cached), a `windows-gpu` job in `ci.yml` (manual) that uploads the bare
    helpers, and the Release workflow's test build with `TALAAN_GPU=1`.
-9. Testing on Miguel's PC from the CI artifacts (docs/TESTING.md, "GPU on Windows").
+9. Testing on Miguel's PC from the CI artifacts (docs/TESTING.md, "GPU on Windows"). Whisper part checked
+   2026-10-16 with `gpu_whisper_live` (RTX 5070 Ti, GPU 0.9 s vs processor 3-5 s for 62 s with Whisper Base, fallback
+   and gpu.json as designed; numbers in docs/WINDOWS-PORT.md).
 10. Optional, last: Parakeet on DirectML, kept only if more than 2x faster with the same transcript.
