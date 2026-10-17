@@ -770,6 +770,7 @@ function Done({ systemAudio, settings: s, name, setName }: { systemAudio: Perm; 
         </>
       )}
       {noKey && <p className={warn}>{t("onboarding.doneNoKey")}</p>}
+      <p className={desc}>{t("onboarding.doneStatus")}</p>
     </div>
   );
 }
