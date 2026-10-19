@@ -1,0 +1,40 @@
+name: Mac signing certificate
+description: >
+  Imports the self-signed code-signing certificate (APPLE_CERTIFICATE, a base64 .p12) into a temporary keychain and
+  trusts it for code signing on this runner, so Tauri can sign with APPLE_SIGNING_IDENTITY. The same certificate
+  as the Mac's own, so macOS keeps Talaan's permissions across updates whichever machine built the release.
+inputs:
+  certificate:
+    description: base64 of the .p12
+    required: true
+  password:
+    description: the .p12 export password
+    required: true
+  identity:
+    description: the certificate's name
+    required: true
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      env:
+        CERT: ${{ inputs.certificate }}
+        CERT_PASSWORD: ${{ inputs.password }}
+        IDENTITY: ${{ inputs.identity }}
+      run: |
+        set -euo pipefail
+        [ -n "$CERT" ] && [ -n "$IDENTITY" ] || { echo "::error::APPLE_CERTIFICATE / APPLE_SIGNING_IDENTITY secrets are missing"; exit 1; }
+        kc="$RUNNER_TEMP/talaan.keychain-db"; kcpass="$(uuidgen)"
+        echo "$CERT" | base64 --decode > "$RUNNER_TEMP/cert.p12"
+        security create-keychain -p "$kcpass" "$kc"
+        security set-keychain-settings -lut 21600 "$kc"
+        security unlock-keychain -p "$kcpass" "$kc"
+        security import "$RUNNER_TEMP/cert.p12" -k "$kc" -P "$CERT_PASSWORD" -T /usr/bin/codesign
+        rm -f "$RUNNER_TEMP/cert.p12"
+        security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$kcpass" "$kc" >/dev/null
+        security list-keychains -d user -s "$kc" $(security list-keychains -d user | tr -d '"')
+        # Self-signed: trust it for code signing on this runner.
+        security find-certificate -c "$IDENTITY" -p "$kc" > "$RUNNER_TEMP/cert.pem"
+        sudo security add-trusted-cert -d -r trustRoot -p codeSign -k /Library/Keychains/System.keychain "$RUNNER_TEMP/cert.pem"
+        # The same certificate as the Mac's: its SHA-1 is printed so a mix-up shows in the log.
+        echo "Signing with: $(security find-identity -p codesigning "$kc" | grep -m1 "$IDENTITY" | awk '{print $2, $3, $4, $5}')"

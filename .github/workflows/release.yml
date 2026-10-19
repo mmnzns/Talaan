@@ -10,6 +10,9 @@ name: Release
 # check that latest.json has four keys (the script checks it too). latest-json.mjs reads its upload back and retries,
 # but two uploads at once can still race.
 # Publish the draft by hand after the release gate (docs/TESTING.md).
+# With MAC_RELEASE_ON_CI "true" the whole release is built here (Windows and Mac), so it can be cut from either computer:
+# bump the version and CHANGELOG, push a tag, wait for updater-json, check the draft (six files, latest.json with four
+# keys), publish. scripts/release-local.sh + upload-mac-release.sh stay as the fallback when CI's Mac job can't run.
 # Windows builds carry the GPU helpers (talaan-llm-vulkan.exe, talaan-stt-vulkan.exe; docs/plans/G1-windows-gpu.md),
 # so both Windows jobs install the Vulkan SDK first (.github/actions/vulkan-sdk, pinned and cached).
 #
@@ -17,7 +20,7 @@ name: Release
 #   TAURI_SIGNING_PRIVATE_KEY / _PASSWORD   Talaan's updater key (minisign), used by both platforms
 #   APPLE_CERTIFICATE                       macos job only: base64 of the exported code-signing .p12 (self-signed)
 #   APPLE_CERTIFICATE_PASSWORD              its export password
-#   APPLE_SIGNING_IDENTITY                  the certificate's name
+#   APPLE_SIGNING_IDENTITY                  the certificate's name ("Parlato Code Signing", shared with Parlato)
 # On the Mac a stable signature is what keeps the microphone, system audio, calendar and automation permissions
 # across updates, so the macos job fails rather than ship unsigned.
 
@@ -27,14 +30,21 @@ on:
   # Test build: Actions › Release › Run workflow (pick the branch). Builds the signed Windows installer exactly like
   # a release and keeps it as a workflow artifact, with the bare GPU helpers as a second artifact; no tag, no
   # release, no latest.json.
+  # Mac test build (macos-test): the signed .dmg as an artifact, to check the certificate secrets work on CI.
   workflow_dispatch:
+    inputs:
+      platform:
+        description: Which test build
+        type: choice
+        options: [both, windows, mac]
+        default: both
 
 permissions:
   contents: write
 
 jobs:
   windows-test:
-    if: github.event_name == 'workflow_dispatch'
+    if: github.event_name == 'workflow_dispatch' && inputs.platform != 'mac'
     runs-on: windows-latest
     env:
       LIBCLANG_PATH: C:\Program Files\LLVM\bin
@@ -169,25 +179,11 @@ jobs:
         run: node -e "const f='src-tauri/tauri.conf.json',fs=require('fs'),c=JSON.parse(fs.readFileSync(f));c.bundle.createUpdaterArtifacts=true;fs.writeFileSync(f,JSON.stringify(c,null,2))"
 
       - name: Signing certificate into a temporary keychain
-        env:
-          CERT: ${{ secrets.APPLE_CERTIFICATE }}
-          CERT_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
-          IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
-        run: |
-          set -euo pipefail
-          [ -n "$CERT" ] && [ -n "$IDENTITY" ] || { echo "::error::APPLE_CERTIFICATE / APPLE_SIGNING_IDENTITY secrets are missing"; exit 1; }
-          kc="$RUNNER_TEMP/talaan.keychain-db"; kcpass="$(uuidgen)"
-          echo "$CERT" | base64 --decode > "$RUNNER_TEMP/cert.p12"
-          security create-keychain -p "$kcpass" "$kc"
-          security set-keychain-settings -lut 21600 "$kc"
-          security unlock-keychain -p "$kcpass" "$kc"
-          security import "$RUNNER_TEMP/cert.p12" -k "$kc" -P "$CERT_PASSWORD" -T /usr/bin/codesign
-          rm -f "$RUNNER_TEMP/cert.p12"
-          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$kcpass" "$kc" >/dev/null
-          security list-keychains -d user -s "$kc" $(security list-keychains -d user | tr -d '"')
-          # Self-signed: trust it for code signing on this runner.
-          security find-certificate -c "$IDENTITY" -p "$kc" > "$RUNNER_TEMP/cert.pem"
-          sudo security add-trusted-cert -d -r trustRoot -p codeSign -k /Library/Keychains/System.keychain "$RUNNER_TEMP/cert.pem"
+        uses: ./.github/actions/mac-signing
+        with:
+          certificate: ${{ secrets.APPLE_CERTIFICATE }}
+          password: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          identity: ${{ secrets.APPLE_SIGNING_IDENTITY }}
 
       - name: Build, sign and draft the release
         uses: tauri-apps/tauri-action@v0
@@ -209,6 +205,51 @@ jobs:
           app="src-tauri/target/aarch64-apple-darwin/release/bundle/macos/Talaan.app"
           codesign --verify --deep --strict --verbose=2 "$app"
           codesign -d --entitlements - "$app" | grep -q device.audio-input
+
+  macos-test:
+    if: github.event_name == 'workflow_dispatch' && inputs.platform != 'windows'
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+          key: release-arm64
+      - run: npm ci
+      - name: Turn on updater artifacts
+        run: node -e "const f='src-tauri/tauri.conf.json',fs=require('fs'),c=JSON.parse(fs.readFileSync(f));c.bundle.createUpdaterArtifacts=true;fs.writeFileSync(f,JSON.stringify(c,null,2))"
+      - name: Signing certificate into a temporary keychain
+        uses: ./.github/actions/mac-signing
+        with:
+          certificate: ${{ secrets.APPLE_CERTIFICATE }}
+          password: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          identity: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+      - name: Build and sign
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+        run: npm run tauri build -- --target aarch64-apple-darwin
+      - name: Signature check
+        run: |
+          out=src-tauri/target/aarch64-apple-darwin/release/bundle
+          codesign --verify --deep --strict --verbose=2 "$out/macos/Talaan.app"
+          codesign -d --entitlements - "$out/macos/Talaan.app" | grep -q device.audio-input
+          # Same identity as the Mac's local builds, so permissions carry over.
+          codesign -dvv "$out/macos/Talaan.app" 2>&1 | grep -E "^Authority|^TeamIdentifier"
+          ls "$out"/dmg/*.dmg "$out"/macos/*.tar.gz.sig
+      - uses: actions/upload-artifact@v4
+        with:
+          name: talaan-mac-test
+          path: src-tauri/target/aarch64-apple-darwin/release/bundle/dmg/*.dmg
+          retention-days: 7
 
   updater-json:
     needs: [windows, macos]
