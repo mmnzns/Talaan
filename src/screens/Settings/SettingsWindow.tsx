@@ -67,7 +67,7 @@ export function SettingsWindow({ tab }: { tab: string }) {
                 onClick={() => navigate(routes.settings(x.id))}
                 className={cn(
                   "flex h-9 cursor-pointer items-center rounded-control border-0 px-3 text-left font-[inherit] text-[13px] text-ink",
-                  on ? "bg-surface font-bold shadow-[inset_3px_0_0_var(--t-gold),var(--t-shadow)]" : "bg-transparent font-medium hover:bg-hover",
+                  on ? "bg-gold-soft font-bold shadow-[inset_0_0_0_1px_var(--t-gold)]" : "bg-transparent font-medium hover:bg-hover",
                 )}
               >
                 {t(x.label)}
@@ -76,7 +76,10 @@ export function SettingsWindow({ tab }: { tab: string }) {
           })}
         </div>
         <span className="flex-1" />
-        <Label className="px-2.5">{t("settings.footer", { version: __APP_VERSION__ })}</Label>
+        <Label className="flex flex-col px-2.5">
+          <span>{t("settings.footer", { version: __APP_VERSION__ })}</span>
+          <span>{t("settings.footer_license")}</span>
+        </Label>
       </nav>
       <div id="settings-panel" role="tabpanel" aria-labelledby={`tab-${current.id}`} className="relative min-h-0 min-w-0 flex-1 overflow-auto">
         <SunCorner size={200} className="absolute right-0 top-0" />
