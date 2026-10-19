@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.1.1 (2026-10-19)
+
+- **Know when there's a new version:** Talaan checks at launch and every 6 hours, sends one notification per new version, and shows "Update now" in the main window and the tray. It never interrupts a recording: no update installs while you record, and no recording starts while an update installs.
+- **Easier to see what's selected:** the chosen speech model, summary engine, setup choice, Settings tab and meeting now fill with gold.
+- **Fixed:** time estimates were too short right after a restart with meetings still waiting.
+- **Fixed:** Ollama at 0.0.0.0 counted as another computer in the privacy line.
+- Small wording fixes in Spanish; "MIT license" now sits under the version in Settings.
+
 ## 1.1.0 (2026-10-17)
 
 **Easier to start**
