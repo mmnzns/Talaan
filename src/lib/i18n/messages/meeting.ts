@@ -667,6 +667,6 @@ export const meeting = area({
     rewriteBody: "Tus cambios y las casillas marcadas se reemplazarán con el nuevo resumen.",
     rewriteConfirm: "Reemplazar el resumen",
     followUpWaiting: "Esperando a que termine el resumen en curso",
-    sectionsMissing: "Esta vez no se pudieron escribir las secciones de {type}.",
+    sectionsMissing: "Esta vez no se pudieron escribir las secciones de “{type}”.",
   },
 });

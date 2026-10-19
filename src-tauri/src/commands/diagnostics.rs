@@ -36,10 +36,17 @@ fn marker(v: &Value) -> Value {
     }
 }
 
+/// This computer: loopback, or a server listening on every interface (`0.0.0.0`, `[::]`, common for Ollama). Same
+/// hosts as `loopback` in src/lib/privacyChip.ts.
 fn is_local(address: &str) -> bool {
     let rest = address.trim().split_once("://").map(|(_, r)| r).unwrap_or(address.trim());
-    let host = rest.split(['/', ':', '?', '#']).next().unwrap_or("");
-    matches!(host, "localhost" | "127.0.0.1" | "[::1]" | "0.0.0.0")
+    let host = match rest.strip_prefix('[') {
+        // An IPv6 address: up to the closing bracket.
+        Some(v6) => v6.split(']').next().unwrap_or(""),
+        None => rest.split(['/', ':', '?', '#']).next().unwrap_or(""),
+    }
+    .to_ascii_lowercase();
+    host == "localhost" || host.parse::<std::net::IpAddr>().is_ok_and(|ip| ip.is_loopback() || ip.is_unspecified())
 }
 
 /// A safe value: strings redacted, arrays and objects of them too.
@@ -421,6 +428,14 @@ mod tests {
         assert!(is_local("http://127.0.0.1:1234/v1"));
         assert!(!is_local("https://llm.acme.internal/v1"));
         assert!(!is_local("http://localhost.evil.com"));
+        // Ollama listening on every interface, and IPv6 loopback, are this computer too.
+        assert!(is_local("http://0.0.0.0:11434"));
+        assert!(is_local("http://[::]:11434"));
+        assert!(is_local("http://[::1]:11434/v1"));
+        assert!(is_local("HTTP://LocalHost:11434"));
+        assert!(is_local("127.0.0.2:8080"));
+        assert!(!is_local("http://0.0.0.0.evil.com"));
+        assert!(!is_local("http://10.0.0.5:11434"));
     }
 
     #[test]
