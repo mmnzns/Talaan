@@ -286,6 +286,8 @@ pub fn stop_recording(app: &AppHandle) -> CmdResult<String> {
     transcriber.enqueue(&id);
     notify(app, MEETINGS_CHANGED);
     emit_state(app);
+    // An update found during the call is announced now.
+    super::updates::recording_ended(app);
     Ok(id)
 }
 
@@ -305,6 +307,7 @@ pub fn recorder_discard(app: AppHandle, state: State<AppState>, rec: State<Recor
     log::info!("recording discarded");
     notify(&app, MEETINGS_CHANGED);
     emit_state(&app);
+    super::updates::recording_ended(&app);
     Ok(())
 }
 

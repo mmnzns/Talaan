@@ -43,6 +43,13 @@ const TABLE: &[(&str, &str, &str, &str)] = &[
     ("tray.quit", "Quit Talaan", "Quitter Talaan", "Salir de Talaan"),
     ("notify.summary_ready", "Summary ready", "Résumé prêt", "Resumen listo"),
     ("notify.transcript_ready", "Transcript ready", "Transcription prête", "Transcripción lista"),
+    ("notify.update_ready", "Talaan {version} is ready", "Talaan {version} est prêt", "Talaan {version} está listo"),
+    (
+        "notify.update_body",
+        "Open Talaan to update. It takes about a minute.",
+        "Ouvrez Talaan pour faire la mise à jour. Cela prend environ une minute.",
+        "Abre Talaan para actualizar. Tarda más o menos un minuto.",
+    ),
     (
         "notice.no_system_audio",
         "Talaan can't hear the call audio, so only your side is recorded. Allow system audio recording in System Settings.",

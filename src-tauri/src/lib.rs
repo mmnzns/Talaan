@@ -19,6 +19,7 @@ mod recorder;
 mod storage;
 mod summarizer;
 mod transcriber;
+mod update_notice;
 
 use commands::recorder as rec_cmd;
 use commands::{dev, meetings, settings, AppState, MEETINGS_CHANGED};
@@ -54,10 +55,12 @@ pub fn run() {
     // Talaan instead. (On the Mac the OS already does this, and the plugin's socket would make `tauri dev` exit
     // while the installed app runs.)
     #[cfg(target_os = "windows")]
-    // A second launch with a `talaan://meeting/<id>` link (a toast clicked, also from Action Center) opens it.
+    // A second launch with a `talaan://meeting/<id>` link (a toast clicked, also from Action Center) opens it;
+    // `talaan://update` (the update toast) opens the main window on the update banner.
     #[cfg(target_os = "windows")]
-    let builder = builder.plugin(tauri_plugin_single_instance::init(|app, args, _cwd| match deeplink::meeting_in_args(&args) {
-        Some(id) => commands::summarizer::open_meeting(app, &id),
+    let builder = builder.plugin(tauri_plugin_single_instance::init(|app, args, _cwd| match deeplink::link_in_args(&args) {
+        Some(deeplink::Link::Meeting(id)) => commands::summarizer::open_meeting(app, &id),
+        Some(deeplink::Link::Update) => commands::updates::open_banner(app),
         None => commands::tray::show_main(app),
     }));
     builder
@@ -115,7 +118,11 @@ pub fn run() {
             commands::summarizer::setup(app.handle(), root.clone());
             commands::ask::setup(app.handle(), root.clone());
             let handle = app.handle().clone();
-            platform::notify::setup(move |id| commands::summarizer::open_meeting(&handle, &id));
+            platform::notify::setup(move |id| match id.as_str() {
+                deeplink::UPDATE_NOTICE => commands::updates::open_banner(&handle),
+                _ => commands::summarizer::open_meeting(&handle, &id),
+            });
+            commands::updates::setup(app.handle());
             commands::transcriber::setup(app.handle(), root);
             commands::calls::setup(app.handle());
             #[cfg(target_os = "windows")]
@@ -138,10 +145,13 @@ pub fn run() {
                     }
                 });
             }
-            // Started by a toast click while Talaan wasn't running: open that meeting once the window loads.
+            // Started by a toast click while Talaan wasn't running: open that meeting once the window loads (or,
+            // for the update toast, the main window, with a check right away for its banner).
             #[cfg(target_os = "windows")]
-            if let Some(id) = deeplink::meeting_in_args(&std::env::args().collect::<Vec<_>>()) {
-                commands::summarizer::open_meeting_at_launch(app.handle(), id);
+            match deeplink::link_in_args(&std::env::args().collect::<Vec<_>>()) {
+                Some(deeplink::Link::Meeting(id)) => commands::summarizer::open_meeting_at_launch(app.handle(), id),
+                Some(deeplink::Link::Update) => commands::updates::open_banner_at_launch(app.handle()),
+                None => {}
             }
 
             let handle = app.handle().clone();
@@ -206,6 +216,7 @@ pub fn run() {
             commands::calls::calls_hide,
             commands::calls::browsers_status,
             commands::updates::updates_check,
+            commands::updates::updates_pending,
             rec_cmd::audio_inputs,
             rec_cmd::permissions_request_system_audio,
             commands::updates::updates_install,
