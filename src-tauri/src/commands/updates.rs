@@ -88,9 +88,9 @@ async fn check(app: &AppHandle) -> CmdResult<Option<Available>> {
 pub async fn updates_check(app: AppHandle) -> CmdResult<Option<Available>> {
     let found = check(&app).await?;
     if let (Some(a), Some(state)) = (&found, app.try_state::<UpdateState>()) {
-        let mut notice = state.notice();
-        if notice.notified() != Some(a.version.as_str()) {
-            notice.posted(&a.version);
+        // One lock: decided and marked together, so the background check can't announce it after this.
+        let news = state.notice().posted(&a.version);
+        if news {
             remember_notified(&state, &a.version);
         }
     }
@@ -239,12 +239,14 @@ pub fn recording_ended(app: &AppHandle) {
 fn announce(app: &AppHandle, state: &UpdateState, version: &str) {
     if !setting(app, "notifySummaryReady") {
         log::info!("update notification: notifications are turned off");
+        state.notice().failed(version);
         return;
     }
     crate::platform::notify::post(crate::deeplink::UPDATE_NOTICE, &tr_with("notify.update_ready", &[("version", version)]), &tr("notify.update_body"));
     log::info!("update notification posted for {version}");
-    state.notice().posted(version);
-    remember_notified(state, version);
+    if state.notice().posted(version) {
+        remember_notified(state, version);
+    }
 }
 
 fn remember_notified(state: &UpdateState, version: &str) {

@@ -39,24 +39,33 @@ pub fn check_due(started: u64, last: Option<Last>, now: u64) -> bool {
     now >= next_check_at(started, last)
 }
 
-/// Which version to announce, and when.
+/// Which version to announce, and when. Every decision is one call on one lock: `found` (or
+/// `recording_stopped`) both decides and reserves the version, so a Check now in Settings (`posted`) and the
+/// background check can't both announce it.
 #[derive(Default, Debug)]
 pub struct Notice {
     /// The version already announced (from disk, so it survives restarts).
     notified: Option<String>,
     /// A version found while recording, announced when the recording ends.
     waiting: Option<String>,
+    /// The version being posted right now (decided, not yet confirmed by `posted` or undone by `failed`).
+    posting: Option<String>,
 }
 
 impl Notice {
     pub fn new(notified: Option<String>) -> Self {
-        Notice { notified, waiting: None }
+        Notice { notified, waiting: None, posting: None }
     }
 
-    /// A check found `version`. Returns it when the notification should be posted now; while `recording`, it
-    /// waits for `recording_stopped` instead. Nothing for a version that was already announced.
+    fn settled(&self, version: &str) -> bool {
+        self.notified.as_deref() == Some(version) || self.posting.as_deref() == Some(version)
+    }
+
+    /// A check found `version`. Returns it (reserved) when the notification should be posted now; while
+    /// `recording`, it waits for `recording_stopped` instead. Nothing for a version already announced or being
+    /// announced.
     pub fn found(&mut self, version: &str, recording: bool) -> Option<String> {
-        if self.notified.as_deref() == Some(version) {
+        if self.settled(version) {
             self.waiting = None;
             return None;
         }
@@ -65,22 +74,40 @@ impl Notice {
             return None;
         }
         self.waiting = None;
+        self.posting = Some(version.to_string());
         Some(version.to_string())
     }
 
-    /// The recording ended: the version that waited, if any (and still not announced).
+    /// The recording ended: the version that waited, if any and still not announced (reserved, like `found`).
     pub fn recording_stopped(&mut self) -> Option<String> {
-        self.waiting.take().filter(|v| self.notified.as_deref() != Some(v.as_str()))
+        let v = self.waiting.take().filter(|v| !self.settled(v))?;
+        self.posting = Some(v.clone());
+        Some(v)
     }
 
-    /// `version` was announced (or the user saw it in Settings): never again.
-    pub fn posted(&mut self, version: &str) {
+    /// `version` was announced (or the user saw it in Settings): never again. True when that's news, so the
+    /// caller saves it once.
+    pub fn posted(&mut self, version: &str) -> bool {
+        let news = self.notified.as_deref() != Some(version);
         self.notified = Some(version.to_string());
         if self.waiting.as_deref() == Some(version) {
             self.waiting = None;
         }
+        if self.posting.as_deref() == Some(version) {
+            self.posting = None;
+        }
+        news
     }
 
+    /// The notification for `version` didn't go out (turned off, refused by the system): the next check tries
+    /// again.
+    pub fn failed(&mut self, version: &str) {
+        if self.posting.as_deref() == Some(version) {
+            self.posting = None;
+        }
+    }
+
+    #[cfg(test)]
     pub fn notified(&self) -> Option<&str> {
         self.notified.as_deref()
     }
@@ -214,6 +241,28 @@ mod tests {
         assert_eq!(n.recording_stopped(), None);
         assert_eq!(n.found("1.1.0", true), None, "already announced: nothing waits");
         assert_eq!(n.recording_stopped(), None);
+    }
+
+    #[test]
+    fn a_version_being_posted_is_not_posted_twice() {
+        let mut n = Notice::new(None);
+        assert_eq!(n.found("1.2.0", false).as_deref(), Some("1.2.0"));
+        // Before the post is confirmed: another check, or a recording that ends, decides nothing.
+        assert_eq!(n.found("1.2.0", false), None);
+        assert_eq!(n.found("1.2.0", true), None);
+        assert_eq!(n.recording_stopped(), None);
+        // Check now saw it meanwhile: saved once, the background post's confirmation is no news.
+        assert!(n.posted("1.2.0"));
+        assert!(!n.posted("1.2.0"));
+    }
+
+    #[test]
+    fn a_post_that_didnt_go_out_is_tried_at_the_next_check() {
+        let mut n = Notice::new(None);
+        assert_eq!(n.found("1.2.0", false).as_deref(), Some("1.2.0"));
+        n.failed("1.2.0");
+        assert_eq!(n.notified(), None);
+        assert_eq!(n.found("1.2.0", false).as_deref(), Some("1.2.0"));
     }
 
     #[test]
