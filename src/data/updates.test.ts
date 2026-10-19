@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { StoreError } from "./errors";
 import type { SettingsStore } from "./settings";
-import { bannerVisible, found, install, later, resetUpdateForTests, showBanner, updateSnapshot } from "./updates";
+import { bannerVisible, found, install, later, progressed, resetUpdateForTests, showBanner, updateSnapshot } from "./updates";
 
 const store = (installUpdate: () => Promise<void>) => ({ installUpdate }) as unknown as SettingsStore;
 
@@ -50,6 +50,18 @@ describe("the pending update", () => {
     later();
     expect(updateSnapshot().phase).toEqual({ state: "idle" });
     expect(bannerVisible(updateSnapshot())).toBe(false);
+  });
+
+  it("a window that only heard the progress also hears the failure", () => {
+    found({ version: "1.2.0" });
+    progressed({ percent: 40 }); // another window clicked Update now
+    expect(updateSnapshot().phase).toEqual({ state: "installing", percent: 40 });
+    progressed({ error: "The update didn't install: signature mismatch" });
+    expect(updateSnapshot().phase).toEqual({ state: "error", message: "The update didn't install: signature mismatch" });
+    progressed({ percent: 0 }); // tried again from somewhere
+    expect(updateSnapshot().phase).toEqual({ state: "installing", percent: 0 });
+    progressed({ percent: 100, restarting: true });
+    expect(updateSnapshot().phase).toEqual({ state: "restarting" });
   });
 
   it("a second click while installing does nothing", async () => {

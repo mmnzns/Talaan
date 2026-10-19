@@ -299,6 +299,12 @@ const TABLE: &[(&str, &str, &str, &str)] = &[
         "Arrêtez d’abord l’enregistrement, puis faites la mise à jour.",
         "Primero detén la grabación y luego actualiza.",
     ),
+    (
+        "update.already_installing",
+        "The update is already downloading. Talaan restarts when it's done.",
+        "La mise à jour est déjà en cours de téléchargement. Talaan redémarre quand c’est terminé.",
+        "La actualización ya se está descargando. Talaan se reinicia cuando termine.",
+    ),
     ("update.up_to_date", "Talaan is up to date.", "Talaan est à jour.", "Talaan está actualizado."),
     ("update.install_failed", "The update didn't install: {error}", "La mise à jour ne s’est pas installée : {error}", "La actualización no se instaló: {error}"),
     // Notion

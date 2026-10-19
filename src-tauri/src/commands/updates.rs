@@ -110,13 +110,26 @@ pub fn installing(app: &AppHandle) -> bool {
 
 /// Downloads, verifies (signature), installs and relaunches. Refused while recording, and no recording can
 /// start while it runs (the installer quits Talaan).
+///
+/// Every window hears how it goes (`update-progress`), failures included (`{ error }`), so a banner that showed
+/// "Downloading…" from another window's click doesn't stay stuck on it.
 #[tauri::command]
 pub async fn updates_install(app: AppHandle) -> CmdResult<()> {
     let state = app.state::<UpdateState>();
-    // Two windows can ask at once; the second waits for the restart the first one causes.
+    // Two windows can ask at once: the second is told so (its banner follows the first through the events).
     let Some(_installing) = state.installing.begin() else {
-        return Ok(());
+        return Err(refused(tr("update.already_installing")));
     };
+    let result = install(&app).await;
+    if let Err(e) = &result {
+        let _ = app.emit(UPDATE_PROGRESS, serde_json::json!({ "error": e.to_string() }));
+    }
+    result
+}
+
+/// `updates_install` once it holds the install flag.
+async fn install(app: &AppHandle) -> CmdResult<()> {
+    let app = app.clone();
     // The flag is set before this look, and a recording starts only after looking at the flag (under the
     // recorder's lock), so from here on no call can start and none is running.
     if super::recorder::is_recording(&app) {

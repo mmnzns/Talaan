@@ -55,11 +55,23 @@ function start(store: SettingsStore) {
     .catch(() => {});
   if (!inTauri()) return;
   onEvent<PendingUpdate>("update-available", (p) => found(p));
-  onEvent<{ percent: number | null; restarting?: boolean }>("update-progress", (p) =>
-    set({ phase: p.restarting ? { state: "restarting" } : { state: "installing", percent: p.percent ?? null } }),
-  );
+  onEvent<UpdateProgress>("update-progress", progressed);
   // A click on the update notification shows the banner again, even after Later.
   onEvent("show-update", () => set({ laterFor: null }));
+}
+
+/** What Rust says while installing, to every window: the percent, then `restarting`, or `error` on any failure. */
+export interface UpdateProgress {
+  percent?: number | null;
+  restarting?: boolean;
+  error?: string;
+}
+
+/** Install progress from whichever window clicked Update now (a failure ends it here too). */
+export function progressed(p: UpdateProgress) {
+  if (p.error) set({ phase: { state: "error", message: p.error } });
+  else if (p.restarting) set({ phase: { state: "restarting" } });
+  else set({ phase: { state: "installing", percent: p.percent ?? null } });
 }
 
 /** A check found `p` (or, with null, found nothing newer). */
