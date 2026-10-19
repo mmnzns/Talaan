@@ -432,7 +432,9 @@ const KNOWN_HOSTS: &[&str] = &[
 fn known_host(authority: &str) -> bool {
     let host = authority.rsplit_once(':').filter(|(_, port)| port.chars().all(|c| c.is_ascii_digit())).map(|(h, _)| h).unwrap_or(authority);
     let host = host.trim_matches(['[', ']']).to_ascii_lowercase();
-    if matches!(host.as_str(), "localhost" | "127.0.0.1" | "::1" | "0.0.0.0") || host.ends_with(".localhost") {
+    // This computer: loopback, or a server listening on every interface (0.0.0.0, [::]), as in diagnostics' is_local.
+    let this_computer = host.parse::<std::net::IpAddr>().is_ok_and(|ip| ip.is_loopback() || ip.is_unspecified());
+    if this_computer || host == "localhost" || host.ends_with(".localhost") {
         return true;
     }
     KNOWN_HOSTS.iter().any(|k| host == *k || host.ends_with(&format!(".{k}")))
@@ -477,7 +479,15 @@ fn cut_urls(s: &str) -> String {
             }
         };
         let start = i + scheme.len();
-        let end = s[start..].find(url_end).map(|e| start + e).unwrap_or(s.len());
+        // An IPv6 host (`[::1]`) holds a `]`, which otherwise ends a URL.
+        let host_end = match s[start..].strip_prefix('[') {
+            Some(v6) => match v6.find(|c: char| !(c.is_ascii_hexdigit() || matches!(c, ':' | '.' | '%'))) {
+                Some(e) if v6[e..].starts_with(']') => start + 1 + e + 1,
+                _ => start,
+            },
+            None => start,
+        };
+        let end = s[host_end..].find(url_end).map(|e| host_end + e).unwrap_or(s.len());
         let body = &s[start..end];
         let authority = body.split(['/', '?', '#']).next().unwrap_or("");
         let host = authority.rsplit('@').next().unwrap_or("");
@@ -677,6 +687,11 @@ mod tests {
         assert_eq!(redact_with("can't reach https://llm.acme.internal:8443/v1/chat", None), "can't reach https://[host]/…");
         assert_eq!(redact_with("http://192.168.1.20:11434", None), "http://[host]");
         assert_eq!(redact_with("http://localhost:1234/v1", None), "http://localhost:1234/…");
+        // Ollama on every interface is this computer too.
+        assert_eq!(redact_with("http://0.0.0.0:11434/api/chat", None), "http://0.0.0.0:11434/…");
+        assert_eq!(redact_with("http://[::]:11434", None), "http://[::]:11434");
+        assert_eq!(redact_with("http://127.0.0.2:8080", None), "http://127.0.0.2:8080");
+        assert_eq!(redact_with("http://[fd00::5]:11434/api", None), "http://[host]/…");
     }
 
     #[test]

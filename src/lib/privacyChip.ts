@@ -2,7 +2,9 @@ import type { Settings } from "../data/settings";
 import type { MessageKey } from "./i18n";
 import { onWindows } from "./platform";
 
-const loopback = (address: string) => /^(https?:\/\/)?(localhost|127\.\d+\.\d+\.\d+|\[::1\])(:\d+)?(\/|$)/i.test(address.trim());
+/** This computer: loopback, or a server listening on every interface (`0.0.0.0`, `[::]`, common for Ollama), which
+ *  is reached here through loopback. Same hosts as `is_local` in src-tauri/src/commands/diagnostics.rs. */
+const loopback = (address: string) => /^(https?:\/\/)?(localhost|127\.\d+\.\d+\.\d+|0\.0\.0\.0|\[::1?\])(:\d+)?(\/|$)/i.test(address.trim());
 
 /** The toolbar's privacy line. It claims "everything stays on this computer" only when that's true: summaries
  *  by the built-in AI, no Notion connection, and (Windows) no calendar address fetched over the internet.
