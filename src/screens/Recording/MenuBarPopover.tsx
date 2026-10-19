@@ -23,10 +23,12 @@ interface Props {
   onOpenMeeting?: (id: string) => void;
   onOpenApp?: () => void;
   onQuit?: () => void;
+  /** A recording is running: Update now is off (the tray shows the recording popover then, so this is a guard). */
+  recording?: boolean;
 }
 
 /** Menu bar popover when nothing is recording. */
-export function MenuBarPopover({ onStart, onOpenMeeting, onOpenApp, onQuit, next: given }: Props) {
+export function MenuBarPopover({ onStart, onOpenMeeting, onOpenApp, onQuit, next: given, recording = false }: Props) {
   const t = useT();
   const store = useStore();
   const toast = useToast();
@@ -108,7 +110,7 @@ export function MenuBarPopover({ onStart, onOpenMeeting, onOpenApp, onQuit, next
           );
         })}
       </div>
-      <UpdateLine />
+      <UpdateLine recording={recording} />
       <div className="flex border-t border-line p-2">
         <button type="button" onClick={() => (onOpenApp ? onOpenApp() : navigate(routes.meetings()))} className={`${item} flex-1 cursor-pointer border-0 bg-transparent font-[inherit] text-[13px] font-semibold text-ink`}>
           {t("recording.openTalaan")}
@@ -125,7 +127,7 @@ export function MenuBarPopover({ onStart, onOpenMeeting, onOpenApp, onQuit, next
 }
 
 /** "Talaan {version} is ready" with Update now, for people who only open the menu bar / tray. */
-function UpdateLine() {
+function UpdateLine({ recording }: { recording: boolean }) {
   const t = useT();
   const u = useUpdate();
   const line = useRef<HTMLDivElement>(null);
@@ -147,14 +149,21 @@ function UpdateLine() {
       </span>
       <div className="flex min-w-0 flex-1 flex-col">
         <span className="truncate text-[13px] font-semibold text-ink">{title}</span>
-        {progress && (
-          <span aria-hidden={busy || undefined} className={`text-xs leading-[16px] ${u.phase.state === "error" ? "text-warn-fg" : "text-subtle"}`}>
-            {progress}
+        {(progress || recording) && (
+          <span id="update-line-detail" aria-hidden={busy || undefined} className={`text-xs leading-[16px] ${u.phase.state === "error" ? "text-warn-fg" : "text-subtle"}`}>
+            {progress ?? t("shell.updateWhileRecording")}
           </span>
         )}
       </div>
       {!busy && (
-        <Button variant="primary" className="h-[28px] flex-none px-2.5 text-xs" onClick={install}>
+        <Button
+          variant="primary"
+          className="h-[28px] flex-none px-2.5 text-xs"
+          onClick={install}
+          disabled={recording}
+          title={recording ? t("shell.updateWhileRecording") : undefined}
+          aria-describedby={recording ? "update-line-detail" : undefined}
+        >
           {t(u.phase.state === "error" ? "shell.updateRetry" : "shell.updateNow")}
         </Button>
       )}

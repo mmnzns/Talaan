@@ -7,8 +7,9 @@ import { Button } from "../../ui";
  * "Talaan {version} is ready", a strip under the toolbar (like the tray tip, so it covers nothing). Update now
  * installs and restarts; Later hides it for this version until the next launch (the toolbar chip brings it back).
  * Screen readers hear the title, the start, every 25%, Restarting and a failure (`liveText`), not every percent.
+ * While `recording`, Update now is off and says why (the installer would quit Talaan mid-call).
  */
-export function UpdateBanner() {
+export function UpdateBanner({ recording = false }: { recording?: boolean }) {
   const t = useT();
   const u = useUpdate();
   const banner = useRef<HTMLElement>(null);
@@ -42,8 +43,8 @@ export function UpdateBanner() {
         <h2 id="update-banner-title" className="m-0 font-display text-[14px] font-bold leading-5 tracking-[-0.02em] text-ink">
           {title}
         </h2>
-        <p aria-hidden={busy || undefined} className={`m-0 text-[13px] leading-[18px] ${u.phase.state === "error" ? "text-warn-fg" : "text-subtle"}`}>
-          {progress ?? t("shell.updateBannerBody")}
+        <p id="update-banner-detail" aria-hidden={busy || undefined} className={`m-0 text-[13px] leading-[18px] ${u.phase.state === "error" ? "text-warn-fg" : "text-subtle"}`}>
+          {progress ?? (recording ? t("shell.updateWhileRecording") : t("shell.updateBannerBody"))}
         </p>
         {busy && (
           <div aria-hidden="true" className="mt-1.5 h-1 w-full max-w-[320px] overflow-hidden rounded-full bg-surface">
@@ -56,7 +57,13 @@ export function UpdateBanner() {
           <Button variant="ghost" onClick={later}>
             {t("shell.updateLater")}
           </Button>
-          <Button variant="primary" onClick={install}>
+          <Button
+            variant="primary"
+            onClick={install}
+            disabled={recording}
+            title={recording ? t("shell.updateWhileRecording") : undefined}
+            aria-describedby={recording ? "update-banner-detail" : undefined}
+          >
             {t(u.phase.state === "error" ? "shell.updateRetry" : "shell.updateNow")}
           </Button>
         </div>

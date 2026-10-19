@@ -86,7 +86,7 @@ export function MainWindow({ route }: { route: Route }) {
     <RecordingContext.Provider value={{ start: recording.start }}>
     <div className="flex h-full flex-col bg-paper">
       <Toolbar onImport={() => setImporting(true)} onRecord={recording.start} recording={recording.state} />
-      <UpdateBanner />
+      <UpdateBanner recording={recording.state.state !== "idle"} />
       <TrayTip />
       <div className="flex min-h-0 flex-1">
         <MeetingList selectedId={route.name === "meeting" ? route.id : undefined} />
