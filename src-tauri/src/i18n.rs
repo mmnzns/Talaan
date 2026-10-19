@@ -43,6 +43,13 @@ const TABLE: &[(&str, &str, &str, &str)] = &[
     ("tray.quit", "Quit Talaan", "Quitter Talaan", "Salir de Talaan"),
     ("notify.summary_ready", "Summary ready", "Résumé prêt", "Resumen listo"),
     ("notify.transcript_ready", "Transcript ready", "Transcription prête", "Transcripción lista"),
+    ("notify.update_ready", "Talaan {version} is ready", "Talaan {version} est prêt", "Talaan {version} está listo"),
+    (
+        "notify.update_body",
+        "Open Talaan to update. It takes about a minute.",
+        "Ouvrez Talaan pour faire la mise à jour. Cela prend environ une minute.",
+        "Abre Talaan para actualizar. Tarda más o menos un minuto.",
+    ),
     (
         "notice.no_system_audio",
         "Talaan can't hear the call audio, so only your side is recorded. Allow system audio recording in System Settings.",
@@ -292,6 +299,12 @@ const TABLE: &[(&str, &str, &str, &str)] = &[
         "Arrêtez d’abord l’enregistrement, puis faites la mise à jour.",
         "Primero detén la grabación y luego actualiza.",
     ),
+    (
+        "update.already_installing",
+        "The update is already downloading. Talaan restarts when it's done.",
+        "La mise à jour est déjà en cours de téléchargement. Talaan redémarre quand c’est terminé.",
+        "La actualización ya se está descargando. Talaan se reinicia cuando termine.",
+    ),
     ("update.up_to_date", "Talaan is up to date.", "Talaan est à jour.", "Talaan está actualizado."),
     ("update.install_failed", "The update didn't install: {error}", "La mise à jour ne s’est pas installée : {error}", "La actualización no se instaló: {error}"),
     // Notion
@@ -352,6 +365,12 @@ const TABLE: &[(&str, &str, &str, &str)] = &[
         "No se pudo quitar la clave del almacén seguro de claves: {error}",
     ),
     // Recorder
+    (
+        "recorder.updating",
+        "Talaan is installing an update and restarts in a moment. Record after that.",
+        "Talaan installe une mise à jour et redémarre dans un instant. Enregistrez ensuite.",
+        "Talaan está instalando una actualización y se reinicia en un momento. Graba después.",
+    ),
     ("recorder.already_recording", "Already recording", "Enregistrement déjà en cours", "Ya se está grabando"),
     ("recorder.not_recording", "Not recording", "Aucun enregistrement en cours", "No se está grabando"),
     ("recorder.no_mic_found", "No microphone found", "Aucun microphone trouvé", "No se encontró ningún micrófono"),

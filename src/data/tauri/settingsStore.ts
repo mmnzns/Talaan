@@ -152,6 +152,10 @@ export class TauriSettingsStore implements SettingsStore {
     return call<void>("updates_install");
   }
 
+  pendingUpdate() {
+    return call<{ version: string; notes?: string | null } | null>("updates_pending");
+  }
+
   calendarAccess(): Promise<CalendarAccess> {
     return call<CalendarAccess>("calendar_access");
   }

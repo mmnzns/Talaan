@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useMeetings, useNextMeeting } from "../../data/hooks";
 import type { NextMeeting } from "../../data/settings";
 import { startsIn } from "../../lib/nextMeeting";
@@ -12,6 +12,7 @@ import { useT } from "../../lib/i18n/I18nProvider";
 import { Logo } from "../../brand/Logo";
 import { etaText, PROCESSING_KEYS, useNow } from "../../lib/eta";
 import { SunCorner } from "../../brand/SunCorner";
+import { liveText, phaseText, useUpdate } from "../../data/updates";
 
 interface Props {
   /** `next`: the calendar meeting to record (its title and attendees go on the recording). */
@@ -22,10 +23,12 @@ interface Props {
   onOpenMeeting?: (id: string) => void;
   onOpenApp?: () => void;
   onQuit?: () => void;
+  /** A recording is running: Update now is off (the tray shows the recording popover then, so this is a guard). */
+  recording?: boolean;
 }
 
 /** Menu bar popover when nothing is recording. */
-export function MenuBarPopover({ onStart, onOpenMeeting, onOpenApp, onQuit, next: given }: Props) {
+export function MenuBarPopover({ onStart, onOpenMeeting, onOpenApp, onQuit, next: given, recording = false }: Props) {
   const t = useT();
   const store = useStore();
   const toast = useToast();
@@ -107,6 +110,7 @@ export function MenuBarPopover({ onStart, onOpenMeeting, onOpenApp, onQuit, next
           );
         })}
       </div>
+      <UpdateLine recording={recording} />
       <div className="flex border-t border-line p-2">
         <button type="button" onClick={() => (onOpenApp ? onOpenApp() : navigate(routes.meetings()))} className={`${item} flex-1 cursor-pointer border-0 bg-transparent font-[inherit] text-[13px] font-semibold text-ink`}>
           {t("recording.openTalaan")}
@@ -118,6 +122,51 @@ export function MenuBarPopover({ onStart, onOpenMeeting, onOpenApp, onQuit, next
           {t("recording.quit")}
         </button>
       </div>
+    </div>
+  );
+}
+
+/** "Talaan {version} is ready" with Update now, for people who only open the menu bar / tray. */
+function UpdateLine({ recording }: { recording: boolean }) {
+  const t = useT();
+  const u = useUpdate();
+  const line = useRef<HTMLDivElement>(null);
+  if (!u.pending) return null;
+  const busy = u.phase.state === "installing" || u.phase.state === "restarting";
+  const progress = phaseText(t, u.phase);
+  const title = t("shell.updateBannerTitle", { version: u.pending.version });
+  const install = () => {
+    // The button gives way to the progress line: keep the focus here.
+    line.current?.focus();
+    void u.install();
+  };
+  return (
+    <div ref={line} tabIndex={-1} className="mx-2.5 mb-2.5 flex items-center gap-2.5 rounded-[10px] bg-gold-soft px-3 py-2 outline-none">
+      <span aria-hidden="true" className="size-1.5 flex-none rounded-full bg-gold" />
+      {/* Read out at the start, every 25%, Restarting and a failure; not at every percent. */}
+      <span role="status" aria-live="polite" className="sr-only">
+        {liveText(t, u.phase) ?? title}
+      </span>
+      <div className="flex min-w-0 flex-1 flex-col">
+        <span className="truncate text-[13px] font-semibold text-ink">{title}</span>
+        {(progress || recording) && (
+          <span id="update-line-detail" aria-hidden={busy || undefined} className={`text-xs leading-[16px] ${u.phase.state === "error" ? "text-warn-fg" : "text-subtle"}`}>
+            {progress ?? t("shell.updateWhileRecording")}
+          </span>
+        )}
+      </div>
+      {!busy && (
+        <Button
+          variant="primary"
+          className="h-[28px] flex-none px-2.5 text-xs"
+          onClick={install}
+          disabled={recording}
+          title={recording ? t("shell.updateWhileRecording") : undefined}
+          aria-describedby={recording ? "update-line-detail" : undefined}
+        >
+          {t(u.phase.state === "error" ? "shell.updateRetry" : "shell.updateNow")}
+        </Button>
+      )}
     </div>
   );
 }

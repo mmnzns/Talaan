@@ -1,4 +1,5 @@
-//! "Summary ready" notifications as Windows toasts. Clicking one opens the meeting. Windows shows toasts only for
+//! "Summary ready" (and "Talaan {version} is ready") notifications as Windows toasts. Clicking one opens the meeting
+//! (or the main window on the update banner). Windows shows toasts only for
 //! an app id with a Start-menu shortcut: the Start Menu shortcut the installer creates carries the bundle id as its
 //! AppUserModelID, so installed builds use that; dev builds borrow PowerShell's.
 //!
@@ -46,9 +47,20 @@ pub fn allowed() -> Option<bool> {
 
 /// Shows a toast; a click calls the `setup` callback with `id`. Never fails the caller.
 pub fn post(id: &str, title: &str, body: &str) {
-    if let Err(e) = show(id, title, body) {
-        log::warn!("notification failed: {}", crate::logging::text(&e));
-    }
+    post_checked(id, title, body, |_| {});
+}
+
+/// Like `post`, then tells `done` whether the toast went out: false when Windows refused it or toasts are
+/// turned off for Talaan. Called before this returns.
+pub fn post_checked(id: &str, title: &str, body: &str, done: impl FnOnce(bool) + Send + 'static) {
+    let shown = match show(id, title, body) {
+        Ok(()) => allowed() != Some(false),
+        Err(e) => {
+            log::warn!("notification failed: {}", crate::logging::text(&e));
+            false
+        }
+    };
+    done(shown);
 }
 
 fn show(id: &str, title: &str, body: &str) -> Result<(), String> {
@@ -56,7 +68,7 @@ fn show(id: &str, title: &str, body: &str) -> Result<(), String> {
     super::com::init();
     let exe = std::env::current_exe().unwrap_or_default();
     if protocol_is_ours(&exe) {
-        return show_protocol(app_id(&exe), &toast_xml(title, body, &deeplink::meeting_uri(id))).map_err(|e| e.to_string());
+        return show_protocol(app_id(&exe), &toast_xml(title, body, &deeplink::uri_for(id))).map_err(|e| e.to_string());
     }
     let id = id.to_string();
     Toast::new(app_id(&exe))

@@ -61,7 +61,7 @@ export function ScreensStage({ which }: { which?: string }) {
               <h2 className="m-0 text-lg font-extrabold">Onboarding</h2>
               <p className="m-0 text-[13px] text-subtle">
                 Shows the first-run flow again in the main window. Finishing it brings you back to Talaan. In the browser preview, "as a new install" also
-                marks every model as not downloaded. Add ?os=mac or ?os=windows, and ?mic=denied or ?mic=ask, to the URL to see those cases.
+                marks every model as not downloaded. Add ?os=mac or ?os=windows, ?mic=denied or ?mic=ask, and ?update=1.2.0 (with ?updateFail for a failed install) to the URL to see those cases.
               </p>
               <div className="flex gap-2">
                 <Button
