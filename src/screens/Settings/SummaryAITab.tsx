@@ -33,7 +33,7 @@ function EngineCard({ engine: e, on, onPick }: { engine: Engine; on: boolean; on
       onClick={onPick}
       className={cn(
         "flex cursor-pointer flex-col gap-1.5 rounded-card border p-3 text-left font-[inherit] text-ink",
-        on ? "border-line bg-surface shadow-[inset_3px_0_0_var(--t-gold),var(--t-shadow)]" : "border-line bg-surface hover:border-edge",
+        on ? "border-gold bg-gold-soft shadow-[var(--t-shadow)]" : "border-line bg-surface hover:border-edge",
       )}
     >
       <span className="flex flex-wrap items-center gap-2">

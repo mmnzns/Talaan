@@ -10,7 +10,7 @@ interface Props extends HTMLAttributes<HTMLElement> {
 const tones = {
   default: "border-line bg-surface text-subtle",
   strong: "border-strong bg-strong text-strong-fg",
-  gold: "border-transparent bg-gold-soft text-gold-ink",
+  gold: "border-gold/50 bg-gold-soft text-gold-ink",
 };
 
 export function Chip({ tone = "default", className, onClick, children, ...rest }: Props) {

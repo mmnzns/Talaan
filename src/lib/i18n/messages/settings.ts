@@ -5,7 +5,8 @@ export const settings = area({
     // window
     nav_label: "Settings",
     window_title: "settings",
-    footer: "talaan {version} · mit license",
+    footer: "talaan {version}",
+    footer_license: "mit license",
     tab_status: "Status",
     tab_general: "General",
     tab_apps: "Call apps",
@@ -422,7 +423,8 @@ export const settings = area({
   fr: {
     nav_label: "Paramètres",
     window_title: "paramètres",
-    footer: "talaan {version} · licence mit",
+    footer: "talaan {version}",
+    footer_license: "licence mit",
     tab_general: "Général",
     tab_apps: "Applications d’appel",
     tab_models: "Modèles vocaux",
@@ -826,7 +828,8 @@ export const settings = area({
   es: {
     nav_label: "Ajustes",
     window_title: "ajustes",
-    footer: "talaan {version} · licencia mit",
+    footer: "talaan {version}",
+    footer_license: "licencia mit",
     tab_general: "General",
     tab_apps: "Apps de llamadas",
     tab_models: "Modelos de voz",
