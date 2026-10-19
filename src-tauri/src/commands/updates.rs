@@ -8,7 +8,7 @@
 use super::{AppState, CmdResult};
 use crate::i18n::{tr, tr_err, tr_with};
 use crate::storage::StorageError;
-use crate::update_notice::{check_due, InstallFlag, Last, Notice, NoticeFiles, CHECK_TIMEOUT, DOWNLOAD_TIMEOUT};
+use crate::update_notice::{check_due, check_on_click, InstallFlag, Last, Notice, NoticeFiles, CHECK_TIMEOUT, DOWNLOAD_TIMEOUT};
 use serde::Serialize;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
@@ -277,20 +277,17 @@ fn remember_notified(state: &UpdateState, version: &str) {
     }
 }
 
-/// A click on the update notification: the main window, with the banner showing.
+/// A click on the update notification: the main window, with the banner showing. When Talaan was started by
+/// the click (Windows starts it with the `talaan://update` link; macOS launches it to deliver the click), no
+/// check has run yet, so one runs right away instead of in 20 s.
 pub fn open_banner(app: &AppHandle) {
-    super::tray::show_main(app);
-    let _ = app.emit(SHOW_UPDATE, ());
-}
-
-/// Talaan was started by a click on the update notification (Windows): the main window, and a check right away
-/// so the banner has something to show.
-#[cfg_attr(not(target_os = "windows"), allow(dead_code))]
-pub fn open_banner_at_launch(app: &AppHandle) {
     if let Some(s) = app.try_state::<UpdateState>() {
-        s.soon.store(true, Ordering::SeqCst);
+        if check_on_click(s.pending().is_some()) {
+            s.soon.store(true, Ordering::SeqCst);
+        }
     }
     super::tray::show_main(app);
+    let _ = app.emit(SHOW_UPDATE, ());
 }
 
 /// Makes the login item match the setting (default on). Called at launch and whenever settings change.

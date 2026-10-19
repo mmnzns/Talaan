@@ -43,6 +43,12 @@ pub fn check_due(started: u64, last: Option<Last>, now: u64) -> bool {
     now >= next_check_at(started, last)
 }
 
+/// A click on the update notification: check right away when nothing is known yet (Talaan was just started
+/// by the click, on either platform), so the banner has something to show.
+pub fn check_on_click(pending_known: bool) -> bool {
+    !pending_known
+}
+
 /// Which version to announce, and when. Every decision is one call on one lock: `found` (or
 /// `recording_stopped`) both decides and reserves the version, so a Check now in Settings (`posted`) and the
 /// background check can't both announce it.
@@ -229,6 +235,12 @@ mod tests {
     fn a_hung_check_gives_up_long_before_the_next_one() {
         assert!(CHECK_TIMEOUT.as_secs() <= 30);
         assert!(CHECK_TIMEOUT.as_secs() < RETRY_SECS && DOWNLOAD_TIMEOUT > CHECK_TIMEOUT);
+    }
+
+    #[test]
+    fn a_click_that_started_talaan_checks_right_away() {
+        assert!(check_on_click(false), "cold start from the click: nothing checked yet");
+        assert!(!check_on_click(true), "already known: just show the banner");
     }
 
     #[test]

@@ -150,7 +150,7 @@ pub fn run() {
             #[cfg(target_os = "windows")]
             match deeplink::link_in_args(&std::env::args().collect::<Vec<_>>()) {
                 Some(deeplink::Link::Meeting(id)) => commands::summarizer::open_meeting_at_launch(app.handle(), id),
-                Some(deeplink::Link::Update) => commands::updates::open_banner_at_launch(app.handle()),
+                Some(deeplink::Link::Update) => commands::updates::open_banner(app.handle()),
                 None => {}
             }
 
