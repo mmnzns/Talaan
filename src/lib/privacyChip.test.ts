@@ -20,6 +20,14 @@ describe("privacyChip", () => {
     expect(privacyChip(s({ summaryEngine: "ollama", ollamaAddress: "127.0.0.1:1234" }), true)).toBe("shell.summariesLocal");
     expect(privacyChip(s({ summaryEngine: "ollama", ollamaAddress: "http://gpu-box.lan:11434" }), true)).toBe("shell.summariesServer");
   });
+  it("counts Ollama listening on every interface (0.0.0.0, [::]) as this computer", () => {
+    for (const ollamaAddress of ["http://0.0.0.0:11434", "0.0.0.0:11434", "http://[::]:11434/", "http://[::1]:11434", "HTTP://LOCALHOST:11434"]) {
+      expect(privacyChip(s({ summaryEngine: "ollama", ollamaAddress }), true), ollamaAddress).toBe("shell.summariesLocal");
+    }
+    for (const ollamaAddress of ["http://0.0.0.0.evil.com:11434", "http://10.0.0.5:11434", "http://localhost.evil.com"]) {
+      expect(privacyChip(s({ summaryEngine: "ollama", ollamaAddress }), true), ollamaAddress).toBe("shell.summariesServer");
+    }
+  });
   it("claims nothing before settings load", () => {
     expect(privacyChip(undefined)).toBe("shell.summariesLocal");
   });

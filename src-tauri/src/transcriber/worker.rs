@@ -222,6 +222,17 @@ pub fn stamp_estimate(s: &Storage, id: &str, on_gpu: &OnGpu) {
     let _ = s.update_meeting_file(id, |f| set_eta(f, ahead + total, profile.device == Device::Cpu));
 }
 
+/// Meetings re-queued at launch: estimates from before the restart mean nothing now, so each gets a fresh one at
+/// this computer's pace, chained in queue order. A Stop made before the worker picks them up then waits for them.
+pub fn restamp_queue(s: &Storage, ids: &[String], on_gpu: &OnGpu) {
+    for id in ids {
+        let _ = s.update_meeting_file(id, |f| f.eta = None);
+    }
+    for id in ids {
+        stamp_estimate(s, id, on_gpu);
+    }
+}
+
 fn process(deps: &Deps, id: &str, loaded: &mut Option<Loaded>, cancel: &AtomicBool) {
     let (dir, config, transcript_only, audio) = {
         let s = lock(&deps.storage);
@@ -581,6 +592,42 @@ mod tests {
         let (a, b) = (minutes_left(&first), minutes_left(&second));
         // Each is about 11 min of work; the second starts when the first is done.
         assert!((b - 2.0 * a).abs() < 0.5, "{a} then {b}");
+    }
+
+    #[test]
+    fn meetings_requeued_at_launch_get_chained_estimates_that_a_later_stop_counts() {
+        let (_d, storage, first, _worker) = setup(true, "x");
+        let s = storage.lock().unwrap();
+        let at = |h: u32| chrono::DateTime::parse_from_rfc3339(&format!("2026-10-14T{h}:30:00-07:00")).unwrap();
+        let second = s.create_meeting("zoom", "Zoom", at(15)).unwrap().id;
+        let third = s.create_meeting("zoom", "Zoom", at(16)).unwrap().id;
+        let minutes_left = |id: &str| {
+            let eta = s.read_meeting_file(id).unwrap().eta.unwrap();
+            let finish = chrono::DateTime::parse_from_rfc3339(&eta.finish_at).unwrap();
+            (finish.with_timezone(&chrono::Local) - chrono::Local::now()).num_seconds() as f64 / 60.0
+        };
+        for id in [&first, &second] {
+            s.update_meeting_file(id, |f| {
+                f.status = MeetingStatus::Transcribing;
+                f.duration_ms = 3_600_000;
+                // A stale estimate from before the restart (hours away): it must not count.
+                set_eta(f, 5.0 * 3600.0, true);
+            })
+            .unwrap();
+        }
+        restamp_queue(&s, &[first.clone(), second.clone()], &|_, _| false);
+        let (a, b) = (minutes_left(&first), minutes_left(&second));
+        assert!((5.0..30.0).contains(&a), "fresh, not stale: {a}");
+        assert!((b - 2.0 * a).abs() < 0.5, "chained in queue order: {a} then {b}");
+        // A Stop made now, before the worker has picked them up, waits for both.
+        s.update_meeting_file(&third, |f| {
+            f.status = MeetingStatus::Transcribing;
+            f.duration_ms = 3_600_000;
+        })
+        .unwrap();
+        stamp_estimate(&s, &third, &|_, _| false);
+        let c = minutes_left(&third);
+        assert!((c - 3.0 * a).abs() < 0.5, "{a}, {b} then {c}");
     }
 
     #[test]
