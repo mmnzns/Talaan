@@ -205,7 +205,7 @@ function Option({ on, onClick, title, tag, children, role = "radio" }: { on: boo
       onClick={onClick}
       className={cn(
         "flex w-full cursor-pointer items-center gap-3.5 rounded-card border px-4 py-3.5 text-left font-[inherit] text-ink",
-        on ? "border-gold bg-surface shadow-[0_0_0_3px_var(--t-gold-soft)]" : "border-line bg-surface hover:border-edge",
+        on ? "border-gold bg-gold-soft shadow-[var(--t-shadow)]" : "border-line bg-surface hover:border-edge",
       )}
     >
       {role === "radio" && <Radio checked={on} />}

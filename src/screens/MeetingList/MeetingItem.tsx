@@ -50,7 +50,7 @@ export function MeetingItem({ meeting, selected }: { meeting: MeetingListItem; s
   const label = (status: string) => t("shell.meetingAria", { title: meeting.title, date: formatDate(meeting.startedAt), status });
 
   const base = "flex w-full cursor-pointer flex-col gap-1 rounded-xl border-0 px-3.5 py-[11px] text-left font-[inherit] text-ink";
-  const tone = selected ? "bg-surface shadow-[inset_3px_0_0_var(--t-gold),var(--t-shadow)]" : "bg-transparent hover:bg-hover";
+  const tone = selected ? "bg-gold-soft shadow-[inset_0_0_0_1px_var(--t-gold)]" : "bg-transparent hover:bg-hover";
 
   if (processing) {
     return (

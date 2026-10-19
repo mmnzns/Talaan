@@ -101,7 +101,7 @@ function ModelCard({ model: m, settings: s, update }: { model: SpeechModel } & T
     <div
       className={cn(
         "flex flex-wrap items-center gap-x-4 gap-y-3 rounded-card border px-3.5 py-3",
-        on ? "border-line bg-surface shadow-[inset_3px_0_0_var(--t-gold),var(--t-shadow)]" : "border-line bg-surface hover:border-edge",
+        on ? "border-gold bg-gold-soft shadow-[var(--t-shadow)]" : "border-line bg-surface hover:border-edge",
       )}
     >
       <button
