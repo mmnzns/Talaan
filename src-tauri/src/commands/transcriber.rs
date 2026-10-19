@@ -7,7 +7,7 @@ use crate::transcriber::download::{clear_cancelled, download_model, mark_cancell
 use crate::transcriber::models::{find, EngineKind, Location, ModelInfo, ModelStore, CATALOG, VAD};
 use crate::transcriber::pipeline::Detector;
 use crate::transcriber::vad::Vad;
-use crate::transcriber::worker::{stamp_estimate, Config, Deps, OnGpu, Worker, NO_MODEL};
+use crate::transcriber::worker::{restamp_queue, stamp_estimate, Config, Deps, OnGpu, Worker, NO_MODEL};
 use serde::Serialize;
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -100,10 +100,11 @@ pub fn setup(app: &AppHandle, data_dir: PathBuf) {
         on_gpu: on_gpu.clone(),
     });
     let storage = state.lock();
-    for id in storage.ids_with_status(MeetingStatus::Transcribing).unwrap_or_default() {
-        // An estimate from before the restart means nothing now (and would push back the next Stop's estimate).
-        let _ = storage.update_meeting_file(&id, |f| f.eta = None);
-        worker.enqueue(&id);
+    let waiting = storage.ids_with_status(MeetingStatus::Transcribing).unwrap_or_default();
+    // Fresh estimates, chained in the order they're queued, so a Stop made before the worker reaches them counts them.
+    restamp_queue(&storage, &waiting, on_gpu.as_ref());
+    for id in &waiting {
+        worker.enqueue(id);
     }
     drop(storage);
     app.manage(TranscriberState { worker, data_dir, on_gpu, downloads: Mutex::default(), failed: Mutex::default() });
