@@ -82,13 +82,26 @@ pub fn setup(on_click: impl Fn(String) + Send + Sync + 'static) {
 
 /// Posts a notification identified by `id` (clicking it calls back with `id`). Asks permission the first time.
 pub fn post(id: &str, title: &str, body: &str) {
+    post_checked(id, title, body, |_| {});
+}
+
+type Done = Box<dyn FnOnce(bool) + Send>;
+
+/// Like `post`, then tells `done` whether it could go out: false outside a bundle or when permission is denied
+/// (macOS answers later, on its own thread).
+pub fn post_checked(id: &str, title: &str, body: &str, done: impl FnOnce(bool) + Send + 'static) {
     if !available() {
+        done(false);
         return;
     }
+    let done: std::sync::Mutex<Option<Done>> = std::sync::Mutex::new(Some(Box::new(done)));
     let center = UNUserNotificationCenter::currentNotificationCenter();
     let (id, title, body) = (id.to_string(), title.to_string(), body.to_string());
     let after_permission = RcBlock::new(move |granted: Bool, _err: *mut NSError| {
         PERMISSION.store(if granted.as_bool() { 1 } else { 2 }, Ordering::Relaxed);
+        if let Some(f) = done.lock().unwrap_or_else(|e| e.into_inner()).take() {
+            f(granted.as_bool());
+        }
         if !granted.as_bool() {
             return;
         }
@@ -108,5 +121,12 @@ mod tests {
     fn outside_a_bundle_nothing_is_posted_and_nothing_crashes() {
         assert!(!super::available());
         super::post("m1", "Summary ready", "Q4 roadmap sync");
+    }
+
+    #[test]
+    fn outside_a_bundle_a_checked_post_reports_not_shown() {
+        let (tx, rx) = std::sync::mpsc::channel();
+        super::post_checked("talaan-update", "Talaan 1.2.0 is ready", "Open Talaan to update.", move |shown| tx.send(shown).unwrap());
+        assert_eq!(rx.recv_timeout(std::time::Duration::from_secs(1)), Ok(false));
     }
 }

@@ -47,9 +47,20 @@ pub fn allowed() -> Option<bool> {
 
 /// Shows a toast; a click calls the `setup` callback with `id`. Never fails the caller.
 pub fn post(id: &str, title: &str, body: &str) {
-    if let Err(e) = show(id, title, body) {
-        log::warn!("notification failed: {}", crate::logging::text(&e));
-    }
+    post_checked(id, title, body, |_| {});
+}
+
+/// Like `post`, then tells `done` whether the toast went out: false when Windows refused it or toasts are
+/// turned off for Talaan. Called before this returns.
+pub fn post_checked(id: &str, title: &str, body: &str, done: impl FnOnce(bool) + Send + 'static) {
+    let shown = match show(id, title, body) {
+        Ok(()) => allowed() != Some(false),
+        Err(e) => {
+            log::warn!("notification failed: {}", crate::logging::text(&e));
+            false
+        }
+    };
+    done(shown);
 }
 
 fn show(id: &str, title: &str, body: &str) -> Result<(), String> {

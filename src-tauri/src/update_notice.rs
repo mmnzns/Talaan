@@ -156,6 +156,37 @@ pub fn write_notified(path: &Path, version: &str) -> Result<(), crate::storage::
     write_json_atomic(path, &NoticeFile { notified: version.to_string() })
 }
 
+/// Where the announced version is kept: `update-notice.json` in the data folder, and a copy in the temp folder
+/// for when the data folder can't be written (so a broken data folder doesn't mean the same notification at
+/// every launch).
+pub struct NoticeFiles {
+    pub main: PathBuf,
+    pub spare: PathBuf,
+}
+
+impl NoticeFiles {
+    pub fn new(data_dir: &Path, temp_dir: &Path) -> Self {
+        NoticeFiles { main: notice_path(data_dir), spare: temp_dir.join("talaan-update-notice.json") }
+    }
+
+    /// The version announced last: the data folder's file, else the spare.
+    pub fn read(&self) -> Option<String> {
+        read_notified(&self.main).or_else(|| read_notified(&self.spare))
+    }
+
+    /// Saves `version`; Err only when neither file could be written (it's still remembered until Talaan quits).
+    pub fn write(&self, version: &str) -> Result<(), crate::storage::StorageError> {
+        match write_notified(&self.main, version) {
+            Ok(()) => {
+                // A spare from an earlier failure would otherwise win over nothing; it's no longer needed.
+                let _ = std::fs::remove_file(&self.spare);
+                Ok(())
+            }
+            Err(_) => write_notified(&self.spare, version),
+        }
+    }
+}
+
 fn looks_like_version(v: &str) -> bool {
     !v.is_empty() && v.len() <= 32 && v.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '-' | '+'))
 }
@@ -213,6 +244,34 @@ mod tests {
         let mut n = Notice::new(read_notified(&path));
         assert_eq!(n.notified(), Some("1.2.0"));
         assert_eq!(n.found("1.2.0", false), None);
+    }
+
+    #[test]
+    fn when_the_data_folder_cant_be_written_the_spare_remembers() {
+        let dir = tempfile::tempdir().unwrap();
+        // A data "folder" that is a file: nothing can be written inside it.
+        let data = dir.path().join("data");
+        std::fs::write(&data, "not a folder").unwrap();
+        let temp = dir.path().join("temp");
+        std::fs::create_dir(&temp).unwrap();
+        let files = NoticeFiles::new(&data, &temp);
+        files.write("1.2.0").expect("the spare is written");
+        assert_eq!(NoticeFiles::new(&data, &temp).read().as_deref(), Some("1.2.0"), "the next launch doesn't announce it again");
+
+        // Neither writable: an error for the caller to log, nothing else.
+        let gone = NoticeFiles::new(&data, &data);
+        assert!(gone.write("1.3.0").is_err());
+    }
+
+    #[test]
+    fn the_data_folder_wins_and_clears_the_spare() {
+        let dir = tempfile::tempdir().unwrap();
+        let files = NoticeFiles::new(dir.path(), dir.path());
+        write_notified(&files.spare, "1.1.0").unwrap();
+        assert_eq!(files.read().as_deref(), Some("1.1.0"));
+        files.write("1.2.0").unwrap();
+        assert!(!files.spare.exists());
+        assert_eq!(files.read().as_deref(), Some("1.2.0"));
     }
 
     #[test]

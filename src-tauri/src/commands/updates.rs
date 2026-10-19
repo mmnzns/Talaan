@@ -8,9 +8,8 @@
 use super::{AppState, CmdResult};
 use crate::i18n::{tr, tr_err, tr_with};
 use crate::storage::StorageError;
-use crate::update_notice::{check_due, notice_path, read_notified, write_notified, InstallFlag, Last, Notice};
+use crate::update_notice::{check_due, InstallFlag, Last, Notice, NoticeFiles};
 use serde::Serialize;
-use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -38,7 +37,7 @@ pub struct Available {
 pub struct UpdateState {
     pending: Mutex<Option<Available>>,
     notice: Mutex<Notice>,
-    notice_file: PathBuf,
+    notice_files: NoticeFiles,
     /// Check at the next tick, not on the schedule (Talaan was started by a click on the update notification).
     soon: AtomicBool,
     installing: InstallFlag,
@@ -55,9 +54,9 @@ impl UpdateState {
 
 /// Call once at launch, after `AppState`.
 pub fn setup(app: &AppHandle) {
-    let notice_file = notice_path(app.state::<AppState>().lock().root());
-    let notice = Notice::new(read_notified(&notice_file));
-    app.manage(UpdateState { pending: Mutex::new(None), notice: Mutex::new(notice), notice_file, soon: AtomicBool::new(false), installing: InstallFlag::default() });
+    let notice_files = NoticeFiles::new(app.state::<AppState>().lock().root(), &std::env::temp_dir());
+    let notice = Notice::new(notice_files.read());
+    app.manage(UpdateState { pending: Mutex::new(None), notice: Mutex::new(notice), notice_files, soon: AtomicBool::new(false), installing: InstallFlag::default() });
 }
 
 fn setting(app: &AppHandle, key: &str) -> bool {
@@ -242,16 +241,31 @@ fn announce(app: &AppHandle, state: &UpdateState, version: &str) {
         state.notice().failed(version);
         return;
     }
-    crate::platform::notify::post(crate::deeplink::UPDATE_NOTICE, &tr_with("notify.update_ready", &[("version", version)]), &tr("notify.update_body"));
-    log::info!("update notification posted for {version}");
-    if state.notice().posted(version) {
-        remember_notified(state, version);
-    }
+    let (app, v) = (app.clone(), version.to_string());
+    let title = tr_with("notify.update_ready", &[("version", version)]);
+    crate::platform::notify::post_checked(crate::deeplink::UPDATE_NOTICE, &title, &tr("notify.update_body"), move |shown| {
+        let Some(state) = app.try_state::<UpdateState>() else { return };
+        if shown {
+            log::info!("update notification posted for {v}");
+            if state.notice().posted(&v) {
+                remember_notified(&state, &v);
+            }
+        } else {
+            // A failed toast, or no permission (macOS): the next check tries again.
+            log::info!("update notification for {v} wasn't shown");
+            state.notice().failed(&v);
+        }
+    });
 }
 
+/// Saves the announced version. If neither file can be written it's still remembered until Talaan quits; that
+/// is logged once, not at every announcement.
 fn remember_notified(state: &UpdateState, version: &str) {
-    if let Err(e) = write_notified(&state.notice_file, version) {
-        log::warn!("couldn't save which update was announced: {}", e.for_log());
+    static WARNED: AtomicBool = AtomicBool::new(false);
+    if let Err(e) = state.notice_files.write(version) {
+        if !WARNED.swap(true, Ordering::Relaxed) {
+            log::warn!("couldn't save which update was announced: {}", e.for_log());
+        }
     }
 }
 
