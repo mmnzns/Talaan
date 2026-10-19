@@ -12,6 +12,9 @@ import { useSettingsStore } from "./StoreProvider";
 import type { SettingsStore } from "./settings";
 import { onEvent } from "./tauri/invoke";
 
+/** The toolbar chip that brings the banner back after Later; focus goes there when the banner closes. */
+export const UPDATE_CHIP_ID = "update-chip";
+
 export interface PendingUpdate {
   version: string;
   notes?: string | null;
@@ -111,6 +114,27 @@ export function phaseText(t: T, phase: InstallPhase): string | null {
   switch (phase.state) {
     case "installing":
       return phase.percent === null ? t("shell.updateDownloading") : t("shell.updateDownloadingPercent", { percent: phase.percent });
+    case "restarting":
+      return t("shell.updateRestarting");
+    case "error":
+      return phase.message;
+    default:
+      return null;
+  }
+}
+
+/**
+ * What a screen reader hears (the live region): that the download started, every 25%, Restarting and a failure.
+ * The visible line moves with each percent; this text changes only at those steps, so it isn't read out 100
+ * times. Null when idle (the banner's title is announced as it appears).
+ */
+export function liveText(t: T, phase: InstallPhase): string | null {
+  switch (phase.state) {
+    case "installing": {
+      // 100% downloaded is announced as Restarting, which comes right after.
+      const step = phase.percent === null ? 0 : Math.min(75, Math.floor(phase.percent / 25) * 25);
+      return step === 0 ? t("shell.updateDownloading") : t("shell.updateDownloadingPercent", { percent: step });
+    }
     case "restarting":
       return t("shell.updateRestarting");
     case "error":

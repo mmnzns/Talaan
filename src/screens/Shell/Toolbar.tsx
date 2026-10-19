@@ -1,6 +1,6 @@
 import { ArrowUp, Download, MessageCircle, Settings as SettingsIcon } from "lucide-react";
 import { useSettings } from "../../data/hooks";
-import { useUpdate } from "../../data/updates";
+import { UPDATE_CHIP_ID, useUpdate } from "../../data/updates";
 import type { RecorderState } from "../../data/recorder";
 import { formatTime } from "../../lib/format";
 import { onMac } from "../../lib/platform";
@@ -44,7 +44,7 @@ export function Toolbar({ onImport, onRecord, recording }: Props) {
         {t(privacyChip(settings))}
       </Chip>
       {chip && (
-        <Chip tone="gold" onClick={update.showBanner} title={t("shell.updateReadyTitle", { version: chip })} aria-label={`${t("shell.updateReadyTitle", { version: chip })}. ${t("shell.updateShowBanner")}`}>
+        <Chip id={UPDATE_CHIP_ID} tone="gold" onClick={update.showBanner} title={t("shell.updateReadyTitle", { version: chip })} aria-label={`${t("shell.updateReadyTitle", { version: chip })}. ${t("shell.updateShowBanner")}`}>
           <ArrowUp size={12} aria-hidden="true" />
           {/* Narrow windows: the arrow alone, so the toolbar stays on one line. */}
           <span className="max-lg:hidden">{t("shell.updateReady")}</span>

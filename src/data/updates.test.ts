@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { StoreError } from "./errors";
 import type { SettingsStore } from "./settings";
-import { bannerVisible, found, install, later, progressed, resetUpdateForTests, showBanner, updateSnapshot } from "./updates";
+import { bannerVisible, found, install, later, liveText, progressed, resetUpdateForTests, showBanner, updateSnapshot } from "./updates";
 
 const store = (installUpdate: () => Promise<void>) => ({ installUpdate }) as unknown as SettingsStore;
 
@@ -74,5 +74,25 @@ describe("the pending update", () => {
     void install(s);
     void install(s);
     expect(calls).toBe(1);
+  });
+});
+
+describe("what a screen reader hears", () => {
+  const t = ((key: string, vars?: Record<string, unknown>) => (vars?.percent !== undefined ? `${key} ${vars.percent}` : key)) as never;
+
+  it("the start, every 25%, Restarting and a failure, not every percent", () => {
+    const heard = new Set<string>();
+    for (let p = 0; p <= 100; p++) heard.add(liveText(t, { state: "installing", percent: p }) ?? "");
+    heard.add(liveText(t, { state: "restarting" }) ?? "");
+    expect([...heard]).toEqual([
+      "shell.updateDownloading",
+      "shell.updateDownloadingPercent 25",
+      "shell.updateDownloadingPercent 50",
+      "shell.updateDownloadingPercent 75",
+      "shell.updateRestarting",
+    ]);
+    expect(liveText(t, { state: "installing", percent: null })).toBe("shell.updateDownloading");
+    expect(liveText(t, { state: "error", message: "Stop the recording first, then update." })).toBe("Stop the recording first, then update.");
+    expect(liveText(t, { state: "idle" })).toBeNull();
   });
 });
