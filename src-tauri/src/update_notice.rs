@@ -15,6 +15,10 @@ use std::sync::atomic::{AtomicBool, Ordering};
 pub const FIRST_CHECK_SECS: u64 = 20;
 pub const CHECK_EVERY_SECS: u64 = 6 * 3600;
 pub const RETRY_SECS: u64 = 3600;
+/// How long a check may take before it counts as failed (and is retried after RETRY_SECS).
+pub const CHECK_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
+/// How long downloading the update may take after Update now.
+pub const DOWNLOAD_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(20 * 60);
 
 /// The last check: when it ran and whether it reached GitHub.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -219,6 +223,12 @@ mod tests {
         let last = Some(Last { at: T0 + 20, ok: false });
         assert!(!check_due(T0, last, T0 + 20 + 3599));
         assert!(check_due(T0, last, T0 + 20 + 3600));
+    }
+
+    #[test]
+    fn a_hung_check_gives_up_long_before_the_next_one() {
+        assert!(CHECK_TIMEOUT.as_secs() <= 30);
+        assert!(CHECK_TIMEOUT.as_secs() < RETRY_SECS && DOWNLOAD_TIMEOUT > CHECK_TIMEOUT);
     }
 
     #[test]

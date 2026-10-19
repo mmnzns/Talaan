@@ -8,7 +8,7 @@
 use super::{AppState, CmdResult};
 use crate::i18n::{tr, tr_err, tr_with};
 use crate::storage::StorageError;
-use crate::update_notice::{check_due, InstallFlag, Last, Notice, NoticeFiles};
+use crate::update_notice::{check_due, InstallFlag, Last, Notice, NoticeFiles, CHECK_TIMEOUT, DOWNLOAD_TIMEOUT};
 use serde::Serialize;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
@@ -63,10 +63,16 @@ fn setting(app: &AppHandle, key: &str) -> bool {
     app.state::<AppState>().lock().settings_get().ok().flatten().and_then(|s| s[key].as_bool()).unwrap_or(true)
 }
 
+/// The updater, with a time limit, so a request that hangs can't hold the background check (or Update now)
+/// forever.
+fn updater(app: &AppHandle) -> tauri_plugin_updater::Result<tauri_plugin_updater::Updater> {
+    app.updater_builder().timeout(CHECK_TIMEOUT).build()
+}
+
 /// Asks GitHub and records the answer in the shared state. Nothing is downloaded.
 async fn check(app: &AppHandle) -> CmdResult<Option<Available>> {
     let current = app.package_info().version.to_string();
-    let updater = app.updater().inspect_err(|e| log::warn!("update check failed: {}", crate::logging::text(e))).map_err(|e| refused(tr_err("update.check_failed", e)))?;
+    let updater = updater(app).inspect_err(|e| log::warn!("update check failed: {}", crate::logging::text(e))).map_err(|e| refused(tr_err("update.check_failed", e)))?;
     let update = updater.check().await.inspect_err(|e| log::warn!("update check failed (offline?): {}", crate::logging::text(e))).map_err(|e| refused(tr_err("update.offline", e)))?;
     match &update {
         Some(u) => log::info!("update check: {} is available (this is {current})", u.version),
@@ -134,8 +140,8 @@ async fn install(app: &AppHandle) -> CmdResult<()> {
     if super::recorder::is_recording(&app) {
         return Err(refused(tr("update.stop_recording")));
     }
-    let updater = app.updater().map_err(|e| refused(tr_err("update.check_failed", e)))?;
-    let update = match updater.check().await {
+    let updater = updater(&app).map_err(|e| refused(tr_err("update.check_failed", e)))?;
+    let mut update = match updater.check().await {
         Ok(Some(u)) => u,
         Ok(None) => return Err(refused(tr("update.up_to_date"))),
         Err(e) => return Err(refused(tr_err("update.check_failed", e))),
@@ -156,6 +162,8 @@ async fn install(app: &AppHandle) -> CmdResult<()> {
     let on_finish = move || {
         let _ = finish_app.emit(UPDATE_PROGRESS, serde_json::json!({ "percent": 100, "restarting": true }));
     };
+    // The package is megabytes: more time than the check, still never forever.
+    update.timeout = Some(DOWNLOAD_TIMEOUT);
     let bytes = update
         .download(on_chunk, on_finish)
         .await
