@@ -172,6 +172,10 @@ fn start_with(app: &AppHandle, app_id: &str, app_label: &str, test_max_ms: Optio
     let rec = app.state::<RecorderState>();
     let on_speakers = speakers();
     let mut engine = rec.lock();
+    // Under the recorder's lock, so an update that starts installing sees this recording (updates_install).
+    if super::updates::installing(app) {
+        return Err(err(crate::i18n::tr("recorder.updating")));
+    }
     let storage = state.lock();
     let started_at = chrono::Local::now().fixed_offset();
     let mic = storage.settings_get().ok().flatten().and_then(|s| s["microphone"].as_str().map(String::from)).unwrap_or_default();

@@ -359,6 +359,12 @@ const TABLE: &[(&str, &str, &str, &str)] = &[
         "No se pudo quitar la clave del almacén seguro de claves: {error}",
     ),
     // Recorder
+    (
+        "recorder.updating",
+        "Talaan is installing an update and restarts in a moment. Record after that.",
+        "Talaan installe une mise à jour et redémarre dans un instant. Enregistrez ensuite.",
+        "Talaan está instalando una actualización y se reinicia en un momento. Graba después.",
+    ),
     ("recorder.already_recording", "Already recording", "Enregistrement déjà en cours", "Ya se está grabando"),
     ("recorder.not_recording", "Not recording", "Aucun enregistrement en cours", "No se está grabando"),
     ("recorder.no_mic_found", "No microphone found", "Aucun microphone trouvé", "No se encontró ningún micrófono"),

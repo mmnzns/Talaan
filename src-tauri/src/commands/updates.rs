@@ -8,7 +8,7 @@
 use super::{AppState, CmdResult};
 use crate::i18n::{tr, tr_err, tr_with};
 use crate::storage::StorageError;
-use crate::update_notice::{check_due, notice_path, read_notified, write_notified, Last, Notice};
+use crate::update_notice::{check_due, notice_path, read_notified, write_notified, InstallFlag, Last, Notice};
 use serde::Serialize;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -41,7 +41,7 @@ pub struct UpdateState {
     notice_file: PathBuf,
     /// Check at the next tick, not on the schedule (Talaan was started by a click on the update notification).
     soon: AtomicBool,
-    installing: AtomicBool,
+    installing: InstallFlag,
 }
 
 impl UpdateState {
@@ -57,7 +57,7 @@ impl UpdateState {
 pub fn setup(app: &AppHandle) {
     let notice_file = notice_path(app.state::<AppState>().lock().root());
     let notice = Notice::new(read_notified(&notice_file));
-    app.manage(UpdateState { pending: Mutex::new(None), notice: Mutex::new(notice), notice_file, soon: AtomicBool::new(false), installing: AtomicBool::new(false) });
+    app.manage(UpdateState { pending: Mutex::new(None), notice: Mutex::new(notice), notice_file, soon: AtomicBool::new(false), installing: InstallFlag::default() });
 }
 
 fn setting(app: &AppHandle, key: &str) -> bool {
@@ -103,31 +103,30 @@ pub fn updates_pending(app: AppHandle) -> Option<Available> {
     app.try_state::<UpdateState>().and_then(|s| s.pending().clone())
 }
 
-/// Downloads, verifies (signature), installs and relaunches. Refused while recording.
+/// True while an update downloads and installs: recordings don't start then (`recorder::start_with`).
+pub fn installing(app: &AppHandle) -> bool {
+    app.try_state::<UpdateState>().is_some_and(|s| s.installing.is_set())
+}
+
+/// Downloads, verifies (signature), installs and relaunches. Refused while recording, and no recording can
+/// start while it runs (the installer quits Talaan).
 #[tauri::command]
 pub async fn updates_install(app: AppHandle) -> CmdResult<()> {
+    let state = app.state::<UpdateState>();
+    // Two windows can ask at once; the second waits for the restart the first one causes.
+    let Some(_installing) = state.installing.begin() else {
+        return Ok(());
+    };
+    // The flag is set before this look, and a recording starts only after looking at the flag (under the
+    // recorder's lock), so from here on no call can start and none is running.
     if super::recorder::is_recording(&app) {
         return Err(refused(tr("update.stop_recording")));
     }
-    let state = app.try_state::<UpdateState>();
-    // Two windows can ask at once; the second waits for the restart the first one causes.
-    if state.as_ref().is_some_and(|s| s.installing.swap(true, Ordering::SeqCst)) {
-        return Ok(());
-    }
-    let done = |r: CmdResult<()>| {
-        if let Some(s) = &state {
-            s.installing.store(false, Ordering::SeqCst);
-        }
-        r
-    };
-    let updater = match app.updater() {
-        Ok(u) => u,
-        Err(e) => return done(Err(refused(tr_err("update.check_failed", e)))),
-    };
+    let updater = app.updater().map_err(|e| refused(tr_err("update.check_failed", e)))?;
     let update = match updater.check().await {
         Ok(Some(u)) => u,
-        Ok(None) => return done(Err(refused(tr("update.up_to_date")))),
-        Err(e) => return done(Err(refused(tr_err("update.check_failed", e)))),
+        Ok(None) => return Err(refused(tr("update.up_to_date"))),
+        Err(e) => return Err(refused(tr_err("update.check_failed", e))),
     };
     log::info!("installing update {}", update.version);
     let (progress_app, finish_app) = (app.clone(), app.clone());
@@ -145,10 +144,17 @@ pub async fn updates_install(app: AppHandle) -> CmdResult<()> {
     let on_finish = move || {
         let _ = finish_app.emit(UPDATE_PROGRESS, serde_json::json!({ "percent": 100, "restarting": true }));
     };
-    if let Err(e) = update.download_and_install(on_chunk, on_finish).await {
-        log::error!("update install failed: {}", crate::logging::text(&e));
-        return done(Err(refused(tr_err("update.install_failed", e))));
+    let bytes = update
+        .download(on_chunk, on_finish)
+        .await
+        .inspect_err(|e| log::error!("update download failed: {}", crate::logging::text(e)))
+        .map_err(|e| refused(tr_err("update.install_failed", e)))?;
+    // Last look before the installer quits Talaan.
+    if super::recorder::is_recording(&app) {
+        log::warn!("update not installed: a recording is running");
+        return Err(refused(tr("update.stop_recording")));
     }
+    update.install(bytes).inspect_err(|e| log::error!("update install failed: {}", crate::logging::text(e))).map_err(|e| refused(tr_err("update.install_failed", e)))?;
     log::info!("update installed, restarting");
     app.restart()
 }

@@ -213,6 +213,10 @@ struct Seen {
 
 fn run(app: &AppHandle, action: Action) {
     match action {
+        // While an update installs Talaan is about to restart: no "Record this call?" and no auto-start.
+        Action::Nudge { .. } | Action::AutoStart { .. } if super::updates::installing(app) => {
+            log::info!("call detection: not recording, an update is installing");
+        }
         Action::Nudge { app: id } => show_prompt(app, Prompt { kind: "nudge", label: label_of(&id), app: id, deadline: None }),
         Action::CloseNudge | Action::ClosePrompt => hide_prompt(app),
         Action::AutoStart { app: id } => {

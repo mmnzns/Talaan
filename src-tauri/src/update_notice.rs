@@ -10,6 +10,7 @@
 use crate::storage::io::{read_json_opt, write_json_atomic};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 
 pub const FIRST_CHECK_SECS: u64 = 20;
 pub const CHECK_EVERY_SECS: u64 = 6 * 3600;
@@ -82,6 +83,30 @@ impl Notice {
 
     pub fn notified(&self) -> Option<&str> {
         self.notified.as_deref()
+    }
+}
+
+/// Set while an update downloads and installs. No recording may start then: the installer quits Talaan, which
+/// would cut the call short. `begin` sets it (once: a second install gets None); the guard clears it when the
+/// install fails or gives up.
+#[derive(Default)]
+pub struct InstallFlag(AtomicBool);
+
+pub struct InstallGuard<'a>(&'a AtomicBool);
+
+impl InstallFlag {
+    pub fn begin(&self) -> Option<InstallGuard<'_>> {
+        (!self.0.swap(true, Ordering::SeqCst)).then_some(InstallGuard(&self.0))
+    }
+
+    pub fn is_set(&self) -> bool {
+        self.0.load(Ordering::SeqCst)
+    }
+}
+
+impl Drop for InstallGuard<'_> {
+    fn drop(&mut self) {
+        self.0.store(false, Ordering::SeqCst);
     }
 }
 
@@ -189,6 +214,18 @@ mod tests {
         assert_eq!(n.recording_stopped(), None);
         assert_eq!(n.found("1.1.0", true), None, "already announced: nothing waits");
         assert_eq!(n.recording_stopped(), None);
+    }
+
+    #[test]
+    fn one_install_at_a_time_and_recording_is_blocked_until_it_ends() {
+        let flag = InstallFlag::default();
+        assert!(!flag.is_set(), "recordings may start");
+        let guard = flag.begin().expect("the first install starts");
+        assert!(flag.is_set(), "no recording may start while it downloads");
+        assert!(flag.begin().is_none(), "a second install is refused");
+        drop(guard); // it failed or was given up
+        assert!(!flag.is_set(), "recordings may start again");
+        assert!(flag.begin().is_some(), "and Update now can be tried again");
     }
 
     #[test]
