@@ -1,4 +1,5 @@
 import { defaultSettings, withDefaults } from "../defaultSettings";
+import { StoreError } from "../errors";
 import { onWindows } from "../../lib/platform";
 import type { AutoSaveResult, AutoSaveStatus, ByokProvider, GpuStatus, NextMeeting, Settings, SettingsStore } from "../settings";
 
@@ -17,6 +18,14 @@ function load(): Settings {
 }
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+const previewParam = (name: string) => (typeof window === "undefined" ? null : new URLSearchParams(window.location.search).get(name));
+
+/** The browser preview shows a pending update with `?update=1.2.0` in the URL (and `?updateFail` makes Update now fail). */
+function previewUpdate(): { version: string; notes: string } | null {
+  const v = previewParam("update");
+  return v ? { version: v, notes: "Sample release notes." } : null;
+}
 /** When the sample data was loaded: the sample next meeting counts down from here. */
 const MOCK_ANCHOR = Date.now();
 
@@ -144,10 +153,18 @@ export class MockSettingsStore implements SettingsStore {
 
   async checkForUpdate() {
     await sleep(600);
-    return null;
+    return previewUpdate();
   }
 
-  async installUpdate() {}
+  /** The browser preview pretends to install: a short wait, then "Restarting…" (or the error with `?updateFail`). */
+  async installUpdate() {
+    await sleep(1500);
+    if (previewParam("updateFail") !== null) throw new StoreError("refused", "The update didn't install: signature mismatch");
+  }
+
+  async pendingUpdate() {
+    return previewUpdate();
+  }
 
   async calendarAccess() {
     return "allowed" as const;

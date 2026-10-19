@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Logo } from "../../brand/Logo";
 import { describeError } from "../../data/errors";
+import { phaseText, useUpdate } from "../../data/updates";
 import { useSettingsStore } from "../../data/StoreProvider";
 import { openLink } from "../../lib/windows";
 import { Button, Field, Label, Select, Switch } from "../../ui";
@@ -72,49 +73,46 @@ export function GeneralTab({ settings: s, update }: TabProps) {
   );
 }
 
-type Check = { state: "idle" | "checking" | "current" | "installing" } | { state: "available"; version: string } | { state: "error"; message: string };
+type Check = "idle" | "checking" | "current" | { error: string };
 
+/** Uses the same pending update as the main window's banner and the menu bar popover (`data/updates`). */
 function UpdatesRow({ settings: s, update }: TabProps) {
   const t = useT();
   const store = useSettingsStore();
-  const [check, setCheck] = useState<Check>({ state: "idle" });
+  const u = useUpdate();
+  const [check, setCheck] = useState<Check>("idle");
   const run = async () => {
-    setCheck({ state: "checking" });
+    setCheck("checking");
     try {
-      const u = await store.checkForUpdate();
-      setCheck(u ? { state: "available", version: u.version } : { state: "current" });
+      const found = await store.checkForUpdate();
+      u.found(found);
+      setCheck(found ? "idle" : "current");
     } catch (e) {
-      setCheck({ state: "error", message: describeError(e) });
+      setCheck({ error: describeError(e) });
     }
   };
-  const install = async () => {
-    setCheck({ state: "installing" });
-    try {
-      await store.installUpdate(); // relaunches when done
-    } catch (e) {
-      setCheck({ state: "error", message: describeError(e) });
-    }
-  };
+  const busy = u.phase.state === "installing" || u.phase.state === "restarting";
+  const progress = phaseText(t, u.phase);
   const desc =
-    check.state === "available"
-      ? t("settings.updates_available", { version: check.version })
-      : check.state === "current"
-        ? t("settings.updates_current", { version: __APP_VERSION__ })
-        : check.state === "error"
-          ? check.message
-          : check.state === "installing"
-            ? t("settings.updates_installing")
+    typeof check === "object"
+      ? check.error
+      : progress
+        ? progress
+        : u.pending
+          ? t("settings.updates_available", { version: u.pending.version })
+          : check === "current"
+            ? t("settings.updates_current", { version: __APP_VERSION__ })
             : t("settings.updates_version", { version: __APP_VERSION__ });
   return (
     <>
       <Row title={t("settings.updates_title")} desc={desc}>
-        {check.state === "available" ? (
-          <Button variant="primary" onClick={() => void install()}>
+        {u.pending ? (
+          <Button variant="primary" disabled={busy} onClick={() => void u.install()}>
             {t("settings.updates_now")}
           </Button>
         ) : (
-          <Button disabled={check.state === "checking" || check.state === "installing"} onClick={() => void run()}>
-            {check.state === "checking" ? t("settings.updates_checking") : t("settings.updates_check")}
+          <Button disabled={check === "checking"} onClick={() => void run()}>
+            {check === "checking" ? t("settings.updates_checking") : t("settings.updates_check")}
           </Button>
         )}
       </Row>

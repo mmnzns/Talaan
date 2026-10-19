@@ -1,7 +1,6 @@
-import { Download, MessageCircle, Settings as SettingsIcon } from "lucide-react";
-import { useEffect, useState } from "react";
+import { ArrowUp, Download, MessageCircle, Settings as SettingsIcon } from "lucide-react";
 import { useSettings } from "../../data/hooks";
-import { onEvent } from "../../data/tauri/invoke";
+import { useUpdate } from "../../data/updates";
 import type { RecorderState } from "../../data/recorder";
 import { formatTime } from "../../lib/format";
 import { onMac } from "../../lib/platform";
@@ -22,9 +21,10 @@ interface Props {
 export function Toolbar({ onImport, onRecord, recording }: Props) {
   const t = useT();
   const { settings } = useSettings();
-  // A newer version found by the launch check (the app only; nothing is downloaded until Update now).
-  const [update, setUpdate] = useState<string>();
-  useEffect(() => (inTauri() ? onEvent<{ version: string }>("update-available", (u) => setUpdate(u.version)) : undefined), []);
+  // A newer version (nothing is downloaded until Update now). The banner under the toolbar says it; after
+  // Later, this chip stays and brings the banner back.
+  const update = useUpdate();
+  const chip = update.pending && !update.bannerVisible ? update.pending.version : undefined;
   // Something in Settings › Status stops a call: a dot on the button, which then opens Status.
   const problems = useSetupProblems();
 
@@ -43,9 +43,11 @@ export function Toolbar({ onImport, onRecord, recording }: Props) {
         <span aria-hidden="true" className="size-[7px] rounded-full bg-gold shadow-[0_0_0_3px_color-mix(in_srgb,var(--t-gold)_30%,transparent)]" />
         {t(privacyChip(settings))}
       </Chip>
-      {update && (
-        <Chip tone="gold" onClick={() => void openSettings("general")} title={t("shell.updateReadyTitle", { version: update })}>
-          {t("shell.updateReady")}
+      {chip && (
+        <Chip tone="gold" onClick={update.showBanner} title={t("shell.updateReadyTitle", { version: chip })} aria-label={`${t("shell.updateReadyTitle", { version: chip })}. ${t("shell.updateShowBanner")}`}>
+          <ArrowUp size={12} aria-hidden="true" />
+          {/* Narrow windows: the arrow alone, so the toolbar stays on one line. */}
+          <span className="max-lg:hidden">{t("shell.updateReady")}</span>
         </Chip>
       )}
       <span data-tauri-drag-region className="flex-1 self-stretch" />

@@ -206,6 +206,8 @@ export interface SettingsStore {
   audioInputs(): Promise<string[]>;
   /** A newer version on GitHub, if any. */
   checkForUpdate(): Promise<{ version: string; notes?: string } | null>;
+  /** The newer version the last check found (at launch, every 6 hours, or Check now), if any. */
+  pendingUpdate(): Promise<{ version: string; notes?: string | null } | null>;
   /** Downloads, installs and relaunches. */
   installUpdate(): Promise<void>;
   /** Calendar access as the system reports it. */
