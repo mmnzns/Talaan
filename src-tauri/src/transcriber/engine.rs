@@ -298,3 +298,13 @@ mod probe {
         }
     }
 }
+
+#[cfg(test)]
+impl ParakeetEngine {
+    /// Test-only: a Parakeet TDT with the encoder and the decoder/joint configured separately
+    /// (`transcriber::measure`, the DirectML measurement).
+    pub(crate) fn load_tdt_with(dir: &Path, label: &str, encoder: parakeet_rs::ExecutionConfig, joint: parakeet_rs::ExecutionConfig) -> Result<Self, String> {
+        let m = parakeet_rs::ParakeetTDT::from_pretrained_with_joint_config(dir, Some(encoder), Some(joint)).map_err(|e| format!("couldn't load the speech model: {e}"))?;
+        Ok(ParakeetEngine { model: NvidiaModel::Tdt(m), label: label.into() })
+    }
+}

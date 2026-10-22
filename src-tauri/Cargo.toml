@@ -19,6 +19,9 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 # Test builds only: the updater end-to-end test (.github/workflows/updater-test.yml) turns this on through its
 # config overlay. Release builds never do; scripts/release-windows.ps1 checks talaan.exe for it.
 updater-e2e = []
+# Measurement only (docs/WINDOWS-PORT.md, "Parakeet measurements, 2026-10-22"): compiles the DirectML provider into
+# parakeet-rs so the ignored `parakeet_directml_live` test can run the encoder on the GPU. No build or script enables it.
+parakeet-directml = ["parakeet-rs/directml"]
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }

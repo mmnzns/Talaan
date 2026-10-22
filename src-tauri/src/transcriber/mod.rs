@@ -4,6 +4,8 @@ pub mod diarize;
 pub mod download;
 pub mod echo;
 pub mod fallback;
+#[cfg(test)]
+mod measure;
 pub mod engine;
 pub mod merge;
 pub mod models;
