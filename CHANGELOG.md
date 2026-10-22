@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.2.1 (unreleased)
+
+**Fixes**
+- **Stricter security for the app window:** Talaan's windows can now load only Talaan's own files, so nothing from the internet can run inside the app.
+
 ## 1.2.0 (2026-10-31)
 
 **Models and speed**
