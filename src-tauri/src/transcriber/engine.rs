@@ -35,7 +35,8 @@ pub fn load(model: &ModelInfo, dir: &Path, use_gpu: bool) -> Result<Box<dyn Engi
     }
 }
 
-/// Speech threads (three quarters of the cores on Windows, all on the Mac; `talaan_stt::thread_count`).
+/// Speech threads for Parakeet and the other ONNX models (three quarters of the cores on Windows, all on the Mac;
+/// `talaan_stt::thread_count`). Whisper has its own rule, `talaan_stt::whisper_threads`.
 fn threads() -> usize {
     talaan_stt::threads()
 }
@@ -155,6 +156,8 @@ pub struct WhisperEngine {
     state: whisper_rs::WhisperState,
     _ctx: whisper_rs::WhisperContext,
     label: String,
+    /// Running on the processor (no Metal, no GPU helper): that takes the three-quarters thread rule on the Mac too.
+    on_cpu: bool,
 }
 
 impl WhisperEngine {
@@ -163,14 +166,14 @@ impl WhisperEngine {
         let p = talaan_stt::context_params(use_gpu.then_some(0), cfg!(target_os = "macos") && use_gpu);
         let ctx = whisper_rs::WhisperContext::new_with_params(file, p).map_err(|e| format!("couldn't load the speech model: {e}"))?;
         let state = ctx.create_state().map_err(|e| format!("couldn't load the speech model: {e}"))?;
-        Ok(WhisperEngine { state, _ctx: ctx, label: label.into() })
+        Ok(WhisperEngine { state, _ctx: ctx, label: label.into(), on_cpu: !use_gpu })
     }
 }
 
 impl Engine for WhisperEngine {
     /// The same chunk transcription as the Windows GPU helper (`talaan_stt::transcribe`).
     fn transcribe(&mut self, samples: &[f32], language: Option<&str>) -> Result<ChunkResult, String> {
-        let (pieces, language) = talaan_stt::transcribe(&mut self.state, samples, language, threads())?;
+        let (pieces, language) = talaan_stt::transcribe(&mut self.state, samples, language, talaan_stt::whisper_threads(self.on_cpu))?;
         Ok(ChunkResult { pieces: pieces.into_iter().map(|p| Piece { start_ms: p.start_ms, end_ms: p.end_ms, text: p.text }).collect(), language })
     }
 
