@@ -193,6 +193,11 @@ settings.json   library.json   meetings/<YYYY-MM-DD_HHMM_xxxx>/
 
 Echo (drop Me lines matching Them within ~2 s, speaker warning on built-in output) · crash/sleep/device changes (folder created at start with "recording" status, audio flushed every few seconds, Recover/Discard on launch, follow device switches) · long meetings (chunk on speaker turns, summarize, merge, show progress) · no summary engine (save transcript-only, "Generate summary" later) · language (auto-detect per meeting, override, model picker shows languages) · titles (placeholder "Call, Zoom, Oct 14, 2:30 PM", replaced by summary title, editable) · permissions (explain before macOS asks, deep-link on denial).
 
+## Testing and safety
+
+- Tests that delete data (meetings, models, settings) only ever use throwaway items they create themselves, never Miguel's real data. In Parlato an agent deleted one of Miguel's real dictations this way.
+- An app launched by Claude may run with a sandboxed copy of the settings and data, so never trust Claude's own view of Miguel's settings. Ask, or check on his real machine.
+
 ## Commands
 
 ```bash

@@ -6,6 +6,7 @@ import { useLang, useT } from "../../lib/i18n/I18nProvider";
 import type { MessageKey } from "../../lib/i18n";
 import { modelNote, splitByTier, tierOf } from "../../lib/modelTiers";
 import { Button, Chip, Radio, Select, Switch, cn, useToast } from "../../ui";
+import { DeleteModelLink } from "./DeleteModelLink";
 import { Dots, Group, Row, SectionIntro } from "./parts";
 import type { TabProps } from "./tabProps";
 
@@ -142,9 +143,7 @@ function ModelCard({ model: m, settings: s, update }: { model: SpeechModel } & T
           </span>
         )}
         {m.state === "downloaded" && !on && (
-          <button type="button" className="cursor-pointer border-0 bg-transparent p-0 text-xs text-subtle underline" onClick={() => run(store.deleteModel(m.id))}>
-            {t("settings.delete")}
-          </button>
+          <DeleteModelLink id={m.id} name={m.name} sizeMb={m.sizeMb} />
         )}
       </div>
     </div>
@@ -177,9 +176,7 @@ function ExtraModelRow({ model: m, title, desc, on, onToggle }: { model: SpeechM
       {installed(m) && (
         <span className="flex items-center gap-3">
           {m.state === "downloaded" && (
-            <button type="button" className="cursor-pointer border-0 bg-transparent p-0 text-xs text-subtle underline" onClick={() => run(store.deleteModel(m.id))}>
-              {t("settings.delete")}
-            </button>
+            <DeleteModelLink id={m.id} name={m.name} sizeMb={m.sizeMb} />
           )}
           {onToggle ? <Switch aria-label={title} checked={!!on} onChange={onToggle} /> : <Chip tone="gold">{t("settings.on")}</Chip>}
         </span>

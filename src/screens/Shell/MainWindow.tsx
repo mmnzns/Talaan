@@ -19,7 +19,7 @@ import { TestRecordingWatcher } from "../Onboarding/TestRecording";
 
 export function MainWindow({ route }: { route: Route }) {
   const [importing, setImporting] = useState(false);
-  const [dropped, setDropped] = useState<string>();
+  const [dropped, setDropped] = useState<string[]>();
   const recording = useRecording();
 
   useEffect(() => {
@@ -62,7 +62,7 @@ export function MainWindow({ route }: { route: Route }) {
     return startAutoSave(meetingStore, settingsStore, (cb) => onEvent<{ id: string; finished: boolean }>("autosave-due", cb));
   }, [meetingStore, settingsStore]);
 
-  // Drop an audio file anywhere on the window to import it.
+  // Drop audio files anywhere on the window to import them, one after another.
   useEffect(() => {
     if (!inTauri()) return;
     let off: (() => void) | undefined;
@@ -70,9 +70,9 @@ export function MainWindow({ route }: { route: Route }) {
       getCurrentWebview()
         .onDragDropEvent((e) => {
           if (e.payload.type === "over") setImporting(true);
-          if (e.payload.type === "drop" && e.payload.paths[0]) {
+          if (e.payload.type === "drop" && e.payload.paths.length > 0) {
             setImporting(true);
-            setDropped(e.payload.paths[0]);
+            setDropped([...e.payload.paths]);
           }
         })
         .then((unlisten) => (off = unlisten)),
@@ -103,6 +103,7 @@ export function MainWindow({ route }: { route: Route }) {
       <ImportSheet
         open={importing}
         dropped={dropped}
+        onShow={() => setImporting(true)}
         onClose={() => {
           setImporting(false);
           setDropped(undefined);

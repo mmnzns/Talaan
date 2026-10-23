@@ -343,6 +343,7 @@ Remove-Item -Recurse HKCU:\Software\Classes\talaan -ErrorAction SilentlyContinue
 | Meetings, audio, models, settings | `~/Library/Application Support/Talaan` |
 | App data | `~/Library/Application Support/com.craftconceptsdigital.talaan`, `~/Library/Caches/com.craftconceptsdigital.talaan`, `~/Library/WebKit/com.craftconceptsdigital.talaan`, `~/Library/HTTPStorages/com.craftconceptsdigital.talaan`, `~/Library/Preferences/com.craftconceptsdigital.talaan.plist`, `~/Library/Saved Application State/com.craftconceptsdigital.talaan.savedState` |
 | Open at login | `~/Library/LaunchAgents/Talaan.plist`, also listed in **System Settings › General › Login Items & Extensions** |
+| Background item | **System Settings › General › Login Items & Extensions › Allow in the Background** can still list Talaan after you delete the app. Remove it there (or switch it off). |
 | Saved API keys | **Keychain Access**, search "Talaan": entries named `Talaan` for `claude`, `openai`, `gemini`, `compatible`, `notion` |
 
 Or paste this into Terminal:

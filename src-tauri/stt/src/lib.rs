@@ -22,6 +22,18 @@ pub fn threads() -> usize {
     thread_count(std::thread::available_parallelism().map(|n| n.get()).unwrap_or(4), cfg!(windows))
 }
 
+/// Threads for Whisper. Whisper running on the processor (any system) takes the three-quarters rule: Parlato measured
+/// it slowest at all 12 cores and fastest at about three quarters. On the Mac with Metal the processor only feeds the
+/// graphics chip, and Parakeet is not Whisper, so those keep `threads()`.
+pub fn whisper_threads(on_cpu: bool) -> usize {
+    thread_count_for(std::thread::available_parallelism().map(|n| n.get()).unwrap_or(4), cfg!(windows), on_cpu)
+}
+
+/// The pure rule behind `whisper_threads`: Windows and any Whisper-on-processor run use three quarters of the cores.
+pub fn thread_count_for(logical: usize, windows: bool, whisper_on_cpu: bool) -> usize {
+    thread_count(logical, windows || whisper_on_cpu)
+}
+
 /// Mac: all cores, 2..=8 (the original formula). Windows: three quarters of the logical cores, 2..=12. Measured on a
 /// 16-thread Ryzen: 12 threads is fastest and 16 is 2-3x slower (same finding as Parlato).
 pub fn thread_count(logical: usize, windows: bool) -> usize {
@@ -117,6 +129,30 @@ mod tests {
     fn mac_thread_count_is_all_cores_clamped() {
         for (logical, want) in [(16, 8), (10, 8), (8, 8), (4, 4), (2, 2), (1, 2)] {
             assert_eq!(thread_count(logical, false), want, "{logical} cores");
+        }
+    }
+
+    #[test]
+    fn mac_whisper_on_the_processor_uses_three_quarters() {
+        // 12 cores: all of them was slowest in Parlato's measurements, about three quarters best.
+        for (logical, want) in [(12, 9), (10, 7), (8, 6), (16, 12), (4, 3), (2, 2), (1, 2)] {
+            assert_eq!(thread_count_for(logical, false, true), want, "{logical} cores");
+        }
+    }
+
+    #[test]
+    fn mac_on_metal_and_other_engines_keep_all_cores() {
+        for (logical, want) in [(12, 8), (10, 8), (8, 8), (4, 4), (2, 2)] {
+            assert_eq!(thread_count_for(logical, false, false), want, "{logical} cores");
+        }
+    }
+
+    #[test]
+    fn windows_is_three_quarters_either_way() {
+        for on_cpu in [true, false] {
+            for (logical, want) in [(16, 12), (8, 6), (4, 3)] {
+                assert_eq!(thread_count_for(logical, true, on_cpu), want, "{logical} cores, cpu {on_cpu}");
+            }
         }
     }
 

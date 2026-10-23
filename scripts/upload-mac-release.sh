@@ -15,8 +15,8 @@ trap 'rm -rf "$TMP"' EXIT
 # Same names tauri-action uses, so a CI-built Mac release looks the same.
 cp "$OUT/macos/Talaan.app.tar.gz" "$TMP/Talaan_aarch64.app.tar.gz"
 cp "$OUT/macos/Talaan.app.tar.gz.sig" "$TMP/Talaan_aarch64.app.tar.gz.sig"
-# The notes link to INSTALL.md and CHANGELOG.md as of this tag.
-sed "s/{{TAG}}/$TAG/g" scripts/release-notes.md > "$TMP/notes.md"
+# This version's CHANGELOG.md section plus the install text (fails when CHANGELOG.md has no section for it).
+node scripts/release-notes.mjs "$TAG" > "$TMP/notes.md"
 gh release view "$TAG" >/dev/null 2>&1 || gh release create "$TAG" --draft --verify-tag --title "Talaan $TAG" --notes-file "$TMP/notes.md"
 gh release upload "$TAG" "$OUT/dmg/Talaan_${VERSION}_aarch64.dmg" "$TMP/Talaan_aarch64.app.tar.gz" "$TMP/Talaan_aarch64.app.tar.gz.sig" --clobber
 node scripts/latest-json.mjs "$TAG"
