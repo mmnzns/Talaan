@@ -39,14 +39,15 @@ export function Sheet({ open, title, onClose, children, className }: Props) {
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key !== "Escape" && e.key !== "Tab") return;
+      // Another sheet already took this key (two stacked sheets each listen; the top one can close first).
+      if (e.defaultPrevented || (e.key !== "Escape" && e.key !== "Tab")) return;
       const dialog = ref.current;
       if (!dialog) return;
       // Only the top-most sheet answers Escape and traps Tab (a sheet can open over another, e.g. a failed import).
       const modals = document.querySelectorAll('[aria-modal="true"]');
       if (modals[modals.length - 1] !== dialog) return;
       if (e.key === "Escape") {
-        e.stopPropagation();
+        e.preventDefault();
         onCloseRef.current();
         return;
       }
