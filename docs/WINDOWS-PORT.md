@@ -336,3 +336,35 @@ Windows needs its own title bar treatment.
 
 The release gate on Notion passes on Windows too: install, onboard, record a real Zoom/Teams/Meet call with
 both sides, transcribe and summarize offline, call rules, export, Ask, update from a previous build.
+
+## Parakeet measurements, 2026-10-22
+
+Code: `src-tauri/src/transcriber/measure.rs` (test-only; the live tests are `#[ignore]` and take their inputs from the
+environment). Two questions from Parlato's notes: is 40 s too long a chunk for Parakeet, and is the encoder worth
+running on the graphics card (DirectML).
+
+### Chunk length (measured on the Mac, 2026-10-23)
+
+- **Input:** an original 648-word meeting monologue (budget, decisions, owners, open questions, numbers and dates) spoken by
+  macOS `say`, 200 s at 16 kHz, nearly continuous: the VAD finds 1 span, so the chunks are as long as the limit allows.
+  Scored against the script with the word normalisation in `measure.rs` (digits spoken, punctuation dropped). Run
+  clean and with noise at 10 dB SNR (`TALAAN_PK_NOISE_DB=10`).
+- **Model:** Parakeet Ultra (Parakeet TDT 0.6B v3 further trained, the same architecture and chunking as Parakeet v3), int8,
+  on the processor (Apple M3 Pro).
+
+| Max chunk | Chunks | Clean: word errors | 10 dB noise: word errors | Dropped / repeated phrases | Speed |
+|---|---|---|---|---|---|
+| 40 s (today's `Shape::parakeet`) | 6, avg 33 s | 2.16% | 4.48% | 0 / 0 | 52-56x real time |
+| 25 s | 9, avg 22 s | 2.31% | 4.01% | 0 / 0 | 54-58x |
+| 15 s | 15, avg 13 s | 2.62% | 4.78% | 0 / 0 | 52-56x |
+
+**Conclusion: keep 40 s.** No drift, dropped or repeated phrases at any length; the differences (about half a point either
+way, with 25 s best in noise and 40 s best clean) are within what one synthetic voice and one run can tell apart, and the
+speed is the same. Parlato's drift was on a 147 s recording fed as one long piece; Talaan already cuts at 40 s and,
+since 1.0, resumes when decoding stops early (`ParakeetEngine::transcribe`). Revisit with a real long call (several voices, crosstalk) if a
+transcript ever shows the drift.
+
+### Parakeet on the graphics card (DirectML)
+
+Not measured yet: needs the Windows PC (`--features parakeet-directml`, `parakeet_directml_live`). Keep it only if it's
+more than 2x faster with an equivalent transcript (Parlato measured 2.4x on the same RTX 5070 Ti).
