@@ -2,6 +2,10 @@ import { useEffect, useRef, type ReactNode } from "react";
 import { cn } from "./cn";
 import { focusableIn, initialFocusIn, openerElement, trackPointer, trapTarget } from "./focus";
 
+// Remember clicks from the start: on the Mac a clicked button doesn't take focus, so the click that opens the first
+// sheet is the only way to know where focus should go back to.
+trackPointer();
+
 interface Props {
   open: boolean;
   title: string;
@@ -19,11 +23,6 @@ export function Sheet({ open, title, onClose, children, className }: Props) {
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
 
-  useEffect(() => {
-    if (!open) return;
-    trackPointer();
-  }, [open]);
-
   // Focus in on open, back to the opener on close. Keyed on `open` only: a parent re-rendering with a new
   // `onClose` must not move focus.
   useEffect(() => {
@@ -40,13 +39,17 @@ export function Sheet({ open, title, onClose, children, className }: Props) {
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") return onCloseRef.current();
-      if (e.key !== "Tab") return;
+      if (e.key !== "Escape" && e.key !== "Tab") return;
       const dialog = ref.current;
       if (!dialog) return;
-      // Only the top-most sheet traps Tab (a sheet can open over another).
+      // Only the top-most sheet answers Escape and traps Tab (a sheet can open over another, e.g. a failed import).
       const modals = document.querySelectorAll('[aria-modal="true"]');
       if (modals[modals.length - 1] !== dialog) return;
+      if (e.key === "Escape") {
+        e.stopPropagation();
+        onCloseRef.current();
+        return;
+      }
       const stops = focusableIn(dialog);
       if (stops.length === 0) {
         e.preventDefault();

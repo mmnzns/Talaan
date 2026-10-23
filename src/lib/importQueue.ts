@@ -64,6 +64,8 @@ const empty = (): QueueSnapshot => ({ running: false, total: 0, finished: 0, fai
 
 export class ImportQueue {
   private pending: string[] = [];
+  /** Waiting or importing right now: the same file dropped again meanwhile is skipped, not imported twice. */
+  private queued = new Set<string>();
   private state = empty();
   private active = false;
 
@@ -75,7 +77,9 @@ export class ImportQueue {
 
   /** Adds files (and paths of files that can't be imported). Starts the run if it isn't running. */
   add(paths: string[], unsupported: string[] = []) {
+    paths = paths.filter((p) => !this.queued.has(p));
     if (paths.length === 0 && unsupported.length === 0) return;
+    paths.forEach((p) => this.queued.add(p));
     if (!this.active) this.state = empty();
     this.pending.push(...paths);
     this.state = {
@@ -106,6 +110,7 @@ export class ImportQueue {
       } catch (e) {
         outcome = { ok: false, message: e instanceof Error ? e.message : String(e) };
       }
+      this.queued.delete(path);
       this.state = {
         ...this.state,
         finished: this.state.finished + 1,

@@ -208,13 +208,18 @@ jobs:
           includeUpdaterJson: false
           args: --target aarch64-apple-darwin
 
-      # The draft's notes come from the draft job (CHANGELOG.md section); put them back in case tauri-action touched them.
+      # The draft's notes come from the draft job (CHANGELOG.md section); put them back only if tauri-action replaced
+      # them, so notes edited by hand on the draft while this job ran are kept.
       - name: Keep the release notes from CHANGELOG.md
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          node scripts/release-notes.mjs "$GITHUB_REF_NAME" > "$RUNNER_TEMP/notes.md"
-          gh release edit "$GITHUB_REF_NAME" --notes-file "$RUNNER_TEMP/notes.md"
+          body=$(gh release view "$GITHUB_REF_NAME" --json body -q .body)
+          case "$body" in
+            "## What's new in "*) echo "Release notes intact." ;;
+            *) node scripts/release-notes.mjs "$GITHUB_REF_NAME" > "$RUNNER_TEMP/notes.md"
+               gh release edit "$GITHUB_REF_NAME" --notes-file "$RUNNER_TEMP/notes.md" ;;
+          esac
 
       - name: Signature check
         run: |

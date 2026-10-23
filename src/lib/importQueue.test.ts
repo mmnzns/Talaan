@@ -122,6 +122,28 @@ describe("ImportQueue", () => {
     expect(onFinish).toHaveBeenCalledTimes(1);
   });
 
+  it("skips a file dropped again while it's still waiting or importing", async () => {
+    const seen: string[] = [];
+    let release: () => void = () => {};
+    const gate = new Promise<void>((r) => (release = r));
+    const done = vi.fn();
+    const q = new ImportQueue({
+      importOne: async (path) => {
+        seen.push(path);
+        await gate;
+        return { ok: true, id: path };
+      },
+      onChange: () => {},
+      onFinish: done,
+    });
+    q.add(["/a.m4a", "/b.m4a"]);
+    q.add(["/a.m4a", "/b.m4a", "/c.m4a"]);
+    release();
+    await vi.waitFor(() => expect(done).toHaveBeenCalledTimes(1));
+    expect(seen).toEqual(["/a.m4a", "/b.m4a", "/c.m4a"]);
+    expect(done.mock.calls[0][0].total).toBe(3);
+  });
+
   it("starts a fresh run after one has finished", async () => {
     const { queue, finished } = setup(async () => ({ ok: false, message: "no" }));
     queue.add(["/a/1.mp3"]);

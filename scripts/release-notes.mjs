@@ -16,7 +16,12 @@ export function changelogSection(markdown, version) {
   const start = lines.findIndex((l) => HEADING.exec(l)?.[1] === want);
   if (start === -1) throw new Error(`CHANGELOG.md has no section for ${want} (expected a "## ${want} (date)" heading)`);
   const rest = lines.slice(start + 1);
-  const end = rest.findIndex((l) => /^##\s/.test(l));
+  // The next "## " heading ends the section, but not one inside a code block.
+  let inFence = false;
+  const end = rest.findIndex((l) => {
+    if (/^\s*(```|~~~)/.test(l)) inFence = !inFence;
+    return !inFence && /^##\s/.test(l);
+  });
   const section = (end === -1 ? rest : rest.slice(0, end)).join("\n").trim();
   if (!section) throw new Error(`CHANGELOG.md has a heading for ${want} but nothing under it`);
   return section;

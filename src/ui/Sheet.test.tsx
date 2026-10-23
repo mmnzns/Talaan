@@ -155,4 +155,23 @@ describe("Sheet focus", () => {
     await user.tab();
     expect(document.activeElement).toBe(screen.getByText("Over A"));
   });
+
+  it("Escape closes only the top-most of two stacked sheets", async () => {
+    const user = userEvent.setup();
+    const under = vi.fn();
+    const over = vi.fn();
+    render(
+      <>
+        <Sheet open title="Under" onClose={under}>
+          <button>Under A</button>
+        </Sheet>
+        <Sheet open title="Over" onClose={over}>
+          <button>Over A</button>
+        </Sheet>
+      </>,
+    );
+    await user.keyboard("{Escape}");
+    expect(over).toHaveBeenCalledTimes(1);
+    expect(under).not.toHaveBeenCalled();
+  });
 });

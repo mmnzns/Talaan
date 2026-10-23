@@ -28,6 +28,14 @@ const CHANGELOG = `# Changelog
 `;
 
 describe("changelogSection", () => {
+  it("a ## line inside a code block doesn't end the section", () => {
+    const md = "## 2.0.0 (2026-11-01)\n\n- a\n\n```\n## not a heading\n```\n\n- b\n\n## 1.9.0 (2026-10-01)\n\n- old\n";
+    const s = changelogSection(md, "2.0.0");
+    expect(s).toContain("## not a heading");
+    expect(s).toContain("- b");
+    expect(s).not.toContain("- old");
+  });
+
   it("returns the version's section up to the next heading", () => {
     const s = changelogSection(CHANGELOG, "1.1.1");
     expect(s).toBe("- **Know:** the old one.");
