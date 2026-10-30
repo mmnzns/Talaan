@@ -124,6 +124,7 @@ pub fn setup(app: &AppHandle, data_dir: PathBuf) {
         }),
         unsummarized: Arc::new(move |id, title| notify_done(&done_app, id, "notify.transcript_ready", title)),
         profile: Box::new(move |cfg| summary_profile(cfg, &profile_dir)),
+        quitting: crate::quit::flag(),
     });
     let storage = state.lock();
     for id in storage.ids_with_status(MeetingStatus::Summarizing).unwrap_or_default() {

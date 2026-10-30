@@ -15,6 +15,7 @@ mod logging;
 mod models;
 mod notion;
 mod platform;
+mod quit;
 mod recorder;
 mod storage;
 mod summarizer;
@@ -275,9 +276,7 @@ pub fn run() {
                     }
                     // The helpers end with the app (Windows can't replace a running helper, and a helper left behind
                     // would hold the models' memory).
-                    summarizer::local::shutdown_all();
-                    #[cfg(windows)]
-                    app.state::<commands::transcriber::TranscriberState>().shutdown_speech_helper();
+                    commands::shutdown_helpers(app);
                     rec_cmd::stop_on_exit(app)
                 }
                 // Dock icon clicked while the main window is hidden.

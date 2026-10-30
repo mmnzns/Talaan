@@ -73,6 +73,9 @@ pub struct Deps {
     pub unsummarized: Arc<dyn Fn(&str, &str) + Send + Sync>,
     /// How a summary with these settings is timed on this computer (`eta::summary_profile`).
     pub profile: Box<dyn Fn(&Config) -> Profile + Send + Sync>,
+    /// Set when Talaan is quitting (`crate::quit`): a summary that fails then is left `summarizing` (it resumes at
+    /// the next launch) instead of ending without one.
+    pub quitting: Arc<std::sync::atomic::AtomicBool>,
 }
 
 /// Other work that needs the local AI (a follow-up draft): run on this thread between summaries, so only one
@@ -243,6 +246,11 @@ fn without_summary(deps: &Deps, id: &str, auto: bool, code: &str, message: Strin
 }
 
 fn without_summary_detail(deps: &Deps, id: &str, auto: bool, code: &str, message: String, detail: Option<String>) {
+    // The AI helper was stopped because Talaan is quitting: not a failure of the summary.
+    if code == FAILED && deps.quitting.load(Ordering::SeqCst) {
+        log::info!("summary interrupted by quitting: meeting {id} stays as it is");
+        return;
+    }
     match &detail {
         Some(d) => log::warn!("no summary for meeting {id} ({code}): {} | helper: {}", crate::logging::text(&message), crate::logging::text(d)),
         None if code == TOO_SHORT => log::info!("no summary for meeting {id}: too little speech"),
@@ -369,6 +377,10 @@ mod tests {
     }
 
     fn setup_profile(make: Box<EngineFactory>, profile: Box<dyn Fn(&Config) -> Profile + Send + Sync>) -> (tempfile::TempDir, Arc<Mutex<Storage>>, String, Worker, Arc<Mutex<Vec<String>>>) {
+        setup_quitting(make, profile, Arc::default())
+    }
+
+    fn setup_quitting(make: Box<EngineFactory>, profile: Box<dyn Fn(&Config) -> Profile + Send + Sync>, quitting: Arc<AtomicBool>) -> (tempfile::TempDir, Arc<Mutex<Storage>>, String, Worker, Arc<Mutex<Vec<String>>>) {
         let dir = tempfile::tempdir().unwrap();
         let mut storage = Storage::new(dir.path().to_path_buf()).unwrap();
         let f = storage.create_meeting("zoom", "Zoom", chrono::DateTime::parse_from_rfc3339("2026-10-14T14:30:00-07:00").unwrap()).unwrap();
@@ -388,6 +400,7 @@ mod tests {
             // "Transcript ready" is told apart from "Summary ready" by a prefix.
             unsummarized: Arc::new(move |_, t| d3.lock().unwrap().push(format!("transcript: {t}"))),
             profile,
+            quitting,
         });
         (dir, storage, f.id, worker, done)
     }
@@ -527,6 +540,24 @@ mod tests {
         wait(&w);
         assert_eq!(storage.lock().unwrap().get_meeting(&id).unwrap().summary_error.unwrap().code, FAILED);
         assert!(done.lock().unwrap().is_empty(), "the reason is on screen; no notification");
+    }
+
+    #[test]
+    fn a_summary_cut_short_by_quitting_stays_summarizing() {
+        let quitting = Arc::new(AtomicBool::new(false));
+        let q2 = quitting.clone();
+        // The helper dies as Talaan quits: the engine fails with the flag already set.
+        let make: Box<EngineFactory> = Box::new(move |_| {
+            q2.store(true, Ordering::SeqCst);
+            Ok(Box::new(Dies))
+        });
+        let (_d, storage, id, w, done) = setup_quitting(make, Box::new(|c| eta::summary_profile(&c.engine, "test", false)), quitting);
+        w.enqueue(&id);
+        wait(&w);
+        let f = storage.lock().unwrap().read_meeting_file(&id).unwrap();
+        assert_eq!(f.status, MeetingStatus::Summarizing);
+        assert!(f.summary_error.is_none());
+        assert!(done.lock().unwrap().is_empty());
     }
 
     /// An engine that fails the way the local AI does when its helper dies.

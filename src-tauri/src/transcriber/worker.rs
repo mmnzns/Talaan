@@ -79,6 +79,8 @@ pub struct Deps {
     /// (transcript only, or automatic summaries off): the "Transcript ready" notification.
     pub transcript_ready: Arc<dyn Fn(&str, &str) + Send + Sync>,
     pub on_gpu: Arc<OnGpu>,
+    /// Set when Talaan is quitting (`crate::quit`): a job that ends then is left as it is, not failed.
+    pub quitting: Arc<AtomicBool>,
 }
 
 #[derive(Default)]
@@ -135,6 +137,15 @@ impl Worker {
         let mut q = lock.lock().unwrap_or_else(|e| e.into_inner());
         q.ids.retain(|i| i != id);
         if q.current.as_deref() == Some(id) {
+            self.cancel.store(true, Ordering::Relaxed);
+        }
+    }
+
+    /// Cancels the job running now, leaving its meeting as it is (Talaan is quitting).
+    pub fn cancel_running(&self) {
+        let (lock, _) = &*self.queue;
+        let q = lock.lock().unwrap_or_else(|e| e.into_inner());
+        if q.current.is_some() {
             self.cancel.store(true, Ordering::Relaxed);
         }
     }
@@ -228,6 +239,12 @@ fn lock(storage: &Mutex<Storage>) -> std::sync::MutexGuard<'_, Storage> {
 }
 
 fn fail(deps: &Deps, id: &str, code: &str, message: String) {
+    // Talaan is quitting and the helpers are going: the job ended because of that. The meeting stays `transcribing`
+    // and is picked up again at the next launch.
+    if deps.quitting.load(Ordering::SeqCst) {
+        log::info!("transcription interrupted by quitting: meeting {id} stays as it is");
+        return;
+    }
     log::warn!("transcription failed: meeting {id} ({code}): {}", crate::logging::text(&message));
     let _ = lock(&deps.storage).update_meeting_file(id, |f| {
         f.status = MeetingStatus::Failed;
@@ -289,6 +306,9 @@ pub fn restamp_queue(s: &Storage, ids: &[String], on_gpu: &OnGpu) {
 }
 
 fn process(deps: &Deps, id: &str, loaded: &mut Option<Loaded>, cancel: &AtomicBool, busy: &Mutex<Vec<&'static str>>) {
+    if deps.quitting.load(Ordering::SeqCst) {
+        return;
+    }
     let (dir, config, transcript_only, audio) = {
         let s = lock(&deps.storage);
         let Ok(file) = s.read_meeting_file(id) else { return };
@@ -456,6 +476,9 @@ fn process(deps: &Deps, id: &str, loaded: &mut Option<Loaded>, cancel: &AtomicBo
         }
         // Cancelled means the meeting is being deleted; leave it alone.
         Err(PipelineError::Cancelled) => log::info!("transcription cancelled: meeting {id} (being deleted)"),
+        // The meeting was deleted (or everything was stopped) and the engine said so with an error instead of
+        // returning: same as cancelled.
+        Err(PipelineError::Failed(_)) if cancel.load(Ordering::Relaxed) => log::info!("transcription cancelled: meeting {id}"),
         Err(PipelineError::Failed(e)) => fail(deps, id, "failed", e),
     }
 }
@@ -508,6 +531,11 @@ mod tests {
 
     /// `secs` of tone on the Them track, the given engine and graphics-chip answer.
     fn setup_full(with_models: bool, secs: usize, load_engine: Box<EngineLoader>, on_gpu: Arc<OnGpu>) -> (tempfile::TempDir, Arc<Mutex<Storage>>, String, Worker, Arc<Mutex<Vec<String>>>) {
+        setup_quitting(with_models, secs, load_engine, on_gpu, Arc::default())
+    }
+
+    /// `setup_full` with the "Talaan is quitting" flag the test holds.
+    fn setup_quitting(with_models: bool, secs: usize, load_engine: Box<EngineLoader>, on_gpu: Arc<OnGpu>, quitting: Arc<AtomicBool>) -> (tempfile::TempDir, Arc<Mutex<Storage>>, String, Worker, Arc<Mutex<Vec<String>>>) {
         let ready = Arc::new(Mutex::new(vec![]));
         let r2 = ready.clone();
         let dir = tempfile::tempdir().unwrap();
@@ -541,6 +569,7 @@ mod tests {
             transcribed: Arc::new(|_| {}),
             transcript_ready: Arc::new(move |_, t| r2.lock().unwrap().push(t.to_string())),
             on_gpu,
+            quitting,
         });
         (dir, storage, f.id, worker, ready)
     }
@@ -908,6 +937,50 @@ mod tests {
         assert_eq!(s.read_meeting_file(&second).unwrap().status, MeetingStatus::Transcribing);
         assert!(s.get_meeting(&id).unwrap().transcript.is_empty());
         assert!(s.get_meeting(&second).unwrap().transcript.is_empty());
+    }
+
+    /// Errors as soon as the first chunk is asked for, after setting the quitting flag (what the helper's
+    /// shutdown looks like from the engine: the request fails).
+    struct DiesWhenQuitting(Arc<AtomicBool>);
+    impl Engine for DiesWhenQuitting {
+        fn transcribe(&mut self, _s: &[f32], _l: Option<&str>) -> Result<ChunkResult, String> {
+            self.0.store(true, Ordering::SeqCst);
+            Err("the helper went away".into())
+        }
+        fn label(&self) -> &str {
+            "Dies"
+        }
+        fn chunking(&self) -> Shape {
+            Shape { pad: 0, ..Shape::default() }
+        }
+    }
+
+    #[test]
+    fn a_job_that_ends_because_talaan_is_quitting_leaves_the_meeting_transcribing() {
+        let quitting = Arc::new(AtomicBool::new(false));
+        let q2 = quitting.clone();
+        let (_d, storage, id, worker, _) = setup_quitting(true, 1, Box::new(move |_, _, _| Ok(Box::new(DiesWhenQuitting(q2.clone())))), Arc::new(|_, _| false), quitting);
+        worker.enqueue(&id);
+        wait(&worker);
+        let f = storage.lock().unwrap().read_meeting_file(&id).unwrap();
+        assert_eq!(f.status, MeetingStatus::Transcribing);
+        assert!(f.error.is_none());
+    }
+
+    #[test]
+    fn the_same_error_without_quitting_still_fails_the_meeting() {
+        let (_d, storage, id, worker, _) = setup_quitting(true, 1, Box::new(|_, _, _| Ok(Box::new(DiesWhenQuitting(Arc::default())))), Arc::new(|_, _| false), Arc::default());
+        worker.enqueue(&id);
+        wait(&worker);
+        assert_eq!(storage.lock().unwrap().read_meeting_file(&id).unwrap().status, MeetingStatus::Failed);
+    }
+
+    #[test]
+    fn nothing_starts_once_talaan_is_quitting() {
+        let (_d, storage, id, worker, _) = setup_quitting(true, 1, Box::new(|_, _, _| Ok(Box::new(Echoes("Hi.")))), Arc::new(|_, _| false), Arc::new(AtomicBool::new(true)));
+        worker.enqueue(&id);
+        wait(&worker);
+        assert_eq!(storage.lock().unwrap().read_meeting_file(&id).unwrap().status, MeetingStatus::Transcribing);
     }
 
     #[test]

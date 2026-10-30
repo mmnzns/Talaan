@@ -175,9 +175,7 @@ async fn install(app: &AppHandle) -> CmdResult<()> {
         return Err(refused(tr("update.stop_recording")));
     }
     // Windows can't replace a running helper: stop the AI and speech helpers first.
-    crate::summarizer::local::shutdown_all();
-    #[cfg(windows)]
-    app.state::<super::transcriber::TranscriberState>().shutdown_speech_helper();
+    super::shutdown_helpers(&app);
     update.install(bytes).inspect_err(|e| log::error!("update install failed: {}", crate::logging::text(e))).map_err(|e| refused(tr_err("update.install_failed", e)))?;
     log::info!("update installed, restarting");
     app.restart()

@@ -138,6 +138,7 @@ pub fn setup(app: &AppHandle, data_dir: PathBuf) {
             Arc::new(move |id: &str, title: &str| super::summarizer::notify_done(&app, id, "notify.transcript_ready", title))
         },
         on_gpu: on_gpu.clone(),
+        quitting: crate::quit::flag(),
     });
     let storage = state.lock();
     let waiting = storage.ids_with_status(MeetingStatus::Transcribing).unwrap_or_default();
