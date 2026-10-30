@@ -14,7 +14,7 @@ export interface DownloadItem {
   id: string;
   name: string;
   sizeMb: number;
-  state: string; // "not_downloaded" | "downloading" | "downloaded" | "on_this_mac"
+  state: string; // "not_downloaded" | "downloading" | "downloaded"
   progress?: number;
   /** What an interrupted download left on disk (0..1). */
   partial?: number;
@@ -37,10 +37,10 @@ export function cancelledPartials(needed: DownloadItem[]): DownloadItem[] {
   return needed.filter((m) => m.state === "not_downloaded" && (m.partial ?? 0) > 0 && m.cancelled && !m.error);
 }
 
-export const isReady = (i: DownloadItem) => i.state === "downloaded" || i.state === "on_this_mac";
+export const isReady = (i: DownloadItem) => i.state === "downloaded";
 
 /** The local summary model the settings pick. */
-const localModel = (s: Settings) => s.localModels.find((m) => m.choice === (s.localModel ?? "recommended")) ?? s.localModels[0];
+const localModel = (s: Settings) => s.localModels.find((m) => m.id === s.localModel) ?? s.localModels[0];
 
 /**
  * What the setup step offers, and what its "all ready" and "Skip for now" look at: the active speech model when

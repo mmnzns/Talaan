@@ -74,8 +74,12 @@ export interface SpeechModel {
   sizeMb: number;
   speed: 1 | 2 | 3;
   accuracy: 1 | 2 | 3;
-  languages: string; // "English only" | "25 European languages" ...
-  state: "not_downloaded" | "downloading" | "downloaded" | "on_this_mac";
+  languages: string; // "English" | "25 European languages" ...
+  /** SPDX licence id of the model ("MIT", "CC-BY-4.0"). */
+  licence: string;
+  /** Listens in English only: other languages come out wrong. */
+  englishOnly: boolean;
+  state: "not_downloaded" | "downloading" | "downloaded";
   progress?: number; // 0..1 while downloading
   /** What an interrupted download left on disk (0..1), while not downloading; Download resumes from it. */
   partial?: number;
@@ -88,10 +92,15 @@ export interface SpeechModel {
 /** A local summary AI model (downloaded once, runs on this computer). */
 export interface LocalModel {
   id: string;
-  choice: "recommended" | "larger";
   name: string;
   note: string;
   sizeMb: number;
+  /** The one Talaan suggests first. */
+  recommended: boolean;
+  /** SPDX licence id. */
+  licence: string;
+  /** Rough memory needed to run it, in GB. */
+  memoryGb: number;
   state: "not_downloaded" | "downloading" | "downloaded";
   progress?: number;
   /** What an interrupted download left on disk (0..1), while not downloading; Download resumes from it. */
@@ -131,7 +140,6 @@ export interface Settings {
   separateSpeakers: boolean;
   /** Ask's search by meaning (from disk in the app). */
   searchModel: SpeechModel;
-  reuseModels: boolean;
   meetingLanguage: "auto" | string;
   /** The language of Talaan's own screens: "auto" follows the system. Not the language of meetings or summaries. */
   uiLanguage: "auto" | "en" | "fr" | "es";
@@ -146,7 +154,8 @@ export interface Settings {
   summaryTemplate: string;
   /** Applied to every summary ("Always mention budget numbers"). */
   summaryInstructions: string;
-  localModel: "recommended" | "larger";
+  /** The id of the local summary model in use (one of localModels). */
+  localModel: string;
   /** From disk in the app (like speechModels); never stored in settings.json. */
   localModels: LocalModel[];
   ollamaAddress: string;
@@ -185,8 +194,8 @@ export interface SettingsStore {
   downloadModel(id: string): Promise<void>;
   /** Stops a download. The part already downloaded is kept, so Download resumes. */
   cancelModelDownload(id: string): Promise<void>;
-  /** Deletes Talaan's own copy of a model (models reused from another app are never touched). */
-  deleteModel(id: string): Promise<void>;
+  /** Stops Talaan using a model. The file is erased unless another app (`otherApps`) still uses it. */
+  deleteModel(id: string): Promise<{ erased: boolean; otherApps: string[] }>;
   /** Checks an API key with the provider and, if it works, saves it in the Keychain (never in settings). */
   testApiKey(provider: ByokProvider, key: string): Promise<{ ok: boolean; message: string; model?: string }>;
   /** Removes a saved key from the Keychain. */

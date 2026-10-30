@@ -233,8 +233,9 @@ export class MockSettingsStore implements SettingsStore {
 
   async revealAutoSaveFolder() {}
 
-  async deleteModel(id: string): Promise<void> {
+  async deleteModel(id: string) {
     this.setModel(id, { state: "not_downloaded", progress: undefined });
+    return { erased: true, otherApps: [] as string[] };
   }
 
   async testApiKey(provider: ByokProvider, key: string) {

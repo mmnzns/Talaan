@@ -319,7 +319,7 @@ function RetranscribeSheet({ meeting, open, onClose }: { meeting: Meeting; open:
   const store = useStore();
   const toast = useToast();
   const { settings } = useSettings();
-  const ready = (settings?.speechModels ?? []).filter((m) => m.state === "downloaded" || m.state === "on_this_mac");
+  const ready = (settings?.speechModels ?? []).filter((m) => m.state === "downloaded");
   const used = meeting.transcription?.model;
   const [choice, setChoice] = useState<string>();
   const model = choice ?? ready.find((m) => m.id !== used)?.id ?? ready[0]?.id;

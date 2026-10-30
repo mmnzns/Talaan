@@ -2,9 +2,10 @@ import { useEffect, useState } from "react";
 import { describeError } from "../../data/errors";
 import { useSettingsStore } from "../../data/StoreProvider";
 import { byokModels } from "../../data/byokModels";
-import { hasByokKey, type ByokProvider, type SummaryEngineKind } from "../../data/settings";
+import { hasByokKey, type ByokProvider, type LocalModel, type SummaryEngineKind } from "../../data/settings";
 import { useLang, useT } from "../../lib/i18n/I18nProvider";
-import { messageOr, type MessageKey } from "../../lib/i18n";
+import { messageOr, type MessageKey, type T } from "../../lib/i18n";
+import { deletedMessage } from "../../lib/modelDelete";
 import { Button, Chip, Field, Label, Select, Switch, cn, useToast } from "../../ui";
 import { Group, Row, SectionIntro } from "./parts";
 import type { TabProps } from "./tabProps";
@@ -157,21 +158,32 @@ function Instructions({ value, onSave }: { value: string; onSave: (v: string) =>
 
 const gb = (mb: number) => `${(mb / 1000).toFixed(1)} GB`;
 
+/** One line in the Local model list: the name (with Recommended on the one Talaan suggests), the download size,
+ *  the memory it needs and its licence. */
+export function localOption(t: T, m: Pick<LocalModel, "name" | "sizeMb" | "memoryGb" | "licence" | "recommended">): string {
+  return t("settings.local_option", {
+    name: m.recommended ? `${m.name} (${t("settings.local_recommended")})` : m.name,
+    size: gb(m.sizeMb),
+    memory: `${m.memoryGb.toFixed(1)} GB`,
+    licence: m.licence,
+  });
+}
+
 function LocalPanel({ settings: s, update }: TabProps) {
   const store = useSettingsStore();
   const toast = useToast();
   const t = useT();
   const lang = useLang();
-  const run = (p: Promise<void>) => p.catch((e) => toast(describeError(e)));
-  const model = s.localModels.find((m) => m.choice === s.localModel) ?? s.localModels[0];
+  const run = (p: Promise<unknown>) => p.catch((e) => toast(describeError(e)));
+  const model = s.localModels.find((m) => m.id === s.localModel) ?? s.localModels[0];
   const pct = Math.round((model?.progress ?? 0) * 100);
   return (
     <Group>
       <Row title={t("settings.local_model_title")} desc={t("settings.local_model_desc")}>
-        <Select label={t("settings.local_model_title")} wrapperClassName="w-72" value={s.localModel} onChange={(e) => update({ localModel: e.target.value as "recommended" | "larger" })}>
+        <Select label={t("settings.local_model_title")} wrapperClassName="w-96 max-w-full" value={model?.id ?? s.localModel} onChange={(e) => update({ localModel: e.target.value })}>
           {s.localModels.map((m) => (
-            <option key={m.id} value={m.choice}>
-              {t("settings.local_option", { choice: m.choice === "recommended" ? t("settings.local_recommended") : t("settings.local_larger"), name: m.name, size: gb(m.sizeMb) })}
+            <option key={m.id} value={m.id}>
+              {localOption(t, m)}
             </option>
           ))}
         </Select>
@@ -181,7 +193,7 @@ function LocalPanel({ settings: s, update }: TabProps) {
           {model.state === "downloaded" && (
             <span className="flex items-center gap-2">
               <Chip tone="gold">{t("settings.installed")}</Chip>
-              <button type="button" className="cursor-pointer border-0 bg-transparent p-0 text-xs text-subtle underline" onClick={() => run(store.deleteModel(model.id))}>
+              <button type="button" className="cursor-pointer border-0 bg-transparent p-0 text-xs text-subtle underline" onClick={() => run(store.deleteModel(model.id).then((r) => { const msg = deletedMessage(t, lang, model.name, r); if (msg) toast(msg); }))}>
                 {t("settings.delete")}
               </button>
             </span>

@@ -41,7 +41,7 @@ export interface Probe {
   autoSave?: AutoSaveStatus;
 }
 
-const READY = new Set(["downloaded", "on_this_mac"]);
+const READY = new Set(["downloaded"]);
 const openSettings = () => platformCopy(os, currentLang()).openSettings;
 const pct = (p?: number) => Math.round((p ?? 0) * 100);
 
@@ -174,7 +174,7 @@ function summary(p: Probe): CheckResult {
     if (s.ollamaModel && !server.models.includes(s.ollamaModel)) return r("warn", t("settings.setup_summary_gone", { name: s.ollamaModel }));
     return r("ok", s.ollamaModel ? t("settings.setup_summary_server_model", { name: s.ollamaModel }) : t("settings.setup_summary_server"));
   }
-  const model = s.localModels.find((m) => m.choice === s.localModel) ?? s.localModels[0];
+  const model = s.localModels.find((m) => m.id === s.localModel) ?? s.localModels[0];
   if (model?.state === "downloaded") return r("ok", t("settings.setup_ready", { name: `${t("settings.engine_local")} · ${model.name}` }));
   if (model?.state === "downloading") return r("warn", t("settings.setup_summary_downloading", { name: model.name, pct: pct(model.progress) }));
   return r("fail", t("settings.setup_summary_nolocal", { name: model?.name ?? "?" }));

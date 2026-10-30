@@ -23,6 +23,12 @@ describe("MockSettingsStore", () => {
     vi.useRealTimers();
   });
 
+  it("deletes a model and says it was erased", async () => {
+    const s = new MockSettingsStore();
+    expect(await s.deleteModel("whisper-turbo")).toEqual({ erased: true, otherApps: [] });
+    expect((await s.get()).speechModels.find((m) => m.id === "whisper-turbo")?.state).toBe("not_downloaded");
+  });
+
   it("tests API keys", async () => {
     vi.useFakeTimers();
     const s = new MockSettingsStore();
