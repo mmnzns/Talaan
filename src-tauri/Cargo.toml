@@ -68,7 +68,9 @@ log = "0.4.34"
 # Read the optimization guideline for more details: https://tauri.app/concept/size/#cargo-configuration
 [profile.release]
 codegen-units = 1
-lto = true
+# The engine's MACOSX_DEPLOYMENT_TARGET 11.0 makes ggml's Metal code call `__isPlatformVersionAtLeast`, and under LTO that
+# symbol fails to link on macOS. The speed that matters is in the C++ libraries, which LTO never touched.
+lto = false
 opt-level = 3
 strip = true
 
