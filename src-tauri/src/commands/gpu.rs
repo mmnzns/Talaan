@@ -21,15 +21,15 @@ pub struct GpuStatus {
     pub device: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub vram_mb: Option<u64>,
-    /// What failed, in English: "Graphics card failed, used the processor (speech)".
+    /// For `failed`, which jobs fell back to the processor, as codes the screen words: "stt", "llm" or "stt,llm".
     #[serde(skip_serializing_if = "Option::is_none")]
     pub detail: Option<String>,
 }
 
-/// Which jobs the card failed for: speech, AI (summaries and search), or both.
+/// Which jobs the card failed for, as codes: speech ("stt"), AI for summaries and search ("llm"), or both.
 fn failed_parts(stt: bool, llm: bool) -> Option<String> {
-    let parts: Vec<&str> = [(stt, "speech"), (llm, "AI")].into_iter().filter(|p| p.0).map(|p| p.1).collect();
-    (!parts.is_empty()).then(|| format!("Graphics card failed, used the processor ({})", parts.join(", ")))
+    let parts: Vec<&str> = [(stt, "stt"), (llm, "llm")].into_iter().filter(|p| p.0).map(|p| p.1).collect();
+    (!parts.is_empty()).then(|| parts.join(","))
 }
 
 pub fn status(mac: bool, use_gpu: bool, card: Option<&str>, stt_failed: bool, llm_failed: bool) -> GpuStatus {
@@ -107,9 +107,9 @@ mod tests {
     #[test]
     fn a_failed_card_says_which_part_used_the_processor() {
         let both = status(false, true, RTX, true, true);
-        assert_eq!((both.state, both.detail.as_deref()), ("failed", Some("Graphics card failed, used the processor (speech, AI)")));
-        assert_eq!(status(false, true, RTX, true, false).detail.as_deref(), Some("Graphics card failed, used the processor (speech)"));
-        assert_eq!(status(true, true, None, false, true).detail.as_deref(), Some("Graphics card failed, used the processor (AI)"));
+        assert_eq!((both.state, both.detail.as_deref()), ("failed", Some("stt,llm")));
+        assert_eq!(status(false, true, RTX, true, false).detail.as_deref(), Some("stt"));
+        assert_eq!(status(true, true, None, false, true).detail.as_deref(), Some("llm"));
         // Turned off, nothing is "failed".
         assert_eq!(status(false, false, RTX, true, true).state, "off");
     }

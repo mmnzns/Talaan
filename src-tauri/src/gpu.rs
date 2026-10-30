@@ -3,19 +3,24 @@
 //! Talaan decides: whether the card is on for a new install, and the note "the card failed" for Settings.
 
 use serde_json::Value;
-use std::sync::Mutex;
+use std::sync::{Mutex, OnceLock};
 
 /// The PC's discrete graphics card, by the name the driver gives it. Windows only (a cheap DXGI listing; no helper
 /// starts). None on the Mac, with built-in graphics only, or when the check fails.
+/// The listing runs once per process; every later call gets the same answer.
 pub fn discrete_card() -> Option<String> {
-    #[cfg(windows)]
-    {
-        voice_engine_stt::discrete_card().map(|d| d.description)
-    }
-    #[cfg(not(windows))]
-    {
-        None
-    }
+    static CARD: OnceLock<Option<String>> = OnceLock::new();
+    CARD.get_or_init(|| {
+        #[cfg(windows)]
+        {
+            voice_engine_stt::discrete_card().map(|d| d.description)
+        }
+        #[cfg(not(windows))]
+        {
+            None
+        }
+    })
+    .clone()
 }
 
 /// Whether the card is on by default: always on the Mac; on a PC only with a discrete card.
@@ -37,6 +42,23 @@ pub fn apply_default(settings: &mut Value, mac: bool, card: Option<&str>) -> boo
     }
     settings["gpuDefaultSet"] = true.into();
     true
+}
+
+/// The default for a settings save from the screens (`value` is what is about to be written). A first launch has no
+/// settings file, so the start-up default never ran and the first save would carry the screens' `useGpu: true` even
+/// on a PC without a discrete card. A save that already has `gpuDefaultSet`, or whose stored settings do, is left
+/// alone (the person's own choice stays). Returns whether `value` changed.
+pub fn apply_default_on_save(value: &mut Value, stored: Option<&Value>, mac: bool, card: Option<&str>) -> bool {
+    if value.get("gpuDefaultSet").is_some() {
+        return false;
+    }
+    if let Some(done) = stored.and_then(|s| s.get("gpuDefaultSet")) {
+        if value.is_object() {
+            value["gpuDefaultSet"] = done.clone();
+        }
+        return false;
+    }
+    apply_default(value, mac, card)
 }
 
 /// Which jobs fell back to the processor since the last "Try again", with the backend that did the work.
@@ -99,6 +121,35 @@ mod tests {
         let mut card = serde_json::json!({ "useGpu": true });
         assert!(apply_default(&mut card, false, Some("RTX")));
         assert_eq!(card["useGpu"], true);
+    }
+
+    #[test]
+    fn the_first_save_carries_the_card_default() {
+        // First launch on a PC with no discrete card: the screens send useGpu true, the save turns it off.
+        let mut first = serde_json::json!({ "useGpu": true, "yourName": "A" });
+        assert!(apply_default_on_save(&mut first, None, false, None));
+        assert_eq!((first["useGpu"].clone(), first["gpuDefaultSet"].clone()), (false.into(), true.into()));
+        // With a discrete card it stays on.
+        let mut card = serde_json::json!({ "useGpu": true });
+        assert!(apply_default_on_save(&mut card, None, false, Some("RTX")));
+        assert_eq!(card["useGpu"], true);
+        // The Mac keeps useGpu and only marks it done.
+        let mut mac = serde_json::json!({ "useGpu": true });
+        assert!(apply_default_on_save(&mut mac, None, true, None));
+        assert_eq!((mac["useGpu"].clone(), mac["gpuDefaultSet"].clone()), (true.into(), true.into()));
+    }
+
+    #[test]
+    fn later_saves_keep_the_persons_choice() {
+        // The value already says it was done: untouched.
+        let mut done = serde_json::json!({ "useGpu": true, "gpuDefaultSet": true });
+        assert!(!apply_default_on_save(&mut done, None, false, None));
+        assert_eq!(done["useGpu"], true);
+        // The screens dropped the marker but the stored file has it: carried over, useGpu untouched.
+        let stored = serde_json::json!({ "useGpu": false, "gpuDefaultSet": true });
+        let mut dropped = serde_json::json!({ "useGpu": true });
+        assert!(!apply_default_on_save(&mut dropped, Some(&stored), false, None));
+        assert_eq!((dropped["useGpu"].clone(), dropped["gpuDefaultSet"].clone()), (true.into(), true.into()));
     }
 
     #[test]

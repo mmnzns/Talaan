@@ -10,9 +10,13 @@ pub fn settings_get(state: State<AppState>) -> CmdResult<Option<Value>> {
 }
 
 #[tauri::command]
-pub fn settings_set(app: AppHandle, state: State<AppState>, models: State<Arc<Models>>, value: Value) -> CmdResult<()> {
-    let claim = value.clone();
+pub fn settings_set(app: AppHandle, state: State<AppState>, models: State<Arc<Models>>, mut value: Value) -> CmdResult<()> {
     let mut storage = state.lock();
+    // The card default, once: a first launch has no settings file for the start-up default, so the first save
+    // carries it (the card listing runs once per process).
+    let stored = storage.settings_get().ok().flatten();
+    crate::gpu::apply_default_on_save(&mut value, stored.as_ref(), cfg!(target_os = "macos"), crate::gpu::discrete_card().as_deref());
+    let claim = value.clone();
     let name_before = storage.your_name();
     storage.settings_set(value)?;
     // Your name shows in every meeting.

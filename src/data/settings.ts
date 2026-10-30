@@ -46,7 +46,7 @@ export interface GpuStatus {
   /** The GPU in use ("NVIDIA GeForce RTX 5070 Ti"). */
   device?: string;
   vramMb?: number;
-  /** What failed, for `failed` (English): which part used the processor. */
+  /** For `failed`: codes for the jobs that used the processor, "stt" (speech), "llm" (AI) or "stt,llm". */
   detail?: string;
 }
 export type BrowserState = "allowed" | "denied" | "not_asked" | "not_installed";

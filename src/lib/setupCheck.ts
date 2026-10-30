@@ -81,7 +81,12 @@ function gpu(p: Probe): CheckResult[] {
   const title = t("settings.setup_gpu");
   const ok = (detail: string): CheckResult[] => [{ id: "gpu", title, status: "ok", detail }];
   const warn = (detail: string): CheckResult[] => [{ id: "gpu", title, status: "warn", detail, fix: { label: t("settings.setup_gpu_retry"), action: "retryGpu" } }];
-  const error = g.detail ?? "?";
+  // `detail` is codes for the parts that fell back ("stt", "llm", "stt,llm"), worded here.
+  const parts = (g.detail ?? "")
+    .split(",")
+    .filter((c) => c === "stt" || c === "llm")
+    .map((c) => t(c === "stt" ? "settings.setup_gpu_part_stt" : "settings.setup_gpu_part_llm"))
+    .join(", ");
   switch (g.state) {
     case "metal":
       return ok(t("settings.setup_gpu_metal"));
@@ -92,7 +97,7 @@ function gpu(p: Probe): CheckResult[] {
       return ok(g.vramMb ? t("settings.setup_gpu_in_use", { name, size: Math.round(g.vramMb / 1024) }) : t("settings.setup_gpu_in_use_plain", { name }));
     }
     case "failed":
-      return warn(t("settings.setup_gpu_failed", { error }));
+      return warn(t("settings.setup_gpu_failed", { parts: parts || t("settings.setup_gpu_part_stt") }));
     case "unavailable":
       return ok(t("settings.setup_gpu_no_gpu"));
   }

@@ -32,7 +32,7 @@ describe("needsFixing (the dot on the Settings button)", () => {
     expect(needsFixing(checkSetup(probe({ mic: "denied" }))).map((r) => r.id)).toEqual(["mic"]);
     const noSpeech = defaultSettings.speechModels.map((m) => ({ ...m, state: "not_downloaded" as const }));
     expect(needsFixing(checkSetup(probe({ settings: settings({ speechModels: noSpeech }) }))).map((r) => r.id)).toEqual(["speech"]);
-    const notices = probe({ soundRelay: "FxSound", mic: "undetermined", gpu: { state: "failed", detail: "lost" } });
+    const notices = probe({ soundRelay: "FxSound", mic: "undetermined", gpu: { state: "failed", detail: "stt" } });
     expect(checkSetup(notices).filter((r) => r.status === "warn").length).toBeGreaterThan(0);
     expect(needsFixing(checkSetup(notices))).toEqual([]);
   });
@@ -150,13 +150,16 @@ describe("checkSetup", () => {
     expect(rtx.fix).toBeUndefined();
     expect(rtx.detail).toContain("NVIDIA GeForce RTX 5070 Ti (16 GB)");
     expect(find(probe({ gpu: { state: "unavailable", reason: "no_gpu" } }), "gpu").status).toBe("ok");
-    for (const s of checkSetup(probe({ gpu: { state: "failed", detail: "Graphics card failed, used the processor (speech)" } }))) expect(s.status).not.toBe("fail");
+    for (const s of checkSetup(probe({ gpu: { state: "failed", detail: "stt" } }))) expect(s.status).not.toBe("fail");
   });
 
   it("says why the graphics chip isn't used, with Try again where trying again can help", () => {
-    const failed = find(probe({ gpu: { state: "failed", detail: "Graphics card failed, used the processor (speech)" } }), "gpu");
+    const failed = find(probe({ gpu: { state: "failed", detail: "stt" } }), "gpu");
     expect(failed).toMatchObject({ status: "warn", fix: { action: "retryGpu" } });
-    expect(failed.detail).toContain("used the processor (speech)");
+    expect(failed.detail).toBe("The graphics card failed for speech, so the processor did the work.");
+    const both = find(probe({ gpu: { state: "failed", detail: "stt,llm" } }), "gpu");
+    expect(both.detail).toBe("The graphics card failed for speech, AI, so the processor did the work.");
+    expect(find(probe({ gpu: { state: "failed", detail: "llm" } }), "gpu").detail).toContain("failed for AI,");
   });
 
   it("reports a data folder it can't read", () => {
