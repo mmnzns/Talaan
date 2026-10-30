@@ -77,29 +77,6 @@ pub fn run() {
             if std::env::var("TALAAN_DATA_DIR").is_ok_and(|s| !s.trim().is_empty()) {
                 let _ = app.asset_protocol_scope().allow_directory(root.join("meetings"), true);
             }
-            // Windows: models (gigabytes) live in %LOCALAPPDATA%, out of the roaming profile. Renames happen now,
-            // before any worker can open a model; what needs copying is copied after setup, in the background,
-            // and the old folder is read until then. A TALAAN_DATA_DIR run keeps models inside that folder.
-            #[cfg(target_os = "windows")]
-            let models_to_copy = if std::env::var("TALAAN_DATA_DIR").map_or(true, |s| s.trim().is_empty()) {
-                dirs::data_local_dir().map(|local| {
-                    let new = transcriber::models::local_models_root(&local, &app.config().identifier);
-                    transcriber::models::set_models_root(new.clone());
-                    let old = root.join("models");
-                    let left = match transcriber::relocate::prepare(&old, &new) {
-                        Ok(m) => m.left,
-                        Err(e) => {
-                            // The kind only: the error's text names the models folders, which hold the user's name.
-                            let kind = e.kind();
-                            log::warn!("models move failed ({kind}), the old folder is used");
-                            vec![]
-                        }
-                    };
-                    (old, new, left)
-                })
-            } else {
-                None
-            };
             let started = || -> Result<storage::Storage, storage::StorageError> {
                 let mut store = storage::Storage::new(root.clone())?;
                 store.load_policy()?;
@@ -153,19 +130,6 @@ pub fn run() {
             #[cfg(feature = "updater-e2e")]
             commands::updater_e2e::start(app.handle());
             commands::tray::setup(app.handle())?;
-            #[cfg(target_os = "windows")]
-            if let Some((old, new, left)) = models_to_copy.filter(|(_, _, left)| !left.is_empty()) {
-                let handle = app.handle().clone();
-                std::thread::spawn(move || {
-                    let r = transcriber::relocate::copy_rest(&old, &new, &left, transcriber::relocate::free_bytes);
-                    if !r.left.is_empty() {
-                        log::info!("models move: {} model(s) left for the next launch", r.left.len());
-                    }
-                    if r.moved > 0 {
-                        commands::transcriber::models_moved(&handle);
-                    }
-                });
-            }
             // Started by a toast click while Talaan wasn't running: open that meeting once the window loads (or,
             // for the update toast, the main window, with a check right away for its banner).
             #[cfg(target_os = "windows")]

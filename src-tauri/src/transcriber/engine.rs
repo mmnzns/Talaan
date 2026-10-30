@@ -1,7 +1,7 @@
 //! Speech engines behind one small trait. Each call gets one chunk of speech (16 kHz mono) and returns
 //! timed pieces relative to that chunk; the pipeline places them on the recording clock.
 
-use super::models::{EngineKind, ModelInfo};
+use voice_engine_models::{Kind, ModelInfo};
 use std::path::Path;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -28,10 +28,10 @@ pub trait Engine: Send {
 }
 
 pub fn load(model: &ModelInfo, dir: &Path, use_gpu: bool) -> Result<Box<dyn Engine>, String> {
-    match model.engine {
-        EngineKind::Parakeet | EngineKind::ParakeetUnified | EngineKind::Nemotron => Ok(Box::new(ParakeetEngine::load(dir, model.name, model.engine)?)),
-        EngineKind::Whisper => Ok(Box::new(WhisperEngine::load(&dir.join(model.files[0].name), model.name, use_gpu)?)),
-        EngineKind::Llm | EngineKind::Diarization | EngineKind::Embedding => Err("not a speech model".into()),
+    match model.kind {
+        Kind::Parakeet | Kind::ParakeetUnified | Kind::Nemotron => Ok(Box::new(ParakeetEngine::load(dir, model.name, model.kind)?)),
+        Kind::Whisper => Ok(Box::new(WhisperEngine::load(&dir.join(model.files[0].name), model.name, use_gpu)?)),
+        Kind::Vad | Kind::Llm | Kind::Diarization | Kind::Embedding => Err("not a speech model".into()),
     }
 }
 
@@ -58,12 +58,12 @@ pub struct ParakeetEngine {
 }
 
 impl ParakeetEngine {
-    pub fn load(dir: &Path, label: &str, kind: EngineKind) -> Result<Self, String> {
+    pub fn load(dir: &Path, label: &str, kind: Kind) -> Result<Self, String> {
         let config = parakeet_rs::ExecutionConfig::new().with_intra_threads(threads());
         let failed = |e: parakeet_rs::Error| format!("couldn't load the speech model: {e}");
         let model = match kind {
-            EngineKind::ParakeetUnified => NvidiaModel::Unified(parakeet_rs::ParakeetUnified::from_pretrained(dir, Some(config)).map_err(failed)?),
-            EngineKind::Nemotron => {
+            Kind::ParakeetUnified => NvidiaModel::Unified(parakeet_rs::ParakeetUnified::from_pretrained(dir, Some(config)).map_err(failed)?),
+            Kind::Nemotron => {
                 let handle = parakeet_rs::NemotronHandle::from_pretrained(dir, Some(config)).map_err(failed)?;
                 NvidiaModel::Nemotron(Box::new(parakeet_rs::Nemotron::from_shared(&handle)), handle.available_languages())
             }
@@ -190,20 +190,21 @@ mod tests {
     // Thread count and noise markers: tested in talaan-stt (stt/src/lib.rs).
 
     /// Real-time factor of each downloaded model on 60 s of a real meeting.
-    /// `TALAAN_SMOKE_MEETING=<meeting dir> cargo test --release engine_smoke -- --ignored --nocapture`
+    /// `TALAAN_SMOKE_MODELS=<models folder> TALAAN_SMOKE_MEETING=<meeting dir> cargo test --release engine_smoke -- --ignored --nocapture`
     #[test]
     #[ignore]
     fn engine_smoke() {
-        use super::super::models::{ModelStore, CATALOG};
         use super::super::vad::{read_track, shape, Vad, RATE};
         let dir = std::path::PathBuf::from(std::env::var("TALAAN_SMOKE_MEETING").unwrap());
-        let data = dirs::data_dir().unwrap().join("Talaan");
-        let store = ModelStore::new(&data, false);
-        let mut vad = Vad::load(&data.join("models/vad/ggml-silero-v6.2.0.bin")).unwrap();
+        let models = std::path::PathBuf::from(std::env::var("TALAAN_SMOKE_MODELS").unwrap());
+        let mut vad = Vad::load(&models.join("vad/ggml-silero-v6.2.0.bin")).unwrap();
         let them = read_track(&dir.join("them.wav")).unwrap();
         let raw = vad.detect(&them).unwrap();
-        for m in CATALOG {
-            let Some(d) = store.locate(m).dir().map(|d| d.to_path_buf()) else { continue };
+        for m in voice_engine_models::catalog::speech() {
+            let d = models.join(m.id);
+            if !d.exists() {
+                continue;
+            }
             let t = std::time::Instant::now();
             let mut engine = load(m, &d, true).unwrap();
             let load_s = t.elapsed().as_secs_f32();
@@ -234,20 +235,19 @@ mod download_smoke {
     #[test]
     #[ignore]
     fn new_models_smoke() {
-        use super::super::download::download_model;
-        use super::super::models::{find, VAD};
         use super::super::vad::{read_track, shape, Vad, RATE};
         use std::sync::atomic::AtomicBool;
+        use voice_engine_models::{catalog::find, App, SharedStore};
         let data = std::path::PathBuf::from(std::env::var("TALAAN_SMOKE_DATA").unwrap());
         let meeting = std::path::PathBuf::from(std::env::var("TALAAN_SMOKE_MEETING").unwrap());
+        let store = SharedStore::open_at(App::Talaan, data.join("models")).unwrap();
         let get = |id: &str| {
             let m = find(id).unwrap();
-            let dir = data.join("models").join(id);
-            download_model(m, &dir, &AtomicBool::new(false), &mut |_| {}).unwrap_or_else(|e| panic!("{id}: {}", e.user_message()));
+            let dir = store.download(id, &AtomicBool::new(false), &mut |_| {}).unwrap_or_else(|e| panic!("{id}: {e}"));
             (m, dir)
         };
-        let (_, vad_dir) = get(VAD.id);
-        let mut vad = Vad::load(&vad_dir.join(VAD.files[0].name)).unwrap();
+        let (vad_model, vad_dir) = get("vad");
+        let mut vad = Vad::load(&vad_dir.join(vad_model.files[0].name)).unwrap();
         let me = read_track(&meeting.join("me.wav")).unwrap();
         let raw = vad.detect(&me).unwrap();
         for id in std::env::var("TALAAN_SMOKE_IDS").unwrap().split(',') {
@@ -276,10 +276,10 @@ mod probe {
         use super::super::vad::{read_track, shape, Shape, Vad};
         let dir = std::path::PathBuf::from(std::env::var("TALAAN_SMOKE_MEETING").unwrap());
         let me = read_track(&dir.join("me.wav")).unwrap();
-        let data = dirs::data_dir().unwrap().join("Talaan");
-        let mut vad = Vad::load(&data.join("models/vad/ggml-silero-v6.2.0.bin")).unwrap();
+        let data = std::path::PathBuf::from(std::env::var("TALAAN_SMOKE_MODELS").unwrap());
+        let mut vad = Vad::load(&data.join("vad/ggml-silero-v6.2.0.bin")).unwrap();
         let spans = shape(&vad.detect(&me).unwrap(), &me, Shape::parakeet());
-        let mut m = super::ParakeetEngine::load(&data.join("models/parakeet-v3"), "Parakeet", crate::transcriber::models::EngineKind::Parakeet).unwrap();
+        let mut m = super::ParakeetEngine::load(&data.join("parakeet-v3"), "Parakeet", voice_engine_models::Kind::Parakeet).unwrap();
         let _ = spans;
         let f = |a: f32| (a * 16000.0) as usize;
         let mut padded = vec![0.0f32; 8000];

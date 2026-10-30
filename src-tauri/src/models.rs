@@ -102,6 +102,11 @@ pub fn used_ids(settings: Option<&Value>) -> Vec<&'static str> {
     ids
 }
 
+/// The `localModel` setting as a catalog model.
+pub fn local_model(setting: Option<&str>) -> &'static ModelInfo {
+    catalog::find(local_model_id(setting)).expect("local_model_id returns a catalog id")
+}
+
 /// The `localModel` setting as a catalog id. 1.1 and earlier stored "recommended" or "larger".
 pub fn local_model_id(setting: Option<&str>) -> &'static str {
     match setting {
@@ -176,5 +181,19 @@ mod tests {
         models.start(Some(&json!({"activeSpeechModel": "parakeet-ultra"})));
         assert!(models.ready_dir("vad").is_none());
         assert!(models.ready_dir("parakeet-ultra").is_none());
+    }
+
+    /// The uninstaller removes Talaan's old folders and nothing of the shared models folder (Ensayo and Parlato
+    /// use it). The file never names that folder's publisher directory, so no line can remove it.
+    #[test]
+    fn the_uninstaller_never_touches_the_shared_models_folder() {
+        let nsh = include_str!("../windows/installer-hooks.nsh");
+        assert!(!nsh.contains("Craft Concepts Digital"));
+        assert!(nsh.contains(r#"RmDir /r "$APPDATA\Talaan""#));
+        assert!(nsh.contains(r#"RmDir /r "$LOCALAPPDATA\${BUNDLEID}\models""#));
+        // Every folder it removes is Talaan's own.
+        for line in nsh.lines().filter(|l| l.trim_start().starts_with("RmDir")) {
+            assert!(line.contains(r"$APPDATA\Talaan") || line.contains(r"${BUNDLEID}"), "{line}");
+        }
     }
 }

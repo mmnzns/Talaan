@@ -4,7 +4,7 @@
 //! what the GPU couldn't, so an input the processor can't handle either isn't blamed on the GPU.
 
 use super::engine::{self, ChunkResult, Engine};
-use super::models::{EngineKind, ModelInfo};
+use voice_engine_models::{Kind as ModelKind, ModelInfo};
 use super::remote::{LoadError, RemoteWhisper, Timeouts};
 use crate::gpu::{Gpu, Kind, Plan};
 use std::path::Path;
@@ -82,11 +82,11 @@ impl Engine for Fallback {
 /// The speech engine for a model: on Windows, Whisper goes through the GPU helper when `gpu` says so, with the
 /// processor behind it; everything else (Parakeet, Nemotron, the Mac's Metal Whisper) loads as before.
 pub fn load(model: &ModelInfo, dir: &Path, use_gpu: bool, gpu: &Arc<Gpu>) -> Result<Box<dyn Engine>, String> {
-    if cfg!(windows) && model.engine == EngineKind::Whisper {
+    if cfg!(windows) && model.kind == ModelKind::Whisper {
         if let Plan::Gpu { exe, env } = gpu.plan(Kind::Stt, use_gpu) {
             let file = dir.join(model.files[0].name);
             let remote = RemoteWhisper::load(&exe, &env, &file, model.name, Timeouts::default()).map(|e| Box::new(e) as Box<dyn Engine>);
-            let cpu_model: &'static ModelInfo = super::models::find(model.id).ok_or_else(|| format!("unknown speech model {}", model.id))?;
+            let cpu_model: &'static ModelInfo = voice_engine_models::catalog::find(model.id).ok_or_else(|| format!("unknown speech model {}", model.id))?;
             let cpu_dir = dir.to_path_buf();
             let load_cpu: CpuLoader = Box::new(move || engine::load(cpu_model, &cpu_dir, false));
             return Fallback::start(remote, load_cpu, gpu.recorder(Kind::Stt), model.name, super::vad::Shape::whisper());
@@ -251,7 +251,7 @@ mod tests {
         let helpers = std::env::var("TALAAN_GPU_HELPERS").map(PathBuf::from).unwrap_or_else(|_| manifest.join("binaries"));
         let meeting = std::env::var("TALAAN_SMOKE_MEETING").map(PathBuf::from).unwrap_or_else(|_| manifest.join("../fixtures/three-speakers"));
         let id = std::env::var("TALAAN_SMOKE_MODEL").unwrap_or_else(|_| "whisper-base".into());
-        let model = super::super::models::find(&id).expect("a catalog id");
+        let model = voice_engine_models::catalog::find(&id).expect("a catalog id");
         let model_dir = data.join("models").join(model.id);
         let mut vad = Vad::load(&data.join("models/vad/ggml-silero-v6.2.0.bin")).unwrap();
         // SAFETY: an ignored test run with --test-threads=1; nothing else reads the environment meanwhile.

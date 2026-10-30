@@ -335,24 +335,25 @@ mod tests {
         assert_eq!(detect_language(&[line("ok")]), None);
     }
 
-    /// `TALAAN_SMOKE_MEETING=<dir> cargo test --release pipeline_smoke -- --ignored --nocapture`
+    /// `TALAAN_SMOKE_MODELS=<models folder> TALAAN_SMOKE_MEETING=<dir> cargo test --release pipeline_smoke -- --ignored --nocapture`
     #[test]
     #[ignore]
     fn pipeline_smoke() {
-        use crate::transcriber::models::{ModelStore, CATALOG};
         let dir = std::path::PathBuf::from(std::env::var("TALAAN_SMOKE_MEETING").unwrap());
-        let data = dirs::data_dir().unwrap().join("Talaan");
-        let store = ModelStore::new(&data, false);
-        let mut vad = Vad::load(&data.join("models/vad/ggml-silero-v6.2.0.bin")).unwrap();
+        let data = std::path::PathBuf::from(std::env::var("TALAAN_SMOKE_MODELS").unwrap());
+        let mut vad = Vad::load(&data.join("vad/ggml-silero-v6.2.0.bin")).unwrap();
         let only = std::env::var("TALAAN_SMOKE_MODEL").ok();
-        for m in CATALOG.iter().filter(|m| only.as_deref().is_none_or(|o| o == m.id)) {
-            let Some(d) = store.locate(m).dir().map(|d| d.to_path_buf()) else { continue };
+        for m in voice_engine_models::catalog::speech().filter(|m| only.as_deref().is_none_or(|o| o == m.id)) {
+            let d = data.join(m.id);
+            if !d.exists() {
+                continue;
+            }
             let mut engine = crate::transcriber::engine::load(m, &d, true).unwrap();
             let t = std::time::Instant::now();
             // TALAAN_SMOKE_SPEAKERS=1 also splits the Them track with the speaker model.
             let mut split = std::env::var("TALAAN_SMOKE_SPEAKERS")
                 .is_ok()
-                .then(|| crate::transcriber::diarize::Diarizer::load(&data.join("models/diarization/nemotron3_diar_v3.onnx")).unwrap());
+                .then(|| crate::transcriber::diarize::Diarizer::load(&data.join("diarization/nemotron3_diar_v3.onnx")).unwrap());
             let splitter = split.as_mut().map(|d| d as &mut dyn crate::transcriber::diarize::SpeakerSplitter);
             let out = run(&dir, engine.as_mut(), &mut vad, None, splitter, &AtomicBool::new(false), &mut |_| {}).unwrap();
             eprintln!("== {}: {:.1}s, {} lines, {} echo removed, language {:?}, {:.0}s speech, {} speakers", m.id, t.elapsed().as_secs_f32(), out.lines.len(), out.echo_removed, out.language, out.speech_ms as f32 / 1000.0, out.speakers);

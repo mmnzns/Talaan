@@ -1,10 +1,10 @@
 ; Talaan's NSIS hooks (bundle.windows.nsis.installerHooks in tauri.windows.conf.json).
 ; Tauri's uninstaller, when "Delete the application data" is ticked, removes only %APPDATA% and %LOCALAPPDATA%
 ; folders named after the bundle id. Talaan keeps meetings and settings in %APPDATA%\Talaan and API keys in
-; Credential Manager, so those go here too. Models are in %LOCALAPPDATA%\<bundle id>\models since v1.1 (Tauri's
-; own RmDir covers it; removed here as well so it doesn't depend on the template), or still in %APPDATA%\Talaan\models
-; when the move hadn't finished. Never inside $INSTDIR, which Tauri empties file by file. Updates (/UPDATE) never
-; delete anything.
+; Credential Manager, so those go here too. Old models were in %LOCALAPPDATA%\<bundle id>\models (v1.1; Tauri's own
+; RmDir covers it; removed here as well so it doesn't depend on the template) or %APPDATA%\Talaan\models. Since the
+; move to the shared models folder those hold only links. The shared folder itself is never removed here. Never
+; inside $INSTDIR, which Tauri empties file by file. Updates (/UPDATE) never delete anything.
 
 ; One Credential Manager entry: keyring writes generic credentials (type 1) named "<account>.Talaan".
 ; The list below must match keys::ACCOUNTS (src-tauri/src/keys.rs); a test there checks it.
@@ -48,6 +48,10 @@
     ${If} $DeleteAppDataCheckboxState = 1
       SetShellVarContext current
       RmDir /r "$APPDATA\Talaan"
+      ; Talaan's own old model folder (after the move it holds only links into the shared models folder, so removing it
+      ; frees nothing that other apps use).
+      ; NEVER remove the shared models folder, $LOCALAPPDATA\<publisher folder>\Models (the one voice-engine keeps):
+      ; Ensayo and Parlato use the same files. Talaan lets go of its models through the engine (release_all) instead.
       RmDir /r "$LOCALAPPDATA\${BUNDLEID}\models"
       !insertmacro TalaanDeleteKey "claude"
       !insertmacro TalaanDeleteKey "openai"

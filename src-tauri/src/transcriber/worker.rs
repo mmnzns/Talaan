@@ -3,7 +3,8 @@
 
 use super::engine::Engine;
 use super::diarize::SpeakerSplitter;
-use super::models::{find, ModelInfo, ModelStore, DEFAULT_MODEL, DIARIZATION, VAD};
+use crate::models::{Models, DEFAULT_SPEECH, DIARIZATION, VAD};
+use voice_engine_models::{catalog, ModelInfo};
 use super::pipeline::{run, Detector, PipelineError};
 use crate::eta::{self, Device};
 use crate::storage::model::{MeetingFile, MeetingStatus, ProcessingError, TranscriptionInfo};
@@ -12,7 +13,7 @@ use crate::storage::speed::set_eta;
 use crate::storage::Storage;
 use serde_json::Value;
 use std::collections::VecDeque;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Condvar, Mutex};
 use std::time::{Duration, Instant};
@@ -32,7 +33,6 @@ pub struct Config {
     /// None = detect.
     pub language: Option<String>,
     pub use_gpu: bool,
-    pub reuse: bool,
     /// Split the Them track into Speaker 1, 2, 3 (when the model is downloaded).
     pub separate_speakers: bool,
     /// Hand each new transcript to the summarizer (Settings › Summary AI › Summarize automatically).
@@ -42,13 +42,13 @@ pub struct Config {
 impl Config {
     pub fn from_settings(v: Option<&Value>) -> Config {
         let v = v.cloned().unwrap_or(Value::Null);
-        let model = v["activeSpeechModel"].as_str().and_then(find).filter(|m| m.id != VAD.id).unwrap_or_else(|| find(DEFAULT_MODEL).unwrap());
+        // Same reading as `models::used_ids`: an unknown or non-speech id ("diarization") is the default.
+        let model = v["activeSpeechModel"].as_str().and_then(catalog::find).filter(|m| m.is_speech()).unwrap_or_else(|| catalog::find(DEFAULT_SPEECH).unwrap());
         let language = v["meetingLanguage"].as_str().filter(|l| !l.is_empty() && *l != "auto").map(str::to_string);
         Config {
             model,
             language,
             use_gpu: v["useGpu"].as_bool().unwrap_or(true),
-            reuse: v["reuseModels"].as_bool().unwrap_or(true),
             separate_speakers: v["separateSpeakers"].as_bool().unwrap_or(true),
             summarize: v["summarizeAutomatically"].as_bool().unwrap_or(true),
         }
@@ -63,14 +63,13 @@ pub type OnGpu = dyn Fn(&ModelInfo, bool) -> bool + Send + Sync;
 
 pub struct Deps {
     pub storage: Arc<Mutex<Storage>>,
-    pub data_dir: PathBuf,
     /// Called whenever a meeting's status or progress changed.
     pub changed: Arc<dyn Fn() + Send + Sync>,
     pub load_engine: Box<EngineLoader>,
     pub load_detector: Box<DetectorLoader>,
     pub load_splitter: Box<SplitterLoader>,
-    /// Extra folders to look for models in (tests); the real app uses the defaults.
-    pub reuse_roots: Option<Vec<PathBuf>>,
+    /// Where the models are (the shared folder; a temp folder in tests).
+    pub models: Arc<Models>,
     /// Called with a meeting id once its transcript is saved and it is `summarizing` (not when it waits).
     pub transcribed: Arc<dyn Fn(&str) + Send + Sync>,
     /// Called with a meeting id and title once its transcript is saved and nothing else will run on it by itself
@@ -88,18 +87,21 @@ struct Queue {
 pub struct Worker {
     queue: Arc<(Mutex<Queue>, Condvar)>,
     cancel: Arc<AtomicBool>,
+    /// The model ids the meeting being transcribed right now uses (speech model, voice detection, speaker model).
+    busy: Arc<Mutex<Vec<&'static str>>>,
 }
 
 impl Worker {
     pub fn start(deps: Deps) -> Worker {
         let queue: Arc<(Mutex<Queue>, Condvar)> = Arc::default();
         let cancel = Arc::new(AtomicBool::new(false));
-        let w = Worker { queue: queue.clone(), cancel: cancel.clone() };
+        let busy: Arc<Mutex<Vec<&'static str>>> = Arc::default();
+        let w = Worker { queue: queue.clone(), cancel: cancel.clone(), busy: busy.clone() };
         std::thread::Builder::new()
             .name("transcriber".into())
             .spawn(move || {
                 crate::platform::background_priority();
-                worker_loop(deps, queue, cancel)
+                worker_loop(deps, queue, cancel, busy)
             })
             .expect("transcriber thread");
         w
@@ -113,6 +115,11 @@ impl Worker {
             q.ids.push_back(id.to_string());
             cv.notify_one();
         }
+    }
+
+    /// Whether a meeting is being transcribed right now with this model (Delete waits until it is done).
+    pub fn is_using(&self, model_id: &str) -> bool {
+        self.busy.lock().unwrap_or_else(|e| e.into_inner()).contains(&model_id)
     }
 
     /// Stops the meeting being transcribed now (it is being deleted).
@@ -142,7 +149,7 @@ struct Loaded {
     splitter: Option<Box<dyn SpeakerSplitter>>,
 }
 
-fn worker_loop(deps: Deps, queue: Arc<(Mutex<Queue>, Condvar)>, cancel: Arc<AtomicBool>) {
+fn worker_loop(deps: Deps, queue: Arc<(Mutex<Queue>, Condvar)>, cancel: Arc<AtomicBool>, busy: Arc<Mutex<Vec<&'static str>>>) {
     let mut loaded: Option<Loaded> = None;
     let (lock, cv) = &*queue;
     loop {
@@ -163,9 +170,15 @@ fn worker_loop(deps: Deps, queue: Arc<(Mutex<Queue>, Condvar)>, cancel: Arc<Atom
             }
         };
         cancel.store(false, Ordering::Relaxed);
-        process(&deps, &id, &mut loaded, &cancel);
+        process(&deps, &id, &mut loaded, &cancel, &busy);
+        busy.lock().unwrap_or_else(|e| e.into_inner()).clear();
         (deps.changed)();
     }
+}
+
+/// The name of a one-file model's file (voice detection, speaker separation).
+fn file_of(id: &str) -> &'static str {
+    catalog::find(id).and_then(|m| m.files.first()).map_or("", |f| f.name)
 }
 
 fn lock(storage: &Mutex<Storage>) -> std::sync::MutexGuard<'_, Storage> {
@@ -185,7 +198,7 @@ fn fail(deps: &Deps, id: &str, code: &str, message: String) {
 /// The settings for one meeting: "Transcribe again" with another model applies to this meeting only.
 fn config_for(s: &Storage, file: &MeetingFile) -> Config {
     let mut config = Config::from_settings(s.settings_get().ok().flatten().as_ref());
-    if let Some(m) = file.retranscribe_model.as_deref().and_then(find).filter(|m| m.id != VAD.id) {
+    if let Some(m) = file.retranscribe_model.as_deref().and_then(catalog::find).filter(|m| m.is_speech()) {
         config.model = m;
     }
     config
@@ -233,7 +246,7 @@ pub fn restamp_queue(s: &Storage, ids: &[String], on_gpu: &OnGpu) {
     }
 }
 
-fn process(deps: &Deps, id: &str, loaded: &mut Option<Loaded>, cancel: &AtomicBool) {
+fn process(deps: &Deps, id: &str, loaded: &mut Option<Loaded>, cancel: &AtomicBool, busy: &Mutex<Vec<&'static str>>) {
     let (dir, config, transcript_only, audio) = {
         let s = lock(&deps.storage);
         let Ok(file) = s.read_meeting_file(id) else { return };
@@ -254,11 +267,14 @@ fn process(deps: &Deps, id: &str, loaded: &mut Option<Loaded>, cancel: &AtomicBo
         if config.separate_speakers { "separated" } else { "not separated" }
     );
 
-    let mut store = ModelStore::new(&deps.data_dir, config.reuse);
-    if let Some(roots) = &deps.reuse_roots {
-        store.reuse_roots = roots.clone();
+    {
+        let mut b = busy.lock().unwrap_or_else(|e| e.into_inner());
+        *b = vec![config.model.id, VAD];
+        if config.separate_speakers {
+            b.push(DIARIZATION);
+        }
     }
-    let (Some(model_dir), Some(vad_dir)) = (store.locate(config.model).dir().map(Path::to_path_buf), store.locate(&VAD).dir().map(Path::to_path_buf)) else {
+    let (Some(model_dir), Some(vad_dir)) = (deps.models.ready_dir(config.model.id), deps.models.ready_dir(VAD)) else {
         fail(deps, id, NO_MODEL, "Download a speech model in Settings › Speech models to transcribe this call.".into());
         return;
     };
@@ -282,7 +298,7 @@ fn process(deps: &Deps, id: &str, loaded: &mut Option<Loaded>, cancel: &AtomicBo
             Ok(e) => e,
             Err(e) => return fail(deps, id, "failed", e),
         };
-        let detector = match (deps.load_detector)(&vad_dir.join(VAD.files[0].name)) {
+        let detector = match (deps.load_detector)(&vad_dir.join(file_of(VAD))) {
             Ok(d) => d,
             Err(e) => return fail(deps, id, "failed", e),
         };
@@ -291,9 +307,9 @@ fn process(deps: &Deps, id: &str, loaded: &mut Option<Loaded>, cancel: &AtomicBo
     }
     let l = loaded.as_mut().expect("loaded above");
     if config.separate_speakers && l.splitter.is_none() {
-        if let Some(dir) = store.locate(&DIARIZATION).dir() {
+        if let Some(dir) = deps.models.ready_dir(DIARIZATION) {
             // A broken speaker model shouldn't cost the transcript: carry on without it.
-            l.splitter = (deps.load_splitter)(&dir.join(DIARIZATION.files[0].name)).inspect_err(|e| log::warn!("speaker separation unavailable: {}", crate::logging::text(e))).ok();
+            l.splitter = (deps.load_splitter)(&dir.join(file_of(DIARIZATION))).inspect_err(|e| log::warn!("speaker separation unavailable: {}", crate::logging::text(e))).ok();
         }
     }
     let splitter: Option<&mut dyn SpeakerSplitter> = match (&mut l.splitter, config.separate_speakers) {
@@ -452,22 +468,22 @@ mod tests {
         w.finalize().unwrap();
         storage.update_meeting_file(&f.id, |m| m.status = MeetingStatus::Transcribing).unwrap();
         storage.settings_set(json!({ "activeSpeechModel": "whisper-small" })).unwrap();
+        let models = Arc::new(Models::open(Some(dir.path())).unwrap());
         if with_models {
-            for m in [find("whisper-small").unwrap(), &VAD] {
-                for file in m.files {
-                    sparse(&dir.path().join("models").join(m.id).join(file.name), file.size);
+            for id in ["whisper-small", VAD] {
+                for file in catalog::find(id).unwrap().files {
+                    sparse(&models.root().join(id).join(file.name), file.size);
                 }
             }
         }
         let storage = Arc::new(Mutex::new(storage));
         let worker = Worker::start(Deps {
             storage: storage.clone(),
-            data_dir: dir.path().to_path_buf(),
             changed: Arc::new(|| {}),
             load_engine,
             load_detector: Box::new(|_| Ok(Box::new(WholeTrack))),
             load_splitter: Box::new(|_| Err("no model".into())),
-            reuse_roots: Some(vec![]),
+            models,
             transcribed: Arc::new(|_| {}),
             transcript_ready: Arc::new(move |_, t| r2.lock().unwrap().push(t.to_string())),
             on_gpu,
@@ -560,7 +576,7 @@ mod tests {
             true,
             61,
             Box::new(move |_, _, _| Ok(Box::new(FallsBack(g1.clone())))),
-            Arc::new(move |m, use_gpu| use_gpu && m.engine == crate::transcriber::models::EngineKind::Whisper && g2.load(Ordering::Relaxed)),
+            Arc::new(move |m, use_gpu| use_gpu && m.kind == voice_engine_models::Kind::Whisper && g2.load(Ordering::Relaxed)),
         );
         worker.enqueue(&id);
         wait(&worker);
@@ -699,6 +715,30 @@ mod tests {
     }
 
     #[test]
+    fn the_models_of_the_meeting_being_transcribed_are_in_use_until_it_is_done() {
+        let (started_tx, started_rx) = std::sync::mpsc::channel();
+        let (go_tx, go_rx) = std::sync::mpsc::channel::<()>();
+        let (started_tx, go_rx) = (Mutex::new(started_tx), Mutex::new(go_rx));
+        let load: Box<EngineLoader> = Box::new(move |_, _, _| {
+            started_tx.lock().unwrap().send(()).unwrap();
+            go_rx.lock().unwrap().recv().unwrap();
+            Ok(Box::new(Echoes("Hi.")))
+        });
+        let (_d, _storage, id, worker, _) = setup_full(true, 1, load, Arc::new(|_, _| false));
+        assert!(!worker.is_using("whisper-small"));
+        worker.enqueue(&id);
+        started_rx.recv_timeout(Duration::from_secs(10)).unwrap();
+        // The speech model, the voice detector and (speakers are separated by default) the speaker model.
+        for id in ["whisper-small", "vad", "diarization"] {
+            assert!(worker.is_using(id), "{id}");
+        }
+        assert!(!worker.is_using("parakeet-v3"));
+        go_tx.send(()).unwrap();
+        wait(&worker);
+        assert!(!worker.is_using("whisper-small"));
+    }
+
+    #[test]
     fn meetings_not_waiting_are_left_alone() {
         let (_d, storage, id, worker) = setup(true, "x");
         storage.lock().unwrap().update_meeting_file(&id, |f| f.status = MeetingStatus::Ready).unwrap();
@@ -710,9 +750,15 @@ mod tests {
     #[test]
     fn settings_pick_the_model_language_and_gpu() {
         let c = Config::from_settings(Some(&json!({ "activeSpeechModel": "parakeet-v3", "meetingLanguage": "es", "useGpu": false })));
-        assert_eq!((c.model.id, c.language.as_deref(), c.use_gpu, c.reuse), ("parakeet-v3", Some("es"), false, true));
+        assert_eq!((c.model.id, c.language.as_deref(), c.use_gpu), ("parakeet-v3", Some("es"), false));
         let d = Config::from_settings(Some(&json!({ "activeSpeechModel": "parakeet", "meetingLanguage": "auto" })));
-        assert_eq!((d.model.id, d.language), (DEFAULT_MODEL, None));
-        assert_eq!(Config::from_settings(None).model.id, DEFAULT_MODEL);
+        assert_eq!((d.model.id, d.language), (DEFAULT_SPEECH, None));
+        assert_eq!(Config::from_settings(None).model.id, DEFAULT_SPEECH);
+        // A model that isn't a speech model (voice detection, speaker separation) is the default too.
+        for id in ["vad", "diarization", "qwen3.5-4b"] {
+            assert_eq!(Config::from_settings(Some(&json!({ "activeSpeechModel": id }))).model.id, DEFAULT_SPEECH, "{id}");
+        }
+        // The engine's newer ids are speech models like the rest.
+        assert_eq!(Config::from_settings(Some(&json!({ "activeSpeechModel": "whisper-small-en" }))).model.id, "whisper-small-en");
     }
 }
