@@ -8,7 +8,7 @@ use crate::storage::StorageError;
 use crate::transcriber::models::speech;
 use crate::transcriber::pipeline::Detector;
 use crate::transcriber::speech::{EngineSplitter, EngineVad};
-use crate::transcriber::worker::{restamp_queue, stamp_estimate, Deps, OnGpu, Worker, NO_MODEL};
+use crate::transcriber::worker::{asks_card, restamp_queue, stamp_estimate, Deps, OnGpu, Worker, NO_MODEL};
 use serde::Serialize;
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -28,6 +28,9 @@ pub struct TranscriberState {
     downloads: Mutex<HashMap<String, Arc<AtomicBool>>>,
     /// Model id → why its last download failed (shown until the next try).
     failed: Mutex<HashMap<String, String>>,
+    /// The one speech helper client of this app run (Windows; the worker's loader holds it too).
+    #[cfg(windows)]
+    stt_client: Arc<voice_engine_client::SttClient>,
 }
 
 impl TranscriberState {
@@ -37,6 +40,11 @@ impl TranscriberState {
     /// A first time estimate on a meeting that was just handed over (Stop says how long it will take).
     pub fn stamp_estimate(&self, storage: &crate::storage::Storage, id: &str) {
         stamp_estimate(storage, id, self.on_gpu.as_ref());
+    }
+    /// Stops the speech helper process now (the app is quitting). Does not wait for a request in progress.
+    #[cfg(windows)]
+    pub fn shutdown_speech_helper(&self) {
+        self.stt_client.shutdown();
     }
     pub fn data_dir(&self) -> &std::path::Path {
         &self.data_dir
@@ -57,16 +65,30 @@ fn err(message: String) -> StorageError {
     StorageError::Refused(message)
 }
 
-/// Whether a speech model runs on the graphics chip: Whisper with "use the GPU" on, through Metal on the Mac and
-/// the Vulkan helper on Windows when `gpu.rs` says it should be used. Parakeet and Nemotron use the processor.
-fn stt_on_gpu(model: &ModelInfo, use_gpu: bool, gpu: &crate::gpu::Gpu) -> bool {
-    if model.kind != Kind::Whisper || !use_gpu {
+/// Whether a speech model runs on the graphics chip, for time estimates: the setting asks for it and this
+/// computer has a card path for the model (`asks_card`: Metal on the Mac, Vulkan Whisper or DirectML Parakeet on
+/// Windows). A card failure the engine remembered (`gpu-stt-failures`, Windows Whisper only; Parakeet's DirectML
+/// has no such memory) means the processor does the work.
+fn stt_on_gpu(model: &ModelInfo, use_gpu: bool, data_dir: &std::path::Path) -> bool {
+    if !asks_card(model, use_gpu) {
         return false;
     }
-    if cfg!(target_os = "macos") {
-        return true;
+    !(cfg!(windows) && model.kind == Kind::Whisper && crate::transcriber::helper_speech::stt_card_failed(data_dir, env!("CARGO_PKG_VERSION")))
+}
+
+/// The engine for a model: on Windows, Whisper with the card asked for goes through the speech helper (the client
+/// falls back to the processor helper by itself); everything else loads in this process.
+#[cfg(windows)]
+fn load_engine(client: &Arc<voice_engine_client::SttClient>, model: &'static ModelInfo, handle: voice_engine_models::ModelHandle, use_gpu: bool) -> Result<Box<dyn crate::transcriber::engine::Engine>, String> {
+    if model.kind == Kind::Whisper && use_gpu {
+        return crate::transcriber::helper_speech::HelperSpeech::load(client.clone(), model, handle).map(|e| Box::new(e) as Box<dyn crate::transcriber::engine::Engine>);
     }
-    cfg!(windows) && matches!(gpu.plan(crate::gpu::Kind::Stt, true), crate::gpu::Plan::Gpu { .. })
+    crate::transcriber::speech::EngineSpeech::load(model, handle, use_gpu).map(|e| Box::new(e) as Box<dyn crate::transcriber::engine::Engine>)
+}
+
+#[cfg(not(windows))]
+fn load_engine(model: &'static ModelInfo, handle: voice_engine_models::ModelHandle, use_gpu: bool) -> Result<Box<dyn crate::transcriber::engine::Engine>, String> {
+    crate::transcriber::speech::EngineSpeech::load(model, handle, use_gpu).map(|e| Box::new(e) as Box<dyn crate::transcriber::engine::Engine>)
 }
 
 /// Starts the worker and queues every meeting left `transcribing` (a crash or quit mid-way).
@@ -74,17 +96,29 @@ pub fn setup(app: &AppHandle, data_dir: PathBuf) {
     let state = app.state::<AppState>();
     let changed_app = app.clone();
     let on_gpu: Arc<OnGpu> = {
-        let gpu = crate::gpu::Gpu::shared(&data_dir);
-        Arc::new(move |m: &ModelInfo, use_gpu: bool| stt_on_gpu(m, use_gpu, &gpu))
+        let data_dir = data_dir.clone();
+        Arc::new(move |m: &ModelInfo, use_gpu: bool| stt_on_gpu(m, use_gpu, &data_dir))
+    };
+    // One speech helper client per app run (Windows): it starts the helper on the first Whisper load and keeps it.
+    #[cfg(windows)]
+    let stt_client = {
+        let exe_dir = std::env::current_exe().ok().and_then(|p| p.parent().map(std::path::Path::to_path_buf)).unwrap_or_default();
+        Arc::new(voice_engine_client::SttClient::new(crate::transcriber::helper_speech::config(&exe_dir, &data_dir, env!("CARGO_PKG_VERSION"))))
     };
     let worker = Worker::start(Deps {
         storage: state.shared(),
         models: app.state::<Arc<Models>>().inner().clone(),
         changed: Arc::new(move || notify(&changed_app, MEETINGS_CHANGED)),
-        // Whisper on the GPU helper on Windows when it should be used, the processor behind it (fallback.rs).
+        // Whisper on the card through the speech helper on Windows (helper_speech.rs), everything else in process.
         load_engine: {
-            let gpu = crate::gpu::Gpu::shared(&data_dir);
-            Box::new(move |m, handle, use_gpu| crate::transcriber::fallback::load(m, handle, use_gpu, &gpu))
+            #[cfg(windows)]
+            let client = stt_client.clone();
+            Box::new(move |m, handle, use_gpu| {
+                #[cfg(windows)]
+                return load_engine(&client, m, handle, use_gpu);
+                #[cfg(not(windows))]
+                return load_engine(m, handle, use_gpu);
+            })
         },
         load_detector: Box::new(|handle| Ok(Box::new(EngineVad::new(handle)) as Box<dyn Detector + Send>)),
         load_splitter: Box::new(|handle| EngineSplitter::load(handle).map(|d| Box::new(d) as Box<dyn crate::transcriber::diarize::SpeakerSplitter>)),
@@ -106,7 +140,15 @@ pub fn setup(app: &AppHandle, data_dir: PathBuf) {
         worker.enqueue(id);
     }
     drop(storage);
-    app.manage(TranscriberState { worker, data_dir, on_gpu, downloads: Mutex::default(), failed: Mutex::default() });
+    app.manage(TranscriberState {
+        worker,
+        data_dir,
+        on_gpu,
+        downloads: Mutex::default(),
+        failed: Mutex::default(),
+        #[cfg(windows)]
+        stt_client,
+    });
 }
 
 /// Queues meetings that failed only because no model was there.

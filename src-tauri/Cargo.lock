@@ -5419,12 +5419,8 @@ dependencies = [
 name = "talaan-stt"
 version = "1.0.0"
 dependencies = [
- "serde_json",
- "talaan-llm-protocol",
- "tempfile",
  "voice-engine-protocol",
  "voice-engine-stt",
- "whisper-rs",
 ]
 
 [[package]]

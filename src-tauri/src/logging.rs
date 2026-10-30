@@ -10,7 +10,7 @@
 //!
 //! What: startup (version, OS, CPU, GPU plan), recorder start/stop/pause and device changes, call detection
 //! decisions, transcription and summary jobs, update checks, and every error the app shows. Only Talaan's own
-//! records are written (`talaan_lib`, `talaan`, the `talaan_stt` speech crate, and the engine's `voice_engine_models`,
+//! records are written (`talaan_lib`, `talaan`, and the engine's `voice_engine_models`,
 //! `voice_engine_stt` and `voice_engine_client`, which go through the same scrubbing); any other library's could carry a request URL. Never logged: transcript text,
 //! summaries, prompts, meeting titles, names or emails of people, API keys, the calendar address, the Notion secret.
 //! Three guards: errors and other free text go through `text` (an app message is logged as its key only), every
@@ -137,8 +137,8 @@ struct FileLogger {
     echo: bool,
 }
 
-/// Talaan's own crates: the app, its binary, the speech crate and the engine crates it links (`log_scan` checks their calls).
-const OWN: &[&str] = &["talaan_lib", "talaan", "talaan_stt", "voice_engine_models", "voice_engine_stt", "voice_engine_client"];
+/// Talaan's own crates: the app, its binary and the engine crates it links (`log_scan` checks their calls).
+const OWN: &[&str] = &["talaan_lib", "talaan", "voice_engine_models", "voice_engine_stt", "voice_engine_client"];
 
 /// Only Talaan's own records, at Info and above (Debug in debug builds).
 fn wanted(target: &str, level: log::Level) -> bool {
@@ -816,11 +816,11 @@ mod tests {
 
     #[test]
     fn talaans_crates_are_logged_and_libraries_are_not() {
-        assert!(wanted("talaan_stt::engine", log::Level::Warn));
+        assert!(wanted("voice_engine_client::stt", log::Level::Warn));
         assert!(wanted("talaan", log::Level::Info));
         assert!(wanted("voice_engine_stt::whisper_engine", log::Level::Warn));
         assert!(!wanted("voice_engine_stt_extra", log::Level::Warn));
-        assert!(!wanted("talaan_stt_extra", log::Level::Warn));
+        assert!(!wanted("talaan_stt", log::Level::Warn), "the helper binary is not an app crate that logs");
         assert!(!wanted("hyper::client", log::Level::Error));
     }
 

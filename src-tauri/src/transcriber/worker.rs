@@ -352,8 +352,9 @@ fn process(deps: &Deps, id: &str, loaded: &mut Option<Loaded>, cancel: &AtomicBo
             (deps.changed)();
         }
     };
-    let backend = l.backend.clone();
     let result = run(&dir, l.engine.as_mut(), l.detector.as_mut(), config.language.as_deref(), splitter, cancel, &mut report);
+    // Where the work ended up (the engine knows after the run: the speech helper can fall back to the processor mid-way).
+    let backend = l.engine.backend().or_else(|| l.backend.clone());
 
     match result {
         Ok(out) => {

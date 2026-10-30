@@ -265,6 +265,8 @@ pub fn run() {
                     if code != Some(tauri::RESTART_EXIT_CODE) {
                         exit_watchdog();
                     }
+                    #[cfg(windows)]
+                    app.state::<commands::transcriber::TranscriberState>().shutdown_speech_helper();
                     rec_cmd::stop_on_exit(app)
                 }
                 // Dock icon clicked while the main window is hidden.

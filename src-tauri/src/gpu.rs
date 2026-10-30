@@ -19,7 +19,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
 pub const LLM_HELPER: &str = "talaan-llm-vulkan";
-pub const STT_HELPER: &str = crate::transcriber::remote::HELPER;
+pub const STT_HELPER: &str = crate::transcriber::helper_speech::GPU_HELPER;
 const FILE: &str = "gpu.json";
 
 /// Which GPU helper.
