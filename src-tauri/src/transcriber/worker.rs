@@ -97,6 +97,8 @@ pub struct Worker {
     /// The loaded engine, detector and splitter. The worker thread holds the lock for as long as a job runs, so
     /// whoever gets it (`try_lock`) knows the worker is idle.
     loaded: Arc<Mutex<Option<Loaded>>>,
+    /// Drop the loaded engine before the next job (asked while a job was running, which keeps its engine).
+    reload: Arc<AtomicBool>,
 }
 
 impl Worker {
@@ -105,12 +107,13 @@ impl Worker {
         let cancel = Arc::new(AtomicBool::new(false));
         let busy: Arc<Mutex<Vec<&'static str>>> = Arc::default();
         let loaded: Arc<Mutex<Option<Loaded>>> = Arc::default();
-        let w = Worker { queue: queue.clone(), cancel: cancel.clone(), busy: busy.clone(), loaded: loaded.clone() };
+        let reload = Arc::new(AtomicBool::new(false));
+        let w = Worker { queue: queue.clone(), cancel: cancel.clone(), busy: busy.clone(), loaded: loaded.clone(), reload: reload.clone() };
         std::thread::Builder::new()
             .name("transcriber".into())
             .spawn(move || {
                 crate::platform::background_priority();
-                worker_loop(deps, queue, cancel, busy, loaded)
+                worker_loop(deps, queue, cancel, busy, loaded, reload)
             })
             .expect("transcriber thread");
         w
@@ -138,6 +141,17 @@ impl Worker {
         q.ids.retain(|i| i != id);
         if q.current.as_deref() == Some(id) {
             self.cancel.store(true, Ordering::Relaxed);
+        }
+    }
+
+    /// Lets go of the loaded engine, detector and speaker model, so the next job loads them again: the helper's
+    /// client was replaced, or a model file is being deleted. Right away when the worker is idle; when a job is
+    /// running, before the next one.
+    pub fn drop_loaded(&self) {
+        self.reload.store(true, Ordering::SeqCst);
+        if let Ok(mut l) = self.loaded.try_lock() {
+            l.take();
+            self.reload.store(false, Ordering::SeqCst);
         }
     }
 
@@ -207,7 +221,7 @@ struct Loaded {
     splitter: Option<Box<dyn SpeakerSplitter>>,
 }
 
-fn worker_loop(deps: Deps, queue: Arc<(Mutex<Queue>, Condvar)>, cancel: Arc<AtomicBool>, busy: Arc<Mutex<Vec<&'static str>>>, loaded: Arc<Mutex<Option<Loaded>>>) {
+fn worker_loop(deps: Deps, queue: Arc<(Mutex<Queue>, Condvar)>, cancel: Arc<AtomicBool>, busy: Arc<Mutex<Vec<&'static str>>>, loaded: Arc<Mutex<Option<Loaded>>>, reload: Arc<AtomicBool>) {
     let (lock, cv) = &*queue;
     loop {
         let id = {
@@ -228,7 +242,12 @@ fn worker_loop(deps: Deps, queue: Arc<(Mutex<Queue>, Condvar)>, cancel: Arc<Atom
                 }
             }
         };
-        process(&deps, &id, &mut loaded.lock().unwrap_or_else(|e| e.into_inner()), &cancel, &busy);
+        let mut guard = loaded.lock().unwrap_or_else(|e| e.into_inner());
+        if reload.swap(false, Ordering::SeqCst) {
+            guard.take();
+        }
+        process(&deps, &id, &mut guard, &cancel, &busy);
+        drop(guard);
         busy.lock().unwrap_or_else(|e| e.into_inner()).clear();
         (deps.changed)();
     }
@@ -902,6 +921,33 @@ mod tests {
         assert!(!dropped.load(Ordering::SeqCst));
         worker.stop_all(Duration::from_secs(5));
         assert!(dropped.load(Ordering::SeqCst));
+    }
+
+    #[test]
+    fn dropping_the_loaded_engine_makes_the_next_meeting_load_again() {
+        let loads = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let dropped = Arc::new(AtomicBool::new(false));
+        let (l2, d2) = (loads.clone(), dropped.clone());
+        let (_d, storage, id, worker, _) = setup_full(true, 1, Box::new(move |_, _, _| {
+            l2.fetch_add(1, Ordering::SeqCst);
+            Ok(Box::new(Tracked(d2.clone())))
+        }), Arc::new(|_, _| false));
+        worker.enqueue(&id);
+        wait(&worker);
+        assert_eq!(loads.load(Ordering::SeqCst), 1);
+        // Idle: let go at once.
+        worker.drop_loaded();
+        assert!(dropped.load(Ordering::SeqCst));
+        let again = |storage: &Arc<Mutex<Storage>>| {
+            storage.lock().unwrap().update_meeting_file(&id, |f| f.status = MeetingStatus::Transcribing).unwrap();
+            worker.enqueue(&id);
+            wait(&worker);
+        };
+        again(&storage);
+        assert_eq!(loads.load(Ordering::SeqCst), 2);
+        // Without the call the engine is kept.
+        again(&storage);
+        assert_eq!(loads.load(Ordering::SeqCst), 2);
     }
 
     #[test]

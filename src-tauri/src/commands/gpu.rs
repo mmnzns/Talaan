@@ -83,6 +83,10 @@ pub fn gpu_retry(app: AppHandle) -> GpuStatus {
         clear_gpu_failure(&data_dir.join(file));
     }
     crate::gpu::clear_fallbacks();
+    // The clients remember the failure in memory too: new ones try the card again.
+    crate::summarizer::local::reset_clients();
+    #[cfg(windows)]
+    app.state::<TranscriberState>().reset_speech_client();
     current(&app)
 }
 

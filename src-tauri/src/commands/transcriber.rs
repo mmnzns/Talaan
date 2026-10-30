@@ -28,9 +28,20 @@ pub struct TranscriberState {
     downloads: Mutex<HashMap<String, Arc<AtomicBool>>>,
     /// Model id → why its last download failed (shown until the next try).
     failed: Mutex<HashMap<String, String>>,
-    /// The one speech helper client of this app run (Windows; the worker's loader holds it too).
+    /// The speech helper's client (Windows; the worker's loader reads it on every load). Replaced by "Try again",
+    /// because a client remembers in memory that the card failed.
     #[cfg(windows)]
-    stt_client: Arc<voice_engine_client::SttClient>,
+    stt_client: SttSlot,
+}
+
+#[cfg(windows)]
+type SttSlot = Arc<Mutex<Arc<voice_engine_client::SttClient>>>;
+
+/// A speech helper client for Talaan (Windows).
+#[cfg(windows)]
+fn new_stt_client(data_dir: &std::path::Path) -> Arc<voice_engine_client::SttClient> {
+    let exe_dir = std::env::current_exe().ok().and_then(|p| p.parent().map(std::path::Path::to_path_buf)).unwrap_or_default();
+    Arc::new(voice_engine_client::SttClient::new(crate::transcriber::helper_speech::config(&exe_dir, data_dir, env!("CARGO_PKG_VERSION"))))
 }
 
 impl TranscriberState {
@@ -44,7 +55,16 @@ impl TranscriberState {
     /// Stops the speech helper process now (the app is quitting). Does not wait for a request in progress.
     #[cfg(windows)]
     pub fn shutdown_speech_helper(&self) {
-        self.stt_client.shutdown();
+        let client = self.stt_client.lock().unwrap_or_else(|e| e.into_inner()).clone();
+        client.shutdown();
+    }
+    /// "Try again" on the graphics card: the worker lets go of its engine, the helper ends and a new client takes
+    /// its place, which tries the card again (Windows).
+    #[cfg(windows)]
+    pub fn reset_speech_client(&self) {
+        self.worker.drop_loaded();
+        let old = std::mem::replace(&mut *self.stt_client.lock().unwrap_or_else(|e| e.into_inner()), new_stt_client(&self.data_dir));
+        old.shutdown();
     }
     /// Before "Delete all data": nothing queued starts, the running job is cancelled, the loaded models are dropped
     /// and (Windows) the speech helper ends, so no model file is open when the models are released.
@@ -108,10 +128,7 @@ pub fn setup(app: &AppHandle, data_dir: PathBuf) {
     };
     // One speech helper client per app run (Windows): it starts the helper on the first Whisper load and keeps it.
     #[cfg(windows)]
-    let stt_client = {
-        let exe_dir = std::env::current_exe().ok().and_then(|p| p.parent().map(std::path::Path::to_path_buf)).unwrap_or_default();
-        Arc::new(voice_engine_client::SttClient::new(crate::transcriber::helper_speech::config(&exe_dir, &data_dir, env!("CARGO_PKG_VERSION"))))
-    };
+    let stt_client: SttSlot = Arc::new(Mutex::new(new_stt_client(&data_dir)));
     let worker = Worker::start(Deps {
         storage: state.shared(),
         models: app.state::<Arc<Models>>().inner().clone(),
@@ -122,7 +139,7 @@ pub fn setup(app: &AppHandle, data_dir: PathBuf) {
             let client = stt_client.clone();
             Box::new(move |m, handle, use_gpu| {
                 #[cfg(windows)]
-                return load_engine(&client, m, handle, use_gpu);
+                return load_engine(&client.lock().unwrap_or_else(|e| e.into_inner()).clone(), m, handle, use_gpu);
                 #[cfg(not(windows))]
                 return load_engine(m, handle, use_gpu);
             })
