@@ -196,7 +196,7 @@ Meetings are plain files (transcript, summary, audio) in Talaan's data folder:
 
 ### Models download once
 
-Speech, summary, speaker and search models download only when you click Download (in setup or Settings), then stay on your computer. On the Mac they live in the same data folder. On Windows they live in `%LOCALAPPDATA%\com.craftconceptsdigital.talaan\models`, so a company PC with a roaming profile doesn't copy gigabytes at every sign-in (Talaan 1.1 moves models from the old `%APPDATA%\Talaan\models` by itself). You can switch or delete them in **Settings › Speech models** and **Settings › Summary AI**. If another speech app already downloaded the same model, Talaan can reuse it read-only (**Reuse models already on this computer**).
+Speech, summary, speaker and search models download only when you click Download (in setup or Settings), then stay on your computer. They live in one folder shared with Craft Concepts Digital's other apps: `~/Library/Application Support/Craft Concepts Digital/Models` on the Mac, `%LOCALAPPDATA%\Craft Concepts Digital\Models` on Windows (local, so a company PC with a roaming profile doesn't copy gigabytes at every sign-in). A model one of those apps already has is used as is, so it downloads once. The first time Talaan starts after an update, it moves the models it already had into that folder by itself; nothing downloads again, and the old folders keep links to the same files. You can switch or delete models in **Settings › Speech models** and **Settings › Summary AI**. Delete removes a model for Talaan only: it stays while another app uses it and is erased when none does.
 
 #### Which speech model
 
@@ -216,9 +216,10 @@ Setup and Settings show these three with plain names and the model name undernea
 | **Parakeet Ultra** | Parakeet v3 further trained by Moondream, more accurate. 25 European languages. | 668 MB |
 | **Parakeet v2** | English only, fast and very accurate in English. | 662 MB |
 | **Parakeet Unified** | English only, NVIDIA's newer English model. | 664 MB |
+| **Full-size versions** and **English-only Whisper** | Full-size Whisper and Parakeet give the same words with a bigger download. The English-only Whisper models (Small, Medium, Base, Tiny) are a little more accurate in English. | varies |
 | **Nemotron 3.5** | NVIDIA's newest, 35 languages. | 2.6 GB |
 
-On Windows, Whisper runs on the graphics card when the PC has one (an NVIDIA or AMD card with an up-to-date driver), and on the processor otherwise. On the processor, Parakeet is many times faster than Whisper. **Settings › Status** shows which one Talaan uses, and **Speed up with your graphics card** (also in Status) turns it off.
+On Windows, the graphics card is on by default only on PCs with a separate card (an NVIDIA or AMD card with an up-to-date driver), and Whisper and Parakeet use it; otherwise the processor does the work. If the card fails, Status says so and the processor does the work until you click Try again. On the processor, Parakeet is many times faster than Whisper. **Settings › Status** shows which one Talaan uses, and **Speed up with your graphics card** (also in Status) turns it off.
 
 ### What's different on Windows
 
@@ -297,7 +298,7 @@ Talaan keeps a small log file of what it did and any errors (never what was said
 - saved API keys, the Notion secret and the calendar address,
 - the **Open at login** entry.
 
-It can't be undone. It doesn't touch files you exported yourself, pages already sent to Notion, or models Talaan was reusing from another app. Talaan quits by itself when it's done.
+It can't be undone. It doesn't touch files you exported yourself or pages already sent to Notion. Models another app still uses stay on the computer. Talaan quits by itself when it's done.
 
 If you can't open Talaan any more, skip this and remove the folders by hand as shown below.
 
@@ -307,9 +308,9 @@ If you can't open Talaan any more, skip this and remove the folders by hand as s
 2. Open **Windows Settings › Apps › Installed apps**, find **Talaan**, click **...** › **Uninstall**.
 3. In the uninstaller, tick **Delete the application data** if you want, then **Uninstall**.
 
-Ticking **Delete the application data** removes everything Talaan stored: your meetings, audio and settings (`%APPDATA%\Talaan`), the models (`%LOCALAPPDATA%\com.craftconceptsdigital.talaan\models`), the app's window data, saved API keys, the Notion secret and the calendar address. Leave it unticked to keep your meetings for a later reinstall. The startup entry (**Open at login**) and the `talaan://` link Talaan's notifications use are removed on every uninstall, ticked or not.
+Ticking **Delete the application data** removes everything Talaan stored: your meetings, audio and settings (`%APPDATA%\Talaan`), the app's window data, saved API keys, the Notion secret and the calendar address. Leave it unticked to keep your meetings for a later reinstall. The startup entry (**Open at login**) and the `talaan://` link Talaan's notifications use are removed on every uninstall, ticked or not.
 
-Talaan has no setting to keep meetings in another folder: they're always in `%APPDATA%\Talaan`. If you started it with the `TALAAN_DATA_DIR` environment variable (testing only), the uninstaller doesn't know about that folder; delete it by hand. Files you exported, and models Talaan was reusing from another app, are never touched.
+Talaan has no setting to keep meetings in another folder: they're always in `%APPDATA%\Talaan`. If you started it with the `TALAAN_DATA_DIR` environment variable (testing only), the uninstaller doesn't know about that folder; delete it by hand. Files you exported are never touched. Models live in the shared `%LOCALAPPDATA%\Craft Concepts Digital\Models` and stay while another app uses them.
 
 If you uninstalled without it and want everything gone, delete these by hand:
 
@@ -317,7 +318,8 @@ If you uninstalled without it and want everything gone, delete these by hand:
 |---|---|
 | Program files | `%LOCALAPPDATA%\Talaan` (removed by the uninstaller) |
 | Meetings, audio, settings | `%APPDATA%\Talaan` |
-| Models, app window data | `%LOCALAPPDATA%\com.craftconceptsdigital.talaan` and `%APPDATA%\com.craftconceptsdigital.talaan` |
+| App window data | `%LOCALAPPDATA%\com.craftconceptsdigital.talaan` and `%APPDATA%\com.craftconceptsdigital.talaan` |
+| Models (shared with other Craft Concepts Digital apps) | `%LOCALAPPDATA%\Craft Concepts Digital\Models` |
 | Notification link | `HKEY_CURRENT_USER\Software\Classes\talaan` (removed by the uninstaller) |
 | Saved API keys | **Control Panel › Credential Manager › Windows Credentials**, under Generic Credentials: `claude.Talaan`, `openai.Talaan`, `gemini.Talaan`, `compatible.Talaan`, `notion.Talaan`, `calendar-ics.Talaan` |
 
@@ -340,7 +342,8 @@ Remove-Item -Recurse HKCU:\Software\Classes\talaan -ErrorAction SilentlyContinue
 
 | What | Where |
 |---|---|
-| Meetings, audio, models, settings | `~/Library/Application Support/Talaan` |
+| Meetings, audio, settings | `~/Library/Application Support/Talaan` |
+| Models (shared with other Craft Concepts Digital apps) | `~/Library/Application Support/Craft Concepts Digital/Models` |
 | App data | `~/Library/Application Support/com.craftconceptsdigital.talaan`, `~/Library/Caches/com.craftconceptsdigital.talaan`, `~/Library/WebKit/com.craftconceptsdigital.talaan`, `~/Library/HTTPStorages/com.craftconceptsdigital.talaan`, `~/Library/Preferences/com.craftconceptsdigital.talaan.plist`, `~/Library/Saved Application State/com.craftconceptsdigital.talaan.savedState` |
 | Open at login | `~/Library/LaunchAgents/Talaan.plist`, also listed in **System Settings › General › Login Items & Extensions** |
 | Saved API keys | **Keychain Access**, search "Talaan": entries named `Talaan` for `claude`, `openai`, `gemini`, `compatible`, `notion` |
