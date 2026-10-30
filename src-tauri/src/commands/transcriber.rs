@@ -46,6 +46,13 @@ impl TranscriberState {
     pub fn shutdown_speech_helper(&self) {
         self.stt_client.shutdown();
     }
+    /// Before "Delete all data": nothing queued starts, the running job is cancelled, the loaded models are dropped
+    /// and (Windows) the speech helper ends, so no model file is open when the models are released.
+    pub fn stop_for_wipe(&self) {
+        self.worker.stop_all(Duration::from_secs(10));
+        #[cfg(windows)]
+        self.shutdown_speech_helper();
+    }
     pub fn data_dir(&self) -> &std::path::Path {
         &self.data_dir
     }

@@ -39,12 +39,22 @@ pub fn settings_set(app: AppHandle, state: State<AppState>, models: State<Arc<Mo
 
 /// Deletes everything, then quits (as the Privacy tab says). The next launch starts at onboarding.
 #[tauri::command]
-pub fn data_delete_all(app: AppHandle, state: State<AppState>, models: State<Arc<Models>>) -> CmdResult<()> {
+pub fn data_delete_all(app: AppHandle, state: State<AppState>, models: State<Arc<Models>>, t: State<super::transcriber::TranscriberState>) -> CmdResult<()> {
     super::recorder::discard_for_wipe(&app);
-    state.lock().delete_all_data()?;
+    // Let go of every model first: an engine or helper that has a model open keeps the engine from erasing it
+    // (and on Windows from deleting the file).
+    t.stop_for_wipe();
+    crate::summarizer::local::shutdown_all();
     // The models are the shared folder's: Talaan stops using them, and the engine erases each one no other app
-    // (Ensayo, Parlato) still uses.
-    models.store().release_all().map_err(|e| crate::storage::StorageError::Refused(crate::i18n::tr_err("error.delete_model", e)))?;
+    // (Ensayo, Parlato) still uses. A failure here must not leave the rest of the data behind: it is logged (the
+    // kind only, the text can hold a path) and the wipe goes on.
+    if let Err(e) = models.store().release_all() {
+        let kind = e.kind();
+        log::warn!("couldn't release every model while deleting all data ({kind})");
+    }
+    state.lock().delete_all_data()?;
+    // Talaan's old model folders (the links the move left for 1.1.1).
+    models.remove_legacy_dirs();
     crate::keys::clear_all();
     super::updates::remove_login_item(&app);
     crate::logging::delete_files();

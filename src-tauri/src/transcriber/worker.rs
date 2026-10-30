@@ -92,6 +92,9 @@ pub struct Worker {
     cancel: Arc<AtomicBool>,
     /// The model ids the meeting being transcribed right now uses (speech model, voice detection, speaker model).
     busy: Arc<Mutex<Vec<&'static str>>>,
+    /// The loaded engine, detector and splitter. The worker thread holds the lock for as long as a job runs, so
+    /// whoever gets it (`try_lock`) knows the worker is idle.
+    loaded: Arc<Mutex<Option<Loaded>>>,
 }
 
 impl Worker {
@@ -99,12 +102,13 @@ impl Worker {
         let queue: Arc<(Mutex<Queue>, Condvar)> = Arc::default();
         let cancel = Arc::new(AtomicBool::new(false));
         let busy: Arc<Mutex<Vec<&'static str>>> = Arc::default();
-        let w = Worker { queue: queue.clone(), cancel: cancel.clone(), busy: busy.clone() };
+        let loaded: Arc<Mutex<Option<Loaded>>> = Arc::default();
+        let w = Worker { queue: queue.clone(), cancel: cancel.clone(), busy: busy.clone(), loaded: loaded.clone() };
         std::thread::Builder::new()
             .name("transcriber".into())
             .spawn(move || {
                 crate::platform::background_priority();
-                worker_loop(deps, queue, cancel, busy)
+                worker_loop(deps, queue, cancel, busy, loaded)
             })
             .expect("transcriber thread");
         w
@@ -132,6 +136,32 @@ impl Worker {
         q.ids.retain(|i| i != id);
         if q.current.as_deref() == Some(id) {
             self.cancel.store(true, Ordering::Relaxed);
+        }
+    }
+
+    /// Stops everything now: nothing queued starts, the job running is cancelled (it stays as it is on disk), and
+    /// once the worker is idle its loaded models are dropped, so no file or helper stays open. Waits up to `wait`
+    /// for a running job to notice the cancel; after that the caller goes on (the app is about to exit).
+    pub fn stop_all(&self, wait: Duration) {
+        {
+            let (lock, _) = &*self.queue;
+            let mut q = lock.lock().unwrap_or_else(|e| e.into_inner());
+            q.ids.clear();
+            if q.current.is_some() {
+                self.cancel.store(true, Ordering::Relaxed);
+            }
+        }
+        let started = Instant::now();
+        loop {
+            match self.loaded.try_lock() {
+                Ok(mut l) => return drop(l.take()),
+                Err(std::sync::TryLockError::Poisoned(e)) => return drop(e.into_inner().take()),
+                Err(std::sync::TryLockError::WouldBlock) if started.elapsed() >= wait => {
+                    log::warn!("the transcriber was still busy when everything was stopped");
+                    return;
+                }
+                Err(_) => std::thread::sleep(Duration::from_millis(20)),
+            }
         }
     }
 
@@ -166,8 +196,7 @@ struct Loaded {
     splitter: Option<Box<dyn SpeakerSplitter>>,
 }
 
-fn worker_loop(deps: Deps, queue: Arc<(Mutex<Queue>, Condvar)>, cancel: Arc<AtomicBool>, busy: Arc<Mutex<Vec<&'static str>>>) {
-    let mut loaded: Option<Loaded> = None;
+fn worker_loop(deps: Deps, queue: Arc<(Mutex<Queue>, Condvar)>, cancel: Arc<AtomicBool>, busy: Arc<Mutex<Vec<&'static str>>>, loaded: Arc<Mutex<Option<Loaded>>>) {
     let (lock, cv) = &*queue;
     loop {
         let id = {
@@ -176,18 +205,19 @@ fn worker_loop(deps: Deps, queue: Arc<(Mutex<Queue>, Condvar)>, cancel: Arc<Atom
             loop {
                 if let Some(id) = q.ids.pop_front() {
                     q.current = Some(id.clone());
+                    // Under the queue lock, so a cancel (`stop_all`, `cancel_if_running`) can't land before it.
+                    cancel.store(false, Ordering::Relaxed);
                     break id;
                 }
                 let (next, timeout) = cv.wait_timeout(q, IDLE_UNLOAD).unwrap_or_else(|e| e.into_inner());
                 q = next;
                 if timeout.timed_out() && q.ids.is_empty() {
                     // Free the model's memory when nothing has happened for a while.
-                    loaded = None;
+                    loaded.lock().unwrap_or_else(|e| e.into_inner()).take();
                 }
             }
         };
-        cancel.store(false, Ordering::Relaxed);
-        process(&deps, &id, &mut loaded, &cancel, &busy);
+        process(&deps, &id, &mut loaded.lock().unwrap_or_else(|e| e.into_inner()), &cancel, &busy);
         busy.lock().unwrap_or_else(|e| e.into_inner()).clear();
         (deps.changed)();
     }
@@ -811,6 +841,73 @@ mod tests {
         go_tx.send(()).unwrap();
         wait(&worker);
         assert!(!worker.is_using("whisper-small"));
+    }
+
+    /// An engine that says when it is dropped (the model let go).
+    struct Tracked(Arc<AtomicBool>);
+    impl Engine for Tracked {
+        fn transcribe(&mut self, s: &[f32], l: Option<&str>) -> Result<ChunkResult, String> {
+            Echoes("Hi.").transcribe(s, l)
+        }
+        fn label(&self) -> &str {
+            "Tracked"
+        }
+        fn chunking(&self) -> Shape {
+            Shape { pad: 0, ..Shape::default() }
+        }
+    }
+    impl Drop for Tracked {
+        fn drop(&mut self) {
+            self.0.store(true, Ordering::SeqCst);
+        }
+    }
+
+    #[test]
+    fn stopping_everything_lets_go_of_the_loaded_engine() {
+        let dropped = Arc::new(AtomicBool::new(false));
+        let d2 = dropped.clone();
+        let (_d, _storage, id, worker, _) = setup_full(true, 1, Box::new(move |_, _, _| Ok(Box::new(Tracked(d2.clone())))), Arc::new(|_, _| false));
+        worker.enqueue(&id);
+        wait(&worker);
+        // Idle, but the engine stays loaded for the next meeting.
+        assert!(!dropped.load(Ordering::SeqCst));
+        worker.stop_all(Duration::from_secs(5));
+        assert!(dropped.load(Ordering::SeqCst));
+    }
+
+    #[test]
+    fn stopping_everything_cancels_the_running_job_and_drops_the_queue() {
+        let (started_tx, started_rx) = std::sync::mpsc::channel();
+        let (go_tx, go_rx) = std::sync::mpsc::channel::<()>();
+        let (started_tx, go_rx) = (Mutex::new(started_tx), Mutex::new(go_rx));
+        let dropped = Arc::new(AtomicBool::new(false));
+        let d2 = dropped.clone();
+        let load: Box<EngineLoader> = Box::new(move |_, _, _| {
+            started_tx.lock().unwrap().send(()).unwrap();
+            go_rx.lock().unwrap().recv().unwrap();
+            Ok(Box::new(Tracked(d2.clone())))
+        });
+        let (_d, storage, id, worker, _) = setup_full(true, 1, load, Arc::new(|_, _| false));
+        let second = {
+            let s = storage.lock().unwrap();
+            let second = s.create_meeting("zoom", "Zoom", chrono::DateTime::parse_from_rfc3339("2026-10-14T15:30:00-07:00").unwrap()).unwrap().id;
+            s.update_meeting_file(&second, |f| f.status = MeetingStatus::Transcribing).unwrap();
+            second
+        };
+        worker.enqueue(&id);
+        started_rx.recv_timeout(Duration::from_secs(10)).unwrap();
+        worker.enqueue(&second);
+        // The job is stuck loading: stop_all gives up waiting, having cancelled it and emptied the queue.
+        worker.stop_all(Duration::from_millis(100));
+        assert!(!dropped.load(Ordering::SeqCst));
+        go_tx.send(()).unwrap();
+        wait(&worker);
+        // The cancelled job left the meeting as it was; the queued one never ran; the engine was let go.
+        let s = storage.lock().unwrap();
+        assert_eq!(s.read_meeting_file(&id).unwrap().status, MeetingStatus::Transcribing);
+        assert_eq!(s.read_meeting_file(&second).unwrap().status, MeetingStatus::Transcribing);
+        assert!(s.get_meeting(&id).unwrap().transcript.is_empty());
+        assert!(s.get_meeting(&second).unwrap().transcript.is_empty());
     }
 
     #[test]

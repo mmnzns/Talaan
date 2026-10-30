@@ -5,7 +5,7 @@
 use std::path::{Path, PathBuf};
 
 use serde_json::Value;
-use voice_engine_models::{catalog, App, ModelHandle, ModelInfo, SharedStore, Status, StoreError};
+use voice_engine_models::{catalog, App, LegacySource, ModelHandle, ModelInfo, SharedStore, Status, StoreError};
 
 /// Talaan's recommended speech model.
 pub const DEFAULT_SPEECH: &str = "whisper-turbo";
@@ -17,17 +17,76 @@ pub const SEARCH: &str = "search";
 
 pub struct Models {
     store: SharedStore,
+    /// Talaan's old model folders (the engine's `move_in` leaves a hard link of each moved file there, so 1.1.1 keeps
+    /// working). Empty on a `TALAAN_DATA_DIR` run: a test never touches the real folders.
+    legacy: Vec<PathBuf>,
+}
+
+/// Talaan's old model folders on this computer: the Mac's `Application Support/Talaan/models`, Windows'
+/// `%LOCALAPPDATA%\<bundle id>\models` and the older `%APPDATA%\Talaan\models`. The one place that says so.
+pub fn legacy_dirs() -> Vec<PathBuf> {
+    match dirs::data_local_dir() {
+        Some(local) => legacy_dirs_in(&local, dirs::data_dir().as_deref(), cfg!(target_os = "windows")),
+        None => Vec::new(),
+    }
+}
+
+/// `legacy_dirs` for given folders (`local` is `%LOCALAPPDATA%` / `~/Library/Application Support`, `roaming` is
+/// `%APPDATA%`): the engine's list for Talaan, so the two can't drift apart.
+pub fn legacy_dirs_in(local: &Path, roaming: Option<&Path>, windows: bool) -> Vec<PathBuf> {
+    LegacySource::all(App::Talaan, local, roaming, windows).into_iter().map(|s| s.root).collect()
 }
 
 impl Models {
     /// The shared folder, or `<test data>/shared-models` when `TALAAN_DATA_DIR` points Talaan at a test folder.
     /// `open_at` never moves anything in, so a test run can't touch the real models.
     pub fn open(test_data: Option<&Path>) -> std::io::Result<Models> {
-        let store = match test_data {
-            Some(dir) => SharedStore::open_at(App::Talaan, dir.join("shared-models"))?,
-            None => SharedStore::open(App::Talaan)?,
+        let (store, legacy) = match test_data {
+            Some(dir) => (SharedStore::open_at(App::Talaan, dir.join("shared-models"))?, Vec::new()),
+            None => (SharedStore::open(App::Talaan)?, legacy_dirs()),
         };
-        Ok(Models { store })
+        Ok(Models { store, legacy })
+    }
+
+    /// Tests: the same models with these as Talaan's old folders.
+    #[cfg(test)]
+    pub fn with_legacy(mut self, dirs: Vec<PathBuf>) -> Models {
+        self.legacy = dirs;
+        self
+    }
+
+    /// Talaan's old model folders (empty on a test run).
+    pub fn legacy_dirs(&self) -> &[PathBuf] {
+        &self.legacy
+    }
+
+    /// Removes the hard links the move left in Talaan's old folders for one model, so Delete really frees the space.
+    /// Only `<old folder>/<id>` goes; the engine's own copy is `release`'s business.
+    pub fn remove_legacy_copy(&self, id: &str) {
+        // An id from the catalog only (never a path from outside).
+        let Some(model) = catalog::find(id) else { return };
+        for dir in &self.legacy {
+            let folder = dir.join(model.id);
+            if folder.is_dir() {
+                if let Err(e) = std::fs::remove_dir_all(&folder) {
+                    let kind = e.kind();
+                    log::warn!("couldn't remove Talaan's old copy of a model ({kind})");
+                }
+            }
+        }
+    }
+
+    /// "Delete all data": Talaan's old model folders go whole (1.1.1 removed them too). On the Mac this one is
+    /// inside the data folder and is already gone with it; on Windows `%LOCALAPPDATA%\<bundle id>\models` is not.
+    pub fn remove_legacy_dirs(&self) {
+        for dir in &self.legacy {
+            if let Err(e) = std::fs::remove_dir_all(dir) {
+                if e.kind() != std::io::ErrorKind::NotFound {
+                    let kind = e.kind();
+                    log::warn!("couldn't remove Talaan's old models folder ({kind})");
+                }
+            }
+        }
     }
 
     /// First thing at start, before any model is opened or helper started: the one-time move from Talaan's old
@@ -58,8 +117,12 @@ impl Models {
     /// Records Talaan as a user of each model its settings point to that is already on this computer, so that if
     /// another app (Ensayo, Parlato) deletes one, the file stays. A model not installed yet is claimed when its
     /// download finishes. Run at start and after every settings save.
+    ///
+    /// No settings file (a fresh install, or after Delete all data) claims nothing: the defaults would otherwise
+    /// make Talaan a user again of whatever another app's models are on this computer.
     pub fn claim(&self, settings: Option<&Value>) {
-        for id in used_ids(settings) {
+        let Some(settings) = settings else { return };
+        for id in used_ids(Some(settings)) {
             if !matches!(self.store.status(id), Status::Installed { .. }) {
                 continue;
             }
@@ -223,6 +286,58 @@ mod tests {
         install_without_using(&models, "whisper-turbo");
         models.start(Some(&json!({"separateSpeakers": false, "summaryEngine": "byok"})));
         assert!(matches!(models.status("whisper-turbo"), Status::Installed { used_by_me: true, .. }));
+    }
+
+    #[test]
+    fn without_a_settings_file_nothing_is_claimed() {
+        // A wipe deletes the settings: the defaults must not make Talaan a user of what is still installed.
+        let data = tempfile::tempdir().unwrap();
+        let models = Models::open(Some(data.path())).unwrap();
+        for id in ["whisper-turbo", "vad", "diarization", "qwen3.5-4b"] {
+            install_without_using(&models, id);
+        }
+        models.claim(None);
+        for id in ["whisper-turbo", "vad", "diarization", "qwen3.5-4b"] {
+            assert!(matches!(models.status(id), Status::Installed { used_by_me: false, .. }), "{id}");
+        }
+        // Starting up then tidies away the leftovers nobody uses, instead of keeping them for Talaan.
+        models.start(None);
+        assert!(matches!(models.status("whisper-turbo"), Status::Missing));
+        for id in ["whisper-turbo", "vad", "diarization", "qwen3.5-4b"] {
+            install_without_using(&models, id);
+        }
+        // With a settings file the same models are claimed.
+        models.claim(Some(&json!({})));
+        assert!(matches!(models.status("whisper-turbo"), Status::Installed { used_by_me: true, .. }));
+    }
+
+    #[test]
+    fn the_old_folders_are_the_engines_list_for_each_platform() {
+        let (local, roaming) = (Path::new("/L"), Path::new("/R"));
+        assert_eq!(legacy_dirs_in(local, Some(roaming), false), vec![Path::new("/L/Talaan/models")]);
+        let id = App::Talaan.bundle_id();
+        assert_eq!(legacy_dirs_in(local, Some(roaming), true), vec![Path::new("/L").join(id).join("models"), Path::new("/R/Talaan/models").to_path_buf()]);
+        // A test run has none, so it can't reach the real ones.
+        let data = tempfile::tempdir().unwrap();
+        assert!(Models::open(Some(data.path())).unwrap().legacy_dirs().is_empty());
+    }
+
+    #[test]
+    fn deleting_all_data_removes_the_old_folders_and_only_those() {
+        let data = tempfile::tempdir().unwrap();
+        let (local, roaming) = (data.path().join("local"), data.path().join("roaming"));
+        let models = Models::open(Some(data.path())).unwrap().with_legacy(legacy_dirs_in(&local, Some(&roaming), true));
+        let old_local = local.join(App::Talaan.bundle_id()).join("models/whisper-small/model.bin");
+        let old_roaming = roaming.join("Talaan/models/vad/x");
+        let neighbour = local.join(App::Talaan.bundle_id()).join("EBWebView/keep");
+        for p in [&old_local, &old_roaming, &neighbour] {
+            std::fs::create_dir_all(p.parent().unwrap()).unwrap();
+            std::fs::write(p, b"x").unwrap();
+        }
+        models.remove_legacy_dirs();
+        assert!(!old_local.exists() && !old_roaming.exists());
+        assert!(neighbour.exists(), "only the models folder goes");
+        models.remove_legacy_dirs(); // already gone: fine
     }
 
     #[test]
