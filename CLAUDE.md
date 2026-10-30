@@ -17,6 +17,7 @@ v1.0 ships Mac (Apple silicon, built on Miguel's MacBook) and Windows (x64, buil
 5. **Commit after every change that builds and works.** CI must stay green.
 6. **Talaan's own look ("Sinag", UI v3).** Talaan has its own identity reflecting Miguel's Filipino heritage (decided 2026-10-14, replacing the shared Parlato look). Its own token file (`src/styles/tokens.css`) and components. Don't copy Parlato's component files.
 7. **Notion first:** keep the Talaan Journey decisions and Build Log updated as work happens. Repo docs are generated from Notion.
+8. **Absolute rule: Sonnet does the heavy lifting.** If Sonnet can handle the development work, Sonnet does it: implementing, tests, routine reviews, docs, searches, reading long pages. Spawn those agents with the Sonnet model. Opus only plans, coordinates, and takes what truly needs deeper judgment (architecture, tricky debugging, final review of risky changes). No exceptions for convenience. Reason: Miguel wants token usage kept down (decided 2026-10-29).
 
 ## How the build runs
 
@@ -29,6 +30,8 @@ v1.0 ships Mac (Apple silicon, built on Miguel's MacBook) and Windows (x64, buil
 - **Never link llama.cpp into the main app.** It lives in the `talaan-llm` helper because whisper.cpp and llama.cpp each bundle ggml (see docs/plans/M5-summarizer.md).
 
 ### Model per milestone
+
+Historical split from the v1 build. For new work, Build rule 8 decides: Sonnet unless the work truly needs Opus.
 
 - **Opus:** M0, every milestone's task plan, M3 Recorder, M4 Transcriber, M8 Named speakers and Ask, the local summary model pick in M5, any bug that survives two Sonnet attempts.
 - **Sonnet:** M1 UI, M2 Storage, M5 Summarizer wiring, M6 Call detection and menu bar, M7 Meeting features, M9 Organize and connect, M10 Release prep.
