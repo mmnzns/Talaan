@@ -45,6 +45,27 @@ pub fn stt_card_failed(data_dir: &Path, version: &str) -> bool {
     std::fs::read_to_string(data_dir.join(FAILURES_FILE)).is_ok_and(|t| t.trim() == version)
 }
 
+/// Words for the user from what the speech helper said (matched on the kind of error). The error's own text goes
+/// to the log, through `logging::text`. `Cancelled` is a stop that Talaan asked for (quitting, a deleted meeting;
+/// the worker leaves those meetings alone): when it still reaches the screen, the helper was stopped some other
+/// way (Try again on the card), so it reads as an unexpected stop.
+#[cfg_attr(not(windows), allow(dead_code))] // the Mac has no speech helper; the function is pure, so it is tested there
+pub fn helper_error_text(e: &voice_engine_client::EngineError, name: &str) -> String {
+    use crate::i18n::{tr, tr_with};
+    use voice_engine_client::EngineError as E;
+    match e {
+        E::OutOfMemory => tr("transcribe.out_of_memory"),
+        E::ModelMissing { .. } => tr_with("error.download_speech_model", &[("name", name)]),
+        E::BadModel => tr_with("download.corrupt", &[("name", name)]),
+        // CouldNotStart, Crashed, TimedOut, GpuFailed, Unsupported, Internal, VersionMismatch ...: nothing the user can act on.
+        other => {
+            let detail = format!("{other:?}");
+            log::warn!("speech helper: {}", crate::logging::text(detail));
+            tr("transcribe.helper_failed")
+        }
+    }
+}
+
 #[cfg(windows)]
 pub use windows_impl::HelperSpeech;
 
@@ -52,7 +73,7 @@ pub use windows_impl::HelperSpeech;
 mod windows_impl {
     use std::sync::Arc;
 
-    use voice_engine_client::{EngineError, SttClient};
+    use voice_engine_client::SttClient;
     use voice_engine_models::{ModelHandle, ModelInfo};
     use voice_engine_protocol::stt::{SttLoad, SttModelKind};
     use voice_engine_protocol::Backend;
@@ -60,6 +81,7 @@ mod windows_impl {
 
     use crate::transcriber::engine::{ChunkResult, Engine};
     use crate::transcriber::speech::to_chunk;
+    use super::helper_error_text;
     use crate::transcriber::vad::Shape;
 
     pub struct HelperSpeech {
@@ -73,13 +95,6 @@ mod windows_impl {
         SpeechBackend { backend: b.backend.clone(), device: b.device.clone(), fell_back }
     }
 
-    fn describe(e: &EngineError) -> String {
-        match e {
-            EngineError::Cancelled => "the speech helper was stopped".to_string(),
-            other => format!("{other:?}"),
-        }
-    }
-
     impl HelperSpeech {
         /// Loads the Whisper model into the helper (the client falls back to the processor helper by itself).
         pub fn load(client: Arc<SttClient>, model: &'static ModelInfo, handle: ModelHandle) -> Result<Self, String> {
@@ -91,7 +106,7 @@ mod windows_impl {
                     gpu: true,
                     threads: None,
                 })
-                .map_err(|e| describe(&e))?;
+                .map_err(|e| helper_error_text(&e, model.name))?;
             let last = Some(placed(&out.backend, out.fell_back));
             Ok(HelperSpeech { client, label: model.name.to_string(), last, _model: handle })
         }
@@ -100,7 +115,7 @@ mod windows_impl {
     impl Engine for HelperSpeech {
         fn transcribe(&mut self, samples: &[f32], language: Option<&str>) -> Result<ChunkResult, String> {
             let opts = ChunkOptions { language: language.map(str::to_string), timing: Timing::Segments, ..Default::default() };
-            let out = self.client.transcribe(samples, &opts).map_err(|e| describe(&e))?;
+            let out = self.client.transcribe(samples, &opts).map_err(|e| helper_error_text(&e, &self.label))?;
             self.last = Some(placed(&out.backend, out.fell_back || self.last.as_ref().is_some_and(|b| b.fell_back)));
             Ok(to_chunk(out.value))
         }
@@ -120,7 +135,8 @@ mod windows_impl {
         /// A quick request; the helper keeps running for the next load.
         fn drop(&mut self) {
             if let Err(e) = self.client.unload() {
-                log::warn!("the speech helper did not confirm unloading: {}", crate::logging::text(describe(&e)));
+                let detail = format!("{e:?}");
+                log::warn!("the speech helper did not confirm unloading: {}", crate::logging::text(detail));
             }
         }
     }
@@ -129,6 +145,29 @@ mod windows_impl {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn helper_errors_become_words_not_debug_text() {
+        use crate::i18n::{tr, tr_with};
+        use voice_engine_client::EngineError as E;
+        let name = "Whisper Large Turbo";
+        assert_eq!(helper_error_text(&E::OutOfMemory, name), tr("transcribe.out_of_memory"));
+        assert_eq!(helper_error_text(&E::ModelMissing { path: "/Users/someone/m.bin".into() }, name), tr_with("error.download_speech_model", &[("name", name)]));
+        assert_eq!(helper_error_text(&E::BadModel, name), tr_with("download.corrupt", &[("name", name)]));
+        let generic = tr("transcribe.helper_failed");
+        for e in [
+            E::CouldNotStart { message: "C:\\Users\\someone\\talaan-stt.exe".into() },
+            E::Crashed,
+            E::TimedOut,
+            E::Cancelled,
+            E::GpuFailed { fell_back: false },
+            E::Internal { message: "x".into() },
+        ] {
+            let m = helper_error_text(&e, name);
+            assert_eq!(m, generic);
+            assert!(!m.contains("Users") && !m.contains("Crashed"), "{m}");
+        }
+    }
 
     #[test]
     fn the_card_helper_is_used_only_when_installed() {

@@ -276,6 +276,18 @@ const TABLE: &[(&str, &str, &str, &str)] = &[
         "La IA local se detuvo de forma inesperada. Vuelve a intentarlo.",
     ),
     (
+        "transcribe.helper_failed",
+        "Transcription stopped unexpectedly. Try again.",
+        "La transcription s’est arrêtée de façon inattendue. Réessayez.",
+        "La transcripción se detuvo de forma inesperada. Vuelve a intentarlo.",
+    ),
+    (
+        "transcribe.out_of_memory",
+        "There wasn't enough memory to transcribe this call. Try a smaller speech model, or close other apps.",
+        "Il n’y avait pas assez de mémoire pour transcrire cet appel. Essayez un modèle de voix plus petit ou fermez d’autres applications.",
+        "No había suficiente memoria para transcribir esta llamada. Prueba un modelo de voz más pequeño o cierra otras apps.",
+    ),
+    (
         "local_ai.out_of_memory",
         "The local AI ran out of memory. Try the smaller model, or close other apps.",
         "L’IA locale a manqué de mémoire. Essayez le modèle plus petit ou fermez d’autres applications.",
