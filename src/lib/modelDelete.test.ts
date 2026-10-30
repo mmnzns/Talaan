@@ -9,6 +9,12 @@ describe("the message after Delete on a model", () => {
     expect(say("en", { erased: true, otherApps: [] })).toBeUndefined();
   });
 
+  it("says it is pending, not erased, when nothing is named but the file is still there", () => {
+    expect(say("en", { erased: false, otherApps: [] })).toBe("It will be removed when nothing is using it.");
+    expect(say("fr", { erased: false, otherApps: [] })).toBe("Il sera supprimé quand plus rien ne l’utilisera.");
+    expect(say("es", { erased: false, otherApps: [] })).toBe("Se eliminará cuando nada lo esté usando.");
+  });
+
   it("says which apps keep the file on this computer", () => {
     expect(say("en", { erased: false, otherApps: ["Ensayo"] })).toBe("Talaan no longer uses Whisper Small. Ensayo still uses it, so it stays on this computer.");
     expect(say("en", { erased: false, otherApps: ["Ensayo", "Parlato"] })).toBe("Talaan no longer uses Whisper Small. Ensayo and Parlato still use it, so it stays on this computer.");

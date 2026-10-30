@@ -174,6 +174,12 @@ impl Worker {
         Ahead { summary: q.current.clone(), jobs: before + usize::from(q.running_job.is_some()) }
     }
 
+    /// Whether a summary or a draft is being written or waits for the AI.
+    pub fn busy(&self) -> bool {
+        let q = self.queue.0.lock().unwrap_or_else(|e| e.into_inner());
+        q.current.is_some() || q.running_job.is_some() || !q.jobs.is_empty()
+    }
+
     /// The meeting whose summary is being written right now.
     #[cfg(test)]
     pub fn current(&self) -> Option<String> {

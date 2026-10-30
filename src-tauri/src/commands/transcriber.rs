@@ -436,30 +436,40 @@ fn app_name(app: &App) -> Option<&'static str> {
 }
 
 /// Talaan stops using a model. The engine erases the file once no app uses it; another app's copy stays.
-/// `in_use`: whether a meeting is being transcribed with that model right now.
-pub fn delete_model(models: &Models, in_use: impl Fn(&str) -> bool, id: &str) -> CmdResult<Deleted> {
+/// `in_use`: whether a meeting is being transcribed with that model right now. `unload`: lets go of the model if
+/// Talaan has it loaded (an idle engine, or a helper, holds the file open, which keeps the engine from erasing it).
+pub fn delete_model(models: &Models, in_use: impl Fn(&str) -> bool, unload: impl Fn(&ModelInfo), id: &str) -> CmdResult<Deleted> {
     let model = find_any(id).ok_or_else(|| err(format!("No model called {id}")))?;
     if in_use(model.id) {
         return Err(err(tr("error.model_in_use")));
     }
+    unload(model);
     let released = models.store().release(model.id).map_err(|e| err(crate::i18n::tr_err("error.delete_model", e)))?;
     // The move left a hard link of each file in Talaan's old folder (for 1.1.1): without removing those the bytes
     // stay on the disk.
     models.remove_legacy_copy(model.id);
     Ok(match released {
         Released::Erased | Released::NotUsing => Deleted { erased: true, other_apps: vec![] },
-        // No other app listed: another app has the file open now, and the engine erases it when it lets go.
-        Released::Kept { users } => {
-            let other_apps: Vec<_> = users.iter().filter_map(app_name).collect();
-            Deleted { erased: other_apps.is_empty(), other_apps }
-        }
+        // Not erased yet: other apps still use it (named), or one has it open right now (none named) and the
+        // engine erases it when it lets go. Never "erased" for these.
+        Released::Kept { users } => Deleted { erased: false, other_apps: users.iter().filter_map(app_name).collect() },
     })
 }
 
 /// Talaan stops using a model (Delete). Refused while a meeting is being transcribed with it.
 #[tauri::command]
 pub fn models_delete(app: AppHandle, t: State<TranscriberState>, models: State<Arc<Models>>, id: String) -> CmdResult<Deleted> {
-    let deleted = delete_model(&models, |m| t.worker.is_using(m), &id)?;
+    let unload = |m: &ModelInfo| match m.kind {
+        // The AI helpers hold the model file. Starting over with new clients lets go of it, unless a summary or a
+        // draft is using the helper right now (then the file goes once that is done: "pending").
+        Kind::Llm | Kind::Embedding => {
+            if !app.state::<super::summarizer::SummarizerState>().busy() {
+                crate::summarizer::local::reset_clients();
+            }
+        }
+        _ => t.worker.unload_model(m.id),
+    };
+    let deleted = delete_model(&models, |m| t.worker.is_using(m), unload, &id)?;
     let _ = app.emit(MODELS_CHANGED, ());
     Ok(deleted)
 }
@@ -560,11 +570,11 @@ mod tests {
         models.store().use_model("whisper-small").unwrap();
         let rows = model_rows(&models, &HashMap::new());
         assert_eq!(row(&rows, "whisper-small").state, "downloaded");
-        assert_eq!(delete_model(&models, |_| false, "whisper-small").unwrap(), Deleted { erased: true, other_apps: vec![] });
+        assert_eq!(delete_model(&models, |_| false, |_| {}, "whisper-small").unwrap(), Deleted { erased: true, other_apps: vec![] });
         assert!(!models.root().join("whisper-small").exists());
         assert_eq!(row(&model_rows(&models, &HashMap::new()), "whisper-small").state, "not_downloaded");
         // Again: nothing to do, still fine.
-        assert_eq!(delete_model(&models, |_| false, "whisper-small").unwrap().erased, true);
+        assert_eq!(delete_model(&models, |_| false, |_| {}, "whisper-small").unwrap().erased, true);
     }
 
     #[test]
@@ -575,10 +585,35 @@ mod tests {
         let users = models.root().join(".engine/users/whisper-small");
         std::fs::write(users.join("ensayo"), b"").unwrap();
         std::fs::write(users.join("parlato"), b"").unwrap();
-        let d = delete_model(&models, |_| false, "whisper-small").unwrap();
+        let d = delete_model(&models, |_| false, |_| {}, "whisper-small").unwrap();
         assert_eq!(d, Deleted { erased: false, other_apps: vec!["Ensayo", "Parlato"] });
         assert_eq!(models.status("whisper-small"), Status::Installed { dir: models.root().join("whisper-small"), users: vec![App::Ensayo, App::Parlato], used_by_me: false });
         assert_eq!(serde_json::to_value(&d).unwrap(), serde_json::json!({"erased": false, "otherApps": ["Ensayo", "Parlato"]}));
+    }
+
+    #[test]
+    fn a_model_something_has_loaded_is_let_go_before_it_is_deleted() {
+        let (_d, models) = temp();
+        install(&models, "whisper-small");
+        models.store().use_model("whisper-small").unwrap();
+        // An idle engine keeps its model held: nothing can be erased.
+        let held = Mutex::new(Some(models.hold("whisper-small").unwrap()));
+        let stuck = delete_model(&models, |_| false, |_| {}, "whisper-small").unwrap();
+        assert_eq!(stuck, Deleted { erased: false, other_apps: vec![] }, "not claimed as erased");
+        assert_eq!(serde_json::to_value(&stuck).unwrap(), serde_json::json!({"erased": false, "otherApps": []}));
+        assert!(models.root().join("whisper-small").exists());
+        // Talaan still uses it (the marker was removed by the first try): use it again, and let go first this time.
+        models.store().use_model("whisper-small").unwrap();
+        let unloaded = std::cell::Cell::new(0);
+        let d = delete_model(&models, |_| false, |m| {
+            assert_eq!(m.id, "whisper-small");
+            unloaded.set(unloaded.get() + 1);
+            held.lock().unwrap().take();
+        }, "whisper-small")
+        .unwrap();
+        assert_eq!(d, Deleted { erased: true, other_apps: vec![] });
+        assert_eq!(unloaded.get(), 1);
+        assert!(!models.root().join("whisper-small").exists());
     }
 
     #[test]
@@ -586,12 +621,12 @@ mod tests {
         let (_d, models) = temp();
         install(&models, "whisper-small");
         models.store().use_model("whisper-small").unwrap();
-        let e = delete_model(&models, |id| id == "whisper-small", "whisper-small").unwrap_err();
+        let e = delete_model(&models, |id| id == "whisper-small", |_| {}, "whisper-small").unwrap_err();
         assert!(e.to_string().contains("transcribed"), "{e}");
         assert!(models.ready_dir("whisper-small").is_some());
         // Unknown ids and the voice detection file (never offered) are refused too.
-        assert!(delete_model(&models, |_| false, "nope").is_err());
-        assert!(delete_model(&models, |_| false, "vad").is_err());
+        assert!(delete_model(&models, |_| false, |_| {}, "nope").is_err());
+        assert!(delete_model(&models, |_| false, |_| {}, "vad").is_err());
     }
 
     #[test]
@@ -621,7 +656,7 @@ mod tests {
             std::fs::create_dir_all(old.join(id)).unwrap();
             std::fs::write(old.join(id).join(file), b"bytes").unwrap();
         }
-        assert_eq!(delete_model(&models, |_| false, "whisper-small").unwrap().erased, true);
+        assert_eq!(delete_model(&models, |_| false, |_| {}, "whisper-small").unwrap().erased, true);
         assert!(!old.join("whisper-small").exists());
         assert!(old.join("whisper-base").exists(), "another model's copy stays");
     }

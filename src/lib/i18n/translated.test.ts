@@ -7,6 +7,7 @@ const mustDiffer = [
   "settings.english_only",
   "settings.model_kept_one",
   "settings.model_kept_other",
+  "settings.model_pending",
   "settings.setup_gpu_failed",
   "settings.setup_gpu_part_stt",
   "settings.setup_gpu_part_llm",

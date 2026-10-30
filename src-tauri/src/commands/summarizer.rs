@@ -28,6 +28,10 @@ pub struct SummarizerState {
 }
 
 impl SummarizerState {
+    /// Whether the local AI may be in use right now (a summary or a draft is being written).
+    pub fn busy(&self) -> bool {
+        self.worker.busy()
+    }
     pub fn enqueue(&self, id: &str) {
         self.worker.enqueue(id);
     }

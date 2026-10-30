@@ -155,6 +155,25 @@ impl Worker {
         }
     }
 
+    /// A model is about to be deleted: when the worker is idle and has it loaded (an idle engine keeps the model's
+    /// file open for five minutes), lets go of it. A busy worker is left alone; `is_using` already says no to a
+    /// model its job uses, and any other model isn't loaded.
+    pub fn unload_model(&self, id: &str) {
+        let mut l = match self.loaded.try_lock() {
+            Ok(l) => l,
+            Err(std::sync::TryLockError::Poisoned(e)) => e.into_inner(),
+            Err(std::sync::TryLockError::WouldBlock) => return,
+        };
+        match l.as_mut() {
+            // The engine, the voice detector and the speaker model go together: the next job loads them again.
+            Some(x) if x.model_id == id || id == VAD => {
+                l.take();
+            }
+            Some(x) if id == DIARIZATION => x.splitter = None,
+            _ => {}
+        }
+    }
+
     /// Cancels the job running now, leaving its meeting as it is (Talaan is quitting).
     pub fn cancel_running(&self) {
         let (lock, _) = &*self.queue;
@@ -948,6 +967,21 @@ mod tests {
         // Without the call the engine is kept.
         again(&storage);
         assert_eq!(loads.load(Ordering::SeqCst), 2);
+    }
+
+    #[test]
+    fn deleting_a_model_unloads_it_only_when_it_is_the_loaded_one() {
+        let dropped = Arc::new(AtomicBool::new(false));
+        let d2 = dropped.clone();
+        let (_d, _storage, id, worker, _) = setup_full(true, 1, Box::new(move |_, _, _| Ok(Box::new(Tracked(d2.clone())))), Arc::new(|_, _| false));
+        worker.enqueue(&id);
+        wait(&worker);
+        // The loaded model is whisper-small; another model's delete leaves it be.
+        worker.unload_model("parakeet-v3");
+        assert!(!dropped.load(Ordering::SeqCst));
+        worker.unload_model("whisper-small");
+        assert!(dropped.load(Ordering::SeqCst));
+        worker.unload_model("whisper-small"); // nothing loaded: fine
     }
 
     #[test]
