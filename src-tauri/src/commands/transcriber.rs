@@ -425,6 +425,9 @@ pub fn delete_model(models: &Models, in_use: impl Fn(&str) -> bool, id: &str) ->
         return Err(err(tr("error.model_in_use")));
     }
     let released = models.store().release(model.id).map_err(|e| err(crate::i18n::tr_err("error.delete_model", e)))?;
+    // The move left a hard link of each file in Talaan's old folder (for 1.1.1): without removing those the bytes
+    // stay on the disk.
+    models.remove_legacy_copy(model.id);
     Ok(match released {
         Released::Erased | Released::NotUsing => Deleted { erased: true, other_apps: vec![] },
         // No other app listed: another app has the file open now, and the engine erases it when it lets go.
@@ -585,6 +588,42 @@ mod tests {
         sparse(&models.root().join(".engine/users/whisper-tiny/ensayo"), 0);
         let want = catalog::find("whisper-small").unwrap().size() + catalog::find("whisper-base").unwrap().size();
         assert_eq!(super::super::settings::models_bytes(&models), want);
+    }
+
+    #[test]
+    fn deleting_a_model_also_removes_talaans_old_copy_of_it() {
+        let (d, models) = temp();
+        let old = d.path().join("old/models");
+        let models = models.with_legacy(vec![old.clone()]);
+        install(&models, "whisper-small");
+        models.store().use_model("whisper-small").unwrap();
+        // What the move leaves: the same bytes, linked into the old folder (for two models).
+        for id in ["whisper-small", "whisper-base"] {
+            let file = catalog::find(id).unwrap().files[0].name;
+            std::fs::create_dir_all(old.join(id)).unwrap();
+            std::fs::write(old.join(id).join(file), b"bytes").unwrap();
+        }
+        assert_eq!(delete_model(&models, |_| false, "whisper-small").unwrap().erased, true);
+        assert!(!old.join("whisper-small").exists());
+        assert!(old.join("whisper-base").exists(), "another model's copy stays");
+    }
+
+    #[test]
+    fn the_privacy_tab_does_not_count_a_model_twice() {
+        let (d, models) = temp();
+        // The Mac: the old models folder is inside the data folder, holding links to the same files.
+        let root = d.path().join("Talaan");
+        let old = root.join("models");
+        let models = models.with_legacy(vec![old.clone()]);
+        install(&models, "whisper-small");
+        models.store().use_model("whisper-small").unwrap();
+        let size = catalog::find("whisper-small").unwrap().size();
+        let file = catalog::find("whisper-small").unwrap().files[0].name;
+        std::fs::create_dir_all(old.join("whisper-small")).unwrap();
+        std::fs::hard_link(models.root().join("whisper-small").join(file), old.join("whisper-small").join(file)).unwrap();
+        std::fs::write(root.join("settings.json"), [0u8; 10]).unwrap();
+        assert!(crate::storage::io::dir_size(&root) >= size, "the link is there to be counted");
+        assert_eq!(super::super::settings::data_bytes(&root, &models), size + 10);
     }
 
     #[test]

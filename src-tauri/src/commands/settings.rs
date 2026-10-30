@@ -89,7 +89,12 @@ pub fn models_bytes(models: &Models) -> u64 {
 #[tauri::command]
 pub fn data_info(state: State<AppState>, models: State<Arc<Models>>) -> CmdResult<DataInfo> {
     let storage = state.lock();
-    // The data folder, plus the models Talaan uses (they live in the shared folder, outside it).
-    let bytes = crate::storage::io::dir_size(storage.root()) + models_bytes(&models);
+    let bytes = data_bytes(storage.root(), &models);
     Ok(DataInfo { path: storage.root().to_string_lossy().to_string(), bytes })
+}
+
+/// The data folder, plus the models Talaan uses (they live in the shared folder, outside it). Talaan's old model
+/// folder is inside the data folder on the Mac (hard links of the same files): left out, so no model counts twice.
+pub fn data_bytes(root: &std::path::Path, models: &Models) -> u64 {
+    crate::storage::io::dir_size_excluding(root, models.legacy_dirs()) + models_bytes(models)
 }

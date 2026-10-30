@@ -4,7 +4,7 @@ use super::StorageError;
 use serde::{de::DeserializeOwned, Serialize};
 use std::fs::{self, File};
 use std::io::Write;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 pub fn write_bytes_atomic(path: &Path, bytes: &[u8]) -> Result<(), StorageError> {
     let mut tmp = path.as_os_str().to_owned();
@@ -47,11 +47,17 @@ pub fn read_json_opt<T: DeserializeOwned>(path: &Path) -> Result<Option<T>, Stor
 
 /// Total size in bytes of every file under `path`.
 pub fn dir_size(path: &Path) -> u64 {
+    dir_size_excluding(path, &[])
+}
+
+/// `dir_size` without the folders in `skip` (whole paths).
+pub fn dir_size_excluding(path: &Path, skip: &[PathBuf]) -> u64 {
     let Ok(entries) = fs::read_dir(path) else { return 0 };
     entries
         .flatten()
+        .filter(|e| !skip.contains(&e.path()))
         .map(|e| match e.metadata() {
-            Ok(m) if m.is_dir() => dir_size(&e.path()),
+            Ok(m) if m.is_dir() => dir_size_excluding(&e.path(), skip),
             Ok(m) => m.len(),
             Err(_) => 0,
         })
