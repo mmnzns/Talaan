@@ -30,7 +30,6 @@ mod tests {
 
     /// The browser preview lists the same speech models in the same order as the app.
     #[test]
-    #[ignore = "defaultSettings.ts follows in the frontend half of Task 3"]
     fn the_preview_lists_the_same_speech_models_in_the_same_order() {
         let ts = include_str!("../../../src/data/defaultSettings.ts");
         let block = &ts[ts.find("speechModels").expect("speechModels in defaultSettings.ts")..];

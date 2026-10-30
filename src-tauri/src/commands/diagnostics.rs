@@ -19,7 +19,7 @@ pub const TAIL_LINES: usize = 200;
 /// setting, or one that holds words, names or addresses) is left out of the report, named only in `notShown`.
 const SAFE: &[&str] = &[
     "theme", "detectCalls", "autoTagApps", "launchAtLogin", "checkUpdates", "warnOnSpeakers", "notifySummaryReady", "activeSpeechModel",
-    "separateSpeakers", "reuseModels", "meetingLanguage", "uiLanguage", "useGpu", "summaryEngine", "summarizeAutomatically", "summaryLanguage",
+    "separateSpeakers", "meetingLanguage", "uiLanguage", "useGpu", "summaryEngine", "summarizeAutomatically", "summaryLanguage",
     "localModel", "ollamaModel", "byokProvider", "byokKeys", "byokModel", "calendarConnected", "tabDetection", "suggestSpeakerNames",
     "retention", "transcriptRetention", "onboardingDone",
 ];

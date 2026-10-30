@@ -10,7 +10,8 @@ pub fn settings_get(state: State<AppState>) -> CmdResult<Option<Value>> {
 }
 
 #[tauri::command]
-pub fn settings_set(app: AppHandle, state: State<AppState>, value: Value) -> CmdResult<()> {
+pub fn settings_set(app: AppHandle, state: State<AppState>, models: State<Arc<Models>>, value: Value) -> CmdResult<()> {
+    let claim = value.clone();
     let mut storage = state.lock();
     let name_before = storage.your_name();
     storage.settings_set(value)?;
@@ -20,6 +21,8 @@ pub fn settings_set(app: AppHandle, state: State<AppState>, value: Value) -> Cmd
     // A changed retention setting takes effect right away.
     let report = storage.apply_retention(chrono::Utc::now())?;
     drop(storage);
+    // A model the new settings point to that another app installed: Talaan uses it from now on.
+    models.claim(Some(&claim));
     super::updates::apply_login_item(&app);
     #[cfg(target_os = "windows")]
     super::calendar::sync_source(&app);

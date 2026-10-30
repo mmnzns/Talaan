@@ -46,9 +46,27 @@ impl Models {
                 log::warn!("couldn't move the models into the shared folder ({kind})");
             }
         }
+        // `move_in` records the users only the first time; a model another app installed since is Talaan's to
+        // use too, so say so on every start (before `collect`, which erases models nobody uses).
+        self.claim(settings);
         if let Err(e) = self.store.collect() {
             let kind = e.kind();
             log::warn!("couldn't tidy the shared models folder ({kind})");
+        }
+    }
+
+    /// Records Talaan as a user of each model its settings point to that is already on this computer, so that if
+    /// another app (Ensayo, Parlato) deletes one, the file stays. A model not installed yet is claimed when its
+    /// download finishes. Run at start and after every settings save.
+    pub fn claim(&self, settings: Option<&Value>) {
+        for id in used_ids(settings) {
+            if !matches!(self.store.status(id), Status::Installed { .. }) {
+                continue;
+            }
+            if self.store.use_model(id).is_err() {
+                // The error text can hold a path (the user's name): a fixed message only.
+                log::warn!("couldn't record that Talaan uses an installed model");
+            }
         }
     }
 
@@ -171,6 +189,40 @@ mod tests {
         assert!(models.ready_dir("whisper-turbo").is_none());
         assert!(models.info("nope").is_none());
         assert_eq!(models.info("vad").unwrap().id, "vad");
+    }
+
+    /// Writes every file of a model at its exact catalog size (sparse), as if another app had installed it.
+    fn install_without_using(models: &Models, id: &str) {
+        for file in catalog::find(id).unwrap().files {
+            let path = models.root().join(id).join(file.name);
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::File::create(path).unwrap().set_len(file.size).unwrap();
+        }
+    }
+
+    #[test]
+    fn claiming_records_talaan_as_a_user_of_the_installed_models_its_settings_point_to() {
+        let data = tempfile::tempdir().unwrap();
+        let models = Models::open(Some(data.path())).unwrap();
+        install_without_using(&models, "parakeet-ultra");
+        install_without_using(&models, "whisper-small"); // installed, but Talaan's settings don't point to it
+        let before = |id| matches!(models.status(id), Status::Installed { used_by_me: false, .. });
+        assert!(before("parakeet-ultra"));
+        let settings = json!({"activeSpeechModel": "parakeet-ultra", "separateSpeakers": false, "summaryEngine": "byok"});
+        models.claim(Some(&settings));
+        assert!(matches!(models.status("parakeet-ultra"), Status::Installed { used_by_me: true, .. }));
+        assert!(before("whisper-small"));
+        // Not installed: nothing to record, and no panic.
+        assert!(matches!(models.status("vad"), Status::Missing));
+    }
+
+    #[test]
+    fn start_claims_what_another_app_installed() {
+        let data = tempfile::tempdir().unwrap();
+        let models = Models::open(Some(data.path())).unwrap();
+        install_without_using(&models, "whisper-turbo");
+        models.start(Some(&json!({"separateSpeakers": false, "summaryEngine": "byok"})));
+        assert!(matches!(models.status("whisper-turbo"), Status::Installed { used_by_me: true, .. }));
     }
 
     #[test]
