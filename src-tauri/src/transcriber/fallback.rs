@@ -3,11 +3,11 @@
 //! meeting go to the processor's Whisper. The failure is remembered (`gpu.json`) only once the processor has done
 //! what the GPU couldn't, so an input the processor can't handle either isn't blamed on the GPU.
 
-use super::engine::{self, ChunkResult, Engine};
-use voice_engine_models::{Kind as ModelKind, ModelInfo};
+use super::engine::{ChunkResult, Engine};
+use super::speech::EngineSpeech;
+use voice_engine_models::{Kind as ModelKind, ModelHandle, ModelInfo};
 use super::remote::{LoadError, RemoteWhisper, Timeouts};
 use crate::gpu::{Gpu, Kind, Plan};
-use std::path::Path;
 use std::sync::Arc;
 
 pub type CpuLoader = Box<dyn FnMut() -> Result<Box<dyn Engine>, String> + Send>;
@@ -80,24 +80,30 @@ impl Engine for Fallback {
 }
 
 /// The speech engine for a model: on Windows, Whisper goes through the GPU helper when `gpu` says so, with the
-/// processor behind it; everything else (Parakeet, Nemotron, the Mac's Metal Whisper) loads as before.
-pub fn load(model: &ModelInfo, dir: &Path, use_gpu: bool, gpu: &Arc<Gpu>) -> Result<Box<dyn Engine>, String> {
+/// processor behind it; everything else (Parakeet, Nemotron, the Mac's Metal Whisper) loads in this process through
+/// the engine. `use_gpu` is whether the card is asked for (`worker::asks_card`). Until the helper client replaces this
+/// (Task 5) the model's handle stays with the helper path (it goes to the processor engine if that is ever needed).
+pub fn load(model: &'static ModelInfo, handle: ModelHandle, use_gpu: bool, gpu: &Arc<Gpu>) -> Result<Box<dyn Engine>, String> {
     if cfg!(windows) && model.kind == ModelKind::Whisper {
         if let Plan::Gpu { exe, env } = gpu.plan(Kind::Stt, use_gpu) {
-            let file = dir.join(model.files[0].name);
+            let file = handle.dir().join(model.files[0].name);
             let remote = RemoteWhisper::load(&exe, &env, &file, model.name, Timeouts::default()).map(|e| Box::new(e) as Box<dyn Engine>);
-            let cpu_model: &'static ModelInfo = voice_engine_models::catalog::find(model.id).ok_or_else(|| format!("unknown speech model {}", model.id))?;
-            let cpu_dir = dir.to_path_buf();
-            let load_cpu: CpuLoader = Box::new(move || engine::load(cpu_model, &cpu_dir, false));
+            // The processor engine takes the handle the first time it is needed; until then the closure holds it.
+            let mut held = Some(handle);
+            let load_cpu: CpuLoader = Box::new(move || {
+                let handle = held.take().ok_or_else(|| "the speech model is already loaded".to_string())?;
+                EngineSpeech::load(model, handle, false).map(|e| Box::new(e) as Box<dyn Engine>)
+            });
             return Fallback::start(remote, load_cpu, gpu.recorder(Kind::Stt), model.name, super::vad::Shape::whisper());
         }
     }
-    engine::load(model, dir, use_gpu)
+    EngineSpeech::load(model, handle, use_gpu).map(|e| Box::new(e) as Box<dyn Engine>)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::path::Path;
     use crate::transcriber::engine::Piece;
     use crate::transcriber::vad::Shape;
     use std::sync::Mutex;
@@ -231,15 +237,15 @@ mod tests {
     /// falling back to the processor and writing gpu.json; then a later meeting skipping the GPU until Try again.
     /// Uses a scratch data folder, never Talaan's own:
     /// `TALAAN_DATA_DIR=<scratch> cargo test --release gpu_whisper_live -- --ignored --nocapture --test-threads=1`
-    /// It needs `<scratch>/models/<model id>/` (default `whisper-base`, or `TALAAN_SMOKE_MODEL`) and
-    /// `<scratch>/models/vad/`. The helpers come from `src-tauri/binaries` (or `TALAAN_GPU_HELPERS`); the audio is
+    /// It needs `<scratch>/shared-models/<model id>/` (default `whisper-base`, or `TALAAN_SMOKE_MODEL`) and
+    /// `<scratch>/shared-models/vad/`. The helpers come from `src-tauri/binaries` (or `TALAAN_GPU_HELPERS`); the audio is
     /// `fixtures/three-speakers` (or `TALAAN_SMOKE_MEETING`).
     #[test]
     #[ignore]
     fn gpu_whisper_live() {
         use crate::gpu::Skip;
         use crate::transcriber::pipeline::run;
-        use crate::transcriber::vad::Vad;
+        use crate::transcriber::speech::EngineVad;
         use std::path::PathBuf;
         use std::sync::atomic::AtomicBool;
         use std::time::Instant;
@@ -252,8 +258,9 @@ mod tests {
         let meeting = std::env::var("TALAAN_SMOKE_MEETING").map(PathBuf::from).unwrap_or_else(|_| manifest.join("../fixtures/three-speakers"));
         let id = std::env::var("TALAAN_SMOKE_MODEL").unwrap_or_else(|_| "whisper-base".into());
         let model = voice_engine_models::catalog::find(&id).expect("a catalog id");
-        let model_dir = data.join("models").join(model.id);
-        let mut vad = Vad::load(&data.join("models/vad/ggml-silero-v6.2.0.bin")).unwrap();
+        let models = Arc::new(crate::models::Models::open(Some(&data)).unwrap());
+        let model_dir = models.ready_dir(model.id).expect("the model in <scratch>/shared-models");
+        let mut vad = EngineVad::new(models.hold(crate::models::VAD).unwrap());
         // SAFETY: an ignored test run with --test-threads=1; nothing else reads the environment meanwhile.
         unsafe { std::env::remove_var(talaan_llm_protocol::FAIL_ENV) };
 
@@ -284,7 +291,7 @@ mod tests {
         // 1. GPU, the way the app loads it (twice; "load" is the helper starting and loading the model).
         for round in ["GPU, 1st meeting", "GPU, 2nd meeting"] {
             let t = Instant::now();
-            let mut e = load(model, &model_dir, true, &gpu).unwrap();
+            let mut e = load(model, models.hold(model.id).unwrap(), true, &gpu).unwrap();
             let loaded = t.elapsed().as_secs_f32();
             let (_, text) = transcribe(round, e.as_mut());
             eprintln!("   load {loaded:.2}s, recall vs truth.json {:.0}%", recall(&text) * 100.0);
@@ -292,15 +299,15 @@ mod tests {
         }
         // 2. The processor, same audio.
         let t = Instant::now();
-        let mut cpu = engine::load(model, &model_dir, false).unwrap();
+        let mut cpu = EngineSpeech::load(model, models.hold(model.id).unwrap(), false).unwrap();
         let loaded = t.elapsed().as_secs_f32();
-        let (_, cpu_text) = transcribe("CPU", cpu.as_mut());
+        let (_, cpu_text) = transcribe("CPU", &mut cpu);
         eprintln!("   load {loaded:.2}s, recall vs truth.json {:.0}%", recall(&cpu_text) * 100.0);
         drop(cpu);
 
         // 3. The GPU helper aborts on its first chunk: the meeting still transcribes, on the processor.
         unsafe { std::env::set_var(talaan_llm_protocol::FAIL_ENV, "fail") };
-        let mut e = load(model, &model_dir, true, &gpu).unwrap();
+        let mut e = load(model, models.hold(model.id).unwrap(), true, &gpu).unwrap();
         let (_, text) = transcribe("GPU crash -> CPU", e.as_mut());
         unsafe { std::env::remove_var(talaan_llm_protocol::FAIL_ENV) };
         drop(e);
@@ -313,7 +320,7 @@ mod tests {
         // 4. A later meeting skips the GPU (no helper is started) until Try again.
         assert!(matches!(gpu.plan(Kind::Stt, true), Plan::Cpu(Skip::Failed(_))));
         eprintln!("== plan now: {}", crate::gpu::describe(&gpu.plan(Kind::Stt, true)));
-        let mut e = load(model, &model_dir, true, &gpu).unwrap();
+        let mut e = load(model, models.hold(model.id).unwrap(), true, &gpu).unwrap();
         transcribe("after the failure (GPU skipped)", e.as_mut());
         drop(e);
         gpu.clear();
@@ -323,7 +330,7 @@ mod tests {
         let broken = tempfile::tempdir().unwrap();
         std::fs::write(broken.path().join(format!("{}{}", crate::gpu::STT_HELPER, std::env::consts::EXE_SUFFIX)), "not a program").unwrap();
         let bad = Arc::new(Gpu::detect_with_helpers(&data, broken.path()));
-        let mut e = load(model, &model_dir, true, &bad).unwrap();
+        let mut e = load(model, models.hold(model.id).unwrap(), true, &bad).unwrap();
         let (_, text) = transcribe("broken helper -> CPU", e.as_mut());
         drop(e);
         assert!(recall(&text) > 0.5);

@@ -440,7 +440,7 @@ mod tests {
                 Box::new(move |c| eta::summary_profile(&c.engine, "qwen3.5-4b", gpu.load(Ordering::Relaxed))),
             );
             storage.lock().unwrap().update_meeting_file(&id, |f| {
-                f.transcription = Some(crate::storage::model::TranscriptionInfo { model: "whisper-turbo".into(), echo_lines_removed: 0, speech_ms: 600_000, took_ms: 1, finished_at: String::new() });
+                f.transcription = Some(crate::storage::model::TranscriptionInfo { model: "whisper-turbo".into(), echo_lines_removed: 0, speech_ms: 600_000, took_ms: 1, finished_at: String::new(), gpu_fell_back: false, device: None });
             }).unwrap();
             w.enqueue(&id);
             wait(&w);

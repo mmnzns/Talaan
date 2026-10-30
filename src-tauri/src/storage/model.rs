@@ -253,6 +253,12 @@ pub struct TranscriptionInfo {
     pub speech_ms: u64,
     pub took_ms: u64,
     pub finished_at: String,
+    /// The setting asked for the graphics card and the model could not use it, so the processor did the work.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub gpu_fell_back: bool,
+    /// The graphics card's name, when the model ran on one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub device: Option<String>,
 }
 
 /// A list row (matches `MeetingListItem`).

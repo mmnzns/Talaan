@@ -264,6 +264,7 @@ export function MeetingHeader({ meeting, editing, canRevert, onToggleEdit, onRev
                     <div className="mt-1 flex flex-col gap-1 border-t border-line px-2.5 pb-1 pt-2.5 text-xs text-subtle">
                       <Label>{t("meeting.madeWith")}</Label>
                       {speechModel && <span>{t("meeting.madeWithSpeech", { model: speechModel })}</span>}
+                      {meeting.transcription?.gpuFellBack && <span>{t("meeting.gpuFellBack")}</span>}
                       {meeting.summary && <span>{t("meeting.madeWithSummary", { engine: meeting.summary.engine })}</span>}
                     </div>
                   )}

@@ -8,5 +8,6 @@ pub mod merge;
 pub mod models;
 pub mod pipeline;
 pub mod remote;
+pub mod speech;
 pub mod vad;
 pub mod worker;

@@ -120,7 +120,7 @@ export interface Meeting extends MeetingListItem {
   /** The meeting type chosen for it (lib/templates); absent = the default from Settings › Summary AI. */
   template?: string;
   /** How the transcript was made. `model` is a speech model id (see Settings › Speech models). */
-  transcription?: { model: string; echoLinesRemoved: number; speechMs: Ms; tookMs: Ms; finishedAt: string };
+  transcription?: { model: string; echoLinesRemoved: number; speechMs: Ms; tookMs: Ms; finishedAt: string; gpuFellBack?: boolean; device?: string };
 }
 
 export interface Folder {

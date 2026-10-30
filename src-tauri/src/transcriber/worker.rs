@@ -4,7 +4,8 @@
 use super::engine::Engine;
 use super::diarize::SpeakerSplitter;
 use crate::models::{Models, DEFAULT_SPEECH, DIARIZATION, VAD};
-use voice_engine_models::{catalog, ModelInfo};
+use voice_engine_models::{catalog, ModelHandle, ModelInfo};
+use voice_engine_stt::SpeechBackend;
 use super::pipeline::{run, Detector, PipelineError};
 use crate::eta::{self, Device};
 use crate::storage::model::{MeetingFile, MeetingStatus, ProcessingError, TranscriptionInfo};
@@ -55,9 +56,11 @@ impl Config {
     }
 }
 
-pub type EngineLoader = dyn Fn(&ModelInfo, &Path, bool) -> Result<Box<dyn Engine>, String> + Send + Sync;
-pub type DetectorLoader = dyn Fn(&Path) -> Result<Box<dyn Detector + Send>, String> + Send + Sync;
-pub type SplitterLoader = dyn Fn(&Path) -> Result<Box<dyn SpeakerSplitter>, String> + Send + Sync;
+/// Each loader gets the model held (the engine erases nothing in use) and keeps the handle while the model is loaded.
+/// The engine's `bool` is whether the card is asked for (`asks_card`), not the raw setting.
+pub type EngineLoader = dyn Fn(&'static ModelInfo, ModelHandle, bool) -> Result<Box<dyn Engine>, String> + Send + Sync;
+pub type DetectorLoader = dyn Fn(ModelHandle) -> Result<Box<dyn Detector + Send>, String> + Send + Sync;
+pub type SplitterLoader = dyn Fn(ModelHandle) -> Result<Box<dyn SpeakerSplitter>, String> + Send + Sync;
 /// Whether a model will run on the graphics chip, given the "use the GPU" setting (for the time estimate).
 pub type OnGpu = dyn Fn(&ModelInfo, bool) -> bool + Send + Sync;
 
@@ -140,10 +143,24 @@ impl Worker {
     }
 }
 
+/// Whether the setting means the graphics card for this model on this computer: Metal for Whisper on the Mac,
+/// Vulkan (Whisper) or DirectML (Parakeet) on Windows. A model with no card path here is never asked for one, so
+/// the engine's `fell_back` only means a real failure.
+pub fn asks_card(model: &ModelInfo, use_gpu: bool) -> bool {
+    use_gpu
+        && if cfg!(target_os = "macos") {
+            model.gpu.mac_metal
+        } else {
+            cfg!(windows) && (model.gpu.windows_vulkan || model.gpu.windows_directml)
+        }
+}
+
 struct Loaded {
     model_id: &'static str,
     use_gpu: bool,
     engine: Box<dyn Engine>,
+    /// Where the model landed when it loaded (None for an engine that does not say).
+    backend: Option<SpeechBackend>,
     detector: Box<dyn Detector + Send>,
     /// Loaded on first use; None when the model isn't downloaded or speaker separation is off.
     splitter: Option<Box<dyn SpeakerSplitter>>,
@@ -174,11 +191,6 @@ fn worker_loop(deps: Deps, queue: Arc<(Mutex<Queue>, Condvar)>, cancel: Arc<Atom
         busy.lock().unwrap_or_else(|e| e.into_inner()).clear();
         (deps.changed)();
     }
-}
-
-/// The name of a one-file model's file (voice detection, speaker separation).
-fn file_of(id: &str) -> &'static str {
-    catalog::find(id).and_then(|m| m.files.first()).map_or("", |f| f.name)
 }
 
 fn lock(storage: &Mutex<Storage>) -> std::sync::MutexGuard<'_, Storage> {
@@ -274,8 +286,9 @@ fn process(deps: &Deps, id: &str, loaded: &mut Option<Loaded>, cancel: &AtomicBo
             b.push(DIARIZATION);
         }
     }
-    let (Some(model_dir), Some(vad_dir)) = (deps.models.ready_dir(config.model.id), deps.models.ready_dir(VAD)) else {
-        fail(deps, id, NO_MODEL, "Download a speech model in Settings › Speech models to transcribe this call.".into());
+    let no_model = || "Download a speech model in Settings › Speech models to transcribe this call.".to_string();
+    let (Ok(model_handle), Ok(vad_handle)) = (deps.models.hold(config.model.id), deps.models.hold(VAD)) else {
+        fail(deps, id, NO_MODEL, no_model());
         return;
     };
 
@@ -294,22 +307,26 @@ fn process(deps: &Deps, id: &str, loaded: &mut Option<Loaded>, cancel: &AtomicBo
     if fresh {
         *loaded = None;
         let load = Instant::now();
-        let engine = match (deps.load_engine)(config.model, &model_dir, config.use_gpu) {
+        let engine = match (deps.load_engine)(config.model, model_handle, asks_card(config.model, config.use_gpu)) {
             Ok(e) => e,
             Err(e) => return fail(deps, id, "failed", e),
         };
-        let detector = match (deps.load_detector)(&vad_dir.join(file_of(VAD))) {
+        let detector = match (deps.load_detector)(vad_handle) {
             Ok(d) => d,
             Err(e) => return fail(deps, id, "failed", e),
         };
-        log::info!("speech engine loaded in {:.1}s: {}", load.elapsed().as_secs_f32(), engine.label());
-        *loaded = Some(Loaded { model_id: config.model.id, use_gpu: config.use_gpu, engine, detector, splitter: None });
+        let backend = engine.backend();
+        match &backend {
+            Some(b) => log::info!("speech engine loaded in {:.1}s: {} on {}{}", load.elapsed().as_secs_f32(), engine.label(), b.backend, if b.fell_back { " (the graphics card failed)" } else { "" }),
+            None => log::info!("speech engine loaded in {:.1}s: {}", load.elapsed().as_secs_f32(), engine.label()),
+        }
+        *loaded = Some(Loaded { model_id: config.model.id, use_gpu: config.use_gpu, engine, backend, detector, splitter: None });
     }
     let l = loaded.as_mut().expect("loaded above");
     if config.separate_speakers && l.splitter.is_none() {
-        if let Some(dir) = deps.models.ready_dir(DIARIZATION) {
+        if let Ok(handle) = deps.models.hold(DIARIZATION) {
             // A broken speaker model shouldn't cost the transcript: carry on without it.
-            l.splitter = (deps.load_splitter)(&dir.join(file_of(DIARIZATION))).inspect_err(|e| log::warn!("speaker separation unavailable: {}", crate::logging::text(e))).ok();
+            l.splitter = (deps.load_splitter)(handle).inspect_err(|e| log::warn!("speaker separation unavailable: {}", crate::logging::text(e))).ok();
         }
     }
     let splitter: Option<&mut dyn SpeakerSplitter> = match (&mut l.splitter, config.separate_speakers) {
@@ -335,6 +352,7 @@ fn process(deps: &Deps, id: &str, loaded: &mut Option<Loaded>, cancel: &AtomicBo
             (deps.changed)();
         }
     };
+    let backend = l.backend.clone();
     let result = run(&dir, l.engine.as_mut(), l.detector.as_mut(), config.language.as_deref(), splitter, cancel, &mut report);
 
     match result {
@@ -391,6 +409,8 @@ fn process(deps: &Deps, id: &str, loaded: &mut Option<Loaded>, cancel: &AtomicBo
                     speech_ms: out.speech_ms,
                     took_ms: started.elapsed().as_millis() as u64,
                     finished_at: chrono::Local::now().fixed_offset().to_rfc3339(),
+                    gpu_fell_back: backend.as_ref().is_some_and(|b| b.fell_back),
+                    device: backend.as_ref().and_then(|b| b.device.clone()),
                 });
             });
             drop(s);
@@ -497,6 +517,57 @@ mod tests {
         while !worker.idle() {
             assert!(t.elapsed() < Duration::from_secs(10), "worker stuck");
             std::thread::sleep(Duration::from_millis(10));
+        }
+    }
+
+    /// Says where it ran, like the engine's.
+    struct Placed(SpeechBackend);
+    impl Engine for Placed {
+        fn transcribe(&mut self, s: &[f32], _l: Option<&str>) -> Result<ChunkResult, String> {
+            Echoes("Hello.").transcribe(s, None)
+        }
+        fn label(&self) -> &str {
+            "Placed"
+        }
+        fn chunking(&self) -> Shape {
+            Shape { pad: 0, ..Shape::default() }
+        }
+        fn backend(&self) -> Option<SpeechBackend> {
+            Some(self.0.clone())
+        }
+    }
+
+    fn info_after(backend: SpeechBackend) -> TranscriptionInfo {
+        let (_d, storage, id, worker, _) = setup_full(true, 1, Box::new(move |_, _, _| Ok(Box::new(Placed(backend.clone())))), Arc::new(|_, _| false));
+        worker.enqueue(&id);
+        wait(&worker);
+        let f = storage.lock().unwrap().read_meeting_file(&id).unwrap();
+        f.transcription.unwrap()
+    }
+
+    #[test]
+    fn the_meeting_records_where_the_model_ran_and_a_real_fallback() {
+        let card = info_after(SpeechBackend { backend: "metal".into(), device: Some("Apple M3".into()), fell_back: false });
+        assert!(!card.gpu_fell_back);
+        assert_eq!(card.device.as_deref(), Some("Apple M3"));
+        let fell = info_after(SpeechBackend { backend: "cpu".into(), device: None, fell_back: true });
+        assert!(fell.gpu_fell_back);
+        assert_eq!(fell.device, None);
+        // Both fields are left out of the file when they say nothing.
+        let plain = serde_json::to_value(info_after(SpeechBackend { backend: "cpu".into(), device: None, fell_back: false })).unwrap();
+        assert!(plain.get("gpuFellBack").is_none() && plain.get("device").is_none());
+        assert_eq!(serde_json::to_value(fell).unwrap()["gpuFellBack"], true);
+    }
+
+    #[test]
+    fn the_card_is_only_asked_for_where_the_model_has_a_card_path() {
+        let turbo = catalog::find("whisper-turbo").unwrap();
+        let parakeet = catalog::find("parakeet-ultra").unwrap();
+        assert!(!asks_card(turbo, false));
+        assert_eq!(asks_card(turbo, true), cfg!(target_os = "macos") || (cfg!(windows) && (turbo.gpu.windows_vulkan || turbo.gpu.windows_directml)));
+        if cfg!(target_os = "macos") {
+            assert!(asks_card(turbo, true));
+            assert!(!asks_card(parakeet, true), "Parakeet has no card path on the Mac, so `fell_back` is never by design");
         }
     }
 

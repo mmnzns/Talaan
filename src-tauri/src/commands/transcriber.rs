@@ -7,7 +7,7 @@ use crate::storage::model::MeetingStatus;
 use crate::storage::StorageError;
 use crate::transcriber::models::speech;
 use crate::transcriber::pipeline::Detector;
-use crate::transcriber::vad::Vad;
+use crate::transcriber::speech::{EngineSplitter, EngineVad};
 use crate::transcriber::worker::{restamp_queue, stamp_estimate, Deps, OnGpu, Worker, NO_MODEL};
 use serde::Serialize;
 use std::collections::HashMap;
@@ -84,10 +84,10 @@ pub fn setup(app: &AppHandle, data_dir: PathBuf) {
         // Whisper on the GPU helper on Windows when it should be used, the processor behind it (fallback.rs).
         load_engine: {
             let gpu = crate::gpu::Gpu::shared(&data_dir);
-            Box::new(move |m, dir, use_gpu| crate::transcriber::fallback::load(m, dir, use_gpu, &gpu))
+            Box::new(move |m, handle, use_gpu| crate::transcriber::fallback::load(m, handle, use_gpu, &gpu))
         },
-        load_detector: Box::new(|path| Vad::load(path).map(|v| Box::new(v) as Box<dyn Detector + Send>)),
-        load_splitter: Box::new(|path| crate::transcriber::diarize::Diarizer::load(path).map(|d| Box::new(d) as Box<dyn crate::transcriber::diarize::SpeakerSplitter>)),
+        load_detector: Box::new(|handle| Ok(Box::new(EngineVad::new(handle)) as Box<dyn Detector + Send>)),
+        load_splitter: Box::new(|handle| EngineSplitter::load(handle).map(|d| Box::new(d) as Box<dyn crate::transcriber::diarize::SpeakerSplitter>)),
         transcribed: {
             let app = app.clone();
             Arc::new(move |id: &str| app.state::<super::summarizer::SummarizerState>().enqueue_auto(id))

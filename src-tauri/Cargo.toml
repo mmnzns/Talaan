@@ -45,10 +45,6 @@ cpal = "0.18.2"
 rtrb = "0.4.0"
 rubato = "5.0.1"
 hound = "3.5.1"
-whisper-rs = "0.16.0"
-parakeet-rs = { version = "0.3.8", features = ["sortformer"] }
-# parakeet-rs 0.3.8 does not build against ort 2.0.0-rc.14 (Session::builder changed); keep rc.13 until it does.
-ort = { version = "=2.0.0-rc.13", default-features = false }
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "blocking", "json"] }
 tokio = { version = "1", features = ["rt", "time", "macros"] }
 sha2 = "0.10.9"
@@ -56,8 +52,6 @@ strsim = "0.11.1"
 whatlang = "0.18.0"
 symphonia = { version = "0.5.5", features = ["aac", "isomp4", "mp3", "aiff", "alac", "caf"] }
 talaan-llm-protocol = { path = "llm-protocol" }
-# Whisper chunk transcription shared with the Windows GPU helper (processor build here; never its vulkan feature).
-talaan-stt = { path = "stt" }
 keyring = "3.6.3"
 rrule = "0.14.0"
 chrono-tz = "0.10.4"
@@ -80,7 +74,6 @@ tiny_http = "0.12.0"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 keyring = { version = "3.6.3", features = ["apple-native"] }
-whisper-rs = { version = "0.16.0", features = ["metal"] }
 block2 = "0.6.2"
 mach2 = "0.7.0"
 objc2 = "0.6.5"
@@ -95,8 +88,6 @@ objc2-event-kit = "0.3.2"
 
 [target.'cfg(target_os = "windows")'.dependencies]
 keyring = { version = "3.6.3", features = ["windows-native"] }
-# CPU for now; GPU (vulkan) after the W1 checkpoint, see "Later" in docs/plans/W0-W1-windows-build-and-recorder.md.
-whisper-rs = "0.16.0"
 # Parakeet on the PC's discrete card, in Talaan's own process, and discrete_card() for the graphics card default.
 voice-engine-stt = { git = "https://github.com/mmnzns/voice-engine", tag = "v0.2.2", features = ["directml"] }
 wasapi = "0.26.0"
