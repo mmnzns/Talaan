@@ -29,7 +29,9 @@ pub fn default_on(mac: bool, card: Option<&str>) -> bool {
 }
 
 /// Sets the card default once (`gpuDefaultSet` missing). On the Mac it only marks it done and leaves `useGpu`
-/// (default on). Returns whether the settings changed.
+/// (default on). On Windows a PC without a discrete card gets the card off; a PC with one keeps `useGpu` as it is
+/// stored (on when absent), so nobody who had the card off finds it switched on by an update. Returns whether the
+/// settings changed.
 pub fn apply_default(settings: &mut Value, mac: bool, card: Option<&str>) -> bool {
     if settings.get("gpuDefaultSet").is_some() {
         return false;
@@ -37,8 +39,8 @@ pub fn apply_default(settings: &mut Value, mac: bool, card: Option<&str>) -> boo
     if !settings.is_object() {
         *settings = Value::Object(Default::default());
     }
-    if !mac {
-        settings["useGpu"] = default_on(mac, card).into();
+    if !mac && !default_on(mac, card) {
+        settings["useGpu"] = false.into();
     }
     settings["gpuDefaultSet"] = true.into();
     true
@@ -110,6 +112,27 @@ mod tests {
         s["useGpu"] = true.into(); // the person switched it on
         assert!(!apply_default(&mut s, false, None));
         assert_eq!(s["useGpu"], true);
+    }
+
+    #[test]
+    fn a_pc_with_a_card_keeps_what_was_stored_and_is_never_switched_on() {
+        const RTX: Option<&str> = Some("NVIDIA GeForce RTX 5070 Ti");
+        // Updating from a version where the person had switched the card off: it stays off.
+        let mut off = serde_json::json!({ "useGpu": false });
+        assert!(apply_default(&mut off, false, RTX));
+        assert_eq!((off["useGpu"].clone(), off["gpuDefaultSet"].clone()), (false.into(), true.into()));
+        // Stored on: stays on. Nothing stored: left absent, which reads as on.
+        let mut on = serde_json::json!({ "useGpu": true });
+        assert!(apply_default(&mut on, false, RTX));
+        assert_eq!(on["useGpu"], true);
+        let mut absent = serde_json::json!({});
+        assert!(apply_default(&mut absent, false, RTX));
+        assert!(absent.get("useGpu").is_none() && absent["gpuDefaultSet"] == true);
+        assert!(crate::transcriber::worker::Config::from_settings(Some(&absent)).use_gpu);
+        // Without a card it is switched off, whatever was stored.
+        let mut stored_on = serde_json::json!({ "useGpu": true });
+        assert!(apply_default(&mut stored_on, false, None));
+        assert_eq!(stored_on["useGpu"], false);
     }
 
     #[test]
