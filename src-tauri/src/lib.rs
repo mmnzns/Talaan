@@ -13,6 +13,7 @@ mod keys;
 #[cfg(test)]
 mod log_scan;
 mod logging;
+mod models;
 mod notion;
 mod platform;
 mod recorder;
@@ -110,7 +111,27 @@ pub fn run() {
             };
             let store = started().inspect_err(|e| log::error!("couldn't open the data folder: {}", e.for_log()))?;
             logging::set_your_name(store.your_name());
+            let settings = store.settings_get().ok().flatten();
             app.manage(AppState::new(store));
+            // The shared models folder, opened and filled before any worker or helper can open a model:
+            // `move_in` moves Talaan's old models in and must run first. A TALAAN_DATA_DIR run keeps its models
+            // inside that folder, so a test never touches the real shared one.
+            let test_data = std::env::var("TALAAN_DATA_DIR").ok().filter(|s| !s.trim().is_empty()).map(|_| root.clone());
+            let models = models::Models::open(test_data.as_deref())
+                .or_else(|e| {
+                    // The shared folder can't be opened (permissions, a full disk): keep going with models in
+                    // Talaan's own data folder rather than not starting. The kind only: the path holds the user's name.
+                    let kind = e.kind();
+                    log::warn!("couldn't open the shared models folder ({kind}), using Talaan's own folder");
+                    models::Models::open(Some(&root))
+                })
+                .inspect_err(|e| {
+                    let kind = e.kind();
+                    log::error!("couldn't open a models folder ({kind})");
+                })?;
+            let models = std::sync::Arc::new(models);
+            models.start(settings.as_ref());
+            app.manage(models);
             // Off the main thread: on the Mac it asks sw_vers and sysctl.
             let handle = app.handle().clone();
             std::thread::spawn(move || commands::diagnostics::log_startup(&handle));
