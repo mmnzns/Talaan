@@ -125,22 +125,29 @@ impl LocalEngine {
     }
 }
 
+/// How often a cancel is repeated while the call still runs.
+const CANCEL_EVERY: Duration = Duration::from_secs(1);
+
 /// Asks the client to cancel when `cancel` turns true while `call` runs. The client ignores a cancel that arrives
-/// before its request is sent (the helper may still be starting), so it asks again a second later, up to 3 times.
+/// before its request is sent (the helper may still be starting), so it asks again every second until the call
+/// returns, however long that takes (the call ending is what stops the asking).
 fn with_cancel<T>(ai: &LlmClient, cancel: &AtomicBool, call: impl FnOnce() -> T) -> T {
+    repeat_while(cancel, CANCEL_EVERY, || ai.cancel(), call)
+}
+
+/// Runs `call`, and while it runs calls `ask` once `cancel` is true and then every `every`, until `call` returns.
+fn repeat_while<T>(cancel: &AtomicBool, every: Duration, ask: impl Fn() + Sync, call: impl FnOnce() -> T) -> T {
     use std::sync::atomic::Ordering;
     let done = AtomicBool::new(false);
     std::thread::scope(|scope| {
         let watcher = scope.spawn(|| {
-            let mut asked = 0;
-            let mut last = std::time::Instant::now();
+            let mut last: Option<std::time::Instant> = None;
             while !done.load(Ordering::Relaxed) {
-                if cancel.load(Ordering::Relaxed) && asked < 3 && (asked == 0 || last.elapsed() >= Duration::from_secs(1)) {
-                    ai.cancel();
-                    asked += 1;
-                    last = std::time::Instant::now();
+                if cancel.load(Ordering::Relaxed) && last.is_none_or(|t| t.elapsed() >= every) {
+                    ask();
+                    last = Some(std::time::Instant::now());
                 }
-                std::thread::park_timeout(Duration::from_millis(200));
+                std::thread::park_timeout(Duration::from_millis(200).min(every));
             }
         });
         let result = call();
@@ -480,6 +487,42 @@ pub fn compatible_base(address: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_cancel_is_repeated_until_the_call_returns() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        let asked = AtomicUsize::new(0);
+        let cancel = AtomicBool::new(true);
+        // A slow call: far more than 3 repeats fit, and none of them stops the asking.
+        let out = repeat_while(&cancel, Duration::from_millis(20), || { asked.fetch_add(1, Ordering::SeqCst); }, || {
+            std::thread::sleep(Duration::from_millis(600));
+            7
+        });
+        assert_eq!(out, 7);
+        let n = asked.load(Ordering::SeqCst);
+        assert!(n > 5, "{n} asks");
+        // The call has returned: no more asks.
+        std::thread::sleep(Duration::from_millis(100));
+        assert_eq!(asked.load(Ordering::SeqCst), n);
+    }
+
+    #[test]
+    fn nothing_is_asked_unless_cancel_is_set() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        let asked = AtomicUsize::new(0);
+        let cancel = AtomicBool::new(false);
+        repeat_while(&cancel, Duration::from_millis(10), || { asked.fetch_add(1, Ordering::SeqCst); }, || std::thread::sleep(Duration::from_millis(100)));
+        assert_eq!(asked.load(Ordering::SeqCst), 0);
+        // Set during the call: it starts asking then.
+        let cancel = AtomicBool::new(false);
+        repeat_while(&cancel, Duration::from_millis(10), || { asked.fetch_add(1, Ordering::SeqCst); }, || {
+            std::thread::sleep(Duration::from_millis(50));
+            cancel.store(true, Ordering::Relaxed);
+            std::thread::sleep(Duration::from_millis(300));
+        });
+        assert!(asked.load(Ordering::SeqCst) >= 2);
+    }
+
     use crate::summarizer::prompt::SCHEMA;
 
     fn engine(provider: Provider) -> HttpEngine {
