@@ -13,8 +13,10 @@ name: Release
 # With MAC_RELEASE_ON_CI "true" the whole release is built here (Windows and Mac), so it can be cut from either computer:
 # bump the version and CHANGELOG, push a tag, wait for updater-json, check the draft (six files, latest.json with four
 # keys), publish. scripts/release-local.sh + upload-mac-release.sh stay as the fallback when CI's Mac job can't run.
-# Windows builds carry the GPU helpers (talaan-llm-vulkan.exe, talaan-stt-vulkan.exe; docs/plans/G1-windows-gpu.md),
-# so both Windows jobs install the Vulkan SDK first (.github/actions/vulkan-sdk, pinned and cached).
+# The helper programs (talaan-llm, talaan-stt, and on Windows x64 their -vulkan variants) are built by the engine's
+# reusable workflow (the `helpers` job, voice-engine v0.2.2: its .cargo/config.toml CPU baseline applies there) and
+# downloaded by the jobs that build the app, as Tauri sidecars in src-tauri/binaries. Those jobs set
+# TALAAN_HELPERS_PREBUILT=1 so scripts/build-llm-helper.* and scripts/release-windows.ps1 build no helper themselves.
 #
 # Secrets:
 #   TAURI_SIGNING_PRIVATE_KEY / _PASSWORD   Talaan's updater key (minisign), used by both platforms
@@ -28,8 +30,7 @@ on:
   push:
     tags: ["v*"]
   # Test build: Actions › Release › Run workflow (pick the branch). Builds the signed Windows installer exactly like
-  # a release and keeps it as a workflow artifact, with the bare GPU helpers as a second artifact; no tag, no
-  # release, no latest.json.
+  # a release and keeps it as a workflow artifact; no tag, no release, no latest.json.
   # Mac test build (macos-test): the signed .dmg as an artifact, to check the certificate secrets work on CI.
   workflow_dispatch:
     inputs:
@@ -43,15 +44,26 @@ permissions:
   contents: write
 
 jobs:
+  # The engine's own workflow builds the helpers (the same tag for @ref and engine-ref). It runs on every trigger,
+  # because windows-test/macos-test (dispatch) and windows (tag) all need it. A Mac-only test build asks for the AI
+  # helper only, so the Windows targets (Vulkan shaders take long) aren't built for nothing.
+  helpers:
+    permissions:
+      contents: read
+    uses: mmnzns/voice-engine/.github/workflows/build-helpers.yml@v0.2.2
+    with:
+      engine-ref: v0.2.2
+      helpers: ${{ inputs.platform == 'mac' && 'llm' || 'llm,stt,llm-vulkan,stt-vulkan' }}
+      llm-name: talaan-llm
+      stt-name: talaan-stt
+
   windows-test:
+    needs: helpers
     if: github.event_name == 'workflow_dispatch' && inputs.platform != 'mac'
     runs-on: windows-latest
     env:
       LIBCLANG_PATH: C:\Program Files\LLVM\bin
-      # GPU helpers (docs/plans/G1-windows-gpu.md): required, built in a short folder (whisper.cpp's Vulkan
-      # shaders hit Windows' path-length limit under the checkout).
-      TALAAN_GPU: "1"
-      TALAAN_GPU_TARGET_DIR: C:\tg
+      TALAAN_HELPERS_PREBUILT: "1"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -63,33 +75,29 @@ jobs:
         with:
           workspaces: src-tauri
           key: release-windows
-          cache-directories: C:\tg
-      - uses: ./.github/actions/vulkan-sdk
       - run: npm ci
+      - uses: actions/download-artifact@v4
+        with:
+          name: helpers-x86_64-pc-windows-msvc
+          path: src-tauri/binaries
+      - name: The helpers (build log line, then drop the extras)
+        shell: bash
+        run: |
+          cat src-tauri/binaries/build-info.txt
+          rm -f src-tauri/binaries/SHA256SUMS src-tauri/binaries/build-info.txt
+          ls -l src-tauri/binaries
       - name: Build the installer
         shell: pwsh
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: ./scripts/release-windows.ps1
-      # The runner has the Vulkan loader (from the SDK) but no GPU: both helpers must start and say "cpu".
-      - name: GPU helpers start
-        shell: pwsh
-        run: ./scripts/gpu-helper-smoke.ps1 -Dir src-tauri/binaries
       - uses: actions/upload-artifact@v4
         with:
           name: talaan-windows-installer
           path: |
             src-tauri/target/release/bundle/nsis/*_x64-setup.exe
             src-tauri/target/release/bundle/nsis/*_x64-setup.exe.sig
-          if-no-files-found: error
-      - uses: actions/upload-artifact@v4
-        with:
-          name: talaan-gpu-helpers
-          path: |
-            src-tauri/binaries/talaan-llm-vulkan.exe
-            src-tauri/binaries/talaan-stt-vulkan.exe
-            scripts/gpu-helper-smoke.ps1
           if-no-files-found: error
 
   draft:
@@ -112,14 +120,11 @@ jobs:
             gh release create "$GITHUB_REF_NAME" --draft --verify-tag --title "Talaan $GITHUB_REF_NAME" --notes-file "$RUNNER_TEMP/notes.md"
 
   windows:
-    needs: draft
+    needs: [draft, helpers]
     runs-on: windows-latest
     env:
       LIBCLANG_PATH: C:\Program Files\LLVM\bin
-      # GPU helpers (docs/plans/G1-windows-gpu.md): required, built in a short folder (whisper.cpp's Vulkan
-      # shaders hit Windows' path-length limit under the checkout).
-      TALAAN_GPU: "1"
-      TALAAN_GPU_TARGET_DIR: C:\tg
+      TALAAN_HELPERS_PREBUILT: "1"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -131,11 +136,20 @@ jobs:
         with:
           workspaces: src-tauri
           key: release-windows
-          cache-directories: C:\tg
-      - uses: ./.github/actions/vulkan-sdk
       - run: npm ci
-      # Builds the helpers (CPU and GPU), the installer and its updater signature; fails if whisper.cpp or
-      # llama.cpp weren't built with -O2 for x86-64-v3, or if talaan.exe imports vulkan-1.dll.
+      - uses: actions/download-artifact@v4
+        with:
+          name: helpers-x86_64-pc-windows-msvc
+          path: src-tauri/binaries
+      - name: The helpers (build log line, then drop the extras)
+        shell: bash
+        run: |
+          cat src-tauri/binaries/build-info.txt
+          rm -f src-tauri/binaries/SHA256SUMS src-tauri/binaries/build-info.txt
+          ls -l src-tauri/binaries
+      # Bundles the downloaded helpers, builds the installer and its updater signature; fails if the app's
+      # whisper.cpp wasn't built with -O2 for the baseline, if talaan.exe imports vulkan-1.dll, or if a -vulkan
+      # helper doesn't.
       - name: Build the installer
         shell: pwsh
         env:
@@ -151,9 +165,11 @@ jobs:
           gh release upload "$GITHUB_REF_NAME" "$out/Talaan_${v}_x64-setup.exe" "$out/Talaan_${v}_x64-setup.exe.sig" --clobber
 
   macos:
-    needs: draft
+    needs: [draft, helpers]
     if: vars.MAC_RELEASE_ON_CI == 'true'
     runs-on: macos-latest
+    env:
+      TALAAN_HELPERS_PREBUILT: "1"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -168,6 +184,17 @@ jobs:
           workspaces: src-tauri
           key: release-arm64
       - run: npm ci
+      - uses: actions/download-artifact@v4
+        with:
+          name: helpers-aarch64-apple-darwin
+          path: src-tauri/binaries
+      - name: The helpers (build log line, then drop the extras)
+        run: |
+          cat src-tauri/binaries/build-info.txt
+          # The Mac ships the AI helper only.
+          rm -f src-tauri/binaries/SHA256SUMS src-tauri/binaries/build-info.txt src-tauri/binaries/talaan-stt-aarch64-apple-darwin
+          chmod +x src-tauri/binaries/*-apple-darwin
+          ls -l src-tauri/binaries
 
       - name: Version matches the tag
         run: |
@@ -207,8 +234,11 @@ jobs:
           codesign -d --entitlements - "$app" | grep -q device.audio-input
 
   macos-test:
+    needs: helpers
     if: github.event_name == 'workflow_dispatch' && inputs.platform != 'windows'
     runs-on: macos-latest
+    env:
+      TALAAN_HELPERS_PREBUILT: "1"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -223,6 +253,17 @@ jobs:
           workspaces: src-tauri
           key: release-arm64
       - run: npm ci
+      - uses: actions/download-artifact@v4
+        with:
+          name: helpers-aarch64-apple-darwin
+          path: src-tauri/binaries
+      - name: The helpers (build log line, then drop the extras)
+        run: |
+          cat src-tauri/binaries/build-info.txt
+          # The Mac ships the AI helper only.
+          rm -f src-tauri/binaries/SHA256SUMS src-tauri/binaries/build-info.txt src-tauri/binaries/talaan-stt-aarch64-apple-darwin
+          chmod +x src-tauri/binaries/*-apple-darwin
+          ls -l src-tauri/binaries
       - name: Turn on updater artifacts
         run: node -e "const f='src-tauri/tauri.conf.json',fs=require('fs'),c=JSON.parse(fs.readFileSync(f));c.bundle.createUpdaterArtifacts=true;fs.writeFileSync(f,JSON.stringify(c,null,2))"
       - name: Signing certificate into a temporary keychain

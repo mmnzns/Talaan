@@ -4,7 +4,6 @@ on:
   push:
     branches: [main]
   pull_request:
-  # Actions › CI › Run workflow: also builds the Windows GPU helpers (windows-gpu, below).
   workflow_dispatch:
 
 jobs:
@@ -45,40 +44,3 @@ jobs:
       - run: npm run build
       - run: powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-llm-helper.ps1
       - run: cargo test --manifest-path src-tauri/Cargo.toml --workspace
-
-  # The Windows GPU helpers (talaan-llm-vulkan.exe, talaan-stt-vulkan.exe) with the Vulkan SDK, their unit tests in
-  # the Vulkan build, and a start on a runner without a GPU. Manual only: the Vulkan shaders take a while.
-  windows-gpu:
-    if: github.event_name == 'workflow_dispatch'
-    runs-on: windows-latest
-    env:
-      LIBCLANG_PATH: C:\Program Files\LLVM\bin
-      TALAAN_GPU: "1"
-      TALAAN_GPU_TARGET_DIR: C:\tg
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: src-tauri
-          key: windows-gpu
-          cache-directories: C:\tg
-      - uses: ./.github/actions/vulkan-sdk
-      - run: powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-llm-helper.ps1
-      - name: Unit tests of the Vulkan builds
-        shell: pwsh
-        run: |
-          . ./scripts/cpu-baseline.ps1
-          Use-NinjaForGpu
-          cargo test --release --manifest-path src-tauri/Cargo.toml -p talaan-llm -p talaan-stt --features talaan-llm/vulkan,talaan-stt/vulkan --target-dir C:\tg
-      - name: GPU helpers start
-        shell: pwsh
-        run: ./scripts/gpu-helper-smoke.ps1 -Dir src-tauri/binaries
-      - uses: actions/upload-artifact@v4
-        with:
-          name: talaan-gpu-helpers
-          path: |
-            src-tauri/binaries/talaan-llm-vulkan.exe
-            src-tauri/binaries/talaan-stt-vulkan.exe
-            scripts/gpu-helper-smoke.ps1
-          if-no-files-found: error
