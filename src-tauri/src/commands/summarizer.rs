@@ -7,7 +7,6 @@ use crate::i18n::{tr, tr_with};
 use crate::storage::StorageError;
 use crate::summarizer::engines::{compatible_base, default_base, list_models, recommended_model, HttpEngine, LocalEngine, Provider, CLOUD_CONTEXT, LOCAL_CONTEXT};
 use crate::gpu::{Gpu, Kind, Plan};
-use crate::summarizer::local::{helper_path, GpuHelper, LocalAi, GPU_STALL};
 use crate::models::{local_model, Models, DEFAULT_LOCAL_AI};
 use crate::summarizer::summarize::{EngineError, SummaryEngine};
 use crate::summarizer::followup::{self, FollowUpError};
@@ -48,12 +47,6 @@ fn refused(message: impl Into<String>) -> StorageError {
 
 /// Turns settings into an engine, or says (in words for the user) why there isn't one.
 pub fn make_engine(cfg: &Config, data_dir: &Path, models: &Models) -> Result<Box<dyn SummaryEngine>, EngineError> {
-    engine_for(cfg, data_dir, models, false)
-}
-
-/// `followup`: for a follow-up draft, whose GPU failures are remembered only when they are the GPU's own fault
-/// (`gpu_fault`), so a short draft that ran out of memory never moves every later summary to the processor.
-fn engine_for(cfg: &Config, data_dir: &Path, models: &Models, followup: bool) -> Result<Box<dyn SummaryEngine>, EngineError> {
     let s = &cfg.settings;
     match cfg.engine.as_str() {
         "ollama" => {
@@ -92,29 +85,9 @@ fn engine_for(cfg: &Config, data_dir: &Path, models: &Models, followup: bool) ->
                 let size = crate::i18n::decimal(model.size() as f64 / 1e9);
                 return Err(EngineError::Unavailable(tr_with("ai.download_local", &[("name", model.name), ("size", &size)])));
             };
-            Ok(Box::new(LocalEngine { ai: local_ai(data_dir, s["useGpu"].as_bool().unwrap_or(true), followup), model_path: dir.join(model.files[0].name), model_name: model.name.into() }))
+            Ok(Box::new(LocalEngine::new(crate::summarizer::local::summary_client(data_dir), dir.join(model.files[0].name), model.name.into(), s["useGpu"].as_bool().unwrap_or(true))))
         }
     }
-}
-
-/// The local AI helper for a summary: on Windows the GPU build first when it should be used (`gpu.rs`), with the
-/// processor helper behind it; elsewhere the one helper (Metal on the Mac).
-fn local_ai(data_dir: &Path, use_gpu: bool, followup: bool) -> LocalAi {
-    if cfg!(windows) {
-        let gpu = Gpu::shared(data_dir);
-        if let Plan::Gpu { exe, env } = gpu.plan(Kind::Llm, use_gpu) {
-            let record = gpu.recorder(Kind::Llm);
-            let on_failure: Arc<dyn Fn(&str) + Send + Sync> = if followup { Arc::new(move |reason: &str| if gpu_fault(reason) { record(reason) }) } else { record };
-            return LocalAi::with_gpu(&helper_path(), GpuHelper { exe, env, on_failure, stall: GPU_STALL });
-        }
-    }
-    LocalAi::new(&helper_path())
-}
-
-/// A GPU failure that says something about the graphics chip itself (it crashed, was lost, the driver can't run
-/// it), not about memory that something else was using at the time.
-pub fn gpu_fault(reason: &str) -> bool {
-    !reason.to_lowercase().contains("memory")
 }
 
 /// How a summary with these settings is timed: the local model on the graphics chip (Metal on the Mac; on Windows
@@ -333,7 +306,7 @@ fn run_followup(cfg: &Config, data_dir: &Path, models: &Models, meeting: &crate:
     if cancel.load(Ordering::Relaxed) {
         return Err(FollowUpError::Engine(EngineError::Cancelled));
     }
-    let mut engine = engine_for(cfg, data_dir, models, true).map_err(FollowUpError::Engine)?;
+    let mut engine = make_engine(cfg, data_dir, models).map_err(FollowUpError::Engine)?;
     followup::draft(meeting, summary, engine.as_mut(), &cfg.language_for(&meeting.language), cancel)
 }
 
@@ -523,12 +496,5 @@ mod tests {
         let v = serde_json::to_value(&rows[0]).unwrap();
         assert!(v.get("choice").is_none());
         assert!(v["recommended"].as_bool().unwrap() && v["licence"].is_string() && v["memoryGb"].is_number());
-    }
-
-    #[test]
-    fn only_a_real_gpu_fault_counts_against_the_gpu_after_a_follow_up() {
-        assert!(super::gpu_fault("the GPU helper stopped answering"));
-        assert!(super::gpu_fault("ErrorDeviceLost"));
-        assert!(!super::gpu_fault("not enough memory for the AI model: ErrorOutOfDeviceMemory"));
     }
 }

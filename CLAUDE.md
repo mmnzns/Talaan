@@ -115,10 +115,10 @@ src-tauri/src/
   notion.rs             Notion export: page blocks, client (search, pages, append); commands/notion.rs
   commands/calls.rs     1 Hz loop: mic users -> rules -> recordings and the prompt window (nudge, banner, call ended)
   commands/tray.rs      menu bar icon + timer, popover window, window_fit, main window hides on close
-  llm/ llm-protocol/    the talaan-llm helper (own llama.cpp + Metal) and its stdin/stdout protocol (also the Whisper
-                        helper's, and the GPU device policy); Windows also builds talaan-llm-vulkan (docs/plans/G1)
+  llm/                  the talaan-llm helper (the engine's llama.cpp + Metal; protocol in voice-engine-protocol);
+                        Windows also builds talaan-llm-vulkan. summarizer/local.rs makes the LlmClients (summary, search)
   stt/                  Whisper chunk transcription shared by the app and the Windows GPU helper talaan-stt-vulkan
-  gpu.rs  helper.rs     Windows GPU: when to use a Vulkan helper, gpu.json failures; JSON-lines helper processes
+  gpu.rs                Windows GPU: when to use a Vulkan helper, gpu.json failures (Task 7 of the engine move rewrites it)
   platform/mod.rs       picks the OS module
   platform/macos/       Mac-only code
     system_tap.rs       Core Audio global process tap (excludes Talaan) + private aggregate device + IOProc

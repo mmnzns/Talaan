@@ -5374,7 +5374,6 @@ dependencies = [
  "sha2",
  "strsim",
  "symphonia",
- "talaan-llm-protocol",
  "tauri",
  "tauri-build",
  "tauri-plugin-autostart",
@@ -5404,15 +5403,6 @@ version = "1.0.0"
 dependencies = [
  "voice-engine-llm",
  "voice-engine-protocol",
-]
-
-[[package]]
-name = "talaan-llm-protocol"
-version = "1.0.0"
-dependencies = [
- "base64 0.22.1",
- "serde",
- "serde_json",
 ]
 
 [[package]]

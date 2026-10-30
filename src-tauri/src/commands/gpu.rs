@@ -3,11 +3,9 @@
 use super::transcriber::TranscriberState;
 use super::AppState;
 use crate::gpu::{Gpu, Kind, Plan, Skip};
-use crate::helper::Process;
 use serde::Serialize;
-use std::sync::mpsc::RecvTimeoutError;
-use std::time::Duration;
-use talaan_llm_protocol::{Backend, Event, Request};
+use voice_engine_client::LlmClient;
+use voice_engine_protocol::Backend;
 use tauri::{AppHandle, Manager};
 
 #[derive(Debug, Clone, Serialize, PartialEq, Default)]
@@ -72,38 +70,25 @@ pub fn status(mac: bool, use_gpu: bool, llm: Plan, stt: Plan, probe: impl FnOnce
     }
 }
 
-/// Starts the GPU helper, asks what it runs on, and ends it.
-fn probe_helper(plan: &Plan) -> Probe {
-    let Plan::Gpu { exe, env } = plan else { return Probe::Failed("no GPU helper".into()) };
-    let mut p = match Process::<Event>::spawn(exe, env) {
-        Ok(p) => p,
-        Err(e) => return Probe::Failed(format!("couldn't start {}: {e}", exe.display())),
-    };
-    if let Err(e) = p.send(&Request::Ping) {
-        p.kill();
-        return Probe::Failed(e.to_string());
+/// Asks the engine's client which graphics card the summary helper would use. Until Task 7 rewrites this screen the
+/// probe is only that question (`discrete_card`); it starts the helper if none runs, which the next summary reuses.
+fn probe_helper(client: &LlmClient, plan: &Plan) -> Probe {
+    if !matches!(plan, Plan::Gpu { .. }) {
+        return Probe::Failed("no GPU helper".into());
     }
-    match p.recv_timeout(Duration::from_secs(30)) {
-        Ok(Event::Ready { backend }) => {
-            p.kill();
-            Probe::Ready(backend)
-        }
-        Ok(Event::Error { message }) => {
-            p.kill();
-            Probe::Failed(message)
-        }
-        Err(RecvTimeoutError::Disconnected) => Probe::Failed(p.died("GPU helper").detail),
-        _ => {
-            p.kill();
-            Probe::Failed("the GPU helper didn't answer".into())
-        }
+    match client.discrete_card() {
+        Ok(Some(d)) => Probe::Ready(Backend { backend: "vulkan".into(), device: Some(d.description), vram_mb: d.memory_mb }),
+        Ok(None) => Probe::Ready(Backend::cpu()),
+        Err(e) => Probe::Failed(format!("{e:?}")),
     }
 }
 
 fn current(app: &AppHandle) -> GpuStatus {
     let use_gpu = app.state::<AppState>().lock().settings_get().ok().flatten().and_then(|s| s["useGpu"].as_bool()).unwrap_or(true);
-    let gpu = Gpu::shared(app.state::<TranscriberState>().data_dir());
-    status(cfg!(target_os = "macos"), use_gpu, gpu.plan(Kind::Llm, use_gpu), gpu.plan(Kind::Stt, use_gpu), probe_helper)
+    let data_dir = app.state::<TranscriberState>().data_dir().to_path_buf();
+    let gpu = Gpu::shared(&data_dir);
+    let client = crate::summarizer::local::summary_client(&data_dir);
+    status(cfg!(target_os = "macos"), use_gpu, gpu.plan(Kind::Llm, use_gpu), gpu.plan(Kind::Stt, use_gpu), |plan| probe_helper(&client, plan))
 }
 
 /// The Graphics chip row. Starts the GPU helper for a moment, so it runs off the main thread.
@@ -165,13 +150,14 @@ mod tests {
     }
 
     #[test]
-    fn the_probe_talks_to_a_real_helper_process() {
-        use crate::helper::fake::{reply, script};
+    fn the_probe_says_so_when_the_helper_will_not_start() {
         let dir = tempfile::tempdir().unwrap();
-        let exe = script(dir.path(), "llm-vulkan", &[reply(&[r#"{"event":"ready","backend":"vulkan","device":"RTX","vram_mb":8192}"#])]);
-        let Probe::Ready(b) = probe_helper(&Plan::Gpu { exe, env: vec![] }) else { panic!() };
-        assert_eq!(b.device.as_deref(), Some("RTX"));
-        let Probe::Failed(e) = probe_helper(&Plan::Gpu { exe: dir.path().join("missing.exe"), env: vec![] }) else { panic!() };
-        assert!(e.contains("couldn't start"), "{e}");
+        let client = crate::summarizer::local::client(dir.path(), "test", "summary");
+        let Probe::Failed(e) = probe_helper(&client, &Plan::Cpu(Skip::Off)) else { panic!() };
+        assert_eq!(e, "no GPU helper");
+        // A helper that is missing (the real one is next to the test binary only after build-llm-helper.sh) gives
+        // either an answer or a failure, never a hang or a panic.
+        let _ = probe_helper(&client, &gpu());
+        client.shutdown();
     }
 }

@@ -6,7 +6,6 @@ mod commands;
 mod deeplink;
 mod eta;
 mod gpu;
-mod helper;
 mod i18n;
 mod importer;
 mod keys;
@@ -265,6 +264,9 @@ pub fn run() {
                     if code != Some(tauri::RESTART_EXIT_CODE) {
                         exit_watchdog();
                     }
+                    // The helpers end with the app (Windows can't replace a running helper, and a helper left behind
+                    // would hold the models' memory).
+                    summarizer::local::shutdown_all();
                     #[cfg(windows)]
                     app.state::<commands::transcriber::TranscriberState>().shutdown_speech_helper();
                     rec_cmd::stop_on_exit(app)

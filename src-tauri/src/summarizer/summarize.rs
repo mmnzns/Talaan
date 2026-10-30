@@ -367,7 +367,6 @@ mod long_smoke {
     use super::*;
     use crate::storage::model::TranscriptLine;
     use crate::summarizer::engines::LocalEngine;
-    use crate::summarizer::local::{helper_file, LocalAi};
     use crate::summarizer::prompt::tests::meeting;
 
     #[test]
@@ -382,12 +381,13 @@ mod long_smoke {
         let mut m = meeting(lines);
         m.speakers = serde_json::from_value(fixture["speakers"].clone()).unwrap();
         m.item.duration_ms = 13 * span;
-        let exe = std::env::current_exe().unwrap().parent().unwrap().parent().unwrap().join(helper_file());
         let model_path = std::path::PathBuf::from(std::env::var("TALAAN_LLM_MODEL").unwrap());
-        let mut engine = LocalEngine { ai: LocalAi::new(&exe), model_path, model_name: "test".into() };
+        let tmp = tempfile::tempdir().unwrap();
+        let client = std::sync::Arc::new(crate::summarizer::local::client(tmp.path(), "test", "summary"));
+        let mut engine = LocalEngine::new(client, model_path, "test".into(), true);
         let t = std::time::Instant::now();
         let out = summarize(&m, &mut engine, "en", &Options::default(), &AtomicBool::new(false), &mut |p| eprintln!("progress {:.0}% at {:.0}s", p * 100.0, t.elapsed().as_secs_f32())).unwrap();
-        eprintln!("== {} min call, {} parts, {:.0}s", m.item.duration_ms / 60_000, out.parts, t.elapsed().as_secs_f32());
+        eprintln!("== {} min call, {} parts, {:.0}s, backend {:?}", m.item.duration_ms / 60_000, out.parts, t.elapsed().as_secs_f32(), crate::summarizer::local::last_backend());
         eprintln!("title: {:?}\nrecap: {}", out.title, out.summary.recap);
         for d in &out.summary.decisions { eprintln!("D {:?} {}", d.at.map(|a| a / 1000), d.text); }
         for a in &out.summary.action_items { eprintln!("A {:?} {} | {:?} | {:?}", a.at.map(|a| a / 1000), a.text, a.owner, a.due); }

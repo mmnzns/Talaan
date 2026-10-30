@@ -8,7 +8,8 @@ use crate::storage::model::{Meeting, MeetingStatus};
 use crate::storage::store::Filter;
 use crate::i18n::{tr, tr_err, tr_with};
 use crate::storage::StorageError;
-use crate::summarizer::local::{helper_path, LocalAi};
+use voice_engine_client::LlmClient;
+use voice_engine_protocol::Embedding;
 use crate::summarizer::summarize::EngineError;
 use crate::summarizer::worker::Config;
 use crate::models::{Models, SEARCH};
@@ -28,8 +29,9 @@ const REPLY_TOKENS: u32 = 900;
 pub struct AskState {
     data_dir: PathBuf,
     models: Arc<Models>,
-    /// The search model's helper, shared by questions and the indexer (it exits by itself when idle).
-    embedder: Arc<Mutex<LocalAi>>,
+    /// The search model's helper, shared by questions and the indexer (it exits by itself when idle). The client
+    /// runs one request at a time, so questions interleave with the indexer between requests.
+    embedder: Arc<LlmClient>,
     kick: Mutex<mpsc::Sender<()>>,
 }
 
@@ -37,7 +39,7 @@ pub struct AskState {
 const INDEX_DEBOUNCE: Duration = Duration::from_secs(5);
 
 pub fn setup(app: &AppHandle, data_dir: PathBuf) {
-    let embedder = Arc::new(Mutex::new(LocalAi::new(&helper_path())));
+    let embedder = crate::summarizer::local::search_client(&data_dir);
     let (kick, rx) = mpsc::channel::<()>();
     app.manage(AskState { data_dir: data_dir.clone(), models: app.state::<Arc<Models>>().inner().clone(), embedder: embedder.clone(), kick: Mutex::new(kick) });
     let app = app.clone();
@@ -64,14 +66,13 @@ pub fn reindex_soon(app: &AppHandle) {
 
 /// Brings every finished meeting's index up to date. Takes the embedder per meeting so questions can
 /// interleave instead of waiting for the whole pass.
-fn index_all(app: &AppHandle, embedder: &Mutex<LocalAi>) {
+fn index_all(app: &AppHandle, embedder: &LlmClient) {
     let Some(model) = search_model(&app.state::<AskState>().models) else { return };
     let ids: Vec<String> = {
         let s = app.state::<AppState>();
         let s = s.lock();
         s.list_meetings(&Filter::default()).map(|l| l.into_iter().filter(|m| m.status == MeetingStatus::Ready).map(|m| m.id).collect()).unwrap_or_default()
     };
-    let cancel = AtomicBool::new(false);
     for id in ids {
         let loaded = {
             let s = app.state::<AppState>();
@@ -80,8 +81,7 @@ fn index_all(app: &AppHandle, embedder: &Mutex<LocalAi>) {
         };
         let Some((m, dir)) = loaded else { continue };
         let ps = passages(&m);
-        let mut ai = embedder.lock().unwrap_or_else(|e| e.into_inner());
-        if index::ensure(&dir, SEARCH, &ps, &mut |texts| ai.embed(&model, texts, &cancel)).is_err() {
+        if index::ensure(&dir, SEARCH, &ps, &mut |texts| embed_texts(embedder, &model, texts)).is_err() {
             return; // the helper failed: try again on the next change rather than hammering it
         }
     }
@@ -147,7 +147,7 @@ pub(crate) fn pending_test(settings: Option<&serde_json::Value>) -> Option<&str>
 }
 
 /// The question answered from these meetings (their folders hold the search indexes).
-fn answer_from(data_dir: &Path, models: &Models, embedder: &Mutex<LocalAi>, meetings: &[Meeting], dirs: &[PathBuf], settings: Option<&serde_json::Value>, single: bool, question: &str) -> CmdResult<AskAnswer> {
+fn answer_from(data_dir: &Path, models: &Models, embedder: &LlmClient, meetings: &[Meeting], dirs: &[PathBuf], settings: Option<&serde_json::Value>, single: bool, question: &str) -> CmdResult<AskAnswer> {
     let total = meetings.len();
     if total == 0 {
         return Ok(AskAnswer::nothing(0));
@@ -159,7 +159,7 @@ fn answer_from(data_dir: &Path, models: &Models, embedder: &Mutex<LocalAi>, meet
 
     // Meaning: only when the search model is downloaded. A failure here falls back to keywords.
     let cancel = AtomicBool::new(false);
-    let vectors = embed_all(models, embedder, dirs, &per_meeting, question, &cancel).ok().flatten();
+    let vectors = embed_all(models, embedder, dirs, &per_meeting, question).ok().flatten();
     let (query_vec, doc_vecs) = match &vectors {
         Some((q, docs)) => (Some(q.as_slice()), docs.iter().flatten().map(|v| Some(v.as_slice())).collect::<Vec<_>>()),
         None => (None, vec![None; all.len()]),
@@ -213,16 +213,27 @@ fn answer_from(data_dir: &Path, models: &Models, embedder: &Mutex<LocalAi>, meet
 /// The question's vector and every meeting's passage vectors (building missing indexes now), or None when
 /// the search model isn't downloaded.
 #[allow(clippy::type_complexity)]
-fn embed_all(models: &Models, embedder: &Mutex<LocalAi>, dirs: &[PathBuf], per_meeting: &[Vec<Passage>], question: &str, cancel: &AtomicBool) -> Result<Option<(Vec<f32>, Vec<Vec<Vec<f32>>>)>, String> {
+fn embed_all(models: &Models, embedder: &LlmClient, dirs: &[PathBuf], per_meeting: &[Vec<Passage>], question: &str) -> Result<Option<(Vec<f32>, Vec<Vec<Vec<f32>>>)>, String> {
     let Some(model) = search_model(models) else { return Ok(None) };
-    let mut ai = embedder.lock().unwrap_or_else(|e| e.into_inner());
-    let mut embed = |texts: Vec<String>| ai.embed(&model, texts, cancel);
+    let mut embed = |texts: Vec<String>| embed_texts(embedder, &model, texts);
     let mut docs = Vec::with_capacity(dirs.len());
     for (dir, ps) in dirs.iter().zip(per_meeting) {
         docs.push(index::ensure(dir, SEARCH, ps, &mut embed)?);
     }
     let q = embed(vec![query_text(question)])?.pop().ok_or("no vector for the question")?;
     Ok(Some((q, docs)))
+}
+
+/// One vector per text from the search model. Search stays on the processor (`gpu: false`) as it always has: the
+/// texts are short, and a question runs beside a summary that may hold the graphics card.
+fn embed_texts(client: &LlmClient, model: &Path, texts: Vec<String>) -> Result<Vec<Vec<f32>>, String> {
+    client
+        .embed(Embedding { model_path: model.to_string_lossy().into_owned(), texts, gpu: false })
+        .map(|o| o.value)
+        .map_err(|e| match crate::summarizer::local::to_summary_error(e) {
+            EngineError::Unavailable(m) | EngineError::Failed(m) => m,
+            EngineError::Cancelled => tr("error.cancelled"),
+        })
 }
 
 pub fn search_model(models: &Models) -> Option<PathBuf> {
@@ -277,8 +288,7 @@ mod tests {
             std::fs::create_dir_all(&d).unwrap();
             dirs.push(d);
         }
-        let exe = std::env::current_exe().unwrap().parent().unwrap().parent().unwrap().join(crate::summarizer::local::helper_file());
-        let embedder = Mutex::new(LocalAi::new(&exe));
+        let embedder = crate::summarizer::local::client(tmp.path(), "test", "search");
         let settings = serde_json::json!({ "summaryEngine": "local", "localModel": "recommended" });
         for (q, want_meeting, want_at) in [
             ("When did the vendor promise SSO?", "m1", 65_000),

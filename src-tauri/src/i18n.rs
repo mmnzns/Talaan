@@ -230,6 +230,12 @@ const TABLE: &[(&str, &str, &str, &str)] = &[
         "Téléchargez le modèle d’IA local ({name}, {size} Go) dans Paramètres › IA de résumé.",
         "Descarga el modelo de IA local ({name}, {size} GB) en Ajustes › IA de resumen.",
     ),
+    (
+        "ai.download_local_short",
+        "Download the local AI model in Settings › Summary AI.",
+        "Téléchargez le modèle d’IA local dans Paramètres › IA de résumé.",
+        "Descarga el modelo de IA local en Ajustes › IA de resumen.",
+    ),
     ("ai.connected", "Connected.", "Connecté.", "Conectado."),
     ("ai.connected_model", "Connected. Summaries will use {model}.", "Connecté. Les résumés utiliseront {model}.", "Conectado. Los resúmenes usarán {model}."),
     (
