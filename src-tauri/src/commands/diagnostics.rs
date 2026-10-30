@@ -5,7 +5,6 @@
 //! content: the log has none (see `logging`), and the settings lose names, the recording notice and addresses.
 
 use super::{AppState, CmdResult};
-use crate::gpu::{describe, Gpu, Kind};
 use crate::logging;
 use crate::storage::StorageError;
 use serde_json::{json, Value};
@@ -248,18 +247,21 @@ fn cpu() -> String {
     format!("{name}, {threads} threads")
 }
 
-/// What speech and local summaries run on (no helper is started for this).
+/// What speech and local summaries run on (no helper is started for this): the card name, the setting and whether
+/// the card failed. The name is the driver's description of the card, nothing about the person.
 fn graphics(use_gpu: bool, data_dir: &Path) -> String {
     if cfg!(target_os = "macos") {
         return if use_gpu { "Metal (Apple GPU)".into() } else { "processor (GPU turned off)".into() };
     }
-    let gpu = Gpu::shared(data_dir);
-    let drivers = crate::gpu::driver_fingerprint();
+    let card = crate::gpu::discrete_card();
+    let (stt_file, llm_file) = super::gpu::remembered(data_dir);
+    let fell = crate::gpu::fallbacks();
+    let failed = super::gpu::status(false, true, card.as_deref(), stt_file || fell.stt.is_some(), llm_file || fell.llm.is_some());
     format!(
-        "speech: {}; summaries: {}; drivers: {}",
-        describe(&gpu.plan(Kind::Stt, use_gpu)),
-        describe(&gpu.plan(Kind::Llm, use_gpu)),
-        if drivers.is_empty() { "unknown".into() } else { drivers }
+        "card: {}; useGpu: {}; {}",
+        card.as_deref().unwrap_or("none"),
+        use_gpu,
+        failed.detail.as_deref().unwrap_or("no card failure")
     )
 }
 

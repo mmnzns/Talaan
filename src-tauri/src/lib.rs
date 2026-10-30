@@ -85,9 +85,18 @@ pub fn run() {
                 store.apply_retention(chrono::Utc::now())?;
                 Ok(store)
             };
-            let store = started().inspect_err(|e| log::error!("couldn't open the data folder: {}", e.for_log()))?;
+            let mut store = started().inspect_err(|e| log::error!("couldn't open the data folder: {}", e.for_log()))?;
             logging::set_your_name(store.your_name());
-            let settings = store.settings_get().ok().flatten();
+            let mut settings = store.settings_get().ok().flatten();
+            // The card default, once, before any model loads (no settings file yet means first launch: the first
+            // save from the screens has no `gpuDefaultSet`, so the next start applies it).
+            if let Some(s) = settings.as_mut() {
+                let card = gpu::discrete_card();
+                log::info!("discrete card found: {}", if card.is_some() { "yes" } else { "no" });
+                if gpu::apply_default(s, cfg!(target_os = "macos"), card.as_deref()) {
+                    store.settings_set(s.clone()).inspect_err(|e| log::warn!("couldn't save the card default: {}", e.for_log())).ok();
+                }
+            }
             app.manage(AppState::new(store));
             // The shared models folder, opened and filled before any worker or helper can open a model:
             // `move_in` moves Talaan's old models in and must run first. A TALAAN_DATA_DIR run keeps its models

@@ -42,11 +42,11 @@ export type AutoSaveResult = "written" | "off" | "not_ready" | "missing" | "fail
 export interface GpuStatus {
   /** `metal`: the Mac's GPU. `unavailable`: see `reason`. `failed`: it failed with this app and driver (Try again). */
   state: "metal" | "in_use" | "off" | "unavailable" | "failed";
-  reason?: "no_vulkan" | "no_helper" | "no_gpu" | "no_start";
+  reason?: "no_gpu";
   /** The GPU in use ("NVIDIA GeForce RTX 5070 Ti"). */
   device?: string;
   vramMb?: number;
-  /** The technical error behind `failed` or `no_start` (English). */
+  /** What failed, for `failed` (English): which part used the processor. */
   detail?: string;
 }
 export type BrowserState = "allowed" | "denied" | "not_asked" | "not_installed";

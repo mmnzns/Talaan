@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- **Graphics card on by default where it helps:** on the Mac, and on Windows PCs that have a separate graphics card. A PC with only built-in graphics now starts with it off. The choice is made once, so a PC updating from 1.1 gets it once and keeps whatever you set after. If the card fails, Status says which part (speech or AI) used the processor, with Try again.
+
 ## 1.1.1 (2026-10-19)
 
 - **Know when there's a new version:** Talaan checks at launch and every 6 hours, sends one notification per new version, and shows "Update now" in the main window and the tray. It never interrupts a recording: no update installs while you record, and no recording starts while an update installs.

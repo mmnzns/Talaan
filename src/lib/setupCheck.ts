@@ -80,9 +80,7 @@ function gpu(p: Probe): CheckResult[] {
   if (!g) return [];
   const title = t("settings.setup_gpu");
   const ok = (detail: string): CheckResult[] => [{ id: "gpu", title, status: "ok", detail }];
-  const warn = (detail: string, retry = true): CheckResult[] => [
-    { id: "gpu", title, status: "warn", detail, fix: retry ? { label: t("settings.setup_gpu_retry"), action: "retryGpu" } : undefined },
-  ];
+  const warn = (detail: string): CheckResult[] => [{ id: "gpu", title, status: "warn", detail, fix: { label: t("settings.setup_gpu_retry"), action: "retryGpu" } }];
   const error = g.detail ?? "?";
   switch (g.state) {
     case "metal":
@@ -96,10 +94,7 @@ function gpu(p: Probe): CheckResult[] {
     case "failed":
       return warn(t("settings.setup_gpu_failed", { error }));
     case "unavailable":
-      if (g.reason === "no_gpu") return ok(t("settings.setup_gpu_no_gpu"));
-      if (g.reason === "no_helper") return warn(t("settings.setup_gpu_no_helper"), false);
-      if (g.reason === "no_vulkan") return warn(t("settings.setup_gpu_no_vulkan"));
-      return warn(t("settings.setup_gpu_no_start", { error }));
+      return ok(t("settings.setup_gpu_no_gpu"));
   }
 }
 

@@ -6,7 +6,6 @@ use crate::storage::model::MeetingStatus;
 use crate::i18n::{tr, tr_with};
 use crate::storage::StorageError;
 use crate::summarizer::engines::{compatible_base, default_base, list_models, recommended_model, HttpEngine, LocalEngine, Provider, CLOUD_CONTEXT, LOCAL_CONTEXT};
-use crate::gpu::{Gpu, Kind, Plan};
 use crate::models::{local_model, Models, DEFAULT_LOCAL_AI};
 use crate::summarizer::summarize::{EngineError, SummaryEngine};
 use crate::summarizer::followup::{self, FollowUpError};
@@ -91,8 +90,8 @@ pub fn make_engine(cfg: &Config, data_dir: &Path, models: &Models) -> Result<Box
 }
 
 /// How a summary with these settings is timed: the local model on the graphics chip (Metal on the Mac; on Windows
-/// the Vulkan helper when `gpu.rs` says it should be used) or the processor; a cloud service or local server.
-fn summary_profile(cfg: &Config, gpu: &Gpu) -> crate::eta::Profile {
+/// the card when the PC has a discrete one and it hasn't failed) or the processor; a cloud service or local server.
+fn summary_profile(cfg: &Config, data_dir: &std::path::Path) -> crate::eta::Profile {
     let s = &cfg.settings;
     match cfg.engine.as_str() {
         "ollama" => crate::eta::summary_profile("ollama", "server", false),
@@ -100,7 +99,7 @@ fn summary_profile(cfg: &Config, gpu: &Gpu) -> crate::eta::Profile {
         _ => {
             let model = local_model(s["localModel"].as_str());
             let use_gpu = s["useGpu"].as_bool().unwrap_or(true);
-            let on_gpu = if cfg!(windows) { matches!(gpu.plan(Kind::Llm, use_gpu), Plan::Gpu { .. }) } else { cfg!(target_os = "macos") };
+            let on_gpu = super::gpu::llm_on_gpu(cfg!(target_os = "macos"), use_gpu, data_dir);
             crate::eta::summary_profile("local", model.id, on_gpu)
         }
     }
@@ -111,8 +110,8 @@ pub fn setup(app: &AppHandle, data_dir: PathBuf) {
     let changed_app = app.clone();
     let ready_app = app.clone();
     let done_app = app.clone();
-    let gpu = Gpu::shared(&data_dir);
     let state_dir = data_dir.clone();
+    let profile_dir = data_dir.clone();
     let models = app.state::<Arc<Models>>().inner().clone();
     let engine_models = models.clone();
     let worker = Worker::start(Deps {
@@ -124,7 +123,7 @@ pub fn setup(app: &AppHandle, data_dir: PathBuf) {
             notify_done(&ready_app, id, "notify.summary_ready", title);
         }),
         unsummarized: Arc::new(move |id, title| notify_done(&done_app, id, "notify.transcript_ready", title)),
-        profile: Box::new(move |cfg| summary_profile(cfg, &gpu)),
+        profile: Box::new(move |cfg| summary_profile(cfg, &profile_dir)),
     });
     let storage = state.lock();
     for id in storage.ids_with_status(MeetingStatus::Summarizing).unwrap_or_default() {
@@ -274,7 +273,7 @@ pub fn meetings_followup_eta(state: State<AppState>, s: State<SummarizerState>, 
     let storage = state.lock();
     let summary = storage.get_meeting(&id)?.summary.ok_or_else(|| refused(tr("error.no_summary_for_followup")))?;
     let cfg = Config::from_settings(storage.settings_get().ok().flatten().as_ref());
-    let profile = summary_profile(&cfg, &Gpu::shared(&s.data_dir));
+    let profile = summary_profile(&cfg, &s.data_dir);
     let one = followup::estimate(&profile, storage.speed_rate(&profile.key), &summary);
     let ahead = if cfg.engine == "local" { s.worker.ahead_of(request.as_deref().unwrap_or("")) } else { Default::default() };
     // Drafts ahead are about as long as this one.

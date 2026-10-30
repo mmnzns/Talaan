@@ -387,7 +387,7 @@ mod long_smoke {
         let mut engine = LocalEngine::new(client, model_path, "test".into(), true);
         let t = std::time::Instant::now();
         let out = summarize(&m, &mut engine, "en", &Options::default(), &AtomicBool::new(false), &mut |p| eprintln!("progress {:.0}% at {:.0}s", p * 100.0, t.elapsed().as_secs_f32())).unwrap();
-        eprintln!("== {} min call, {} parts, {:.0}s, backend {:?}", m.item.duration_ms / 60_000, out.parts, t.elapsed().as_secs_f32(), crate::summarizer::local::last_backend());
+        eprintln!("== {} min call, {} parts, {:.0}s", m.item.duration_ms / 60_000, out.parts, t.elapsed().as_secs_f32());
         eprintln!("title: {:?}\nrecap: {}", out.title, out.summary.recap);
         for d in &out.summary.decisions { eprintln!("D {:?} {}", d.at.map(|a| a / 1000), d.text); }
         for a in &out.summary.action_items { eprintln!("A {:?} {} | {:?} | {:?}", a.at.map(|a| a / 1000), a.text, a.owner, a.due); }

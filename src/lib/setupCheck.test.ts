@@ -150,16 +150,13 @@ describe("checkSetup", () => {
     expect(rtx.fix).toBeUndefined();
     expect(rtx.detail).toContain("NVIDIA GeForce RTX 5070 Ti (16 GB)");
     expect(find(probe({ gpu: { state: "unavailable", reason: "no_gpu" } }), "gpu").status).toBe("ok");
-    for (const s of checkSetup(probe({ gpu: { state: "failed", detail: "speech GPU helper stopped: exit code 5" } }))) expect(s.status).not.toBe("fail");
+    for (const s of checkSetup(probe({ gpu: { state: "failed", detail: "Graphics card failed, used the processor (speech)" } }))) expect(s.status).not.toBe("fail");
   });
 
   it("says why the graphics chip isn't used, with Try again where trying again can help", () => {
-    const failed = find(probe({ gpu: { state: "failed", detail: "speech GPU helper stopped: exit code 5" } }), "gpu");
+    const failed = find(probe({ gpu: { state: "failed", detail: "Graphics card failed, used the processor (speech)" } }), "gpu");
     expect(failed).toMatchObject({ status: "warn", fix: { action: "retryGpu" } });
-    expect(failed.detail).toContain("exit code 5");
-    expect(find(probe({ gpu: { state: "unavailable", reason: "no_vulkan" } }), "gpu")).toMatchObject({ status: "warn", fix: { action: "retryGpu" } });
-    expect(find(probe({ gpu: { state: "unavailable", reason: "no_start", detail: "0xC0000135" } }), "gpu").detail).toContain("0xC0000135");
-    expect(find(probe({ gpu: { state: "unavailable", reason: "no_helper" } }), "gpu")).toMatchObject({ status: "warn", fix: undefined });
+    expect(failed.detail).toContain("used the processor (speech)");
   });
 
   it("reports a data folder it can't read", () => {

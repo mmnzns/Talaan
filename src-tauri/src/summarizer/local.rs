@@ -6,7 +6,7 @@
 use super::summarize::EngineError as SummaryError;
 use crate::i18n::tr;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex, OnceLock};
+use std::sync::{Arc, OnceLock};
 use std::time::Duration;
 use voice_engine_client::{EngineError, Limits, LlmClient, LlmConfig};
 
@@ -39,7 +39,7 @@ pub fn client(data_dir: &Path, version: &str, which: &str) -> LlmClient {
         gpu_helper,
         env: vec![],
         gpu_env: vec![("VK_LOADER_LAYERS_DISABLE".into(), "~implicit~".into())],
-        gpu_failures: Some(data_dir.join(format!("gpu-{which}-failures"))),
+        gpu_failures: Some(data_dir.join(failures_file(which))),
         gpu_key: version.to_string(),
         idle_secs: Some(120),
         // Loading a 9B model from a slow disk takes well under this.
@@ -95,33 +95,21 @@ pub fn to_summary_error(e: EngineError) -> SummaryError {
     }
 }
 
-/// Where the last local AI call ran, and whether the graphics card failed in it (the processor then did the job).
-/// Task 7 shows this in Settings; nothing reads it yet but the smoke tests.
-#[derive(Clone)]
-#[allow(dead_code)] // read by Task 7 (and the smoke tests)
-struct Last {
-    backend: String,
-    fell_back: bool,
-}
-
-static LAST: Mutex<Option<Last>> = Mutex::new(None);
-
+/// Notes where a local AI call ran; when the graphics card failed in it (the processor did the job), Settings shows it.
 pub fn record_outcome(backend: &str, fell_back: bool) {
-    *LAST.lock().unwrap_or_else(|e| e.into_inner()) = Some(Last { backend: backend.into(), fell_back });
+    if fell_back {
+        crate::gpu::note_llm_fallback(backend);
+    }
     log::info!("local AI ran on {backend}{}", if fell_back { " (the graphics card failed; the processor did the job)" } else { "" });
 }
 
-/// The backend of the last local AI call (`metal`, `vulkan`, `cpu`).
-#[allow(dead_code)] // Task 7 shows it
-pub fn last_backend() -> Option<String> {
-    LAST.lock().unwrap_or_else(|e| e.into_inner()).as_ref().map(|l| l.backend.clone())
+/// Whether the engine remembers a card failure for this app version for the job (`which`: "summary" or "search").
+pub fn card_failed(data_dir: &Path, which: &str) -> bool {
+    std::fs::read_to_string(data_dir.join(failures_file(which))).is_ok_and(|t| t.trim() == env!("CARGO_PKG_VERSION"))
 }
 
-/// Some(backend it ran on instead) when the graphics card failed during the last local AI call and the processor
-/// did the job. Task 7 shows it.
-#[allow(dead_code)] // Task 7 shows it
-pub fn last_fallback() -> Option<String> {
-    LAST.lock().unwrap_or_else(|e| e.into_inner()).as_ref().filter(|l| l.fell_back).map(|l| l.backend.clone())
+pub fn failures_file(which: &str) -> String {
+    format!("gpu-{which}-failures")
 }
 
 #[cfg(test)]
@@ -182,7 +170,7 @@ mod tests {
         let schema = r#"{"type":"object","properties":{"title":{"type":"string"},"recap":{"type":"string"}},"required":["title","recap"]}"#;
         let t = std::time::Instant::now();
         let text = engine.complete(&p, schema, 200, &std::sync::atomic::AtomicBool::new(false)).unwrap();
-        eprintln!("reply in {:.1}s on {:?}, fell back: {:?} ({} chars)", t.elapsed().as_secs_f32(), last_backend(), last_fallback(), text.len());
+        eprintln!("reply in {:.1}s ({} chars)", t.elapsed().as_secs_f32(), text.len());
         let v: serde_json::Value = serde_json::from_str(&text).unwrap();
         assert!(v["recap"].as_str().is_some());
         ai.shutdown();
