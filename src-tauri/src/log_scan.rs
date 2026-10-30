@@ -347,7 +347,7 @@ fn rust_files() -> Vec<PathBuf> {
     let root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let mut files = vec![];
     // The app, and the libraries it links that could log (the speech crate and the helpers' protocol).
-    for dir in ["src", "stt/src", "llm-protocol/src"] {
+    for dir in ["src", "llm/src", "stt/src", "llm-protocol/src"] {
         walk(&root.join(dir), &mut files);
     }
     files

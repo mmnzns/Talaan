@@ -36,6 +36,11 @@ chrono = { version = "0.4.45", features = ["serde"] }
 dirs = "7.0.0"
 rand = "0.10.3"
 thiserror = "2.0.21"
+# The shared engine (docs/plans/2026-10-30-engine-v0.2.2.md). The old speech and AI code stays until the later tasks remove it.
+voice-engine-protocol = { git = "https://github.com/mmnzns/voice-engine", tag = "v0.2.2" }
+voice-engine-models = { git = "https://github.com/mmnzns/voice-engine", tag = "v0.2.2" }
+voice-engine-client = { git = "https://github.com/mmnzns/voice-engine", tag = "v0.2.2" }
+voice-engine-stt = { git = "https://github.com/mmnzns/voice-engine", tag = "v0.2.2" }
 cpal = "0.18.2"
 rtrb = "0.4.0"
 rubato = "5.0.1"
@@ -90,6 +95,8 @@ objc2-event-kit = "0.3.2"
 keyring = { version = "3.6.3", features = ["windows-native"] }
 # CPU for now; GPU (vulkan) after the W1 checkpoint, see "Later" in docs/plans/W0-W1-windows-build-and-recorder.md.
 whisper-rs = "0.16.0"
+# Parakeet on the PC's discrete card, in Talaan's own process, and discrete_card() for the graphics card default.
+voice-engine-stt = { git = "https://github.com/mmnzns/voice-engine", tag = "v0.2.2", features = ["directml"] }
 wasapi = "0.26.0"
 winreg = "0.56.0"
 windows = { version = "0.62", features = [

@@ -1,6 +1,18 @@
+# voice-engine's build settings, copied from its README ("Build settings an app must copy", v0.2.2). A git dependency
+# never gets the engine's own .cargo/config.toml. This file sits at the repo root so cargo finds it both from the root
+# (CI: --manifest-path src-tauri/Cargo.toml) and from src-tauri (tauri build).
+# cmake-rs strips /O flags from CMAKE_<LANG>_FLAGS_RELEASE under the Visual Studio generator (whisper.cpp and llama.cpp
+# built at /Od on Windows, ~10x slower); the two CMAKE_* lines stop that.
 [env]
-# cmake-rs strips /O flags from CMAKE_<LANG>_FLAGS_RELEASE under the Visual Studio generator, so whisper.cpp (and
-# llama.cpp in the talaan-llm helper) built at /Od in release on Windows: ~10x slower. The CMake-based -sys crates
-# forward CMAKE_* env vars as defines, which stops the override. -O2/-DNDEBUG work for cl, clang-cl and clang.
-CMAKE_C_FLAGS_RELEASE = "-O2 -DNDEBUG"
-CMAKE_CXX_FLAGS_RELEASE = "-O2 -DNDEBUG"
+GGML_NATIVE = { value = "OFF", force = true }
+GGML_AVX = { value = "ON", force = true }
+GGML_AVX2 = { value = "ON", force = true }
+GGML_FMA = { value = "ON", force = true }
+GGML_F16C = { value = "ON", force = true }
+GGML_BMI2 = { value = "ON", force = true }
+MACOSX_DEPLOYMENT_TARGET = { value = "11.0", force = true }
+CMAKE_C_FLAGS_RELEASE = { value = "-O2 -DNDEBUG", force = true }
+CMAKE_CXX_FLAGS_RELEASE = { value = "-O2 -DNDEBUG", force = true }
+
+[target.x86_64-pc-windows-msvc]
+rustflags = ["-C", "target-feature=+avx2,+fma,+f16c,+bmi2"]

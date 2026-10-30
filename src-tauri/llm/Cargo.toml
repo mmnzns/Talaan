@@ -1,21 +1,16 @@
 [package]
 name = "talaan-llm"
 version = "1.0.0"
-description = "Talaan's local AI helper: runs llama.cpp in its own process"
+description = "Talaan's local AI helper: the engine's llama.cpp helper, in its own process"
 edition = "2024"
 license = "MIT"
 publish = false
 
 [dependencies]
-talaan-llm-protocol = { path = "../llm-protocol" }
-serde_json = "1"
-llama-cpp-2 = { version = "=0.1.159", default-features = false, features = ["common"] }
-
-# Windows: the CPU build above, plus a separate GPU build with `--features vulkan` (docs/plans/G1-windows-gpu.md).
-[target.'cfg(target_os = "macos")'.dependencies]
-llama-cpp-2 = { version = "=0.1.159", default-features = false, features = ["metal", "common"] }
+voice-engine-llm = { git = "https://github.com/mmnzns/voice-engine", tag = "v0.2.2" }
+voice-engine-protocol = { git = "https://github.com/mmnzns/voice-engine", tag = "v0.2.2" }
 
 [features]
 # Windows GPU build (talaan-llm-vulkan.exe): needs the Vulkan SDK (VULKAN_SDK) to build, and vulkan-1.dll, which
 # GPU drivers install, to run. scripts/build-llm-helper.ps1 builds it only when VULKAN_SDK is set.
-vulkan = ["llama-cpp-2/vulkan"]
+vulkan = ["voice-engine-llm/vulkan"]

@@ -5390,6 +5390,10 @@ dependencies = [
  "thiserror 2.0.21",
  "tiny_http",
  "tokio",
+ "voice-engine-client",
+ "voice-engine-models",
+ "voice-engine-protocol",
+ "voice-engine-stt",
  "wasapi",
  "whatlang",
  "whisper-rs",
@@ -5402,9 +5406,8 @@ dependencies = [
 name = "talaan-llm"
 version = "1.0.0"
 dependencies = [
- "llama-cpp-2",
- "serde_json",
- "talaan-llm-protocol",
+ "voice-engine-llm",
+ "voice-engine-protocol",
 ]
 
 [[package]]
@@ -5423,6 +5426,8 @@ dependencies = [
  "serde_json",
  "talaan-llm-protocol",
  "tempfile",
+ "voice-engine-protocol",
+ "voice-engine-stt",
  "whisper-rs",
 ]
 
@@ -6445,6 +6450,60 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.119",
+]
+
+[[package]]
+name = "voice-engine-client"
+version = "0.2.2"
+source = "git+https://github.com/mmnzns/voice-engine?tag=v0.2.2#37e9c9a19f040456e19e191e1de87b64cf3146b1"
+dependencies = [
+ "reqwest 0.12.28",
+ "serde_json",
+ "voice-engine-protocol",
+]
+
+[[package]]
+name = "voice-engine-llm"
+version = "0.2.2"
+source = "git+https://github.com/mmnzns/voice-engine?tag=v0.2.2#37e9c9a19f040456e19e191e1de87b64cf3146b1"
+dependencies = [
+ "llama-cpp-2",
+ "serde_json",
+ "voice-engine-protocol",
+]
+
+[[package]]
+name = "voice-engine-models"
+version = "0.2.2"
+source = "git+https://github.com/mmnzns/voice-engine?tag=v0.2.2#37e9c9a19f040456e19e191e1de87b64cf3146b1"
+dependencies = [
+ "dirs 7.0.0",
+ "reqwest 0.12.28",
+ "sha2",
+]
+
+[[package]]
+name = "voice-engine-protocol"
+version = "0.2.2"
+source = "git+https://github.com/mmnzns/voice-engine?tag=v0.2.2#37e9c9a19f040456e19e191e1de87b64cf3146b1"
+dependencies = [
+ "base64 0.22.1",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "voice-engine-stt"
+version = "0.2.2"
+source = "git+https://github.com/mmnzns/voice-engine?tag=v0.2.2#37e9c9a19f040456e19e191e1de87b64cf3146b1"
+dependencies = [
+ "ort",
+ "parakeet-rs",
+ "serde_json",
+ "voice-engine-models",
+ "voice-engine-protocol",
+ "whisper-rs",
+ "windows",
 ]
 
 [[package]]
