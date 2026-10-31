@@ -28,18 +28,18 @@ describe("saveCopy", () => {
   it("writes the same Markdown as Export", async () => {
     const f = fakes();
     expect(await saveCopy(f.store, f.settings, "m-q4", true)).toBe("written");
-    expect(f.written).toEqual([{ id: "m-q4", contents: toMarkdown(q4, false), finished: true }]);
+    expect(f.written).toEqual([{ id: "m-q4", contents: toMarkdown(q4, "summary"), finished: true }]);
   });
 
   it("adds the transcript when asked, and always when there is no summary", async () => {
     const f = fakes({ autoSaveTranscript: true });
     await saveCopy(f.store, f.settings, "m-q4", false);
-    expect(f.written[0].contents).toBe(toMarkdown(q4, true));
+    expect(f.written[0].contents).toBe(toMarkdown(q4, "both"));
 
     const g = fakes();
     g.all.set("m-q4", { ...q4, summary: undefined });
     await saveCopy(g.store, g.settings, "m-q4", true);
-    expect(g.written[0].contents).toContain(toMarkdown({ ...q4, summary: undefined }, true));
+    expect(g.written[0].contents).toContain(toMarkdown({ ...q4, summary: undefined }, "both"));
   });
 
   it("does nothing when no folder is chosen or the meeting isn't finished", async () => {

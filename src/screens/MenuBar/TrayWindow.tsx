@@ -80,6 +80,7 @@ export function TrayWindow() {
         <MenuBarPopover
           onStart={start}
           onOpenMeeting={(id) => inMain("open-meeting", id)}
+          onExportMeeting={(id) => inMain("export-meeting", id)}
           onOpenApp={async () => {
             await invoke("app_show_main");
             await hide();

@@ -1,14 +1,15 @@
 import { useEffect, useState } from "react";
+import type { ExportScope } from "./share";
 
 export type Route =
   | { name: "meetings" }
-  | { name: "meeting"; id: string; t?: number }
+  | { name: "meeting"; id: string; t?: number; /** Open with the Export sheet showing (the menu bar's Export). */ export?: boolean }
   | { name: "ask"; meetingId?: string }
   | { name: "screens"; which?: string }
   | { name: "settings"; tab: string }
   | { name: "tray" }
   | { name: "prompt" }
-  | { name: "print"; id: string; withTranscript: boolean };
+  | { name: "print"; id: string; scope: ExportScope };
 
 export function parseRoute(hash: string): Route {
   const [pathPart, queryPart = ""] = hash.replace(/^#/, "").split("?");
@@ -19,7 +20,7 @@ export function parseRoute(hash: string): Route {
     case "meeting":
       if (seg[1]) {
         const t = query.get("t");
-        return { name: "meeting", id: seg[1], t: t ? Number(t) : undefined };
+        return { name: "meeting", id: seg[1], t: t ? Number(t) : undefined, ...(query.get("export") === "1" ? { export: true } : {}) };
       }
       return { name: "meetings" };
     case "ask":
@@ -31,7 +32,7 @@ export function parseRoute(hash: string): Route {
     case "tray":
       return { name: "tray" };
     case "print":
-      return seg[1] ? { name: "print", id: seg[1], withTranscript: query.get("transcript") === "1" } : { name: "meetings" };
+      return seg[1] ? { name: "print", id: seg[1], scope: query.get("scope") === "both" || query.get("scope") === "transcript" ? (query.get("scope") as ExportScope) : "summary" } : { name: "meetings" };
     case "prompt":
       return { name: "prompt" };
     default:
@@ -41,8 +42,11 @@ export function parseRoute(hash: string): Route {
 
 export const routes = {
   meetings: () => "#/",
-  meeting: (id: string, t?: number) => `#/meeting/${encodeURIComponent(id)}${t !== undefined ? `?t=${t}` : ""}`,
-  print: (id: string, withTranscript: boolean) => `#/print/${encodeURIComponent(id)}${withTranscript ? "?transcript=1" : ""}`,
+  meeting: (id: string, t?: number, exporting?: boolean) => {
+    const query = [t !== undefined ? `t=${t}` : "", exporting ? "export=1" : ""].filter(Boolean).join("&");
+    return `#/meeting/${encodeURIComponent(id)}${query ? `?${query}` : ""}`;
+  },
+  print: (id: string, scope: ExportScope) => `#/print/${encodeURIComponent(id)}${scope === "summary" ? "" : `?scope=${scope}`}`,
   ask: (meetingId?: string) => `#/ask${meetingId ? `?m=${encodeURIComponent(meetingId)}` : ""}`,
   screens: (which?: string) => `#/screens${which ? `/${which}` : ""}`,
   settings: (tab = "status") => `#/settings/${tab}`,
