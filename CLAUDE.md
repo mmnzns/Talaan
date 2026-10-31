@@ -204,10 +204,11 @@ downloader come from https://github.com/mmnzns/voice-engine, pinned by tag in sr
 - Never edit engine code from this repository. If the engine needs a change, open an issue on mmnzns/voice-engine.
 - Move to a new engine tag only on purpose, on a branch, after the tests and a manual check pass. Then update this
   app's column in the change log.
-- A local `src-tauri/.cargo/config.toml` [patch] pointing at ~/Developer/voice-engine is for trying changes only.
-  Never commit it; releases build against the tag.
+- The build settings live in the committed repo-root .cargo/config.toml. A local [patch] pointing at
+  ~/Developer/voice-engine is for trying changes only: put it in ~/.cargo/config.toml or pass --config, never in a
+  committed file; releases build against the tag.
 
-Talaan keeps the engine's build settings in the tracked root `.cargo/config.toml` (cargo reads it from the repo root and from `src-tauri`). Release builds have no LTO: the engine's Metal code doesn't link with it on macOS.
+Release builds have no LTO (`lto = false`): the engine's Metal code doesn't link with it on macOS.
 
 ## Commands
 

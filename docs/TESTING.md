@@ -195,7 +195,7 @@ permissions across an update (the test app is ad-hoc signed), and SmartScreen / 
 The first run on a branch builds everything from scratch (an hour or more per platform); later runs on that branch
 reuse the Rust cache (kept even when the test fails).
 
-## Models and the graphics card (shared engine, v0.2.2)
+## Models and the graphics card (shared engine, v0.3.0)
 
 Use temp copies of data (`TALAAN_DATA_DIR`) for anything that writes, except the one-time move, which needs the real
 folders on a machine that has the previous Talaan.

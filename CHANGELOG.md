@@ -6,6 +6,7 @@
 - **Every local AI model:** Qwen 3.5 4B and 9B and Granite 4.2 3B, each with its size, the memory it needs and its licence.
 - **More speech models:** full-size versions and English-only versions of Whisper and Parakeet.
 - **Parakeet can use the graphics card on Windows.**
+- **"Graphics card failed" only when it did:** the message no longer shows when a model simply has no graphics card path, and Try again now gives the card a new chance in the running app.
 - **Graphics card on by default where it helps:** on the Mac, and on Windows PCs that have a separate graphics card. On Windows a PC with only built-in graphics now starts with the card off, including on a brand-new install; a PC with a separate card keeps what you had (a card you had switched off stays off after updating from 1.1). This is decided once, and what you set after is kept. If the card fails, Status says which part (speech or AI) it failed for and that the processor did the work, with Try again.
 
 ## 1.1.1 (2026-10-19)

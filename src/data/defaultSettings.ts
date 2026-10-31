@@ -55,7 +55,7 @@ export const defaultSettings: Settings = {
     ...windowsIgnoredApps,
   ],
   speechModels: [
-    // Mirrors the engine catalog (voice-engine v0.2.2, crates/models/src/catalog.rs), in the order of src-tauri/src/transcriber/models.rs.
+    // Mirrors the engine catalog (voice-engine v0.3.0, crates/models/src/catalog.rs), in the order of src-tauri/src/transcriber/models.rs.
     // In the app the list and states come from Rust.
     { id: "whisper-turbo", name: "Whisper Large Turbo (compressed)", maker: "OpenAI", note: "Most accurate. 99 languages, including Filipino.", engine: "whisper", sizeMb: 575, speed: 2, accuracy: 3, languages: "99 languages", licence: "MIT", englishOnly: false, state: "downloaded" },
     { id: "parakeet-v3", name: "Parakeet", maker: "NVIDIA", note: "Good for quick notes in 25 European languages.", engine: "parakeet", sizeMb: 671, speed: 3, accuracy: 1, languages: "25 European languages", licence: "CC-BY-4.0", englishOnly: false, state: "downloaded" },
