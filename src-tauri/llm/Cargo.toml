@@ -7,8 +7,8 @@ license = "MIT"
 publish = false
 
 [dependencies]
-voice-engine-llm = { git = "https://github.com/mmnzns/voice-engine", tag = "v0.2.2" }
-voice-engine-protocol = { git = "https://github.com/mmnzns/voice-engine", tag = "v0.2.2" }
+voice-engine-llm = { git = "https://github.com/mmnzns/voice-engine", tag = "v0.3.0" }
+voice-engine-protocol = { git = "https://github.com/mmnzns/voice-engine", tag = "v0.3.0" }
 
 [features]
 # Windows GPU build (talaan-llm-vulkan.exe): needs the Vulkan SDK (VULKAN_SDK) to build, and vulkan-1.dll, which
