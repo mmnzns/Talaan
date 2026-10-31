@@ -32,7 +32,11 @@ describe("the language picker", () => {
     expect(option(markup, "meeting")).toContain('aria-selected="true"');
   });
 
-  it("does not say 'works best with online AI' for any language yet", () => {
-    expect(html({ localModel: "qwen3.5-4b" })).not.toContain("online AI");
+  it("says 'works best with online AI' only for languages the chosen local model wrote poorly", () => {
+    const markup = html({ localModel: "qwen3.5-4b" });
+    expect(option(markup, "fil")).toContain("online AI");
+    expect(option(markup, "en")).not.toContain("online AI");
+    expect(html({ localModel: "qwen3.5-9b" })).not.toContain("online AI");
+    expect(html({})).not.toContain("online AI");
   });
 });

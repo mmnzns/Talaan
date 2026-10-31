@@ -121,9 +121,18 @@ describe("currentSummaryLanguage", () => {
 });
 
 describe("cloudBetter", () => {
-  it("is off for every language until a local model is shown to do poorly", () => {
-    for (const l of SUMMARY_LANGUAGES) expect(cloudBetter(l.code, "qwen3.5-4b")).toBe(false);
-    expect(cloudBetter("ja", undefined)).toBe(false);
+  it("is on for a language Qwen 3.5 4B wrote poorly, and off for English and the ones it wrote well", () => {
+    expect(cloudBetter("fil", "qwen3.5-4b")).toBe(true);
+    expect(cloudBetter("ur", "qwen3.5-4b")).toBe(true);
+    expect(cloudBetter("en", "qwen3.5-4b")).toBe(false);
+    expect(cloudBetter("ja", "qwen3.5-4b")).toBe(false);
+  });
+
+  it("is per model: a model that is not measured shows no note", () => {
+    expect(cloudBetter("fil", "qwen3.5-9b")).toBe(false);
+    expect(cloudBetter("fil", "granite-4.2-3b")).toBe(false);
+    expect(cloudBetter("fil", "some-other-model")).toBe(false);
+    expect(cloudBetter("fil", undefined)).toBe(false);
   });
 });
 

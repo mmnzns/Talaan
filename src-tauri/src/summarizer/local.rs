@@ -263,3 +263,81 @@ mod bakeoff {
         }
     }
 }
+
+/// Language check: the real summary path (prompt, schema, retry, parser) on one fixed transcript, once per summary
+/// language, with the local AI. Each language's raw replies and parsed summary go to `<OUT>/<code>.json`; nothing is
+/// printed but one line per language. A language whose file exists is skipped, so a stopped run can be resumed.
+/// `TALAAN_LLM_MODEL=<gguf> TALAAN_LANGCHECK_OUT=<folder> [TALAAN_LANGCHECK_LANGS=fil,ja] [TALAAN_LANGCHECK_FIXTURE=<json>]
+///  cargo test --release language_check -- --ignored --nocapture`
+#[cfg(test)]
+mod language_check {
+    use super::*;
+    use crate::storage::model::TranscriptLine;
+    use crate::summarizer::engines::LocalEngine;
+    use crate::summarizer::prompt::{summary_language_codes, tests::meeting, Options, Prompt};
+    use crate::summarizer::summarize::{summarize, EngineError, SummaryEngine};
+    use std::sync::atomic::AtomicBool;
+    use std::time::Instant;
+
+    /// Wraps the real engine and keeps every raw reply (a retry makes two).
+    struct Recording<'a> {
+        inner: LocalEngine,
+        replies: &'a std::sync::Mutex<Vec<String>>,
+    }
+
+    impl SummaryEngine for Recording<'_> {
+        fn complete(&mut self, p: &Prompt, schema: &str, max_tokens: u32, cancel: &AtomicBool) -> Result<String, EngineError> {
+            let r = self.inner.complete(p, schema, max_tokens, cancel)?;
+            self.replies.lock().unwrap().push(r.clone());
+            Ok(r)
+        }
+        fn context_tokens(&self) -> usize {
+            self.inner.context_tokens()
+        }
+        fn label(&self) -> String {
+            self.inner.label()
+        }
+    }
+
+    #[test]
+    #[ignore]
+    fn language_check() {
+        let model = std::env::var("TALAAN_LLM_MODEL").unwrap();
+        let out = PathBuf::from(std::env::var("TALAAN_LANGCHECK_OUT").unwrap());
+        std::fs::create_dir_all(&out).unwrap();
+        let fixture_path = std::env::var("TALAAN_LANGCHECK_FIXTURE")
+            .unwrap_or_else(|_| concat!(env!("CARGO_MANIFEST_DIR"), "/../fixtures/summary.language-check.json").into());
+        let fixture: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(fixture_path).unwrap()).unwrap();
+        let lines: Vec<TranscriptLine> = serde_json::from_value(fixture["transcript"].clone()).unwrap();
+        let mut m = meeting(lines);
+        m.speakers = serde_json::from_value(fixture["speakers"].clone()).unwrap();
+        m.marks = serde_json::from_value(fixture["marks"].clone()).unwrap();
+        m.item.duration_ms = fixture["durationMs"].as_u64().unwrap();
+        let wanted: Vec<String> = match std::env::var("TALAAN_LANGCHECK_LANGS") {
+            Ok(s) if !s.trim().is_empty() => s.split(',').map(|c| c.trim().to_string()).collect(),
+            _ => summary_language_codes().iter().map(|c| c.to_string()).collect(),
+        };
+        let tmp = tempfile::tempdir().unwrap();
+        let ai = Arc::new(client(tmp.path(), "test", "summary"));
+        let cancel = AtomicBool::new(false);
+        for code in wanted {
+            let file = out.join(format!("{code}.json"));
+            if file.exists() {
+                continue;
+            }
+            let replies = std::sync::Mutex::new(vec![]);
+            let mut engine = Recording { inner: LocalEngine::new(ai.clone(), PathBuf::from(&model), "Qwen3.5 4B".into(), true), replies: &replies };
+            let t = Instant::now();
+            let r = summarize(&m, &mut engine, &code, &Options::default(), &cancel, &mut |_| {});
+            let secs = t.elapsed().as_secs_f32();
+            let (ok, summary, error) = match &r {
+                Ok(o) => (true, serde_json::to_value(&o.summary).unwrap(), serde_json::Value::Null),
+                Err(e) => (false, serde_json::Value::Null, serde_json::json!(format!("{e:?}"))),
+            };
+            let record = serde_json::json!({ "code": code, "seconds": secs, "parse_ok": ok, "attempts": replies.lock().unwrap().len(), "error": error, "summary": summary, "replies": *replies.lock().unwrap() });
+            std::fs::write(&file, serde_json::to_string_pretty(&record).unwrap()).unwrap();
+            eprintln!("{code}: {secs:.1}s parse_ok={ok} attempts={}", replies.lock().unwrap().len());
+        }
+        ai.shutdown();
+    }
+}

@@ -1,0 +1,390 @@
+{
+ "title": "Call, Zoom, Oct 13, 10:00 AM",
+ "durationMs": 629980,
+ "speakers": {
+  "them:0": "Elena Park",
+  "them:1": "Rafael Ortiz"
+ },
+ "transcript": [
+  {
+   "id": "l0",
+   "at": 0,
+   "end": 13260,
+   "speaker": "me",
+   "text": "Okay, let's start. Thanks both for making time. Today is the Harbor app launch plan: the beta date, the pricing page, and who does what before the 14th.",
+   "edited": false
+  },
+  {
+   "id": "l1",
+   "at": 21260,
+   "end": 34520,
+   "speaker": "them:0",
+   "text": "Sounds good. Quick context: Marisol from support says beta testers are happy with the new booking flow, but three of them reported the calendar sync failing on Android.",
+   "edited": false
+  },
+  {
+   "id": "l2",
+   "at": 40520,
+   "end": 46640,
+   "speaker": "me",
+   "text": "Right. Rafael, do you know what's behind the Android sync bug?",
+   "edited": false
+  },
+  {
+   "id": "l3",
+   "at": 52640,
+   "end": 66740,
+   "speaker": "them:1",
+   "text": "Yes, it's the token refresh. Android drops the refresh token when the phone is idle for an hour. I have a fix, it's about two days of work plus testing.",
+   "edited": false
+  },
+  {
+   "id": "l4",
+   "at": 74740,
+   "end": 80860,
+   "speaker": "me",
+   "text": "Two days is fine. Can that land before the beta opens?",
+   "edited": false
+  },
+  {
+   "id": "l5",
+   "at": 86860,
+   "end": 94240,
+   "speaker": "them:1",
+   "text": "If I start tomorrow, yes. I can have it ready by Wednesday, October 22.",
+   "edited": false
+  },
+  {
+   "id": "l6",
+   "at": 100240,
+   "end": 110980,
+   "speaker": "them:0",
+   "text": "Then I'd suggest we open the beta on Monday, October 27. That gives support a full weekday of overlap with the fix.",
+   "edited": false
+  },
+  {
+   "id": "l7",
+   "at": 118980,
+   "end": 123840,
+   "speaker": "me",
+   "text": "I like that. Any objection to October 27?",
+   "edited": false
+  },
+  {
+   "id": "l8",
+   "at": 129840,
+   "end": 136800,
+   "speaker": "them:1",
+   "text": "No objection from me, as long as QA signs off on Wednesday's build.",
+   "edited": false
+  },
+  {
+   "id": "l9",
+   "at": 142800,
+   "end": 151020,
+   "speaker": "me",
+   "text": "Okay, decision: the beta opens Monday, October 27, provided QA signs off on the Android fix.",
+   "edited": false
+  },
+  {
+   "id": "l10",
+   "at": 159020,
+   "end": 168920,
+   "speaker": "them:0",
+   "text": "Good. Next, the pricing page. Right now it shows three plans, Free, Plus at nine dollars, and Team at twenty-nine.",
+   "edited": false
+  },
+  {
+   "id": "l11",
+   "at": 174920,
+   "end": 183140,
+   "speaker": "me",
+   "text": "Marisol told me the testers found Plus and Team confusing. Several asked what the difference was.",
+   "edited": false
+  },
+  {
+   "id": "l12",
+   "at": 189140,
+   "end": 200720,
+   "speaker": "them:0",
+   "text": "I agree. I'd cut it down to two plans for the beta: Free and Plus, and hold Team back until we have shared calendars.",
+   "edited": false
+  },
+  {
+   "id": "l13",
+   "at": 208720,
+   "end": 216100,
+   "speaker": "them:1",
+   "text": "Shared calendars won't be ready until January at the earliest, so that makes sense.",
+   "edited": false
+  },
+  {
+   "id": "l14",
+   "at": 222100,
+   "end": 232000,
+   "speaker": "me",
+   "text": "So we drop the Team plan from the beta page. Dana, is nine dollars still the right price for Plus?",
+   "edited": false
+  },
+  {
+   "id": "l15",
+   "at": 238000,
+   "end": 249580,
+   "speaker": "them:0",
+   "text": "My name is Elena, by the way, but yes. Nine dollars tested well in the survey. Seventy percent of respondents said they'd pay it.",
+   "edited": false
+  },
+  {
+   "id": "l16",
+   "at": 257580,
+   "end": 269160,
+   "speaker": "me",
+   "text": "Sorry, Elena, my mistake. Okay, decision: two plans in the beta, Free and Plus at nine dollars a month, Team comes back in January.",
+   "edited": false
+  },
+  {
+   "id": "l17",
+   "at": 275160,
+   "end": 284220,
+   "speaker": "them:0",
+   "text": "Agreed. I'll rewrite the pricing page copy and send it to you for review by Friday, October 17.",
+   "edited": false
+  },
+  {
+   "id": "l18",
+   "at": 290220,
+   "end": 296340,
+   "speaker": "me",
+   "text": "Perfect. I'll review it the same day so we don't slip.",
+   "edited": false
+  },
+  {
+   "id": "l19",
+   "at": 304340,
+   "end": 312980,
+   "speaker": "them:1",
+   "text": "One thing on my side: the App Store review. Apple usually takes about two days, sometimes five.",
+   "edited": false
+  },
+  {
+   "id": "l20",
+   "at": 318980,
+   "end": 327200,
+   "speaker": "me",
+   "text": "Then we should submit the iOS build early. Rafael, can you submit by Thursday, October 23?",
+   "edited": false
+  },
+  {
+   "id": "l21",
+   "at": 333200,
+   "end": 345620,
+   "speaker": "them:1",
+   "text": "Yes, but only if the Android fix doesn't block the shared code. I'll submit the iOS build on the twenty-third regardless and send Android right after.",
+   "edited": false
+  },
+  {
+   "id": "l22",
+   "at": 353620,
+   "end": 363520,
+   "speaker": "them:0",
+   "text": "Okay. And for the launch emails, I'd like to schedule them through the new tool, but I haven't tested it.",
+   "edited": false
+  },
+  {
+   "id": "l23",
+   "at": 369520,
+   "end": 378160,
+   "speaker": "me",
+   "text": "Elena, can you run a test send to the three of us by next Tuesday, October 21?",
+   "edited": false
+  },
+  {
+   "id": "l24",
+   "at": 384160,
+   "end": 389860,
+   "speaker": "them:0",
+   "text": "Sure. I'll send a test email to everyone on Tuesday.",
+   "edited": false
+  },
+  {
+   "id": "l25",
+   "at": 397860,
+   "end": 409860,
+   "speaker": "them:1",
+   "text": "Can I raise a risk? The server load. If the beta gets a thousand sign-ups on day one, our current database plan may not hold.",
+   "edited": false
+  },
+  {
+   "id": "l26",
+   "at": 415860,
+   "end": 419880,
+   "speaker": "me",
+   "text": "How many sign-ups are we expecting?",
+   "edited": false
+  },
+  {
+   "id": "l27",
+   "at": 425880,
+   "end": 435780,
+   "speaker": "them:1",
+   "text": "Marketing said between five hundred and two thousand. I honestly don't know. I'd like to load test before the twenty-seventh.",
+   "edited": false
+  },
+  {
+   "id": "l28",
+   "at": 443780,
+   "end": 451160,
+   "speaker": "them:0",
+   "text": "Do we have budget for a bigger database plan if the load test fails?",
+   "edited": false
+  },
+  {
+   "id": "l29",
+   "at": 457160,
+   "end": 471680,
+   "speaker": "me",
+   "text": "I don't know yet. That's an open question: whether we can afford the larger database tier if the load test fails. I'll ask Chen in finance and we'll revisit on Friday.",
+   "edited": false
+  },
+  {
+   "id": "l30",
+   "at": 477680,
+   "end": 486320,
+   "speaker": "them:1",
+   "text": "Okay. I'll run the load test on Monday, October 20, and share the numbers with you both.",
+   "edited": false
+  },
+  {
+   "id": "l31",
+   "at": 494320,
+   "end": 502120,
+   "speaker": "them:0",
+   "text": "One more item: the support macros. Marisol needs the new FAQ answers before the beta.",
+   "edited": false
+  },
+  {
+   "id": "l32",
+   "at": 508120,
+   "end": 515920,
+   "speaker": "me",
+   "text": "I'll write the FAQ answers myself and give them to Marisol by Wednesday, October 22.",
+   "edited": false
+  },
+  {
+   "id": "l33",
+   "at": 521920,
+   "end": 527620,
+   "speaker": "them:0",
+   "text": "Great. Should we also announce the beta on social media?",
+   "edited": false
+  },
+  {
+   "id": "l34",
+   "at": 535620,
+   "end": 545940,
+   "speaker": "me",
+   "text": "Let's hold off. Decision: no public announcement until the Android fix is confirmed. We only email the waitlist on the twenty-seventh.",
+   "edited": false
+  },
+  {
+   "id": "l35",
+   "at": 551940,
+   "end": 556800,
+   "speaker": "them:1",
+   "text": "Makes sense. Less noise if something goes wrong.",
+   "edited": false
+  },
+  {
+   "id": "l36",
+   "at": 562800,
+   "end": 577740,
+   "speaker": "them:0",
+   "text": "So to recap: Rafael fixes Android by the twenty-second and runs the load test on the twentieth, I do the pricing copy by the seventeenth and the test email on the twenty-first.",
+   "edited": false
+  },
+  {
+   "id": "l37",
+   "at": 585740,
+   "end": 596060,
+   "speaker": "me",
+   "text": "And I review the pricing copy on the seventeenth, write the FAQ by the twenty-second, and ask Chen about the budget.",
+   "edited": false
+  },
+  {
+   "id": "l38",
+   "at": 602060,
+   "end": 608180,
+   "speaker": "them:1",
+   "text": "And I submit iOS on the twenty-third. That's everything for me.",
+   "edited": false
+  },
+  {
+   "id": "l39",
+   "at": 614180,
+   "end": 621980,
+   "speaker": "me",
+   "text": "Great. Thanks, everyone. Let's meet again on Friday to look at the load test results.",
+   "edited": false
+  }
+ ],
+ "marks": [
+  {
+   "id": "k0",
+   "at": 257580,
+   "note": "pricing decision"
+  }
+ ],
+ "expected": {
+  "decisions": [
+   "Beta opens Monday Oct 27, if QA signs off the Android fix",
+   "Two plans in the beta: Free and Plus ($9/month); Team returns in January",
+   "No public announcement until the Android fix is confirmed; email the waitlist on the 27th"
+  ],
+  "action_items": [
+   [
+    "Fix Android calendar sync (token refresh)",
+    "Rafael Ortiz",
+    "Oct 22"
+   ],
+   [
+    "Load test",
+    "Rafael Ortiz",
+    "Oct 20"
+   ],
+   [
+    "Submit iOS build to App Store",
+    "Rafael Ortiz",
+    "Oct 23"
+   ],
+   [
+    "Rewrite pricing page copy",
+    "Elena Park",
+    "Oct 17"
+   ],
+   [
+    "Test send of launch email",
+    "Elena Park",
+    "Oct 21"
+   ],
+   [
+    "Review pricing copy",
+    "Me",
+    "Oct 17"
+   ],
+   [
+    "Write FAQ answers for support",
+    "Me",
+    "Oct 22"
+   ],
+   [
+    "Ask Chen in finance about the database budget",
+    "Me",
+    "Friday"
+   ]
+  ],
+  "open_questions": [
+   "Can we afford the larger database tier if the load test fails (ask Chen, revisit Friday)"
+  ]
+ },
+ "note": "Synthetic meeting written for the summary-language check (docs/summary-languages-qwen.md). Not a real recording."
+}

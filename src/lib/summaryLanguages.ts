@@ -100,9 +100,15 @@ export function settingLanguageView(
 
 /**
  * Whether the local AI model `modelId` did poorly on this language, so the list says "Works best with cloud AI".
- * Results per local model (Task 8's quality check), keyed by model id; empty until they are measured.
+ * Results per local model id, from the language check (docs/summary-languages-qwen.md): one synthetic meeting
+ * summarized once per language with the real prompt; the languages graded weak or bad. A model with no entry, or an
+ * empty one, has not been measured: qwen3.5-9b and granite-4.2-3b are still to do, so they show no note.
  */
-const POOR_ON_LOCAL: Readonly<Record<string, readonly string[]>> = {};
+const POOR_ON_LOCAL: Readonly<Record<string, readonly string[]>> = {
+  "qwen3.5-4b": ["fil", "sv", "da", "no", "fi", "pl", "ro", "el", "tr", "ar", "he", "hi", "bn", "ur", "ms", "vi", "ko"],
+  "qwen3.5-9b": [],
+  "granite-4.2-3b": [],
+};
 
 export function cloudBetter(code: string, modelId: string | undefined): boolean {
   return modelId !== undefined && (POOR_ON_LOCAL[modelId] ?? []).includes(code);
