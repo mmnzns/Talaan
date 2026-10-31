@@ -39,6 +39,8 @@ export function MainWindow({ route }: { route: Route }) {
     if (!inTauri()) return;
     const offs = [
       onEvent<string>("open-meeting", (id) => navigate(routes.meeting(id))),
+      // The menu bar's Export: the meeting opens with the Export sheet showing.
+      onEvent<string>("export-meeting", (id) => navigate(routes.meeting(id, undefined, true))),
       // Stop in the menu bar: the toast with the time estimate shows here, where the meeting opens.
       onEvent<string>("recording-saved", (id) => void recording.announceSaved(id)),
       onEvent("record-request", () => recording.start()),
@@ -94,7 +96,7 @@ export function MainWindow({ route }: { route: Route }) {
           {route.name === "ask" ? (
             <AskScreen meetingId={selectedId} />
           ) : route.name === "meeting" ? (
-            <MeetingPane id={route.id} jumpTo={route.t} />
+            <MeetingPane id={route.id} jumpTo={route.t} openExport={route.export} />
           ) : (
             <MeetingPane />
           )}

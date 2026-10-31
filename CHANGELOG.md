@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- **Export what you want:** every way out of a meeting (copy as text, Markdown, PDF, text file, Notion) now lets you pick the summary, the transcript or both. "Copy as text" moved into Export, and the menu bar's button on recent meetings is now Export.
+
 ## 1.1.1 (2026-10-19)
 
 - **Know when there's a new version:** Talaan checks at launch and every 6 hours, sends one notification per new version, and shows "Update now" in the main window and the tray. It never interrupts a recording: no update installs while you record, and no recording starts while an update installs.
