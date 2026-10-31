@@ -123,7 +123,8 @@ mod tests {
         wav(&d.path().join(ME_WAV), &[30_000; 100]);
         wav(&d.path().join(THEM_WAV), &[30_000; 100]);
         let s = read(&ensure(d.path()).unwrap().unwrap());
-        assert!(s.iter().all(|x| *x > 26_000 && *x <= i16::MAX), "{:?}", &s[..3]);
+        // Wrapped samples would come out negative.
+        assert!(s.iter().all(|x| *x > 26_000), "{:?}", &s[..3]);
     }
 
     #[test]
