@@ -4,6 +4,7 @@
 
 use serde_json::Value;
 use std::sync::{Mutex, OnceLock};
+use voice_engine_client::Fallback;
 
 /// The PC's discrete graphics card, by the name the driver gives it. Windows only (a cheap DXGI listing; no helper
 /// starts). None on the Mac, with built-in graphics only, or when the check fails.
@@ -63,6 +64,25 @@ pub fn apply_default_on_save(value: &mut Value, stored: Option<&Value>, mac: boo
     apply_default(value, mac, card)
 }
 
+/// Whether the engine's reason for using the processor is a card that really failed: the only reasons Talaan tells the
+/// person about ("Graphics card failed, used the processor"). `RememberedFailure` (they were told already),
+/// `NoCardHelper` and `NoCardPath` (no card runtime here) are not failures; neither is `None` (the card ran, or was
+/// not asked for).
+pub fn is_card_failure(fallback: Option<Fallback>) -> bool {
+    matches!(fallback, Some(Fallback::CardFailed | Fallback::CardOutOfMemory))
+}
+
+/// The engine's reason for using the processor, for the log.
+pub fn reason(fallback: Fallback) -> &'static str {
+    match fallback {
+        Fallback::NoCardPath => "no card path for this model",
+        Fallback::CardFailed => "card failed",
+        Fallback::CardOutOfMemory => "card out of memory",
+        Fallback::RememberedFailure => "card failed earlier",
+        Fallback::NoCardHelper => "no card helper in this build",
+    }
+}
+
 /// Which jobs fell back to the processor since the last "Try again", with the backend that did the work.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct FellBack {
@@ -95,6 +115,15 @@ pub fn clear_fallbacks() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn only_a_failed_or_out_of_memory_card_counts_as_a_card_failure() {
+        assert!(is_card_failure(Some(Fallback::CardFailed)));
+        assert!(is_card_failure(Some(Fallback::CardOutOfMemory)));
+        for no in [None, Some(Fallback::RememberedFailure), Some(Fallback::NoCardHelper), Some(Fallback::NoCardPath)] {
+            assert!(!is_card_failure(no), "{no:?}");
+        }
+    }
 
     #[test]
     fn the_card_default_is_on_on_the_mac_and_on_a_pc_only_with_a_discrete_card() {

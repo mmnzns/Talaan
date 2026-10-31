@@ -6,6 +6,8 @@ use super::diarize::SpeakerSplitter;
 use crate::models::{Models, DEFAULT_SPEECH, DIARIZATION, VAD};
 use voice_engine_models::{catalog, ModelHandle, ModelInfo};
 use voice_engine_stt::SpeechBackend;
+#[cfg(test)]
+use voice_engine_stt::Fallback;
 use super::pipeline::{run, Detector, PipelineError};
 use crate::eta::{self, Device};
 use crate::storage::model::{MeetingFile, MeetingStatus, ProcessingError, TranscriptionInfo};
@@ -219,7 +221,7 @@ impl Worker {
 
 /// Whether the setting means the graphics card for this model on this computer: Metal for Whisper on the Mac,
 /// Vulkan (Whisper) or DirectML (Parakeet) on Windows. A model with no card path here is never asked for one, so
-/// the engine's `fell_back` only means a real failure.
+/// the engine's `fallback` is never `NoCardPath` by design (and only `CardFailed` and `CardOutOfMemory` are failures).
 pub fn asks_card(model: &ModelInfo, use_gpu: bool) -> bool {
     use_gpu
         && if cfg!(target_os = "macos") {
@@ -405,7 +407,7 @@ fn process(deps: &Deps, id: &str, loaded: &mut Option<Loaded>, cancel: &AtomicBo
         };
         let backend = engine.backend();
         match &backend {
-            Some(b) => log::info!("speech engine loaded in {:.1}s: {} on {}{}", load.elapsed().as_secs_f32(), engine.label(), b.backend, if b.fell_back { " (the graphics card failed)" } else { "" }),
+            Some(b) => log::info!("speech engine loaded in {:.1}s: {} on {}{}", load.elapsed().as_secs_f32(), engine.label(), b.backend, if crate::gpu::is_card_failure(b.fallback) { " (the graphics card failed)" } else { "" }),
             None => log::info!("speech engine loaded in {:.1}s: {}", load.elapsed().as_secs_f32(), engine.label()),
         }
         *loaded = Some(Loaded { model_id: config.model.id, use_gpu: config.use_gpu, engine, backend, detector, splitter: None });
@@ -443,7 +445,7 @@ fn process(deps: &Deps, id: &str, loaded: &mut Option<Loaded>, cancel: &AtomicBo
     let result = run(&dir, l.engine.as_mut(), l.detector.as_mut(), config.language.as_deref(), splitter, cancel, &mut report);
     // Where the work ended up (the engine knows after the run: the speech helper can fall back to the processor mid-way).
     let backend = l.engine.backend().or_else(|| l.backend.clone());
-    if let Some(b) = backend.as_ref().filter(|b| b.fell_back) {
+    if let Some(b) = backend.as_ref().filter(|b| crate::gpu::is_card_failure(b.fallback)) {
         crate::gpu::note_stt_fallback(&b.backend);
     }
 
@@ -501,7 +503,7 @@ fn process(deps: &Deps, id: &str, loaded: &mut Option<Loaded>, cancel: &AtomicBo
                     speech_ms: out.speech_ms,
                     took_ms: started.elapsed().as_millis() as u64,
                     finished_at: chrono::Local::now().fixed_offset().to_rfc3339(),
-                    gpu_fell_back: backend.as_ref().is_some_and(|b| b.fell_back),
+                    gpu_fell_back: backend.as_ref().is_some_and(|b| crate::gpu::is_card_failure(b.fallback)),
                     device: backend.as_ref().and_then(|b| b.device.clone()),
                 });
             });
@@ -648,16 +650,26 @@ mod tests {
 
     #[test]
     fn the_meeting_records_where_the_model_ran_and_a_real_fallback() {
-        let card = info_after(SpeechBackend { backend: "metal".into(), device: Some("Apple M3".into()), fell_back: false });
+        let card = info_after(SpeechBackend { backend: "metal".into(), device: Some("Apple M3".into()), fallback: None });
         assert!(!card.gpu_fell_back);
         assert_eq!(card.device.as_deref(), Some("Apple M3"));
-        let fell = info_after(SpeechBackend { backend: "cpu".into(), device: None, fell_back: true });
+        let fell = info_after(SpeechBackend { backend: "cpu".into(), device: None, fallback: Some(Fallback::CardFailed) });
         assert!(fell.gpu_fell_back);
         assert_eq!(fell.device, None);
         // Both fields are left out of the file when they say nothing.
-        let plain = serde_json::to_value(info_after(SpeechBackend { backend: "cpu".into(), device: None, fell_back: false })).unwrap();
+        let plain = serde_json::to_value(info_after(SpeechBackend { backend: "cpu".into(), device: None, fallback: None })).unwrap();
         assert!(plain.get("gpuFellBack").is_none() && plain.get("device").is_none());
         assert_eq!(serde_json::to_value(fell).unwrap()["gpuFellBack"], true);
+    }
+
+    #[test]
+    fn the_meeting_says_the_card_failed_only_for_a_card_failure() {
+        let says = |fallback| info_after(SpeechBackend { backend: "cpu".into(), device: None, fallback: Some(fallback) }).gpu_fell_back;
+        assert!(says(Fallback::CardFailed));
+        assert!(says(Fallback::CardOutOfMemory));
+        assert!(!says(Fallback::RememberedFailure));
+        assert!(!says(Fallback::NoCardHelper));
+        assert!(!says(Fallback::NoCardPath));
     }
 
     #[test]
@@ -668,7 +680,7 @@ mod tests {
         assert_eq!(asks_card(turbo, true), cfg!(target_os = "macos") || (cfg!(windows) && (turbo.gpu.windows_vulkan || turbo.gpu.windows_directml)));
         if cfg!(target_os = "macos") {
             assert!(asks_card(turbo, true));
-            assert!(!asks_card(parakeet, true), "Parakeet has no card path on the Mac, so `fell_back` is never by design");
+            assert!(!asks_card(parakeet, true), "Parakeet has no card path on the Mac, so `fallback` is never a failure by design");
         }
     }
 

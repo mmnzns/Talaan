@@ -180,7 +180,7 @@ impl SummaryEngine for LocalEngine {
         };
         match with_cancel(&self.ai, cancel, || self.ai.complete(c, &mut |_| {})) {
             Ok(o) => {
-                record_outcome(&o.backend.backend, o.fell_back);
+                record_outcome(&o.backend.backend, o.fallback);
                 Ok(o.value.text)
             }
             Err(e) => {

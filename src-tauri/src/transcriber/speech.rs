@@ -37,7 +37,7 @@ pub struct EngineSpeech {
 
 impl EngineSpeech {
     /// `use_gpu`: whether the setting asks for the graphics card for this model (the caller already limited it to
-    /// models that have a card path on this platform, so `fell_back` only means a real failure).
+    /// models that have a card path on this platform, so a `fallback` that says the card failed is a real failure).
     pub fn load(model: &'static ModelInfo, handle: ModelHandle, use_gpu: bool) -> Result<Self, String> {
         let inner = voice_engine_stt::load(model, handle.dir(), LoadOptions { gpu: use_gpu, threads: None }).map_err(|e| speech_error_text(&e, model.name))?;
         Ok(EngineSpeech { inner, label: model.name.to_string(), kind: model.kind, _model: handle })
@@ -141,8 +141,8 @@ mod tests {
     fn engine_segments_become_pieces() {
         let t = Transcript {
             segments: vec![
-                Segment { start_ms: 0, end_ms: 900, text: " Hello there.".into(), words: vec![] },
-                Segment { start_ms: 900, end_ms: 1000, text: " [BLANK_AUDIO]".into(), words: vec![] },
+                Segment { start_ms: 0, end_ms: 900, text: " Hello there.".into(), words: vec![], starts_word: true },
+                Segment { start_ms: 900, end_ms: 1000, text: " [BLANK_AUDIO]".into(), words: vec![], starts_word: true },
             ],
             language: Some("en".into()),
             stopped_early_at_ms: None,

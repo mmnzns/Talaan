@@ -8,7 +8,7 @@ use crate::i18n::tr;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
-use voice_engine_client::{EngineError, Limits, LlmClient, LlmConfig};
+use voice_engine_client::{EngineError, Fallback, Limits, LlmClient, LlmConfig};
 
 const CPU_HELPER: &str = "talaan-llm";
 /// The Windows Vulkan build, next to the processor one.
@@ -95,7 +95,12 @@ pub fn to_summary_error(e: EngineError) -> SummaryError {
     match e {
         EngineError::Cancelled => SummaryError::Cancelled,
         EngineError::OutOfMemory => SummaryError::Failed(tr("local_ai.out_of_memory")),
-        EngineError::Crashed => SummaryError::Failed(tr("local_ai.crashed")),
+        EngineError::Crashed { exit_code, signal, detail } => {
+            // The engine's detail is the helper's last stderr lines, with no user text: fit for the log.
+            let how = format!("exit {}, signal {}", exit_code.map_or("none".to_string(), |c| c.to_string()), signal.map_or("none".to_string(), |s| s.to_string()));
+            log::warn!("local AI helper crashed: {}: {}", crate::logging::text(how), crate::logging::text(detail));
+            SummaryError::Failed(tr("local_ai.crashed"))
+        }
         EngineError::TimedOut => SummaryError::Failed(tr("local_ai.too_slow")),
         EngineError::CouldNotStart { .. } => SummaryError::Failed(tr("local_ai.no_start")),
         EngineError::ModelMissing { .. } => SummaryError::Unavailable(tr("ai.download_local_short")),
@@ -109,12 +114,17 @@ pub fn to_summary_error(e: EngineError) -> SummaryError {
     }
 }
 
-/// Notes where a local AI call ran; when the graphics card failed in it (the processor did the job), Settings shows it.
-pub fn record_outcome(backend: &str, fell_back: bool) {
-    if fell_back {
+/// Notes where a local AI call ran. Only a card that really failed (the processor did the job) is noted for Settings;
+/// the other reasons for the processor (a failure remembered from before, no card helper or runtime) are just logged.
+pub fn record_outcome(backend: &str, fallback: Option<Fallback>) {
+    let failed = crate::gpu::is_card_failure(fallback);
+    if failed {
         crate::gpu::note_llm_fallback(backend);
     }
-    log::info!("local AI ran on {backend}{}", if fell_back { " (the graphics card failed; the processor did the job)" } else { "" });
+    match fallback {
+        Some(why) => log::info!("local AI ran on {backend}, not the graphics card ({}{})", crate::logging::text(crate::gpu::reason(why)), if failed { ", reported once" } else { "" }),
+        None => log::info!("local AI ran on {backend}"),
+    }
 }
 
 /// Whether the engine remembers a card failure for this app version for the job (`which`: "summary" or "search").
@@ -135,7 +145,7 @@ mod tests {
     fn engine_errors_become_talaan_messages() {
         assert_eq!(to_summary_error(E::Cancelled), SummaryError::Cancelled);
         assert_eq!(to_summary_error(E::OutOfMemory), SummaryError::Failed(tr("local_ai.out_of_memory")));
-        assert_eq!(to_summary_error(E::Crashed), SummaryError::Failed(tr("local_ai.crashed")));
+        assert_eq!(to_summary_error(E::Crashed { exit_code: Some(1), signal: None, detail: "abort()".into() }), SummaryError::Failed(tr("local_ai.crashed")));
         assert_eq!(to_summary_error(E::TimedOut), SummaryError::Failed(tr("local_ai.too_slow")));
         assert_eq!(to_summary_error(E::CouldNotStart { message: "x".into() }), SummaryError::Failed(tr("local_ai.no_start")));
         assert_eq!(to_summary_error(E::ModelMissing { path: "x".into() }), SummaryError::Unavailable(tr("ai.download_local_short")));

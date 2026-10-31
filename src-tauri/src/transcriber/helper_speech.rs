@@ -5,7 +5,7 @@
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use voice_engine_client::{Limits, SttConfig};
+use voice_engine_client::{Fallback, Limits, SttConfig};
 
 /// The graphics card helper's file name (without the extension).
 pub const GPU_HELPER: &str = "talaan-stt-vulkan";
@@ -36,6 +36,19 @@ pub fn config(exe_dir: &Path, data_dir: &Path, version: &str) -> SttConfig {
         // No events arrive while Whisper decodes a chunk, and Talaan's Whisper chunks are up to
         // `Shape::whisper().max_len`, so the stall limit sits well above the longest decode.
         limits: Limits { stall: Duration::from_secs(10 * 60), ..Limits::default() },
+    }
+}
+
+/// The reason to keep for a loaded engine after a request. The card failed when the model loaded (`before`); the
+/// requests that follow run on the processor helper and say `RememberedFailure` (the card was not tried), which would
+/// lose that, so the failure stays until a request says something else: the card ran again after "Try again"
+/// (`None`), or failed anew.
+#[cfg_attr(not(windows), allow(dead_code))] // only the Windows speech helper has a load and requests to follow; the function is pure, so it is tested everywhere
+pub fn keep_card_failure(before: Option<Fallback>, now: Option<Fallback>) -> Option<Fallback> {
+    if now == Some(Fallback::RememberedFailure) && crate::gpu::is_card_failure(before) {
+        before
+    } else {
+        now
     }
 }
 
@@ -73,11 +86,12 @@ pub use windows_impl::HelperSpeech;
 mod windows_impl {
     use std::sync::Arc;
 
+    use super::keep_card_failure;
     use voice_engine_client::SttClient;
     use voice_engine_models::{ModelHandle, ModelInfo};
     use voice_engine_protocol::stt::{SttLoad, SttModelKind};
     use voice_engine_protocol::Backend;
-    use voice_engine_stt::{ChunkOptions, SpeechBackend, Timing};
+    use voice_engine_stt::{ChunkOptions, Fallback, SpeechBackend, Timing};
 
     use crate::transcriber::engine::{ChunkResult, Engine};
     use crate::transcriber::speech::to_chunk;
@@ -91,8 +105,8 @@ mod windows_impl {
         _model: ModelHandle, // keeps the files from being erased while loaded
     }
 
-    fn placed(b: &Backend, fell_back: bool) -> SpeechBackend {
-        SpeechBackend { backend: b.backend.clone(), device: b.device.clone(), fell_back }
+    fn placed(b: &Backend, fallback: Option<Fallback>) -> SpeechBackend {
+        SpeechBackend { backend: b.backend.clone(), device: b.device.clone(), fallback }
     }
 
     impl HelperSpeech {
@@ -107,7 +121,7 @@ mod windows_impl {
                     threads: None,
                 })
                 .map_err(|e| helper_error_text(&e, model.name))?;
-            let last = Some(placed(&out.backend, out.fell_back));
+            let last = Some(placed(&out.backend, out.fallback));
             Ok(HelperSpeech { client, label: model.name.to_string(), last, _model: handle })
         }
     }
@@ -116,7 +130,7 @@ mod windows_impl {
         fn transcribe(&mut self, samples: &[f32], language: Option<&str>) -> Result<ChunkResult, String> {
             let opts = ChunkOptions { language: language.map(str::to_string), timing: Timing::Segments, ..Default::default() };
             let out = self.client.transcribe(samples, &opts).map_err(|e| helper_error_text(&e, &self.label))?;
-            self.last = Some(placed(&out.backend, out.fell_back || self.last.as_ref().is_some_and(|b| b.fell_back)));
+            self.last = Some(placed(&out.backend, keep_card_failure(self.last.as_ref().and_then(|b| b.fallback), out.fallback)));
             Ok(to_chunk(out.value))
         }
         fn label(&self) -> &str {
@@ -157,7 +171,7 @@ mod tests {
         let generic = tr("transcribe.helper_failed");
         for e in [
             E::CouldNotStart { message: "C:\\Users\\someone\\talaan-stt.exe".into() },
-            E::Crashed,
+            E::Crashed { exit_code: None, signal: Some(6), detail: "abort()".into() },
             E::TimedOut,
             E::Cancelled,
             E::GpuFailed { fell_back: false },
@@ -167,6 +181,18 @@ mod tests {
             assert_eq!(m, generic);
             assert!(!m.contains("Users") && !m.contains("Crashed"), "{m}");
         }
+    }
+
+    #[test]
+    fn a_card_failure_at_load_survives_the_remembered_failure_that_follows() {
+        use voice_engine_stt::Fallback::*;
+        assert_eq!(keep_card_failure(Some(CardFailed), Some(RememberedFailure)), Some(CardFailed));
+        assert_eq!(keep_card_failure(Some(CardOutOfMemory), Some(RememberedFailure)), Some(CardOutOfMemory));
+        // Anything else the request says wins: the card ran again (Try again), failed anew, or never had a path.
+        assert_eq!(keep_card_failure(Some(CardFailed), None), None);
+        assert_eq!(keep_card_failure(Some(CardFailed), Some(CardOutOfMemory)), Some(CardOutOfMemory));
+        assert_eq!(keep_card_failure(Some(NoCardPath), Some(RememberedFailure)), Some(RememberedFailure));
+        assert_eq!(keep_card_failure(None, Some(NoCardHelper)), Some(NoCardHelper));
     }
 
     #[test]
