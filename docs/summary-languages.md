@@ -1,11 +1,18 @@
-# Summary languages with the local AI (Qwen 3.5 4B)
+# Summary languages with the local AI
 
-Which of the 32 summary languages the local AI writes poorly. The languages graded weak or bad are the ones that show
-"Works best with cloud AI" when Qwen 3.5 4B is the summary model (`POOR_ON_LOCAL` in `src/lib/summaryLanguages.ts`).
+Which of the 32 summary languages each local AI model writes poorly. The languages graded weak or bad are the ones that
+show "Works best with online AI" when that model is the summary model (`POOR_ON_LOCAL` in
+`src/lib/summaryLanguages.ts`, one list per model id).
+
+| Model | Measured | Languages with the note |
+| --- | --- | --- |
+| `qwen3.5-4b` | yes | 17 of 32 (see below) |
+| `granite-4.2-3b` | yes | 30 of 32: everything but English and Chinese (Simplified) |
+| `qwen3.5-9b` | no | none until measured: it is not on the test Mac and is a 5.5 GB download |
 
 ## Method
 
-- Model: Qwen 3.5 4B, Q4_K_M, Metal (card on), thinking off, as the app runs it.
+- Models: Q4_K_M files, Metal (card on), thinking off, as the app runs them. Same method for every model.
 - Input: `fixtures/summary.language-check.json`, a synthetic English meeting (about 10 minutes, 3 speakers, decisions,
   action items with owners and dates, one open question, and one name slip: the speaker says "Dana" and is corrected to
   "Elena").
@@ -18,7 +25,9 @@ Which of the 32 summary languages the local AI writes poorly. The languages grad
   - bad: unusable: degenerate text or facts lost.
 - One run per language, temperature 0.2, so a language near a boundary could grade differently on another run.
 
-## Results
+## Qwen 3.5 4B
+
+### Results
 
 All 32 replies parsed as Talaan summaries on the first try (no retries). The reply is JSON the model is forced to follow,
 so a bad language still parses; the problems are in the words. Total 1392 s for 32 summaries, median
@@ -59,19 +68,69 @@ so a bad language still parses; the problems are in the words. Total 1392 s for 
 | Chinese (Simplified) (`zh-Hans`) | good | Fluent and accurate in Simplified; merges some items. | yes | 35 |
 | Chinese (Traditional) (`zh-Hant`) | good | Fluent in Traditional characters; "候選名單" is an odd word for waitlist; some items merged. | yes | 37 |
 
-## What shows the note
+### What shows the note
 
 Qwen 3.5 4B: 17 of 32 (weak: fil, sv, da, no, fi, pl, ro, el, tr, ar, hi, bn, ms, vi, ko; bad: he, ur).
 Good: en, es, fr, de, pt, it, nl, cs, ru, uk, id, th, ja, zh-Hans, zh-Hant.
 
-Not measured yet (no note until they are): `qwen3.5-9b`, `granite-4.2-3b`. Run the same check with their model files
-(`TALAAN_LLM_MODEL=<gguf> TALAAN_LANGCHECK_OUT=<folder> cargo test --release language_check -- --ignored --nocapture`)
-and fill their lists.
 
-## Findings worth knowing
+### Findings worth knowing
 
 - Due dates are not written in the target language in several languages that are otherwise fine (de, ru, id, th, hi,
   bn, ar, ro, da and others show "Friday, October 17"). The prompt tells the model to give the deadline "as said" ("Friday", "Oct 17"), so it copies the
   transcript's words. A prompt line for due dates would fix it; not changed here.
 - The user's own speaker label "Me" is treated as a name in many languages ("Me vai escrever", "Me (utente)").
 - Several languages invent weekdays for a date (vi, ro, el, he, bn).
+
+## Granite 4.2 3B
+
+Same fixture, prompt and bar. All 32 replies parsed on the first try. Total 835 s for 32 summaries, median
+26 s each (range 21 to 34 s), faster than Qwen 3.5 4B.
+
+The headline: Granite mostly ignores "Write everything in <language>". In 29 of the 31 non-English languages it wrote the whole summary
+in English (English words and Latin script throughout, including for Russian, Arabic, Japanese and the other non-Latin
+languages). Only German and Chinese (Simplified) came back in the language asked for. So for Granite the note should
+show on almost every language: for those, a summary in the wrong language is the likely result, which is the first
+thing the spec says to flag.
+
+| Language | Grade | Reason | Parse ok | Seconds |
+| --- | --- | --- | --- | --- |
+| English (`en`) | good | Accurate owners and dates; decisions repeat the action items, and "Me" is treated as a name. | yes | 28 |
+| Filipino (`fil`) | bad | Wrote the whole summary in English, ignoring the language. | yes | 23 |
+| Spanish (`es`) | bad | Wrote the whole summary in English, ignoring the language. | yes | 28 |
+| French (`fr`) | bad | Wrote the whole summary in English, ignoring the language. | yes | 27 |
+| German (`de`) | weak | German, but with wrong verb forms ("Me ... prüfe", "teile"), a made-up compound ("Beta-Veröffentlichungdatum"), an English comment in an owner ("Chen (implizit, aber nicht im Transkript genannt)"), and English due dates. | yes | 31 |
+| Portuguese (`pt`) | bad | Wrote the whole summary in English, ignoring the language. | yes | 25 |
+| Italian (`it`) | bad | Wrote the whole summary in English, ignoring the language. | yes | 25 |
+| Dutch (`nl`) | bad | Wrote the whole summary in English, ignoring the language. | yes | 28 |
+| Swedish (`sv`) | bad | Wrote the whole summary in English, ignoring the language. | yes | 27 |
+| Danish (`da`) | bad | Wrote the whole summary in English, ignoring the language. | yes | 26 |
+| Norwegian (`no`) | bad | Wrote the whole summary in English, ignoring the language. | yes | 26 |
+| Finnish (`fi`) | bad | Wrote the whole summary in English, ignoring the language. | yes | 25 |
+| Polish (`pl`) | bad | Wrote the whole summary in English, ignoring the language. | yes | 34 |
+| Czech (`cs`) | bad | Wrote the whole summary in English, ignoring the language. | yes | 24 |
+| Romanian (`ro`) | bad | Wrote the whole summary in English, ignoring the language. | yes | 24 |
+| Greek (`el`) | bad | Wrote the whole summary in English, ignoring the language. | yes | 27 |
+| Russian (`ru`) | bad | Wrote the whole summary in English, ignoring the language. | yes | 21 |
+| Ukrainian (`uk`) | bad | Wrote the whole summary in English, ignoring the language. | yes | 25 |
+| Turkish (`tr`) | bad | Wrote the whole summary in English, ignoring the language. | yes | 26 |
+| Arabic (`ar`) | bad | Wrote the whole summary in English, ignoring the language. | yes | 23 |
+| Hebrew (`he`) | bad | Wrote the whole summary in English, ignoring the language. | yes | 25 |
+| Hindi (`hi`) | bad | Wrote the whole summary in English, ignoring the language. | yes | 29 |
+| Bengali (`bn`) | bad | Wrote the whole summary in English, ignoring the language. | yes | 27 |
+| Urdu (`ur`) | bad | Wrote the whole summary in English, ignoring the language. | yes | 27 |
+| Indonesian (`id`) | bad | Wrote the whole summary in English, ignoring the language. | yes | 24 |
+| Malay (`ms`) | bad | Wrote the whole summary in English, ignoring the language. | yes | 26 |
+| Vietnamese (`vi`) | bad | Wrote the whole summary in English, ignoring the language. | yes | 23 |
+| Thai (`th`) | bad | Wrote the whole summary in English, ignoring the language. | yes | 24 |
+| Japanese (`ja`) | bad | Wrote the whole summary in English, ignoring the language. | yes | 26 |
+| Korean (`ko`) | bad | Wrote the whole summary in English, ignoring the language. | yes | 27 |
+| Chinese (Simplified) (`zh-Hans`) | good | Real Simplified Chinese with Latin plan names; "Me" kept as "我（Me）"; Chen item given the wrong due date; due fields in English. | yes | 32 |
+| Chinese (Traditional) (`zh-Hant`) | bad | Wrote the whole summary in English, ignoring the language. | yes | 23 |
+
+Granite shows the note for 30 of 32 languages (bad: all but en, de, zh-Hans; weak: de).
+
+## Qwen 3.5 9B
+
+Not measured. It is not on the test Mac and needs a 5.5 GB download, so its list is empty and it shows no note until
+it is run (`TALAAN_LLM_MODEL=<gguf> TALAAN_LANGCHECK_OUT=<folder> cargo test --release language_check -- --ignored --nocapture`).

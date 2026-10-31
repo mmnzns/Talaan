@@ -386,5 +386,5 @@
    "Can we afford the larger database tier if the load test fails (ask Chen, revisit Friday)"
   ]
  },
- "note": "Synthetic meeting written for the summary-language check (docs/summary-languages-qwen.md). Not a real recording."
+ "note": "Synthetic meeting written for the summary-language check (docs/summary-languages.md). Not a real recording."
 }

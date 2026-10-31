@@ -36,6 +36,7 @@ describe("the language picker", () => {
     const markup = html({ localModel: "qwen3.5-4b" });
     expect(option(markup, "fil")).toContain("online AI");
     expect(option(markup, "en")).not.toContain("online AI");
+    expect(option(html({ localModel: "granite-4.2-3b" }), "ja")).toContain("online AI");
     expect(html({ localModel: "qwen3.5-9b" })).not.toContain("online AI");
     expect(html({})).not.toContain("online AI");
   });

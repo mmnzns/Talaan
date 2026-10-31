@@ -128,9 +128,15 @@ describe("cloudBetter", () => {
     expect(cloudBetter("ja", "qwen3.5-4b")).toBe(false);
   });
 
+  it("is on for nearly every language with Granite 4.2 3B, which mostly answered in English; off for English and Chinese (Simplified)", () => {
+    expect(cloudBetter("ja", "granite-4.2-3b")).toBe(true);
+    expect(cloudBetter("fil", "granite-4.2-3b")).toBe(true);
+    expect(cloudBetter("en", "granite-4.2-3b")).toBe(false);
+    expect(cloudBetter("zh-Hans", "granite-4.2-3b")).toBe(false);
+  });
+
   it("is per model: a model that is not measured shows no note", () => {
     expect(cloudBetter("fil", "qwen3.5-9b")).toBe(false);
-    expect(cloudBetter("fil", "granite-4.2-3b")).toBe(false);
     expect(cloudBetter("fil", "some-other-model")).toBe(false);
     expect(cloudBetter("fil", undefined)).toBe(false);
   });

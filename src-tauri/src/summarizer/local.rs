@@ -326,7 +326,7 @@ mod language_check {
                 continue;
             }
             let replies = std::sync::Mutex::new(vec![]);
-            let mut engine = Recording { inner: LocalEngine::new(ai.clone(), PathBuf::from(&model), "Qwen3.5 4B".into(), true), replies: &replies };
+            let mut engine = Recording { inner: LocalEngine::new(ai.clone(), PathBuf::from(&model), model.rsplit('/').next().unwrap_or("local").into(), true), replies: &replies };
             let t = Instant::now();
             let r = summarize(&m, &mut engine, &code, &Options::default(), &cancel, &mut |_| {});
             let secs = t.elapsed().as_secs_f32();
