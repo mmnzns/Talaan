@@ -1,3 +1,4 @@
+import type { ExportScope } from "../lib/share";
 import type { NotionDestination } from "./settings";
 import type {
   AskAnswer,
@@ -85,7 +86,7 @@ export interface MeetingStore {
   listTags(): Promise<string[]>;
   ask(question: string, scope: AskScope): Promise<AskAnswer>;
   /** Sends the meeting to Notion; returns the new page's URL. */
-  exportToNotion(id: MeetingId, destination: NotionDestination, includeTranscript: boolean): Promise<string>;
+  exportToNotion(id: MeetingId, destination: NotionDestination, scope: ExportScope): Promise<string>;
   /** Fires on any change. Returns an unsubscribe function. */
   subscribe(listener: () => void): () => void;
 }

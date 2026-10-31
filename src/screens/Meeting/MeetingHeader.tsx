@@ -19,11 +19,12 @@ interface Props {
   canRevert: boolean;
   onToggleEdit: () => void;
   onRevert: () => void;
-  onCopy: (kind: "text" | "email") => void;
+  onCopyEmail: () => void;
   onExport: () => void;
   /** "Email this summary": opens the mail app. */
   onEmail: () => void;
-  copied?: "text" | "email";
+  /** "Copy for email" just ran. */
+  copiedEmail?: boolean;
 }
 
 const languageName = (code: string, ui: string) => {
@@ -34,7 +35,7 @@ const languageName = (code: string, ui: string) => {
   }
 };
 
-export function MeetingHeader({ meeting, editing, canRevert, onToggleEdit, onRevert, onCopy, onExport, onEmail, copied }: Props) {
+export function MeetingHeader({ meeting, editing, canRevert, onToggleEdit, onRevert, onCopyEmail, onExport, onEmail, copiedEmail }: Props) {
   const store = useStore();
   const toast = useToast();
   const t = useT();
@@ -158,9 +159,8 @@ export function MeetingHeader({ meeting, editing, canRevert, onToggleEdit, onRev
             <Button variant={editing ? "strong" : "default"} onClick={onToggleEdit}>
               {editing ? t("meeting.doneEditing") : t("meeting.edit")}
             </Button>
-            <Button onClick={onExport}>{t("meeting.export")}</Button>
-            <Button variant="primary" onClick={() => onCopy("text")}>
-              {copied === "text" ? t("meeting.copied") : t("meeting.copyText")}
+            <Button variant="primary" onClick={onExport}>
+              {t("meeting.export")}
             </Button>
             <Popover
               className="max-h-[50vh] w-64 overflow-y-auto"
@@ -174,11 +174,11 @@ export function MeetingHeader({ meeting, editing, canRevert, onToggleEdit, onRev
                 <>
                   <MenuItem
                     onClick={() => {
-                      onCopy("email");
+                      onCopyEmail();
                       close();
                     }}
                   >
-                    {copied === "email" ? t("meeting.copiedEmail") : t("meeting.copyEmail")}
+                    {copiedEmail ? t("meeting.copiedEmail") : t("meeting.copyEmail")}
                   </MenuItem>
                   <MenuItem
                     onClick={() => {

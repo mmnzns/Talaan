@@ -1,14 +1,26 @@
 # Changelog
 
-## Unreleased
+## 1.2.0 (2026-10-31)
 
-- **Change the language of any summary:** Talaan writes it again from the transcript in the language you pick (about 30 languages, with search), from the summary or the meeting's ⋯ menu. Settings › Summary AI › Summary language has the same list.
-- **Models are shared:** they now live in a folder shared with Craft Concepts Digital's other apps, so a model is downloaded once. The first start after updating moves the models you already have in by itself, without downloading anything again. Delete removes a model for Talaan only; it stays on the computer while another app uses it. The "Reuse models already on this computer" setting is gone, because the shared folder does it.
+**Models and speed**
+- **Models are shared:** they now live in a folder shared with Craft Concepts Digital's other apps, so a model is downloaded once. The first start after updating moves the models you already have in by itself, without downloading anything again. Delete means Talaan stops using a model; the file is erased only when no other app uses it, and Talaan tells you when it stays. The "Reuse models already on this computer" setting is gone, because the shared folder does it.
+- **Ask before deleting a model:** Delete now opens a confirmation that names the model, its size and what will happen, with Cancel selected.
 - **Every local AI model:** Qwen 3.5 4B and 9B and Granite 4.2 3B, each with its size, the memory it needs and its licence.
 - **More speech models:** full-size versions and English-only versions of Whisper and Parakeet.
 - **Parakeet can use the graphics card on Windows.**
-- **"Graphics card failed" only when it did:** the message no longer shows when a model simply has no graphics card path, and Try again now gives the card a new chance in the running app.
-- **Graphics card on by default where it helps:** on the Mac, and on Windows PCs that have a separate graphics card. On Windows a PC with only built-in graphics now starts with the card off, including on a brand-new install; a PC with a separate card keeps what you had (a card you had switched off stays off after updating from 1.1). This is decided once, and what you set after is kept. If the card fails, Status says which part (speech or AI) it failed for and that the processor did the work, with Try again.
+- **Graphics card on by default where it helps:** on the Mac, and on Windows PCs that have a separate graphics card. On Windows a PC with only built-in graphics now starts with the card off, including on a brand-new install; a PC with a separate card keeps what you had (a card you had switched off stays off after updating from 1.1). This is decided once, and what you set after is kept.
+- **"Graphics card failed" only when it did:** the message no longer shows when a model simply has no graphics card path, and Try again now gives the card a new chance in the running app. If the card fails, Status says which part (speech or AI) it failed for and that the processor did the work.
+
+**Summaries**
+- **Change the language of any summary:** Talaan writes it again from the transcript in the language you pick (about 30 languages, with search), from the summary or the meeting's ⋯ menu. Settings › Summary AI › Summary language has the same list.
+
+**Around the meeting**
+- **Export what you want:** every way out of a meeting (copy as text, Markdown, PDF, text file, Notion) now lets you pick the summary, the transcript or both. "Copy as text" moved into Export, and the menu bar's button on recent meetings is now Export.
+- **Import several audio files at once:** drop or pick as many as you like; Talaan imports them one after another.
+- **A date on every meeting:** each row in the list shows its own date, so a second meeting on the same day no longer looks like it has none.
+
+**Easier to use**
+- **Keyboard focus stays inside dialogs:** Tab no longer wanders to the window behind, Escape closes only the top dialog, and focus returns to where you were.
 
 ## 1.1.1 (2026-10-19)
 
