@@ -47,7 +47,12 @@ impl Config {
         }
     }
 
-    pub fn language_for(&self, meeting_language: &str) -> String {
+    /// The language a summary (or follow-up email) is written in: the one picked on the meeting, else the Settings
+    /// language, else, for "Same as meeting", the language the meeting was detected in.
+    pub fn language_for(&self, chosen: Option<&str>, meeting_language: &str) -> String {
+        if let Some(c) = chosen.filter(|c| !c.trim().is_empty()) {
+            return c.to_string();
+        }
         if self.language == "meeting" { meeting_language.to_string() } else { self.language.clone() }
     }
 
@@ -311,7 +316,7 @@ fn process(deps: &Deps, id: &str, auto: bool, cancel: &AtomicBool) {
     };
     log::info!("summary engine ready in {:.1}s: {}", job.elapsed().as_secs_f32(), engine.label());
 
-    let language = config.language_for(&meeting.language);
+    let language = config.language_for(meeting.summary_language.as_deref(), &meeting.language);
     let opts = config.options_for(meeting.template.as_deref());
     let mut last_report = Instant::now() - Duration::from_secs(10);
     let mut first_report: Option<Instant> = None;
@@ -756,8 +761,65 @@ mod tests {
     #[test]
     fn summary_language_follows_the_setting() {
         let c = Config::from_settings(Some(&json!({ "summaryLanguage": "es" })));
-        assert_eq!(c.language_for("en"), "es");
+        assert_eq!(c.language_for(None, "en"), "es");
         let m = Config::from_settings(Some(&json!({})));
-        assert_eq!((m.engine.as_str(), m.language_for("tl").as_str()), ("local", "tl"));
+        assert_eq!((m.engine.as_str(), m.language_for(None, "tl").as_str()), ("local", "tl"));
+        // A blank choice is no choice.
+        assert_eq!(c.language_for(Some(" "), "en"), "es");
+    }
+
+    #[test]
+    fn the_meetings_language_beats_the_settings_language() {
+        let c = Config::from_settings(Some(&json!({ "summaryLanguage": "es" })));
+        assert_eq!(c.language_for(Some("fil"), "en"), "fil");
+        let same = Config::from_settings(Some(&json!({})));
+        assert_eq!(same.language_for(Some("ja"), "tl"), "ja");
+    }
+
+    #[test]
+    fn a_summary_is_written_in_the_meetings_language_and_records_it() {
+        let seen = Arc::new(Mutex::new(vec![]));
+        let seen2 = seen.clone();
+        struct Spy(Arc<Mutex<Vec<String>>>);
+        impl SummaryEngine for Spy {
+            fn complete(&mut self, p: &crate::summarizer::prompt::Prompt, _s: &str, _m: u32, _c: &AtomicBool) -> Result<String, EngineError> {
+                self.0.lock().unwrap().push(p.system.clone());
+                Ok(reply("Plan", "Habang."))
+            }
+            fn context_tokens(&self) -> usize {
+                16_384
+            }
+            fn label(&self) -> String {
+                "Spy".into()
+            }
+        }
+        let (_d, storage, id, w, _) = setup(Box::new(move |_| Ok(Box::new(Spy(seen2.clone())))));
+        {
+            let mut s = storage.lock().unwrap();
+            // Settings say Spanish, the meeting was heard in Filipino, the user picked Japanese for it.
+            s.settings_set(json!({ "summaryEngine": "local", "summaryLanguage": "es" })).unwrap();
+            s.update_meeting_file(&id, |f| {
+                f.language = "tl".into();
+                f.summary_language = Some("ja".into());
+            })
+            .unwrap();
+        }
+        w.enqueue(&id);
+        wait(&w);
+        let s = storage.lock().unwrap().get_meeting(&id).unwrap().summary.unwrap();
+        assert_eq!(s.language.as_deref(), Some("ja"));
+        assert!(seen.lock().unwrap()[0].contains("Write everything in Japanese."));
+        // No choice on the meeting: the Settings language, and the summary says so.
+        {
+            let s = storage.lock().unwrap();
+            s.update_meeting_file(&id, |f| {
+                f.summary_language = None;
+                f.status = MeetingStatus::Summarizing;
+            })
+            .unwrap();
+        }
+        w.enqueue(&id);
+        wait(&w);
+        assert_eq!(storage.lock().unwrap().get_meeting(&id).unwrap().summary.unwrap().language.as_deref(), Some("es"));
     }
 }

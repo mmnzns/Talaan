@@ -66,6 +66,37 @@ impl Storage {
         self.update_meeting_file(id, |f| f.template = template.map(str::to_string))
     }
 
+    /// Puts a meeting back in `summarizing` so the summarizer writes its summary again from the transcript (Generate
+    /// summary, Summarize as…, Summarize in…). `template` and `language`, when given, are remembered on the meeting
+    /// (the type and the language it is written in from now on). Refused, with nothing changed, for a language outside
+    /// the summary languages, a meeting without a transcript and one still being recorded or transcribed.
+    pub fn begin_summary(&self, id: &str, template: Option<&str>, language: Option<&str>) -> Result<()> {
+        if language.is_some_and(|l| !crate::summarizer::prompt::is_summary_language(l)) {
+            return Err(StorageError::Refused(crate::i18n::tr("error.unknown_language")));
+        }
+        if template.is_some_and(|t| !crate::summarizer::templates::exists(t)) {
+            return Err(StorageError::Refused(crate::i18n::tr("error.unknown_template")));
+        }
+        let meeting = self.get_meeting(id)?;
+        if meeting.transcript.is_empty() {
+            return Err(StorageError::Refused(crate::i18n::tr("error.no_transcript_yet")));
+        }
+        if matches!(meeting.item.status, MeetingStatus::Recording | MeetingStatus::Transcribing) {
+            return Err(StorageError::Refused(crate::i18n::tr("error.wait_transcript")));
+        }
+        self.update_meeting_file(id, |f| {
+            f.status = MeetingStatus::Summarizing;
+            f.progress = Some(0.0);
+            f.summary_error = None;
+            if let Some(t) = template {
+                f.template = Some(t.to_string());
+            }
+            if let Some(l) = language {
+                f.summary_language = Some(l.to_string());
+            }
+        })
+    }
+
     /// The user's notes, edited in the meeting view: they replace every mark with text, and marked moments stay.
     /// Blank notes are dropped, a note without a (unique) id gets one, and timed notes come first, in time order.
     /// Refused while recording: the recorder owns the marks until Stop.
@@ -218,6 +249,56 @@ mod tests {
         assert!(s.set_template(&id, Some("nope")).is_err());
         s.set_template(&id, None).unwrap();
         assert_eq!(s.get_meeting(&id).unwrap().template, None);
+    }
+
+    #[test]
+    fn beginning_a_summary_saves_the_language_and_the_meeting_goes_to_summarizing() {
+        let (_d, s) = storage();
+        let id = make(&s);
+        s.save_transcript(&id, &[line("l0", 1_000, "Hello.")]).unwrap();
+        s.set_status(&id, MeetingStatus::Ready).unwrap();
+        s.begin_summary(&id, None, Some("fil")).unwrap();
+        let m = s.get_meeting(&id).unwrap();
+        assert_eq!((m.item.status, m.summary_language.as_deref(), m.template), (MeetingStatus::Summarizing, Some("fil"), None));
+        assert_eq!(m.item.progress, Some(0.0));
+        // Regenerate (no language given) keeps the one chosen before; Summarize as… keeps it too.
+        s.set_status(&id, MeetingStatus::Ready).unwrap();
+        s.begin_summary(&id, Some("interview"), None).unwrap();
+        let m = s.get_meeting(&id).unwrap();
+        assert_eq!((m.summary_language.as_deref(), m.template.as_deref()), (Some("fil"), Some("interview")));
+        // The language is saved in meeting.json under its own name.
+        let raw = std::fs::read_to_string(s.dir(&id).unwrap().join(META)).unwrap();
+        assert!(raw.contains("\"summaryLanguage\": \"fil\""), "{raw}");
+    }
+
+    #[test]
+    fn an_unknown_language_is_refused_and_changes_nothing() {
+        let (_d, s) = storage();
+        let id = make(&s);
+        s.save_transcript(&id, &[line("l0", 1_000, "Hello.")]).unwrap();
+        s.set_status(&id, MeetingStatus::Ready).unwrap();
+        for bad in ["klingon", "", "tl", "zh", "EN"] {
+            assert!(matches!(s.begin_summary(&id, None, Some(bad)), Err(StorageError::Refused(_))), "{bad}");
+        }
+        let m = s.get_meeting(&id).unwrap();
+        assert_eq!((m.item.status, m.summary_language, m.item.progress), (MeetingStatus::Ready, None, None));
+    }
+
+    #[test]
+    fn a_summary_waits_for_the_transcript() {
+        let (_d, s) = storage();
+        let id = make(&s);
+        // No transcript yet.
+        s.set_status(&id, MeetingStatus::Ready).unwrap();
+        assert!(matches!(s.begin_summary(&id, None, Some("fr")), Err(StorageError::Refused(_))));
+        // A transcript, but recording or transcribing is not over.
+        s.save_transcript(&id, &[line("l0", 1_000, "Hello.")]).unwrap();
+        for st in [MeetingStatus::Recording, MeetingStatus::Transcribing] {
+            s.set_status(&id, st).unwrap();
+            assert!(matches!(s.begin_summary(&id, None, Some("fr")), Err(StorageError::Refused(_))));
+        }
+        let m = s.get_meeting(&id).unwrap();
+        assert_eq!((m.item.status, m.summary_language), (MeetingStatus::Transcribing, None));
     }
 
     #[test]

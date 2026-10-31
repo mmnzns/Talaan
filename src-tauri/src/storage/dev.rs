@@ -65,6 +65,7 @@ impl Storage {
             summary_error: None,
             transcript_only: m.transcript_only,
             template: m.template.clone(),
+            summary_language: m.summary_language.clone(),
             retranscribe_model: None,
             exported_copy: None,
             autosave_pending: None,

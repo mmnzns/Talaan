@@ -390,6 +390,7 @@ pub(crate) mod tests {
             transcription: None,
             transcript_only: false,
             template: None,
+            summary_language: None,
         }
     }
 

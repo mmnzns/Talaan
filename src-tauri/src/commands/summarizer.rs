@@ -209,7 +209,7 @@ pub fn requeue_waiting(app: &AppHandle) {
 /// Generate summary (also: regenerate). Needs a transcript.
 #[tauri::command]
 pub fn meetings_generate_summary(app: AppHandle, state: State<AppState>, s: State<SummarizerState>, id: String) -> CmdResult<()> {
-    start_summary(&app, &state, &s, &id, None)
+    start_summary(&app, &state, &s, &id, None, None)
 }
 
 /// The meeting type to summarize a meeting as (from the recording window); none for the Settings default.
@@ -226,29 +226,20 @@ pub fn meetings_summarize_as(app: AppHandle, state: State<AppState>, s: State<Su
     if !templates::exists(&template) {
         return Err(refused(tr("error.unknown_template")));
     }
-    start_summary(&app, &state, &s, &id, Some(&template))
+    start_summary(&app, &state, &s, &id, Some(&template), None)
 }
 
-fn start_summary(app: &AppHandle, state: &State<AppState>, s: &State<SummarizerState>, id: &str, template: Option<&str>) -> CmdResult<()> {
-    let id = id.to_string();
-    let storage = state.lock();
-    let meeting = storage.get_meeting(&id)?;
-    if meeting.transcript.is_empty() {
-        return Err(refused(tr("error.no_transcript_yet")));
-    }
-    if matches!(meeting.item.status, MeetingStatus::Recording | MeetingStatus::Transcribing) {
-        return Err(refused(tr("error.wait_transcript")));
-    }
-    storage.update_meeting_file(&id, |f| {
-        f.status = MeetingStatus::Summarizing;
-        f.progress = Some(0.0);
-        f.summary_error = None;
-        if let Some(t) = template {
-            f.template = Some(t.to_string());
-        }
-    })?;
-    drop(storage);
-    s.enqueue(&id);
+/// The meeting's ⋯ menu › Summarize in…, and the summary card's Change language: remembers the language on the
+/// meeting and writes the summary again from the transcript in it (never a translation of the old summary).
+/// `language` is one of the summary languages; anything else is refused before anything changes.
+#[tauri::command]
+pub fn meetings_summarize_in(app: AppHandle, state: State<AppState>, s: State<SummarizerState>, id: String, language: String) -> CmdResult<()> {
+    start_summary(&app, &state, &s, &id, None, Some(&language))
+}
+
+fn start_summary(app: &AppHandle, state: &State<AppState>, s: &State<SummarizerState>, id: &str, template: Option<&str>, language: Option<&str>) -> CmdResult<()> {
+    state.lock().begin_summary(id, template, language)?;
+    s.enqueue(id);
     notify(app, MEETINGS_CHANGED);
     Ok(())
 }
@@ -311,7 +302,7 @@ fn run_followup(cfg: &Config, data_dir: &Path, models: &Models, meeting: &crate:
         return Err(FollowUpError::Engine(EngineError::Cancelled));
     }
     let mut engine = make_engine(cfg, data_dir, models).map_err(FollowUpError::Engine)?;
-    followup::draft(meeting, summary, engine.as_mut(), &cfg.language_for(&meeting.language), cancel)
+    followup::draft(meeting, summary, engine.as_mut(), &cfg.language_for(meeting.summary_language.as_deref(), &meeting.language), cancel)
 }
 
 /// Draft follow-up email: a short request over the summary the user sees (with their edits), in the summary

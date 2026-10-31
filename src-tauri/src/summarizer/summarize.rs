@@ -127,6 +127,7 @@ fn finish(draft: &Draft, meeting: &Meeting, engine: &dyn SummaryEngine, parts: u
     summary.sections = to_sections(draft, &meeting.transcript, template, language);
     summary.highlights = to_highlights(draft, meeting);
     summary.template = Some(template.id.to_string());
+    summary.language = Some(language.to_string());
     summary.sections_missing = !template.is_general() && summary.sections.is_empty() && reply.plain.load(Ordering::Relaxed);
     Outcome { summary, title: usable_title(&draft.title), parts }
 }
@@ -243,6 +244,14 @@ pub(crate) mod tests {
         assert_eq!(e.0[0], crate::summarizer::prompt::SCHEMA);
         assert!(out.summary.sections.is_empty() && out.summary.highlights.is_empty());
         assert_eq!(out.summary.template.as_deref(), Some("general"));
+    }
+
+    #[test]
+    fn a_new_summary_carries_the_language_it_was_asked_for() {
+        let mut e = Scripted { replies: vec![Ok(reply("Plan", "Ang buod."))], prompts: vec![], context: 16_384 };
+        let out = summarize(&short(), &mut e, "fil", &Options::default(), &AtomicBool::new(false), &mut |_| {}).unwrap();
+        assert_eq!(out.summary.language.as_deref(), Some("fil"));
+        assert!(e.prompts[0].system.contains("Write everything in Filipino."));
     }
 
     #[test]
