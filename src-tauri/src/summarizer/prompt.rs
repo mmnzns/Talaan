@@ -50,7 +50,7 @@ const RULES: &str = "You write meeting summaries. You get the transcript of a ca
 - title: 2 to 6 words naming what the call was about. No date, no app name.
 - recap: 3 to 5 plain sentences: what the call was about and where it landed.
 - decisions: what was agreed or settled. One sentence each, with the time of the line where it was decided.
-- action_items: concrete tasks someone committed to or was asked to do. owner: the person's name as written in the transcript (\"{me}\" for the user), empty if nobody. due: the deadline as said (\"Friday\", \"Oct 17\"), empty if none. time: the line where it came up.
+- action_items: concrete tasks someone committed to or was asked to do. owner: the person's name as written in the transcript (\"{me}\" for the user), empty if nobody. due: the deadline the call gave (\"Friday\", \"Oct 17\"), written in the summary's language like the rest, empty if none. time: the line where it came up.
 - open_questions: questions raised and not answered, or topics left unresolved.
 - Times are the [mm:ss] or [h:mm:ss] stamps of transcript lines. Copy them exactly; empty if unsure.
 - Use only what is in the transcript. Never invent names, dates, numbers or facts. Empty lists are fine.
@@ -216,23 +216,39 @@ fn render_moments(meeting: &Meeting, moments: &[&Mark], with_context: bool) -> S
     out
 }
 
-/// English name of a language code for the instruction ("es" → "Spanish"); unknown codes pass through.
+/// The summary languages Talaan offers (code, English name used in the prompt). One JSON file read by this side
+/// and by the screens (`src/lib/summaryLanguages.ts`), so the two lists can't drift apart.
+const LANGUAGES_JSON: &str = include_str!("../../../src/lib/summaryLanguages.json");
+
+fn languages() -> &'static [(String, String)] {
+    static LIST: std::sync::OnceLock<Vec<(String, String)>> = std::sync::OnceLock::new();
+    LIST.get_or_init(|| {
+        let rows: Vec<Value> = serde_json::from_str(LANGUAGES_JSON).expect("summaryLanguages.json is valid");
+        rows.iter().filter_map(|r| Some((r["code"].as_str()?.to_string(), r["name"].as_str()?.to_string()))).collect()
+    })
+}
+
+/// The codes of the summary languages, in the order the screens list them.
+pub fn summary_language_codes() -> Vec<&'static str> {
+    languages().iter().map(|(c, _)| c.as_str()).collect()
+}
+
+/// Whether `code` is one of the languages a summary can be written in (what the language switch accepts).
+pub fn is_summary_language(code: &str) -> bool {
+    languages().iter().any(|(c, _)| c == code)
+}
+
+/// English name of a language code for the instruction ("es" → "Spanish"). Codes from older settings or from the
+/// speech model's detection ("tl", "zh") keep working; any other unknown code passes through.
 pub fn language_name(code: &str) -> String {
-    let name = match code {
-        "en" => "English",
-        "es" => "Spanish",
-        "tl" | "fil" => "Filipino",
-        "fr" => "French",
-        "de" => "German",
-        "pt" => "Portuguese",
-        "it" => "Italian",
-        "nl" => "Dutch",
-        "ja" => "Japanese",
-        "zh" => "Chinese",
-        "ko" => "Korean",
-        _ => return code.to_string(),
-    };
-    name.into()
+    if let Some((_, name)) = languages().iter().find(|(c, _)| c == code) {
+        return name.clone();
+    }
+    match code {
+        "tl" => "Filipino".into(),
+        "zh" => "Chinese".into(),
+        _ => code.to_string(),
+    }
 }
 
 /// The prompt for one part of a call. `part` is (index from 1, count) when the call is split.
@@ -303,6 +319,40 @@ pub(crate) mod tests {
     use crate::storage::model::{MeetingListItem, MeetingStatus};
     use std::collections::BTreeMap;
 
+    #[test]
+    fn every_summary_language_has_its_english_name() {
+        assert_eq!(summary_language_codes().len(), 32);
+        assert_eq!(language_name("en"), "English");
+        assert_eq!(language_name("fil"), "Filipino");
+        assert_eq!(language_name("sv"), "Swedish");
+        assert_eq!(language_name("he"), "Hebrew");
+        assert_eq!(language_name("ur"), "Urdu");
+        for code in summary_language_codes() {
+            assert!(is_summary_language(code));
+            assert_ne!(language_name(code), code, "{code} has no name");
+        }
+    }
+
+    #[test]
+    fn chinese_names_the_script_and_old_codes_still_work() {
+        assert_eq!(language_name("zh-Hans"), "Chinese (Simplified)");
+        assert_eq!(language_name("zh-Hant"), "Chinese (Traditional)");
+        // What the speech model detects, and what older settings hold.
+        assert_eq!((language_name("tl").as_str(), language_name("zh").as_str()), ("Filipino", "Chinese"));
+        assert!(!is_summary_language("tl") && !is_summary_language("zh") && !is_summary_language("klingon") && !is_summary_language(""));
+        // Unknown codes pass through.
+        assert_eq!(language_name("xx"), "xx");
+    }
+
+    #[test]
+    fn the_prompt_asks_for_the_chosen_language() {
+        let m = meeting(vec![line("l0", 0, "me", "Hello there.")]);
+        let p = summary_prompt(&m, &m.transcript, "fil", None, &Options::default());
+        assert!(p.system.contains("Write everything in Filipino."));
+        // Due dates too: the model used to keep them as said, in English.
+        assert!(p.system.contains("due: the deadline the call gave (\"Friday\", \"Oct 17\"), written in the summary's language"));
+    }
+
     pub fn line(id: &str, at: u64, speaker: &str, text: &str) -> TranscriptLine {
         TranscriptLine { id: id.into(), at, end: at + 4_000, speaker: speaker.into(), text: text.into(), edited: false }
     }
@@ -342,6 +392,7 @@ pub(crate) mod tests {
             transcription: None,
             transcript_only: false,
             template: None,
+            summary_language: None,
         }
     }
 

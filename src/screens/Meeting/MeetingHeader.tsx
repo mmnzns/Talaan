@@ -1,5 +1,5 @@
-import { AudioLines, Calendar, FolderOpen, LayoutList, Mail, MessageCircle, MoreHorizontal, Pin, Sparkles, Trash2, VolumeX, X } from "lucide-react";
-import { useState } from "react";
+import { AudioLines, Calendar, FolderOpen, Languages, LayoutList, Mail, MessageCircle, MoreHorizontal, Pin, Sparkles, Trash2, VolumeX, X } from "lucide-react";
+import { useCallback, useState } from "react";
 import { useFolders, useSettings } from "../../data/hooks";
 import { useStore } from "../../data/StoreProvider";
 import type { Meeting } from "../../data/types";
@@ -10,6 +10,7 @@ import { useT } from "../../lib/i18n/I18nProvider";
 import { useLang } from "../../lib/i18n/I18nProvider";
 import { describeError } from "../../data/errors";
 import { SummarizeAsSheet } from "./SummarizeAsSheet";
+import { SummarizeInSheet } from "./SummarizeInSheet";
 import { useConfirmRewrite } from "./ConfirmRewrite";
 
 interface Props {
@@ -47,6 +48,9 @@ export function MeetingHeader({ meeting, editing, canRevert, onToggleEdit, onRev
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [retranscribing, setRetranscribing] = useState(false);
   const [summarizingAs, setSummarizingAs] = useState(false);
+  const [summarizingIn, setSummarizingIn] = useState(false);
+  // Stable: the sheet takes focus again whenever this changes, which would pull it out of the search box.
+  const closeSummarizingIn = useCallback(() => setSummarizingIn(false), []);
   const rewrite = useConfirmRewrite(meeting.summary);
   const { settings } = useSettings();
   const speechModel = meeting.transcription && (settings?.speechModels.find((m) => m.id === meeting.transcription!.model)?.name ?? meeting.transcription.model);
@@ -212,6 +216,15 @@ export function MeetingHeader({ meeting, editing, canRevert, onToggleEdit, onRev
                     <LayoutList size={14} aria-hidden="true" /> {t("meeting.summarizeAs")}
                   </MenuItem>
                   <MenuItem
+                    disabled={meeting.transcript.length === 0}
+                    onClick={() => {
+                      setSummarizingIn(true);
+                      close();
+                    }}
+                  >
+                    <Languages size={14} aria-hidden="true" /> {t("meeting.summarizeIn")}
+                  </MenuItem>
+                  <MenuItem
                     disabled={!meeting.hasAudio}
                     onClick={() => {
                       setRetranscribing(true);
@@ -286,6 +299,7 @@ export function MeetingHeader({ meeting, editing, canRevert, onToggleEdit, onRev
 
       <RetranscribeSheet meeting={meeting} open={retranscribing} onClose={() => setRetranscribing(false)} />
       <SummarizeAsSheet meeting={meeting} open={summarizingAs} onClose={() => setSummarizingAs(false)} />
+      <SummarizeInSheet meeting={meeting} open={summarizingIn} onClose={closeSummarizingIn} />
       {rewrite.sheet}
 
       <Sheet open={confirmDelete} title={t("meeting.deleteTitle")} onClose={() => setConfirmDelete(false)}>

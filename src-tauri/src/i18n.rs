@@ -427,6 +427,7 @@ const TABLE: &[(&str, &str, &str, &str)] = &[
     ("error.summary_internal", "Talaan hit a problem writing this summary. Try again.", "Talaan a rencontré un problème en rédigeant ce résumé. Réessayez.", "Talaan tuvo un problema al escribir este resumen. Inténtalo de nuevo."),
     ("error.followup_internal", "Talaan hit a problem writing this email. Try again.", "Talaan a rencontré un problème en rédigeant ce courriel. Réessayez.", "Talaan tuvo un problema al escribir este correo. Inténtalo de nuevo."),
     ("error.unknown_template", "Unknown meeting type.", "Type de réunion inconnu.", "Tipo de reunión desconocido."),
+    ("error.unknown_language", "Unknown summary language.", "Langue de résumé inconnue.", "Idioma de resumen desconocido."),
     (
         "download.stalled",
         "The download of {name} stopped: no data for 30 seconds. Check your connection and try again.",

@@ -13,6 +13,14 @@ const mustDiffer = [
   "settings.setup_gpu_part_llm",
   "settings.local_option",
   "meeting.gpuFellBack",
+  "meeting.summarizeIn",
+  "meeting.summarizeInTitle",
+  "meeting.summarizeInDesc",
+  "meeting.writtenIn",
+  "meeting.changeLanguage",
+  "meeting.searchLanguages",
+  "meeting.noLanguageFound",
+  "meeting.cloudBetter",
 ];
 
 describe("translated strings", () => {

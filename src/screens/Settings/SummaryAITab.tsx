@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { describeError } from "../../data/errors";
 import { useSettingsStore } from "../../data/StoreProvider";
 import { byokModels } from "../../data/byokModels";
@@ -6,7 +6,10 @@ import { hasByokKey, type ByokProvider, type LocalModel, type SummaryEngineKind 
 import { useLang, useT } from "../../lib/i18n/I18nProvider";
 import { messageOr, type MessageKey, type T } from "../../lib/i18n";
 import { deletedMessage } from "../../lib/modelDelete";
-import { Button, Chip, Field, Label, Select, Switch, cn, useToast } from "../../ui";
+import { Button, Chip, Field, Label, Select, Sheet, Switch, cn, useToast } from "../../ui";
+import { ChevronDown } from "lucide-react";
+import { settingLanguageView } from "../../lib/summaryLanguages";
+import { LanguagePicker } from "../LanguagePicker";
 import { Group, Row, SectionIntro } from "./parts";
 import type { TabProps } from "./tabProps";
 import { TEMPLATES, isTemplate, templateName } from "../../lib/templates";
@@ -102,15 +105,7 @@ export function SummaryAITab({ settings: s, update }: TabProps) {
             <Switch aria-label={t("settings.summarize_auto")} checked={s.summarizeAutomatically} onChange={(v) => update({ summarizeAutomatically: v })} />
           </Row>
           <Row title={t("settings.summary_language")}>
-            <Select label={t("settings.summary_language")} wrapperClassName="w-44" value={s.summaryLanguage} onChange={(e) => update({ summaryLanguage: e.target.value })}>
-              <option value="meeting">{t("settings.summary_language_meeting")}</option>
-              <option value="en">{t("settings.lang_en")}</option>
-              <option value="tl">{t("settings.lang_tl")}</option>
-              <option value="es">{t("settings.lang_es")}</option>
-              <option value="fr">{t("settings.lang_fr")}</option>
-              <option value="de">{t("settings.lang_de")}</option>
-              <option value="pt">{t("settings.lang_pt")}</option>
-            </Select>
+            <SummaryLanguageSetting value={s.summaryLanguage} localModel={s.summaryEngine === "local" ? s.localModel : undefined} onChange={(code) => update({ summaryLanguage: code })} />
           </Row>
           <Row title={t("settings.default_type")} desc={t("settings.default_type_desc")}>
             <Select
@@ -371,5 +366,45 @@ function ByokPanel({ settings: s, update }: TabProps) {
         </div>
       </Row>
     </Group>
+  );
+}
+
+/** Summary language: a button showing the choice, and the searchable language list in a sheet ("Same as meeting" on top). */
+function SummaryLanguageSetting({ value, localModel, onChange }: { value: string; localModel?: string; onChange: (code: string) => void }) {
+  const t = useT();
+  const lang = useLang();
+  const [open, setOpen] = useState(false);
+  const close = useCallback(() => setOpen(false), []);
+  const view = settingLanguageView(value, lang, t("settings.summary_language_meeting"));
+  return (
+    <>
+      <button
+        type="button"
+        aria-haspopup="dialog"
+        aria-label={`${t("settings.summary_language")}: ${view.label}`}
+        onClick={() => setOpen(true)}
+        className="relative inline-flex h-8 w-52 max-w-full cursor-pointer items-center rounded-control border border-input bg-paper pl-2.5 pr-8 text-left font-[inherit] text-[13px] text-ink outline-none focus:border-edge"
+      >
+        <span className="min-w-0 flex-1 truncate">{view.label}</span>
+        <ChevronDown aria-hidden="true" size={14} className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-subtle" />
+      </button>
+      <Sheet open={open} title={t("settings.summary_language")} onClose={close}>
+        <div className="flex flex-col gap-3 p-5">
+          <h2 className="m-0 font-display text-xl font-bold tracking-[-0.02em]">{t("settings.summary_language")}</h2>
+          <LanguagePicker
+            value={view.current}
+            extra={view.extra}
+            localModel={localModel}
+            onPick={(code) => {
+              close();
+              onChange(code);
+            }}
+          />
+          <div className="flex justify-end">
+            <Button onClick={close}>{t("common.cancel")}</Button>
+          </div>
+        </div>
+      </Sheet>
+    </>
   );
 }

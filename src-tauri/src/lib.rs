@@ -235,6 +235,7 @@ pub fn run() {
             commands::summarizer::meetings_launch_link,
             commands::summarizer::meetings_set_template,
             commands::summarizer::meetings_summarize_as,
+            commands::summarizer::meetings_summarize_in,
             commands::summarizer::meetings_followup_eta,
             commands::summarizer::meetings_draft_followup,
             commands::summarizer::meetings_cancel_followup,
