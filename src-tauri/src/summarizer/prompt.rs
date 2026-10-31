@@ -50,7 +50,7 @@ const RULES: &str = "You write meeting summaries. You get the transcript of a ca
 - title: 2 to 6 words naming what the call was about. No date, no app name.
 - recap: 3 to 5 plain sentences: what the call was about and where it landed.
 - decisions: what was agreed or settled. One sentence each, with the time of the line where it was decided.
-- action_items: concrete tasks someone committed to or was asked to do. owner: the person's name as written in the transcript (\"{me}\" for the user), empty if nobody. due: the deadline as said (\"Friday\", \"Oct 17\"), empty if none. time: the line where it came up.
+- action_items: concrete tasks someone committed to or was asked to do. owner: the person's name as written in the transcript (\"{me}\" for the user), empty if nobody. due: the deadline the call gave (\"Friday\", \"Oct 17\"), written in the summary's language like the rest, empty if none. time: the line where it came up.
 - open_questions: questions raised and not answered, or topics left unresolved.
 - Times are the [mm:ss] or [h:mm:ss] stamps of transcript lines. Copy them exactly; empty if unsure.
 - Use only what is in the transcript. Never invent names, dates, numbers or facts. Empty lists are fine.
@@ -349,6 +349,8 @@ pub(crate) mod tests {
         let m = meeting(vec![line("l0", 0, "me", "Hello there.")]);
         let p = summary_prompt(&m, &m.transcript, "fil", None, &Options::default());
         assert!(p.system.contains("Write everything in Filipino."));
+        // Due dates too: the model used to keep them as said, in English.
+        assert!(p.system.contains("due: the deadline the call gave (\"Friday\", \"Oct 17\"), written in the summary's language"));
     }
 
     pub fn line(id: &str, at: u64, speaker: &str, text: &str) -> TranscriptLine {

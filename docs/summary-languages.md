@@ -24,6 +24,11 @@ show "Works best with online AI" when that model is the summary model (`POOR_ON_
   - weak: a native speaker would flag it: invented or wrong words, wrong meaning, wrong dates, mixed languages.
   - bad: unusable: degenerate text or facts lost.
 - One run per language, temperature 0.2, so a language near a boundary could grade differently on another run.
+- The grades below were made when the prompt said "due: the deadline as said", so most languages kept due dates in
+  English. The prompt now asks for due dates in the summary's language. Rechecked with Qwen 3.5 4B on de, ru, da, es,
+  ja, ar and en: every due date came back in the target language and English was unchanged. Two dates were wrong
+  (German and Japanese gave a wrong day for the budget question), the same kind of slip the weak grades already note.
+  The grades themselves were not redone.
 
 ## Qwen 3.5 4B
 
