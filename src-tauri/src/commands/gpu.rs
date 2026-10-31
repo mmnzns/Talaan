@@ -85,9 +85,16 @@ pub fn gpu_retry(app: AppHandle) -> GpuStatus {
     crate::gpu::clear_fallbacks();
     // The files above are all a client built later needs. A running client also remembers the failure in memory:
     // `retry_gpu` clears that and stops the processor helper that took over, so its next request starts on the card.
-    crate::summarizer::local::retry_gpu_all();
-    #[cfg(windows)]
-    app.state::<TranscriberState>().retry_speech_gpu();
+    // It waits for a request in progress (a summary can take minutes), so it runs aside: the status below doesn't
+    // depend on it.
+    let retry_app = app.clone();
+    std::thread::spawn(move || {
+        crate::summarizer::local::retry_gpu_all();
+        #[cfg(windows)]
+        retry_app.state::<TranscriberState>().retry_speech_gpu();
+        #[cfg(not(windows))]
+        let _ = retry_app;
+    });
     current(&app)
 }
 
