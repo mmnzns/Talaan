@@ -83,10 +83,11 @@ pub fn gpu_retry(app: AppHandle) -> GpuStatus {
         clear_gpu_failure(&data_dir.join(file));
     }
     crate::gpu::clear_fallbacks();
-    // The clients remember the failure in memory too: new ones try the card again.
-    crate::summarizer::local::reset_clients();
+    // The files above are all a client built later needs. A running client also remembers the failure in memory:
+    // `retry_gpu` clears that and stops the processor helper that took over, so its next request starts on the card.
+    crate::summarizer::local::retry_gpu_all();
     #[cfg(windows)]
-    app.state::<TranscriberState>().reset_speech_client();
+    app.state::<TranscriberState>().retry_speech_gpu();
     current(&app)
 }
 

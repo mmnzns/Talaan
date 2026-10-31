@@ -29,6 +29,9 @@ const REPLY_TOKENS: u32 = 900;
 pub struct AskState {
     data_dir: PathBuf,
     models: Arc<Models>,
+    /// The search model's helper, shared by questions and the indexer (it exits by itself when idle). The client
+    /// runs one request at a time, so questions interleave with the indexer between requests.
+    embedder: Arc<LlmClient>,
     kick: Mutex<mpsc::Sender<()>>,
 }
 
@@ -36,8 +39,9 @@ pub struct AskState {
 const INDEX_DEBOUNCE: Duration = Duration::from_secs(5);
 
 pub fn setup(app: &AppHandle, data_dir: PathBuf) {
+    let embedder = crate::summarizer::local::search_client(&data_dir);
     let (kick, rx) = mpsc::channel::<()>();
-    app.manage(AskState { data_dir: data_dir.clone(), models: app.state::<Arc<Models>>().inner().clone(), kick: Mutex::new(kick) });
+    app.manage(AskState { data_dir: data_dir.clone(), models: app.state::<Arc<Models>>().inner().clone(), embedder: embedder.clone(), kick: Mutex::new(kick) });
     let app = app.clone();
     std::thread::Builder::new()
         .name("talaan-ask-index".into())
@@ -47,9 +51,6 @@ pub fn setup(app: &AppHandle, data_dir: PathBuf) {
             let _ = app.state::<AskState>().kick.lock().map(|k| k.send(()));
             while rx.recv().is_ok() {
                 while rx.recv_timeout(INDEX_DEBOUNCE).is_ok() {}
-                // The search model's helper (it exits by itself when idle) is shared with questions: one request at
-                // a time, so they interleave. Asked for on every pass, because Try again / Delete replace the client.
-                let embedder = crate::summarizer::local::search_client(&app.state::<AskState>().data_dir);
                 index_all(&app, &embedder);
             }
         })
@@ -137,7 +138,7 @@ fn ask(app: &AppHandle, question: &str, scope: &Scope) -> CmdResult<AskAnswer> {
         (meetings, dirs, settings)
     };
     let single = matches!(scope, Scope::Meeting { .. });
-    answer_from(&state.data_dir, &state.models, &crate::summarizer::local::search_client(&state.data_dir), &meetings, &dirs, settings.as_ref(), single, question)
+    answer_from(&state.data_dir, &state.models, &state.embedder, &meetings, &dirs, settings.as_ref(), single, question)
 }
 
 /// The test recording whose keep-or-delete offer is still open (`testMeetingId` in settings.json).

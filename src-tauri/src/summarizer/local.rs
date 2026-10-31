@@ -6,7 +6,7 @@
 use super::summarize::EngineError as SummaryError;
 use crate::i18n::tr;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, OnceLock};
 use std::time::Duration;
 use voice_engine_client::{EngineError, Fallback, Limits, LlmClient, LlmConfig};
 
@@ -47,14 +47,13 @@ pub fn client(data_dir: &Path, version: &str, which: &str) -> LlmClient {
     })
 }
 
-/// The two clients, built on first use. Behind a lock so `reset_clients` can drop them: a client remembers in
-/// memory that the graphics card failed (`gpu_disabled`), and only a new one tries the card again.
-static SUMMARY: Mutex<Option<Arc<LlmClient>>> = Mutex::new(None);
-static SEARCH: Mutex<Option<Arc<LlmClient>>> = Mutex::new(None);
+/// The two clients, built on first use and kept for the run.
+static SUMMARY: OnceLock<Arc<LlmClient>> = OnceLock::new();
+static SEARCH: OnceLock<Arc<LlmClient>> = OnceLock::new();
 
-fn shared(slot: &Mutex<Option<Arc<LlmClient>>>, data_dir: &Path, which: &str) -> Arc<LlmClient> {
+fn shared(slot: &'static OnceLock<Arc<LlmClient>>, data_dir: &Path, which: &str) -> Arc<LlmClient> {
     // The data folder never changes while Talaan runs, so the first caller's folder is the folder.
-    slot.lock().unwrap_or_else(|e| e.into_inner()).get_or_insert_with(|| Arc::new(client(data_dir, env!("CARGO_PKG_VERSION"), which))).clone()
+    slot.get_or_init(|| Arc::new(client(data_dir, env!("CARGO_PKG_VERSION"), which))).clone()
 }
 
 /// The app's client for summaries and follow-ups.
@@ -71,20 +70,19 @@ pub fn search_client(data_dir: &Path) -> Arc<LlmClient> {
 /// running exe). Starts nothing that isn't running; `shutdown` kills, so it doesn't hold the caller long.
 pub fn shutdown_all() {
     for slot in [&SUMMARY, &SEARCH] {
-        if let Some(c) = slot.lock().unwrap_or_else(|e| e.into_inner()).as_ref() {
+        if let Some(c) = slot.get() {
             c.shutdown();
         }
     }
 }
 
-/// Stops both helpers and forgets both clients: the next call builds fresh ones, which try the graphics card again
-/// ("Try again" in Check setup) and have no model open (Delete). A call already running with an old client ends
-/// with an error, as with `shutdown_all`.
-pub fn reset_clients() {
+/// "Try again" on the graphics card: gives each live client a new try (the engine's `retry_gpu`: waits for a request in
+/// progress, clears the client's failure memory and its file, stops the processor helper that took over). A client not
+/// built yet reads the cleared file when it is. Starts nothing.
+pub fn retry_gpu_all() {
     for slot in [&SUMMARY, &SEARCH] {
-        let old = slot.lock().unwrap_or_else(|e| e.into_inner()).take();
-        if let Some(c) = old {
-            c.shutdown();
+        if let Some(c) = slot.get() {
+            c.retry_gpu();
         }
     }
 }
@@ -167,20 +165,6 @@ mod tests {
         ] {
             assert_eq!(to_summary_error(e), crashed);
         }
-    }
-
-    #[test]
-    fn resetting_gives_the_next_call_a_fresh_client() {
-        // The statics are the process's: this is the only test that touches them.
-        let dir = tempfile::tempdir().unwrap();
-        let (a, s) = (summary_client(dir.path()), search_client(dir.path()));
-        assert!(Arc::ptr_eq(&a, &summary_client(dir.path())), "the same client until a reset");
-        reset_clients();
-        let (b, t) = (summary_client(dir.path()), search_client(dir.path()));
-        assert!(!Arc::ptr_eq(&a, &b) && !Arc::ptr_eq(&s, &t));
-        assert!(Arc::ptr_eq(&b, &summary_client(dir.path())));
-        reset_clients(); // nothing running: fine, and again with nothing built
-        reset_clients();
     }
 
     #[test]
