@@ -6,6 +6,9 @@ name: Release
 #                  scripts/release-local.sh then scripts/upload-mac-release.sh <tag> (or by the macos job below
 #                  once the APPLE_CERTIFICATE secrets exist and the repo variable MAC_RELEASE_ON_CI is "true")
 #   latest.json:   rebuilt from every .sig on the release by scripts/latest-json.mjs, by whoever uploads last
+# The draft's notes are this version's CHANGELOG.md section (scripts/release-notes.mjs); the draft job fails, and
+# nothing is built or drafted, when CHANGELOG.md has no "## <version> (date)" section for the tag. latest.json's
+# `notes` carry the same section as plain text.
 # Run the Mac upload (scripts/upload-mac-release.sh) only after this workflow's updater-json job has finished, then
 # check that latest.json has four keys (the script checks it too). latest-json.mjs reads its upload back and retries,
 # but two uploads at once can still race.
@@ -112,12 +115,18 @@ jobs:
           want="${GITHUB_REF_NAME#v}"
           have=$(node -p "require('./src-tauri/tauri.conf.json').version")
           [ "$want" = "$have" ] || { echo "::error::tag $GITHUB_REF_NAME but tauri.conf.json says $have"; exit 1; }
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      # This version's CHANGELOG.md section (soft-wrapped lines joined) plus the install text from
+      # scripts/release-notes.md. Fails the release when CHANGELOG.md has no section for the version, so nothing is
+      # drafted without notes. Same script as scripts/upload-mac-release.sh and latest.json's notes.
+      - name: Release notes from CHANGELOG.md
+        run: node scripts/release-notes.mjs "$GITHUB_REF_NAME" > "$RUNNER_TEMP/notes.md"
       - name: Draft release for this tag (once)
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          # The notes link to INSTALL.md and CHANGELOG.md as of this tag.
-          sed "s/{{TAG}}/$GITHUB_REF_NAME/g" scripts/release-notes.md > "$RUNNER_TEMP/notes.md"
           gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1 || \
             gh release create "$GITHUB_REF_NAME" --draft --verify-tag --title "Talaan $GITHUB_REF_NAME" --notes-file "$RUNNER_TEMP/notes.md"
 
@@ -224,10 +233,22 @@ jobs:
         with:
           tagName: ${{ github.ref_name }}
           releaseName: "Talaan ${{ github.ref_name }}"
-          releaseBody: "See CHANGELOG.md for what's new. First install: open the .dmg, drag Talaan to Applications, then right-click › Open (or System Settings › Privacy & Security › Open Anyway) once."
           releaseDraft: true
           includeUpdaterJson: false
           args: --target aarch64-apple-darwin
+
+      # The draft's notes come from the draft job (CHANGELOG.md section); put them back only if tauri-action replaced
+      # them, so notes edited by hand on the draft while this job ran are kept.
+      - name: Keep the release notes from CHANGELOG.md
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          body=$(gh release view "$GITHUB_REF_NAME" --json body -q .body)
+          case "$body" in
+            "## What's new in "*) echo "Release notes intact." ;;
+            *) node scripts/release-notes.mjs "$GITHUB_REF_NAME" > "$RUNNER_TEMP/notes.md"
+               gh release edit "$GITHUB_REF_NAME" --notes-file "$RUNNER_TEMP/notes.md" ;;
+          esac
 
       - name: Signature check
         run: |

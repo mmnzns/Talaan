@@ -5,8 +5,8 @@ import { byokModels } from "../../data/byokModels";
 import { hasByokKey, type ByokProvider, type LocalModel, type SummaryEngineKind } from "../../data/settings";
 import { useLang, useT } from "../../lib/i18n/I18nProvider";
 import { messageOr, type MessageKey, type T } from "../../lib/i18n";
-import { deletedMessage } from "../../lib/modelDelete";
 import { Button, Chip, Field, Label, Select, Sheet, Switch, cn, useToast } from "../../ui";
+import { DeleteModelLink } from "./DeleteModelLink";
 import { ChevronDown } from "lucide-react";
 import { settingLanguageView } from "../../lib/summaryLanguages";
 import { LanguagePicker } from "../LanguagePicker";
@@ -188,9 +188,7 @@ function LocalPanel({ settings: s, update }: TabProps) {
           {model.state === "downloaded" && (
             <span className="flex items-center gap-2">
               <Chip tone="gold">{t("settings.installed")}</Chip>
-              <button type="button" className="cursor-pointer border-0 bg-transparent p-0 text-xs text-subtle underline" onClick={() => run(store.deleteModel(model.id).then((r) => { const msg = deletedMessage(t, lang, model.name, r); if (msg) toast(msg); }))}>
-                {t("settings.delete")}
-              </button>
+              <DeleteModelLink id={model.id} name={model.name} sizeMb={model.sizeMb} />
             </span>
           )}
           {model.state === "not_downloaded" && <Button onClick={() => run(store.downloadModel(model.id))}>{t("settings.download_size", { size: gb(model.sizeMb) })}</Button>}

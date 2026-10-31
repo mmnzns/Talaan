@@ -330,6 +330,10 @@ export const settings = area({
     wipe_keeps_copies: "Copies in your auto-save folder are kept.",
     wipe_deleting: "Deleting…",
     wipe_done: "Everything was deleted",
+    model_delete_link: "Delete {name}",
+    model_delete_title: "Delete model",
+    model_delete_heading: "Delete {name}?",
+    model_delete_body: "Talaan will stop using it. If no other app uses it, the file is erased and frees {size} on this computer; if one does, the file stays for it. You can download it again whenever you want.",
     // V-gaps
     your_name: "Your name",
     your_name_desc: "Used instead of “Me” in transcripts, summaries and exports. Rename Me in a meeting to change it there only.",
@@ -746,6 +750,10 @@ export const settings = area({
     wipe_keeps_copies: "Les copies dans le dossier choisi pour vos réunions sont conservées.",
     wipe_deleting: "Suppression…",
     wipe_done: "Tout a été supprimé",
+    model_delete_link: "Supprimer {name}",
+    model_delete_title: "Supprimer le modèle",
+    model_delete_heading: "Supprimer {name} ?",
+    model_delete_body: "Talaan cessera de l’utiliser. Si aucune autre application ne l’utilise, le fichier est effacé et libère {size} sur cet ordinateur; sinon, il reste pour elle. Vous pourrez le télécharger de nouveau en tout temps.",
     // V-gaps
     your_name: "Votre nom",
     your_name_desc: "Remplace « Moi » dans les transcriptions, les résumés et les exports. Renommez Moi dans une réunion pour ne changer que celle-ci.",
@@ -1159,6 +1167,10 @@ export const settings = area({
     wipe_keeps_copies: "Las copias en la carpeta que elegiste para tus reuniones se conservan.",
     wipe_deleting: "Eliminando…",
     wipe_done: "Todo se eliminó",
+    model_delete_link: "Eliminar {name}",
+    model_delete_title: "Eliminar modelo",
+    model_delete_heading: "¿Eliminar {name}?",
+    model_delete_body: "Talaan dejará de usarlo. Si ninguna otra app lo usa, el archivo se borra y libera {size} en esta computadora; si alguna lo usa, el archivo se queda para ella. Puedes volver a descargarlo cuando quieras.",
     // V-gaps
     your_name: "Tu nombre",
     your_name_desc: "Sustituye a «Yo» en transcripciones, resúmenes y exportaciones. Renombra Yo en una reunión para cambiarlo solo ahí.",
