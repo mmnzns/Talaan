@@ -1,6 +1,6 @@
 [package]
 name = "talaan-llm"
-version = "1.0.0"
+version = "1.2.0"
 description = "Talaan's local AI helper: the engine's llama.cpp helper, in its own process"
 edition = "2024"
 license = "MIT"

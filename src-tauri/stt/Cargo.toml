@@ -1,6 +1,6 @@
 [package]
 name = "talaan-stt"
-version = "1.0.0"
+version = "1.2.0"
 description = "Talaan's speech helper (Whisper on Windows): the engine's helper with Talaan's prefix; talaan-stt-vulkan is its Vulkan build"
 edition = "2024"
 license = "MIT"
