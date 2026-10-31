@@ -51,6 +51,12 @@ export interface MeetingStore {
   setTemplate(id: MeetingId, template?: string): Promise<void>;
   /** "Summarize as…": remembers the type and writes the summary again (it replaces the old one and its edits). */
   summarizeAs(id: MeetingId, template: string): Promise<void>;
+  /**
+   * "Summarize in…" / "Change language": remembers the language on the meeting and writes the summary again from the
+   * transcript in it (never a translation of the old one; it replaces the old one and its edits). Rejects a code that
+   * isn't in lib/summaryLanguages, and a meeting without a finished transcript.
+   */
+  summarizeIn(id: MeetingId, language: string): Promise<void>;
   /** The user's notes (marks with a note), edited in the meeting view. Marked moments stay. Not while recording. */
   setNotes(id: MeetingId, notes: Mark[]): Promise<void>;
   /** When a follow-up draft for this meeting should be done; `waiting`: the local AI finishes a summary first. */

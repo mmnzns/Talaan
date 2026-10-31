@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- **Change the language of any summary:** Talaan writes it again from the transcript in the language you pick (about 30 languages, with search), from the summary or the meeting's ⋯ menu. Settings › Summary AI › Summary language has the same list.
 - **Models are shared:** they now live in a folder shared with Craft Concepts Digital's other apps, so a model is downloaded once. The first start after updating moves the models you already have in by itself, without downloading anything again. Delete removes a model for Talaan only; it stays on the computer while another app uses it. The "Reuse models already on this computer" setting is gone, because the shared folder does it.
 - **Every local AI model:** Qwen 3.5 4B and 9B and Granite 4.2 3B, each with its size, the memory it needs and its licence.
 - **More speech models:** full-size versions and English-only versions of Whisper and Parakeet.

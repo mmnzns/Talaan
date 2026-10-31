@@ -50,6 +50,8 @@ export interface Summary {
   highlights?: MeetingSummaryItem[];
   /** The meeting type it was written as (see lib/templates). Absent on summaries from before meeting types. */
   template?: string;
+  /** The language it was written in (lib/summaryLanguages). Absent on summaries from before the language switch. */
+  language?: string;
   /** The meeting type's sections couldn't be written this time (the plain summary was written instead). */
   sectionsMissing?: boolean;
   engine: string; // "Local AI · <model>" | "Claude" | ...
@@ -119,6 +121,8 @@ export interface Meeting extends MeetingListItem {
   transcriptOnly?: boolean;
   /** The meeting type chosen for it (lib/templates); absent = the default from Settings › Summary AI. */
   template?: string;
+  /** The language picked for this meeting's summaries (lib/summaryLanguages); absent = the Settings default. */
+  summaryLanguage?: string;
   /** How the transcript was made. `model` is a speech model id (see Settings › Speech models). */
   transcription?: { model: string; echoLinesRemoved: number; speechMs: Ms; tookMs: Ms; finishedAt: string; gpuFellBack?: boolean; device?: string };
 }

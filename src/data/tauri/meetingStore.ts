@@ -61,6 +61,10 @@ export class TauriMeetingStore implements MeetingStore {
     return call<void>("meetings_summarize_as", { id, template });
   }
 
+  summarizeIn(id: MeetingId, language: string) {
+    return call<void>("meetings_summarize_in", { id, language });
+  }
+
   setNotes(id: MeetingId, notes: Mark[]) {
     return call<void>("meetings_set_notes", { id, notes });
   }
