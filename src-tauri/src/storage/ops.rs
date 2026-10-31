@@ -266,6 +266,10 @@ mod tests {
         s.begin_summary(&id, Some("interview"), None).unwrap();
         let m = s.get_meeting(&id).unwrap();
         assert_eq!((m.summary_language.as_deref(), m.template.as_deref()), (Some("fil"), Some("interview")));
+        // Picking the language it is already in writes it again (Miguel, 2026-10-31).
+        s.set_status(&id, MeetingStatus::Ready).unwrap();
+        s.begin_summary(&id, None, Some("fil")).unwrap();
+        assert_eq!(s.get_meeting(&id).unwrap().item.status, MeetingStatus::Summarizing);
         // The language is saved in meeting.json under its own name.
         let raw = std::fs::read_to_string(s.dir(&id).unwrap().join(META)).unwrap();
         assert!(raw.contains("\"summaryLanguage\": \"fil\""), "{raw}");

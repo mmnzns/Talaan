@@ -23,6 +23,8 @@ describe("the language picker", () => {
     expect(option(markup, "fil")).toContain('aria-selected="true"');
     expect(option(markup, "fil")).toContain("current");
     expect(option(markup, "ja")).toContain('aria-selected="false"');
+    // The current row can still be picked: it writes the summary again in the same language.
+    expect(option(markup, "fil")).not.toContain("disabled");
   });
 
   it("puts extra rows (Same as meeting) first", () => {
