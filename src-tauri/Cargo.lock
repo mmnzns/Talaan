@@ -1190,7 +1190,7 @@ dependencies = [
  "libc",
  "option-ext",
  "redox_users",
- "windows-sys 0.61.2",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
@@ -1381,7 +1381,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
- "windows-sys 0.61.2",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
@@ -2890,7 +2890,7 @@ dependencies = [
  "png 0.18.1",
  "serde",
  "thiserror 2.0.21",
- "windows-sys 0.61.2",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
@@ -3031,6 +3031,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "071dfc062690e90b734c0b2273ce72ad0ffa95f0c74596bc250dcfd960262841"
 dependencies = [
  "autocfg",
+]
+
+[[package]]
+name = "num_cpus"
+version = "1.17.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "91df4bbde75afed763b708b7eee1e8e7651e02d97f6d5dd763e89367e957b23b"
+dependencies = [
+ "hermit-abi",
+ "libc",
 ]
 
 [[package]]
@@ -4040,7 +4050,7 @@ dependencies = [
  "once_cell",
  "socket2",
  "tracing",
- "windows-sys 0.61.2",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
@@ -4430,7 +4440,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys",
- "windows-sys 0.61.2",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
@@ -4487,7 +4497,7 @@ dependencies = [
  "security-framework 3.7.0",
  "security-framework-sys",
  "webpki-root-certs",
- "windows-sys 0.61.2",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
@@ -4922,7 +4932,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c3d1e2c7f27f8d4cb10542a02c49005dbd6e93095799d6f3be745fae9f8fedd4"
 dependencies = [
  "libc",
- "windows-sys 0.61.2",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
@@ -5344,7 +5354,7 @@ dependencies = [
 
 [[package]]
 name = "talaan"
-version = "1.1.1"
+version = "1.2.0"
 dependencies = [
  "block2",
  "chrono",
@@ -5364,8 +5374,6 @@ dependencies = [
  "objc2-event-kit",
  "objc2-foundation",
  "objc2-user-notifications",
- "ort",
- "parakeet-rs",
  "rand 0.10.3",
  "reqwest 0.12.28",
  "rrule",
@@ -5376,8 +5384,6 @@ dependencies = [
  "sha2",
  "strsim",
  "symphonia",
- "talaan-llm-protocol",
- "talaan-stt",
  "tauri",
  "tauri-build",
  "tauri-plugin-autostart",
@@ -5390,9 +5396,12 @@ dependencies = [
  "thiserror 2.0.21",
  "tiny_http",
  "tokio",
+ "voice-engine-client",
+ "voice-engine-models",
+ "voice-engine-protocol",
+ "voice-engine-stt",
  "wasapi",
  "whatlang",
- "whisper-rs",
  "windows",
  "windows-core",
  "winreg",
@@ -5400,30 +5409,18 @@ dependencies = [
 
 [[package]]
 name = "talaan-llm"
-version = "1.0.0"
+version = "1.2.0"
 dependencies = [
- "llama-cpp-2",
- "serde_json",
- "talaan-llm-protocol",
-]
-
-[[package]]
-name = "talaan-llm-protocol"
-version = "1.0.0"
-dependencies = [
- "base64 0.22.1",
- "serde",
- "serde_json",
+ "voice-engine-llm",
+ "voice-engine-protocol",
 ]
 
 [[package]]
 name = "talaan-stt"
-version = "1.0.0"
+version = "1.2.0"
 dependencies = [
- "serde_json",
- "talaan-llm-protocol",
- "tempfile",
- "whisper-rs",
+ "voice-engine-protocol",
+ "voice-engine-stt",
 ]
 
 [[package]]
@@ -5874,7 +5871,7 @@ dependencies = [
  "getrandom 0.4.3",
  "once_cell",
  "rustix",
- "windows-sys 0.61.2",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
@@ -6268,7 +6265,7 @@ dependencies = [
  "png 0.18.1",
  "serde",
  "thiserror 2.0.21",
- "windows-sys 0.61.2",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
@@ -6297,7 +6294,7 @@ checksum = "f2f6fb2847f6742cd76af783a2a2c49e9375d0a111c7bef6f71cd9e738c72d6e"
 dependencies = [
  "memoffset",
  "tempfile",
- "windows-sys 0.61.2",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
@@ -6445,6 +6442,61 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.119",
+]
+
+[[package]]
+name = "voice-engine-client"
+version = "0.3.3"
+source = "git+https://github.com/mmnzns/voice-engine?tag=v0.3.3#f5ea4ecc3f41163111cc067535dfc060e2e8292d"
+dependencies = [
+ "reqwest 0.12.28",
+ "serde_json",
+ "voice-engine-protocol",
+]
+
+[[package]]
+name = "voice-engine-llm"
+version = "0.3.3"
+source = "git+https://github.com/mmnzns/voice-engine?tag=v0.3.3#f5ea4ecc3f41163111cc067535dfc060e2e8292d"
+dependencies = [
+ "llama-cpp-2",
+ "num_cpus",
+ "serde_json",
+ "voice-engine-protocol",
+]
+
+[[package]]
+name = "voice-engine-models"
+version = "0.3.3"
+source = "git+https://github.com/mmnzns/voice-engine?tag=v0.3.3#f5ea4ecc3f41163111cc067535dfc060e2e8292d"
+dependencies = [
+ "dirs 7.0.0",
+ "reqwest 0.12.28",
+ "sha2",
+]
+
+[[package]]
+name = "voice-engine-protocol"
+version = "0.3.3"
+source = "git+https://github.com/mmnzns/voice-engine?tag=v0.3.3#f5ea4ecc3f41163111cc067535dfc060e2e8292d"
+dependencies = [
+ "base64 0.22.1",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "voice-engine-stt"
+version = "0.3.3"
+source = "git+https://github.com/mmnzns/voice-engine?tag=v0.3.3#f5ea4ecc3f41163111cc067535dfc060e2e8292d"
+dependencies = [
+ "ort",
+ "parakeet-rs",
+ "serde_json",
+ "voice-engine-models",
+ "voice-engine-protocol",
+ "whisper-rs",
+ "windows",
 ]
 
 [[package]]
@@ -6765,7 +6817,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.61.2",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
@@ -6786,7 +6838,7 @@ dependencies = [
  "objc2-foundation",
  "objc2-quartz-core",
  "raw-window-handle",
- "windows-sys 0.61.2",
+ "windows-sys 0.60.2",
  "windows-version",
 ]
 
@@ -7176,7 +7228,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7d6f32a0ff4a9f6f01231eb2059cc85479330739333e0e58cadf03b6af2cca10"
 dependencies = [
  "cfg-if",
- "windows-sys 0.61.2",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]

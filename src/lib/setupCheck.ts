@@ -41,7 +41,7 @@ export interface Probe {
   autoSave?: AutoSaveStatus;
 }
 
-const READY = new Set(["downloaded", "on_this_mac"]);
+const READY = new Set(["downloaded"]);
 const openSettings = () => platformCopy(os, currentLang()).openSettings;
 const pct = (p?: number) => Math.round((p ?? 0) * 100);
 
@@ -80,10 +80,13 @@ function gpu(p: Probe): CheckResult[] {
   if (!g) return [];
   const title = t("settings.setup_gpu");
   const ok = (detail: string): CheckResult[] => [{ id: "gpu", title, status: "ok", detail }];
-  const warn = (detail: string, retry = true): CheckResult[] => [
-    { id: "gpu", title, status: "warn", detail, fix: retry ? { label: t("settings.setup_gpu_retry"), action: "retryGpu" } : undefined },
-  ];
-  const error = g.detail ?? "?";
+  const warn = (detail: string): CheckResult[] => [{ id: "gpu", title, status: "warn", detail, fix: { label: t("settings.setup_gpu_retry"), action: "retryGpu" } }];
+  // `detail` is codes for the parts that fell back ("stt", "llm", "stt,llm"), worded here.
+  const parts = (g.detail ?? "")
+    .split(",")
+    .filter((c) => c === "stt" || c === "llm")
+    .map((c) => t(c === "stt" ? "settings.setup_gpu_part_stt" : "settings.setup_gpu_part_llm"))
+    .join(", ");
   switch (g.state) {
     case "metal":
       return ok(t("settings.setup_gpu_metal"));
@@ -94,12 +97,9 @@ function gpu(p: Probe): CheckResult[] {
       return ok(g.vramMb ? t("settings.setup_gpu_in_use", { name, size: Math.round(g.vramMb / 1024) }) : t("settings.setup_gpu_in_use_plain", { name }));
     }
     case "failed":
-      return warn(t("settings.setup_gpu_failed", { error }));
+      return warn(t("settings.setup_gpu_failed", { parts: parts || t("settings.setup_gpu_part_stt") }));
     case "unavailable":
-      if (g.reason === "no_gpu") return ok(t("settings.setup_gpu_no_gpu"));
-      if (g.reason === "no_helper") return warn(t("settings.setup_gpu_no_helper"), false);
-      if (g.reason === "no_vulkan") return warn(t("settings.setup_gpu_no_vulkan"));
-      return warn(t("settings.setup_gpu_no_start", { error }));
+      return ok(t("settings.setup_gpu_no_gpu"));
   }
 }
 
@@ -174,7 +174,7 @@ function summary(p: Probe): CheckResult {
     if (s.ollamaModel && !server.models.includes(s.ollamaModel)) return r("warn", t("settings.setup_summary_gone", { name: s.ollamaModel }));
     return r("ok", s.ollamaModel ? t("settings.setup_summary_server_model", { name: s.ollamaModel }) : t("settings.setup_summary_server"));
   }
-  const model = s.localModels.find((m) => m.choice === s.localModel) ?? s.localModels[0];
+  const model = s.localModels.find((m) => m.id === s.localModel) ?? s.localModels[0];
   if (model?.state === "downloaded") return r("ok", t("settings.setup_ready", { name: `${t("settings.engine_local")} · ${model.name}` }));
   if (model?.state === "downloading") return r("warn", t("settings.setup_summary_downloading", { name: model.name, pct: pct(model.progress) }));
   return r("fail", t("settings.setup_summary_nolocal", { name: model?.name ?? "?" }));

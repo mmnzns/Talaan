@@ -230,6 +230,12 @@ const TABLE: &[(&str, &str, &str, &str)] = &[
         "Téléchargez le modèle d’IA local ({name}, {size} Go) dans Paramètres › IA de résumé.",
         "Descarga el modelo de IA local ({name}, {size} GB) en Ajustes › IA de resumen.",
     ),
+    (
+        "ai.download_local_short",
+        "Download the local AI model in Settings › Summary AI.",
+        "Téléchargez le modèle d’IA local dans Paramètres › IA de résumé.",
+        "Descarga el modelo de IA local en Ajustes › IA de resumen.",
+    ),
     ("ai.connected", "Connected.", "Connecté.", "Conectado."),
     ("ai.connected_model", "Connected. Summaries will use {model}.", "Connecté. Les résumés utiliseront {model}.", "Conectado. Los resúmenes usarán {model}."),
     (
@@ -268,6 +274,18 @@ const TABLE: &[(&str, &str, &str, &str)] = &[
         "The local AI stopped unexpectedly. Try again.",
         "L’IA locale s’est arrêtée de façon inattendue. Réessayez.",
         "La IA local se detuvo de forma inesperada. Vuelve a intentarlo.",
+    ),
+    (
+        "transcribe.helper_failed",
+        "Transcription stopped unexpectedly. Try again.",
+        "La transcription s’est arrêtée de façon inattendue. Réessayez.",
+        "La transcripción se detuvo de forma inesperada. Vuelve a intentarlo.",
+    ),
+    (
+        "transcribe.out_of_memory",
+        "There wasn't enough memory to transcribe this call. Try a smaller speech model, or close other apps.",
+        "Il n’y avait pas assez de mémoire pour transcrire cet appel. Essayez un modèle de voix plus petit ou fermez d’autres applications.",
+        "No había suficiente memoria para transcribir esta llamada. Prueba un modelo de voz más pequeño o cierra otras apps.",
     ),
     (
         "local_ai.out_of_memory",
@@ -409,17 +427,26 @@ const TABLE: &[(&str, &str, &str, &str)] = &[
     ("error.summary_internal", "Talaan hit a problem writing this summary. Try again.", "Talaan a rencontré un problème en rédigeant ce résumé. Réessayez.", "Talaan tuvo un problema al escribir este resumen. Inténtalo de nuevo."),
     ("error.followup_internal", "Talaan hit a problem writing this email. Try again.", "Talaan a rencontré un problème en rédigeant ce courriel. Réessayez.", "Talaan tuvo un problema al escribir este correo. Inténtalo de nuevo."),
     ("error.unknown_template", "Unknown meeting type.", "Type de réunion inconnu.", "Tipo de reunión desconocido."),
+    ("error.unknown_language", "Unknown summary language.", "Langue de résumé inconnue.", "Idioma de resumen desconocido."),
     (
         "download.stalled",
         "The download of {name} stopped: no data for 30 seconds. Check your connection and try again.",
         "Le téléchargement de {name} s’est arrêté : aucune donnée depuis 30 secondes. Vérifiez votre connexion et réessayez.",
         "La descarga de {name} se detuvo: no llegaron datos en 30 segundos. Revisa tu conexión e inténtalo de nuevo.",
     ),
+    ("download.offline", "no internet connection", "pas de connexion Internet", "sin conexión a internet"),
+    ("download.disk_full", "There isn't enough free space for this model.", "Il n’y a pas assez d’espace libre pour ce modèle.", "No hay suficiente espacio libre para este modelo."),
     (
-        "download.not_a_model",
-        "Couldn't download {name}: the network sent a web page instead. You may need to sign in to this Wi-Fi in your browser first.",
-        "Impossible de télécharger {name} : le réseau a renvoyé une page Web. Vous devrez peut-être d’abord vous connecter à ce Wi-Fi dans votre navigateur.",
-        "No se pudo descargar {name}: la red envió una página web. Quizás primero debas iniciar sesión en esta red Wi-Fi desde tu navegador.",
+        "download.elsewhere",
+        "Another app is downloading {name}. It will be ready here when it finishes.",
+        "Une autre application télécharge {name}. Il sera prêt ici dès que ce sera terminé.",
+        "Otra aplicación está descargando {name}. Estará listo aquí cuando termine.",
+    ),
+    (
+        "error.model_in_use",
+        "A meeting is being transcribed with this model right now. Try again when it's done.",
+        "Une réunion est en cours de transcription avec ce modèle. Réessayez quand elle sera terminée.",
+        "Se está transcribiendo una reunión con este modelo. Inténtalo de nuevo cuando termine.",
     ),
     // The guided test recording's title (set when it starts).
     ("recorder.test_title", "Test recording", "Enregistrement test", "Grabación de prueba"),

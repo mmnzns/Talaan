@@ -4,10 +4,10 @@ import { speakerName } from "../../lib/transcript";
 import { formatDate, formatDuration, formatTime } from "../../lib/format";
 import { useT } from "../../lib/i18n/I18nProvider";
 import { inTauri } from "../../lib/windows";
-import { meetingNotes } from "../../lib/share";
+import { meetingNotes, type ExportScope } from "../../lib/share";
 
 /** A meeting laid out for paper / PDF (`#/print/:id`). Opens the print sheet once it has rendered. */
-export function PrintView({ id, withTranscript }: { id: string; withTranscript: boolean }) {
+export function PrintView({ id, scope }: { id: string; scope: ExportScope }) {
   const { meeting } = useMeeting(id);
   const t = useT();
 
@@ -43,7 +43,7 @@ export function PrintView({ id, withTranscript }: { id: string; withTranscript: 
           {meeting.appLabel} · {formatDate(meeting.startedAt)} · {formatDuration(meeting.durationMs)}
         </div>
       </header>
-      {s ? (
+      {scope === "transcript" ? null : s ? (
         <>
           <p className="m-0 mb-5 text-[15px] leading-[23px]">{s.recap}</p>
           {notes}
@@ -64,8 +64,9 @@ export function PrintView({ id, withTranscript }: { id: string; withTranscript: 
           {notes}
         </>
       )}
-      {withTranscript && meeting.transcript.length > 0 && (
-        <section className="mt-6 break-before-page">
+      {scope === "transcript" && meeting.transcript.length === 0 && <p className="text-subtle">{t("meeting.shNoTranscript")}</p>}
+      {scope !== "summary" && meeting.transcript.length > 0 && (
+        <section className={scope === "both" ? "mt-6 break-before-page" : "mt-2"}>
           <h2 className="mb-3 text-[15px] font-bold lowercase font-mono tracking-normal">{t("meeting.shTranscript")}</h2>
           {meeting.transcript.map((l) => (
             <p key={l.id} className="m-0 mb-2 text-[13px] leading-[19px] [break-inside:avoid]">

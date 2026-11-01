@@ -17,6 +17,7 @@ v1.0 ships Mac (Apple silicon, built on Miguel's MacBook) and Windows (x64, buil
 5. **Commit after every change that builds and works.** CI must stay green.
 6. **Talaan's own look ("Sinag", UI v3).** Talaan has its own identity reflecting Miguel's Filipino heritage (decided 2026-10-14, replacing the shared Parlato look). Its own token file (`src/styles/tokens.css`) and components. Don't copy Parlato's component files.
 7. **Notion first:** keep the Talaan Journey decisions and Build Log updated as work happens. Repo docs are generated from Notion.
+8. **Absolute rule: Sonnet does the heavy lifting.** If Sonnet can handle the development work, Sonnet does it: implementing, tests, routine reviews, docs, searches, reading long pages. Spawn those agents with the Sonnet model. Opus only plans, coordinates, and takes what truly needs deeper judgment (architecture, tricky debugging, final review of risky changes). No exceptions for convenience. Reason: Miguel wants token usage kept down (decided 2026-10-29).
 
 ## How the build runs
 
@@ -30,16 +31,18 @@ v1.0 ships Mac (Apple silicon, built on Miguel's MacBook) and Windows (x64, buil
 
 ### Model per milestone
 
+Historical split from the v1 build. For new work, Build rule 8 decides: Sonnet unless the work truly needs Opus.
+
 - **Opus:** M0, every milestone's task plan, M3 Recorder, M4 Transcriber, M8 Named speakers and Ask, the local summary model pick in M5, any bug that survives two Sonnet attempts.
 - **Sonnet:** M1 UI, M2 Storage, M5 Summarizer wiring, M6 Call detection and menu bar, M7 Meeting features, M9 Organize and connect, M10 Release prep.
 
 ## Architecture
 
 - Tauri 2. Rust backend in focused modules (storage, recorder, transcriber, summarizer, call detection) behind Tauri commands. React + TypeScript + Vite + Tailwind 4 frontend talks only to those commands.
-- **Platform facade:** OS-specific code lives in `src-tauri/src/platform/macos/` and `platform/windows/`, which expose the same items; `platform/mod.rs` re-exports the one being built, so callers say `crate::platform::…`. Where a flow differs, shared files also carry `cfg(target_os = …)` blocks or `cfg!(windows)` values (lib.rs, commands/calendar.rs, calls.rs, mod.rs, recorder.rs, settings.rs, tray.rs, summarizer/local.rs, the Whisper thread count in transcriber/engine.rs); the Windows port touched those shared files, so check both platforms when changing them. Frontend: `src/lib/platform.ts` (`onWindows`, and `usePlatform()` for the words that differ).
+- **Platform facade:** OS-specific code lives in `src-tauri/src/platform/macos/` and `platform/windows/`, which expose the same items; `platform/mod.rs` re-exports the one being built, so callers say `crate::platform::…`. Where a flow differs, shared files also carry `cfg(target_os = …)` blocks or `cfg!(windows)` values (lib.rs, commands/calendar.rs, calls.rs, mod.rs, recorder.rs, settings.rs, tray.rs, summarizer/local.rs); the Windows port touched those shared files, so check both platforms when changing them. Frontend: `src/lib/platform.ts` (`onWindows`, and `usePlatform()` for the words that differ).
 - **Languages:** the UI is in English, French (Canadian) and Spanish: `src/lib/i18n` for the screens, `src-tauri/src/i18n.rs` (`tr`, `tr_with`, `tr_err`) for what Rust shows (tray, notifications, errors). Rules and what stays English: `docs/I18N.md`.
 - Frontend data comes from one `MeetingStore` interface (mock in M1, real in M2), so screens never change when data sources do.
-- Stack: whisper.cpp via whisper-rs with Metal (Whisper, default model Whisper Large Turbo), ONNX Runtime via parakeet-rs (Parakeet), llama.cpp in a separate helper process `talaan-llm` (local summary AI, default Qwen3.5 4B), Core Audio process taps (macOS 14.4+, no ScreenCaptureKit fallback), macOS Keychain, GitHub Actions.
+- Stack: speech (whisper.cpp with Metal, ONNX Runtime for Parakeet; default model Whisper Large Turbo) and local summary AI (llama.cpp in a separate helper process `talaan-llm`, default Qwen3.5 4B) come from voice-engine; models live in its shared folder; Core Audio process taps (macOS 14.4+, no ScreenCaptureKit fallback), macOS Keychain, GitHub Actions.
 
 ```
 src/
@@ -87,20 +90,20 @@ src-tauri/src/
     playback.rs         both tracks mixed into playback.wav on first Play (deleted with the audio)
   commands/transcriber.rs  worker setup, meetings_retry, models_list / download / cancel / delete
   transcriber/          speech to text (no Tauri types)
-    models.rs download.rs  catalog (pinned revisions, sizes, sha256), reuse "On this Mac", resumable verified downloads
+    models.rs speech.rs  Talaan's order of recommendation over the engine's catalog; speech model state from the shared folder
     vad.rs              read tracks, Silero VAD, chunk shaping per engine (pad, join, split at quiet points, pack)
     engine.rs           Engine trait; Parakeet (silence padding, resume when it stops early) and Whisper (Metal)
-    remote.rs fallback.rs  Windows: Whisper in the GPU helper, with the processor taking over on any failure
+    helper_speech.rs    Windows: Whisper in the engine's GPU helper (SttClient), the processor taking over on a failure
     pipeline.rs         tracks -> chunks -> engine -> retry skipped speech -> echo -> merge -> language
     echo.rs merge.rs    drop Me lines the mic heard from the speakers; interleave and join into lines
-    diarize.rs          named speakers: Nemotron 3 Diarization (parakeet-rs sortformer) on the Them track, warm-up pass, Speaker 1, 2, 3
+    diarize.rs          named speakers: Nemotron 3 Diarization (the engine's diarize) on the Them track, warm-up pass, Speaker 1, 2, 3
     worker.rs           one background thread, queue rebuilt from `transcribing` at launch, idle unload
   commands/summarizer.rs  summary worker setup, engine factory from settings, Generate summary, LLM models, keys, local servers
   summarizer/           summaries (no Tauri types)
     prompt.rs parse.rs  the one fixed prompt + JSON schema; reply parsing, time snapping, title
     chunk.rs summarize.rs  split long calls on speaker turns, summarize parts, merge; one retry on bad output
     engines.rs          local helper, Claude, OpenAI, Gemini, OpenAI-compatible (Ollama, LM Studio); model lists
-    local.rs models.rs  client for the talaan-llm helper; local model catalog (Qwen3.5 4B / 9B)
+    local.rs            LlmClient for the talaan-llm helper; local models are the engine's catalog (Qwen3.5 4B / 9B, Granite 4.2 3B)
     worker.rs           summarizing -> ready (with summary_error when there's no engine or it failed)
   ask/                  Ask (no Tauri types): passages.rs (transcript windows + summary items), search.rs (BM25, cosine,
                         rank fusion), index.rs (search.bin vectors beside each meeting), answer.rs (prompt, schema, citations)
@@ -115,10 +118,10 @@ src-tauri/src/
   notion.rs             Notion export: page blocks, client (search, pages, append); commands/notion.rs
   commands/calls.rs     1 Hz loop: mic users -> rules -> recordings and the prompt window (nudge, banner, call ended)
   commands/tray.rs      menu bar icon + timer, popover window, window_fit, main window hides on close
-  llm/ llm-protocol/    the talaan-llm helper (own llama.cpp + Metal) and its stdin/stdout protocol (also the Whisper
-                        helper's, and the GPU device policy); Windows also builds talaan-llm-vulkan (docs/plans/G1)
-  stt/                  Whisper chunk transcription shared by the app and the Windows GPU helper talaan-stt-vulkan
-  gpu.rs  helper.rs     Windows GPU: when to use a Vulkan helper, gpu.json failures; JSON-lines helper processes
+  llm/  stt/            3-line dev helper crates (`talaan-llm`, `talaan-stt`) that run the engine's helpers; release helpers
+                        (incl. Windows Vulkan) are built by the engine's workflow. summarizer/local.rs makes the LlmClients
+  models.rs             `Models`: the shared model folder (SharedStore), the one-time move in, claim and collect
+  gpu.rs                the card default (Mac on; Windows on only with a discrete card) and what fell back this run
   platform/mod.rs       picks the OS module
   platform/macos/       Mac-only code
     system_tap.rs       Core Audio global process tap (excludes Talaan) + private aggregate device + IOProc
@@ -155,7 +158,7 @@ settings.json   library.json   meetings/<YYYY-MM-DD_HHMM_xxxx>/
 - Writes are atomic (temp file + rename). Unknown JSON fields are preserved. A meeting written by a newer schema is listed as failed and never touched.
 - Pinned meetings and meetings that still need their audio (recording, needs recovery, processing) are never touched by retention.
 - Stop and Recover put a meeting in `transcribing`; the transcriber writes `transcript.json` and sets `summarizing`; the summarizer writes `summary.json` and sets `ready` (or `ready` with `summaryError` when no engine is set up or it failed; Generate summary retries). Failures keep `error {code, message}`; `no_model` meetings are re-queued when a model finishes downloading. 
-- Speech models live in `<data>/models/<id>/`; their state comes from disk (`models_list`), never from `settings.json`.
+- Models live in the shared folder (`~/Library/Application Support/Craft Concepts Digital/Models`; Windows `%LOCALAPPDATA%\Craft Concepts Digital\Models`), shared with the other apps; their state comes from disk (`models_list`), never from `settings.json`.
 - In the Tauri app the stores talk to Rust (`src/data/tauri/`); in a plain browser the sample data is used. Debug builds have **Screens → Dev data** to load the sample meetings onto disk.
 - Frontend and Rust share `fixtures/meeting.sample.json`: Rust round-trips it, TS checks its shape.
 
@@ -186,12 +189,34 @@ settings.json   library.json   meetings/<YYYY-MM-DD_HHMM_xxxx>/
 - **Consent:** on start, a recording reminder plus one-click "copy notice" for the meeting chat.
 - **Privacy:** nothing leaves the Mac unless BYOK or Notion export is used. Audio kept 7 days by default (1 / 7 / 30 days / forever / don't keep), pinned meetings keep audio, transcripts kept until deleted. Keys in the Keychain. "Delete all Talaan data" removes everything.
 - **Storage:** each meeting is a plain folder: `meeting.json`, `me.wav`, `them.wav` (16 kHz mono), `transcript.json/.md`, `summary.json/.md`, edits beside originals.
-- **Model reuse:** offer speech models already on this Mac read-only; show them as "On this Mac", never name the other app. Confirm actual folder paths, don't guess.
+- **Shared models:** every app of Craft Concepts Digital uses one model folder, so a model downloads once; Delete releases it for Talaan only (the engine erases it when no other app uses it).
 - **Signing:** no paid signing. Free self-signed certificate so permissions survive updates; microphone entitlement declared; Metal GPU for speech and local AI.
 
 ## Edge cases to honor
 
 Echo (drop Me lines matching Them within ~2 s, speaker warning on built-in output) · crash/sleep/device changes (folder created at start with "recording" status, audio flushed every few seconds, Recover/Discard on launch, follow device switches) · long meetings (chunk on speaker turns, summarize, merge, show progress) · no summary engine (save transcript-only, "Generate summary" later) · language (auto-detect per meeting, override, model picker shows languages) · titles (placeholder "Call, Zoom, Oct 14, 2:30 PM", replaced by summary title, editable) · permissions (explain before macOS asks, deep-link on denial).
+
+## Shared engine (voice-engine)
+
+The local AI helper, the helper protocol, speech model runtimes, the model catalog, the shared model folder and the
+downloader come from https://github.com/mmnzns/voice-engine, pinned by tag in src-tauri/Cargo.toml.
+
+- Sonnet does the heavy lifting, no exceptions: hand every piece of development work Sonnet can handle to Sonnet
+  subagents. Opus only plans, briefs, reviews and decides.
+- Before working on AI, speech or models, read the engine change log on the Notion page "Voice Apps Engine Sync".
+- Never edit engine code from this repository. If the engine needs a change, open an issue on mmnzns/voice-engine.
+- Move to a new engine tag only on purpose, on a branch, after the tests and a manual check pass. Then update this
+  app's column in the change log.
+- The build settings live in the committed repo-root .cargo/config.toml. A local [patch] pointing at
+  ~/Developer/voice-engine is for trying changes only: put it in ~/.cargo/config.toml or pass --config, never in a
+  committed file; releases build against the tag.
+
+Release builds have no LTO (`lto = false`): the engine's Metal code doesn't link with it on macOS.
+
+## Testing and safety
+
+- Tests that delete data (meetings, models, settings) only ever use throwaway items they create themselves, never Miguel's real data. In Parlato an agent deleted one of Miguel's real dictations this way.
+- An app launched by Claude may run with a sandboxed copy of the settings and data, so never trust Claude's own view of Miguel's settings. Ask, or check on his real machine.
 
 ## Commands
 
@@ -204,8 +229,8 @@ cargo test --manifest-path src-tauri/Cargo.toml    # Rust tests
 TALAAN_SMOKE_MEETING=<meeting dir> cargo test --release --manifest-path src-tauri/Cargo.toml pipeline_smoke -- --ignored --nocapture   # real models on a real call
 npm run build                                      # type-check + build frontend
 scripts/build-signed-debug.sh                      # signed debug .app (needed for real mic/system-audio permissions)
-scripts/build-llm-helper.sh                        # builds the talaan-llm helper (tauri dev/build run it first)
-powershell -File scripts/build-llm-helper.ps1       # Windows: builds the talaan-llm helper
+scripts/build-llm-helper.sh                        # builds the dev helpers (tauri dev/build run it first)
+powershell -File scripts/build-llm-helper.ps1       # Windows: builds the dev helpers
 ```
 
 On Windows `npm run tauri dev` needs no signing for mic or system audio.

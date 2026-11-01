@@ -101,7 +101,7 @@ export function TestRecordingCard() {
   const modelNote =
     speech?.state === "downloading"
       ? t("onboarding.testModelDownloading", { pct: Math.floor((speech.progress ?? 0) * 100) })
-      : !settings.speechModels.some((m) => m.state === "downloaded" || m.state === "on_this_mac")
+      : !settings.speechModels.some((m) => m.state === "downloaded")
         ? t("onboarding.testNoModel")
         : undefined;
 

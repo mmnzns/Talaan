@@ -3,7 +3,11 @@
 
 use super::engine::Engine;
 use super::diarize::SpeakerSplitter;
-use super::models::{find, ModelInfo, ModelStore, DEFAULT_MODEL, DIARIZATION, VAD};
+use crate::models::{Models, DEFAULT_SPEECH, DIARIZATION, VAD};
+use voice_engine_models::{catalog, ModelHandle, ModelInfo};
+use voice_engine_stt::SpeechBackend;
+#[cfg(test)]
+use voice_engine_stt::Fallback;
 use super::pipeline::{run, Detector, PipelineError};
 use crate::eta::{self, Device};
 use crate::storage::model::{MeetingFile, MeetingStatus, ProcessingError, TranscriptionInfo};
@@ -12,7 +16,7 @@ use crate::storage::speed::set_eta;
 use crate::storage::Storage;
 use serde_json::Value;
 use std::collections::VecDeque;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Condvar, Mutex};
 use std::time::{Duration, Instant};
@@ -32,7 +36,6 @@ pub struct Config {
     /// None = detect.
     pub language: Option<String>,
     pub use_gpu: bool,
-    pub reuse: bool,
     /// Split the Them track into Speaker 1, 2, 3 (when the model is downloaded).
     pub separate_speakers: bool,
     /// Hand each new transcript to the summarizer (Settings › Summary AI › Summarize automatically).
@@ -42,41 +45,44 @@ pub struct Config {
 impl Config {
     pub fn from_settings(v: Option<&Value>) -> Config {
         let v = v.cloned().unwrap_or(Value::Null);
-        let model = v["activeSpeechModel"].as_str().and_then(find).filter(|m| m.id != VAD.id).unwrap_or_else(|| find(DEFAULT_MODEL).unwrap());
+        // Same reading as `models::used_ids`: an unknown or non-speech id ("diarization") is the default.
+        let model = v["activeSpeechModel"].as_str().and_then(catalog::find).filter(|m| m.is_speech()).unwrap_or_else(|| catalog::find(DEFAULT_SPEECH).unwrap());
         let language = v["meetingLanguage"].as_str().filter(|l| !l.is_empty() && *l != "auto").map(str::to_string);
         Config {
             model,
             language,
             use_gpu: v["useGpu"].as_bool().unwrap_or(true),
-            reuse: v["reuseModels"].as_bool().unwrap_or(true),
             separate_speakers: v["separateSpeakers"].as_bool().unwrap_or(true),
             summarize: v["summarizeAutomatically"].as_bool().unwrap_or(true),
         }
     }
 }
 
-pub type EngineLoader = dyn Fn(&ModelInfo, &Path, bool) -> Result<Box<dyn Engine>, String> + Send + Sync;
-pub type DetectorLoader = dyn Fn(&Path) -> Result<Box<dyn Detector + Send>, String> + Send + Sync;
-pub type SplitterLoader = dyn Fn(&Path) -> Result<Box<dyn SpeakerSplitter>, String> + Send + Sync;
+/// Each loader gets the model held (the engine erases nothing in use) and keeps the handle while the model is loaded.
+/// The engine's `bool` is whether the card is asked for (`asks_card`), not the raw setting.
+pub type EngineLoader = dyn Fn(&'static ModelInfo, ModelHandle, bool) -> Result<Box<dyn Engine>, String> + Send + Sync;
+pub type DetectorLoader = dyn Fn(ModelHandle) -> Result<Box<dyn Detector + Send>, String> + Send + Sync;
+pub type SplitterLoader = dyn Fn(ModelHandle) -> Result<Box<dyn SpeakerSplitter>, String> + Send + Sync;
 /// Whether a model will run on the graphics chip, given the "use the GPU" setting (for the time estimate).
 pub type OnGpu = dyn Fn(&ModelInfo, bool) -> bool + Send + Sync;
 
 pub struct Deps {
     pub storage: Arc<Mutex<Storage>>,
-    pub data_dir: PathBuf,
     /// Called whenever a meeting's status or progress changed.
     pub changed: Arc<dyn Fn() + Send + Sync>,
     pub load_engine: Box<EngineLoader>,
     pub load_detector: Box<DetectorLoader>,
     pub load_splitter: Box<SplitterLoader>,
-    /// Extra folders to look for models in (tests); the real app uses the defaults.
-    pub reuse_roots: Option<Vec<PathBuf>>,
+    /// Where the models are (the shared folder; a temp folder in tests).
+    pub models: Arc<Models>,
     /// Called with a meeting id once its transcript is saved and it is `summarizing` (not when it waits).
     pub transcribed: Arc<dyn Fn(&str) + Send + Sync>,
     /// Called with a meeting id and title once its transcript is saved and nothing else will run on it by itself
     /// (transcript only, or automatic summaries off): the "Transcript ready" notification.
     pub transcript_ready: Arc<dyn Fn(&str, &str) + Send + Sync>,
     pub on_gpu: Arc<OnGpu>,
+    /// Set when Talaan is quitting (`crate::quit`): a job that ends then is left as it is, not failed.
+    pub quitting: Arc<AtomicBool>,
 }
 
 #[derive(Default)]
@@ -88,18 +94,25 @@ struct Queue {
 pub struct Worker {
     queue: Arc<(Mutex<Queue>, Condvar)>,
     cancel: Arc<AtomicBool>,
+    /// The model ids the meeting being transcribed right now uses (speech model, voice detection, speaker model).
+    busy: Arc<Mutex<Vec<&'static str>>>,
+    /// The loaded engine, detector and splitter. The worker thread holds the lock for as long as a job runs, so
+    /// whoever gets it (`try_lock`) knows the worker is idle.
+    loaded: Arc<Mutex<Option<Loaded>>>,
 }
 
 impl Worker {
     pub fn start(deps: Deps) -> Worker {
         let queue: Arc<(Mutex<Queue>, Condvar)> = Arc::default();
         let cancel = Arc::new(AtomicBool::new(false));
-        let w = Worker { queue: queue.clone(), cancel: cancel.clone() };
+        let busy: Arc<Mutex<Vec<&'static str>>> = Arc::default();
+        let loaded: Arc<Mutex<Option<Loaded>>> = Arc::default();
+        let w = Worker { queue: queue.clone(), cancel: cancel.clone(), busy: busy.clone(), loaded: loaded.clone() };
         std::thread::Builder::new()
             .name("transcriber".into())
             .spawn(move || {
                 crate::platform::background_priority();
-                worker_loop(deps, queue, cancel)
+                worker_loop(deps, queue, cancel, busy, loaded)
             })
             .expect("transcriber thread");
         w
@@ -115,6 +128,11 @@ impl Worker {
         }
     }
 
+    /// Whether a meeting is being transcribed right now with this model (Delete waits until it is done).
+    pub fn is_using(&self, model_id: &str) -> bool {
+        self.busy.lock().unwrap_or_else(|e| e.into_inner()).contains(&model_id)
+    }
+
     /// Stops the meeting being transcribed now (it is being deleted).
     pub fn cancel_if_running(&self, id: &str) {
         let (lock, _) = &*self.queue;
@@ -122,6 +140,60 @@ impl Worker {
         q.ids.retain(|i| i != id);
         if q.current.as_deref() == Some(id) {
             self.cancel.store(true, Ordering::Relaxed);
+        }
+    }
+
+    /// A model is about to be deleted: when the worker is idle and has it loaded (an idle engine keeps the model's
+    /// file open for five minutes), lets go of it. A busy worker is left alone; `is_using` already says no to a
+    /// model its job uses, and any other model isn't loaded.
+    pub fn unload_model(&self, id: &str) {
+        let mut l = match self.loaded.try_lock() {
+            Ok(l) => l,
+            Err(std::sync::TryLockError::Poisoned(e)) => e.into_inner(),
+            Err(std::sync::TryLockError::WouldBlock) => return,
+        };
+        match l.as_mut() {
+            // The engine, the voice detector and the speaker model go together: the next job loads them again.
+            Some(x) if x.model_id == id || id == VAD => {
+                l.take();
+            }
+            Some(x) if id == DIARIZATION => x.splitter = None,
+            _ => {}
+        }
+    }
+
+    /// Cancels the job running now, leaving its meeting as it is (Talaan is quitting).
+    pub fn cancel_running(&self) {
+        let (lock, _) = &*self.queue;
+        let q = lock.lock().unwrap_or_else(|e| e.into_inner());
+        if q.current.is_some() {
+            self.cancel.store(true, Ordering::Relaxed);
+        }
+    }
+
+    /// Stops everything now: nothing queued starts, the job running is cancelled (it stays as it is on disk), and
+    /// once the worker is idle its loaded models are dropped, so no file or helper stays open. Waits up to `wait`
+    /// for a running job to notice the cancel; after that the caller goes on (the app is about to exit).
+    pub fn stop_all(&self, wait: Duration) {
+        {
+            let (lock, _) = &*self.queue;
+            let mut q = lock.lock().unwrap_or_else(|e| e.into_inner());
+            q.ids.clear();
+            if q.current.is_some() {
+                self.cancel.store(true, Ordering::Relaxed);
+            }
+        }
+        let started = Instant::now();
+        loop {
+            match self.loaded.try_lock() {
+                Ok(mut l) => return drop(l.take()),
+                Err(std::sync::TryLockError::Poisoned(e)) => return drop(e.into_inner().take()),
+                Err(std::sync::TryLockError::WouldBlock) if started.elapsed() >= wait => {
+                    log::warn!("the transcriber was still busy when everything was stopped");
+                    return;
+                }
+                Err(_) => std::thread::sleep(Duration::from_millis(20)),
+            }
         }
     }
 
@@ -133,17 +205,30 @@ impl Worker {
     }
 }
 
+/// Whether the setting means the graphics card for this model on this computer: Metal for Whisper on the Mac,
+/// Vulkan (Whisper) or DirectML (Parakeet) on Windows. A model with no card path here is never asked for one, so
+/// the engine's `fallback` is never `NoCardPath` by design (and only `CardFailed` and `CardOutOfMemory` are failures).
+pub fn asks_card(model: &ModelInfo, use_gpu: bool) -> bool {
+    use_gpu
+        && if cfg!(target_os = "macos") {
+            model.gpu.mac_metal
+        } else {
+            cfg!(windows) && (model.gpu.windows_vulkan || model.gpu.windows_directml)
+        }
+}
+
 struct Loaded {
     model_id: &'static str,
     use_gpu: bool,
     engine: Box<dyn Engine>,
+    /// Where the model landed when it loaded (None for an engine that does not say).
+    backend: Option<SpeechBackend>,
     detector: Box<dyn Detector + Send>,
     /// Loaded on first use; None when the model isn't downloaded or speaker separation is off.
     splitter: Option<Box<dyn SpeakerSplitter>>,
 }
 
-fn worker_loop(deps: Deps, queue: Arc<(Mutex<Queue>, Condvar)>, cancel: Arc<AtomicBool>) {
-    let mut loaded: Option<Loaded> = None;
+fn worker_loop(deps: Deps, queue: Arc<(Mutex<Queue>, Condvar)>, cancel: Arc<AtomicBool>, busy: Arc<Mutex<Vec<&'static str>>>, loaded: Arc<Mutex<Option<Loaded>>>) {
     let (lock, cv) = &*queue;
     loop {
         let id = {
@@ -152,18 +237,20 @@ fn worker_loop(deps: Deps, queue: Arc<(Mutex<Queue>, Condvar)>, cancel: Arc<Atom
             loop {
                 if let Some(id) = q.ids.pop_front() {
                     q.current = Some(id.clone());
+                    // Under the queue lock, so a cancel (`stop_all`, `cancel_if_running`) can't land before it.
+                    cancel.store(false, Ordering::Relaxed);
                     break id;
                 }
                 let (next, timeout) = cv.wait_timeout(q, IDLE_UNLOAD).unwrap_or_else(|e| e.into_inner());
                 q = next;
                 if timeout.timed_out() && q.ids.is_empty() {
                     // Free the model's memory when nothing has happened for a while.
-                    loaded = None;
+                    loaded.lock().unwrap_or_else(|e| e.into_inner()).take();
                 }
             }
         };
-        cancel.store(false, Ordering::Relaxed);
-        process(&deps, &id, &mut loaded, &cancel);
+        process(&deps, &id, &mut loaded.lock().unwrap_or_else(|e| e.into_inner()), &cancel, &busy);
+        busy.lock().unwrap_or_else(|e| e.into_inner()).clear();
         (deps.changed)();
     }
 }
@@ -173,6 +260,12 @@ fn lock(storage: &Mutex<Storage>) -> std::sync::MutexGuard<'_, Storage> {
 }
 
 fn fail(deps: &Deps, id: &str, code: &str, message: String) {
+    // Talaan is quitting and the helpers are going: the job ended because of that. The meeting stays `transcribing`
+    // and is picked up again at the next launch.
+    if deps.quitting.load(Ordering::SeqCst) {
+        log::info!("transcription interrupted by quitting: meeting {id} stays as it is");
+        return;
+    }
     log::warn!("transcription failed: meeting {id} ({code}): {}", crate::logging::text(&message));
     let _ = lock(&deps.storage).update_meeting_file(id, |f| {
         f.status = MeetingStatus::Failed;
@@ -185,7 +278,7 @@ fn fail(deps: &Deps, id: &str, code: &str, message: String) {
 /// The settings for one meeting: "Transcribe again" with another model applies to this meeting only.
 fn config_for(s: &Storage, file: &MeetingFile) -> Config {
     let mut config = Config::from_settings(s.settings_get().ok().flatten().as_ref());
-    if let Some(m) = file.retranscribe_model.as_deref().and_then(find).filter(|m| m.id != VAD.id) {
+    if let Some(m) = file.retranscribe_model.as_deref().and_then(catalog::find).filter(|m| m.is_speech()) {
         config.model = m;
     }
     config
@@ -233,7 +326,10 @@ pub fn restamp_queue(s: &Storage, ids: &[String], on_gpu: &OnGpu) {
     }
 }
 
-fn process(deps: &Deps, id: &str, loaded: &mut Option<Loaded>, cancel: &AtomicBool) {
+fn process(deps: &Deps, id: &str, loaded: &mut Option<Loaded>, cancel: &AtomicBool, busy: &Mutex<Vec<&'static str>>) {
+    if deps.quitting.load(Ordering::SeqCst) {
+        return;
+    }
     let (dir, config, transcript_only, audio) = {
         let s = lock(&deps.storage);
         let Ok(file) = s.read_meeting_file(id) else { return };
@@ -254,12 +350,16 @@ fn process(deps: &Deps, id: &str, loaded: &mut Option<Loaded>, cancel: &AtomicBo
         if config.separate_speakers { "separated" } else { "not separated" }
     );
 
-    let mut store = ModelStore::new(&deps.data_dir, config.reuse);
-    if let Some(roots) = &deps.reuse_roots {
-        store.reuse_roots = roots.clone();
+    {
+        let mut b = busy.lock().unwrap_or_else(|e| e.into_inner());
+        *b = vec![config.model.id, VAD];
+        if config.separate_speakers {
+            b.push(DIARIZATION);
+        }
     }
-    let (Some(model_dir), Some(vad_dir)) = (store.locate(config.model).dir().map(Path::to_path_buf), store.locate(&VAD).dir().map(Path::to_path_buf)) else {
-        fail(deps, id, NO_MODEL, "Download a speech model in Settings › Speech models to transcribe this call.".into());
+    let no_model = || "Download a speech model in Settings › Speech models to transcribe this call.".to_string();
+    let (Ok(model_handle), Ok(vad_handle)) = (deps.models.hold(config.model.id), deps.models.hold(VAD)) else {
+        fail(deps, id, NO_MODEL, no_model());
         return;
     };
 
@@ -278,22 +378,26 @@ fn process(deps: &Deps, id: &str, loaded: &mut Option<Loaded>, cancel: &AtomicBo
     if fresh {
         *loaded = None;
         let load = Instant::now();
-        let engine = match (deps.load_engine)(config.model, &model_dir, config.use_gpu) {
+        let engine = match (deps.load_engine)(config.model, model_handle, asks_card(config.model, config.use_gpu)) {
             Ok(e) => e,
             Err(e) => return fail(deps, id, "failed", e),
         };
-        let detector = match (deps.load_detector)(&vad_dir.join(VAD.files[0].name)) {
+        let detector = match (deps.load_detector)(vad_handle) {
             Ok(d) => d,
             Err(e) => return fail(deps, id, "failed", e),
         };
-        log::info!("speech engine loaded in {:.1}s: {}", load.elapsed().as_secs_f32(), engine.label());
-        *loaded = Some(Loaded { model_id: config.model.id, use_gpu: config.use_gpu, engine, detector, splitter: None });
+        let backend = engine.backend();
+        match &backend {
+            Some(b) => log::info!("speech engine loaded in {:.1}s: {} on {}{}", load.elapsed().as_secs_f32(), engine.label(), b.backend, if crate::gpu::is_card_failure(b.fallback) { " (the graphics card failed)" } else { "" }),
+            None => log::info!("speech engine loaded in {:.1}s: {}", load.elapsed().as_secs_f32(), engine.label()),
+        }
+        *loaded = Some(Loaded { model_id: config.model.id, use_gpu: config.use_gpu, engine, backend, detector, splitter: None });
     }
     let l = loaded.as_mut().expect("loaded above");
     if config.separate_speakers && l.splitter.is_none() {
-        if let Some(dir) = store.locate(&DIARIZATION).dir() {
+        if let Ok(handle) = deps.models.hold(DIARIZATION) {
             // A broken speaker model shouldn't cost the transcript: carry on without it.
-            l.splitter = (deps.load_splitter)(&dir.join(DIARIZATION.files[0].name)).inspect_err(|e| log::warn!("speaker separation unavailable: {}", crate::logging::text(e))).ok();
+            l.splitter = (deps.load_splitter)(handle).inspect_err(|e| log::warn!("speaker separation unavailable: {}", crate::logging::text(e))).ok();
         }
     }
     let splitter: Option<&mut dyn SpeakerSplitter> = match (&mut l.splitter, config.separate_speakers) {
@@ -320,6 +424,11 @@ fn process(deps: &Deps, id: &str, loaded: &mut Option<Loaded>, cancel: &AtomicBo
         }
     };
     let result = run(&dir, l.engine.as_mut(), l.detector.as_mut(), config.language.as_deref(), splitter, cancel, &mut report);
+    // Where the work ended up (the engine knows after the run: the speech helper can fall back to the processor mid-way).
+    let backend = l.engine.backend().or_else(|| l.backend.clone());
+    if let Some(b) = backend.as_ref().filter(|b| crate::gpu::is_card_failure(b.fallback)) {
+        crate::gpu::note_stt_fallback(&b.backend);
+    }
 
     match result {
         Ok(out) => {
@@ -375,6 +484,8 @@ fn process(deps: &Deps, id: &str, loaded: &mut Option<Loaded>, cancel: &AtomicBo
                     speech_ms: out.speech_ms,
                     took_ms: started.elapsed().as_millis() as u64,
                     finished_at: chrono::Local::now().fixed_offset().to_rfc3339(),
+                    gpu_fell_back: backend.as_ref().is_some_and(|b| crate::gpu::is_card_failure(b.fallback)),
+                    device: backend.as_ref().and_then(|b| b.device.clone()),
                 });
             });
             drop(s);
@@ -386,6 +497,9 @@ fn process(deps: &Deps, id: &str, loaded: &mut Option<Loaded>, cancel: &AtomicBo
         }
         // Cancelled means the meeting is being deleted; leave it alone.
         Err(PipelineError::Cancelled) => log::info!("transcription cancelled: meeting {id} (being deleted)"),
+        // The meeting was deleted (or everything was stopped) and the engine said so with an error instead of
+        // returning: same as cancelled.
+        Err(PipelineError::Failed(_)) if cancel.load(Ordering::Relaxed) => log::info!("transcription cancelled: meeting {id}"),
         Err(PipelineError::Failed(e)) => fail(deps, id, "failed", e),
     }
 }
@@ -438,6 +552,11 @@ mod tests {
 
     /// `secs` of tone on the Them track, the given engine and graphics-chip answer.
     fn setup_full(with_models: bool, secs: usize, load_engine: Box<EngineLoader>, on_gpu: Arc<OnGpu>) -> (tempfile::TempDir, Arc<Mutex<Storage>>, String, Worker, Arc<Mutex<Vec<String>>>) {
+        setup_quitting(with_models, secs, load_engine, on_gpu, Arc::default())
+    }
+
+    /// `setup_full` with the "Talaan is quitting" flag the test holds.
+    fn setup_quitting(with_models: bool, secs: usize, load_engine: Box<EngineLoader>, on_gpu: Arc<OnGpu>, quitting: Arc<AtomicBool>) -> (tempfile::TempDir, Arc<Mutex<Storage>>, String, Worker, Arc<Mutex<Vec<String>>>) {
         let ready = Arc::new(Mutex::new(vec![]));
         let r2 = ready.clone();
         let dir = tempfile::tempdir().unwrap();
@@ -452,25 +571,26 @@ mod tests {
         w.finalize().unwrap();
         storage.update_meeting_file(&f.id, |m| m.status = MeetingStatus::Transcribing).unwrap();
         storage.settings_set(json!({ "activeSpeechModel": "whisper-small" })).unwrap();
+        let models = Arc::new(Models::open(Some(dir.path())).unwrap());
         if with_models {
-            for m in [find("whisper-small").unwrap(), &VAD] {
-                for file in m.files {
-                    sparse(&dir.path().join("models").join(m.id).join(file.name), file.size);
+            for id in ["whisper-small", VAD] {
+                for file in catalog::find(id).unwrap().files {
+                    sparse(&models.root().join(id).join(file.name), file.size);
                 }
             }
         }
         let storage = Arc::new(Mutex::new(storage));
         let worker = Worker::start(Deps {
             storage: storage.clone(),
-            data_dir: dir.path().to_path_buf(),
             changed: Arc::new(|| {}),
             load_engine,
             load_detector: Box::new(|_| Ok(Box::new(WholeTrack))),
             load_splitter: Box::new(|_| Err("no model".into())),
-            reuse_roots: Some(vec![]),
+            models,
             transcribed: Arc::new(|_| {}),
             transcript_ready: Arc::new(move |_, t| r2.lock().unwrap().push(t.to_string())),
             on_gpu,
+            quitting,
         });
         (dir, storage, f.id, worker, ready)
     }
@@ -481,6 +601,67 @@ mod tests {
         while !worker.idle() {
             assert!(t.elapsed() < Duration::from_secs(10), "worker stuck");
             std::thread::sleep(Duration::from_millis(10));
+        }
+    }
+
+    /// Says where it ran, like the engine's.
+    struct Placed(SpeechBackend);
+    impl Engine for Placed {
+        fn transcribe(&mut self, s: &[f32], _l: Option<&str>) -> Result<ChunkResult, String> {
+            Echoes("Hello.").transcribe(s, None)
+        }
+        fn label(&self) -> &str {
+            "Placed"
+        }
+        fn chunking(&self) -> Shape {
+            Shape { pad: 0, ..Shape::default() }
+        }
+        fn backend(&self) -> Option<SpeechBackend> {
+            Some(self.0.clone())
+        }
+    }
+
+    fn info_after(backend: SpeechBackend) -> TranscriptionInfo {
+        let (_d, storage, id, worker, _) = setup_full(true, 1, Box::new(move |_, _, _| Ok(Box::new(Placed(backend.clone())))), Arc::new(|_, _| false));
+        worker.enqueue(&id);
+        wait(&worker);
+        let f = storage.lock().unwrap().read_meeting_file(&id).unwrap();
+        f.transcription.unwrap()
+    }
+
+    #[test]
+    fn the_meeting_records_where_the_model_ran_and_a_real_fallback() {
+        let card = info_after(SpeechBackend { backend: "metal".into(), device: Some("Apple M3".into()), fallback: None });
+        assert!(!card.gpu_fell_back);
+        assert_eq!(card.device.as_deref(), Some("Apple M3"));
+        let fell = info_after(SpeechBackend { backend: "cpu".into(), device: None, fallback: Some(Fallback::CardFailed) });
+        assert!(fell.gpu_fell_back);
+        assert_eq!(fell.device, None);
+        // Both fields are left out of the file when they say nothing.
+        let plain = serde_json::to_value(info_after(SpeechBackend { backend: "cpu".into(), device: None, fallback: None })).unwrap();
+        assert!(plain.get("gpuFellBack").is_none() && plain.get("device").is_none());
+        assert_eq!(serde_json::to_value(fell).unwrap()["gpuFellBack"], true);
+    }
+
+    #[test]
+    fn the_meeting_says_the_card_failed_only_for_a_card_failure() {
+        let says = |fallback| info_after(SpeechBackend { backend: "cpu".into(), device: None, fallback: Some(fallback) }).gpu_fell_back;
+        assert!(says(Fallback::CardFailed));
+        assert!(says(Fallback::CardOutOfMemory));
+        assert!(!says(Fallback::RememberedFailure));
+        assert!(!says(Fallback::NoCardHelper));
+        assert!(!says(Fallback::NoCardPath));
+    }
+
+    #[test]
+    fn the_card_is_only_asked_for_where_the_model_has_a_card_path() {
+        let turbo = catalog::find("whisper-turbo").unwrap();
+        let parakeet = catalog::find("parakeet-ultra").unwrap();
+        assert!(!asks_card(turbo, false));
+        assert_eq!(asks_card(turbo, true), cfg!(target_os = "macos") || (cfg!(windows) && (turbo.gpu.windows_vulkan || turbo.gpu.windows_directml)));
+        if cfg!(target_os = "macos") {
+            assert!(asks_card(turbo, true));
+            assert!(!asks_card(parakeet, true), "Parakeet has no card path on the Mac, so `fallback` is never a failure by design");
         }
     }
 
@@ -560,7 +741,7 @@ mod tests {
             true,
             61,
             Box::new(move |_, _, _| Ok(Box::new(FallsBack(g1.clone())))),
-            Arc::new(move |m, use_gpu| use_gpu && m.engine == crate::transcriber::models::EngineKind::Whisper && g2.load(Ordering::Relaxed)),
+            Arc::new(move |m, use_gpu| use_gpu && m.kind == voice_engine_models::Kind::Whisper && g2.load(Ordering::Relaxed)),
         );
         worker.enqueue(&id);
         wait(&worker);
@@ -699,6 +880,156 @@ mod tests {
     }
 
     #[test]
+    fn the_models_of_the_meeting_being_transcribed_are_in_use_until_it_is_done() {
+        let (started_tx, started_rx) = std::sync::mpsc::channel();
+        let (go_tx, go_rx) = std::sync::mpsc::channel::<()>();
+        let (started_tx, go_rx) = (Mutex::new(started_tx), Mutex::new(go_rx));
+        let load: Box<EngineLoader> = Box::new(move |_, _, _| {
+            started_tx.lock().unwrap().send(()).unwrap();
+            go_rx.lock().unwrap().recv().unwrap();
+            Ok(Box::new(Echoes("Hi.")))
+        });
+        let (_d, _storage, id, worker, _) = setup_full(true, 1, load, Arc::new(|_, _| false));
+        assert!(!worker.is_using("whisper-small"));
+        worker.enqueue(&id);
+        started_rx.recv_timeout(Duration::from_secs(10)).unwrap();
+        // The speech model, the voice detector and (speakers are separated by default) the speaker model.
+        for id in ["whisper-small", "vad", "diarization"] {
+            assert!(worker.is_using(id), "{id}");
+        }
+        assert!(!worker.is_using("parakeet-v3"));
+        go_tx.send(()).unwrap();
+        wait(&worker);
+        assert!(!worker.is_using("whisper-small"));
+    }
+
+    /// An engine that says when it is dropped (the model let go).
+    struct Tracked(Arc<AtomicBool>);
+    impl Engine for Tracked {
+        fn transcribe(&mut self, s: &[f32], l: Option<&str>) -> Result<ChunkResult, String> {
+            Echoes("Hi.").transcribe(s, l)
+        }
+        fn label(&self) -> &str {
+            "Tracked"
+        }
+        fn chunking(&self) -> Shape {
+            Shape { pad: 0, ..Shape::default() }
+        }
+    }
+    impl Drop for Tracked {
+        fn drop(&mut self) {
+            self.0.store(true, Ordering::SeqCst);
+        }
+    }
+
+    #[test]
+    fn stopping_everything_lets_go_of_the_loaded_engine() {
+        let dropped = Arc::new(AtomicBool::new(false));
+        let d2 = dropped.clone();
+        let (_d, _storage, id, worker, _) = setup_full(true, 1, Box::new(move |_, _, _| Ok(Box::new(Tracked(d2.clone())))), Arc::new(|_, _| false));
+        worker.enqueue(&id);
+        wait(&worker);
+        // Idle, but the engine stays loaded for the next meeting.
+        assert!(!dropped.load(Ordering::SeqCst));
+        worker.stop_all(Duration::from_secs(5));
+        assert!(dropped.load(Ordering::SeqCst));
+    }
+
+    #[test]
+    fn deleting_a_model_unloads_it_only_when_it_is_the_loaded_one() {
+        let dropped = Arc::new(AtomicBool::new(false));
+        let d2 = dropped.clone();
+        let (_d, _storage, id, worker, _) = setup_full(true, 1, Box::new(move |_, _, _| Ok(Box::new(Tracked(d2.clone())))), Arc::new(|_, _| false));
+        worker.enqueue(&id);
+        wait(&worker);
+        // The loaded model is whisper-small; another model's delete leaves it be.
+        worker.unload_model("parakeet-v3");
+        assert!(!dropped.load(Ordering::SeqCst));
+        worker.unload_model("whisper-small");
+        assert!(dropped.load(Ordering::SeqCst));
+        worker.unload_model("whisper-small"); // nothing loaded: fine
+    }
+
+    #[test]
+    fn stopping_everything_cancels_the_running_job_and_drops_the_queue() {
+        let (started_tx, started_rx) = std::sync::mpsc::channel();
+        let (go_tx, go_rx) = std::sync::mpsc::channel::<()>();
+        let (started_tx, go_rx) = (Mutex::new(started_tx), Mutex::new(go_rx));
+        let dropped = Arc::new(AtomicBool::new(false));
+        let d2 = dropped.clone();
+        let load: Box<EngineLoader> = Box::new(move |_, _, _| {
+            started_tx.lock().unwrap().send(()).unwrap();
+            go_rx.lock().unwrap().recv().unwrap();
+            Ok(Box::new(Tracked(d2.clone())))
+        });
+        let (_d, storage, id, worker, _) = setup_full(true, 1, load, Arc::new(|_, _| false));
+        let second = {
+            let s = storage.lock().unwrap();
+            let second = s.create_meeting("zoom", "Zoom", chrono::DateTime::parse_from_rfc3339("2026-10-14T15:30:00-07:00").unwrap()).unwrap().id;
+            s.update_meeting_file(&second, |f| f.status = MeetingStatus::Transcribing).unwrap();
+            second
+        };
+        worker.enqueue(&id);
+        started_rx.recv_timeout(Duration::from_secs(10)).unwrap();
+        worker.enqueue(&second);
+        // The job is stuck loading: stop_all gives up waiting, having cancelled it and emptied the queue.
+        worker.stop_all(Duration::from_millis(100));
+        assert!(!dropped.load(Ordering::SeqCst));
+        go_tx.send(()).unwrap();
+        wait(&worker);
+        // The cancelled job left the meeting as it was; the queued one never ran; the engine was let go.
+        let s = storage.lock().unwrap();
+        assert_eq!(s.read_meeting_file(&id).unwrap().status, MeetingStatus::Transcribing);
+        assert_eq!(s.read_meeting_file(&second).unwrap().status, MeetingStatus::Transcribing);
+        assert!(s.get_meeting(&id).unwrap().transcript.is_empty());
+        assert!(s.get_meeting(&second).unwrap().transcript.is_empty());
+    }
+
+    /// Errors as soon as the first chunk is asked for, after setting the quitting flag (what the helper's
+    /// shutdown looks like from the engine: the request fails).
+    struct DiesWhenQuitting(Arc<AtomicBool>);
+    impl Engine for DiesWhenQuitting {
+        fn transcribe(&mut self, _s: &[f32], _l: Option<&str>) -> Result<ChunkResult, String> {
+            self.0.store(true, Ordering::SeqCst);
+            Err("the helper went away".into())
+        }
+        fn label(&self) -> &str {
+            "Dies"
+        }
+        fn chunking(&self) -> Shape {
+            Shape { pad: 0, ..Shape::default() }
+        }
+    }
+
+    #[test]
+    fn a_job_that_ends_because_talaan_is_quitting_leaves_the_meeting_transcribing() {
+        let quitting = Arc::new(AtomicBool::new(false));
+        let q2 = quitting.clone();
+        let (_d, storage, id, worker, _) = setup_quitting(true, 1, Box::new(move |_, _, _| Ok(Box::new(DiesWhenQuitting(q2.clone())))), Arc::new(|_, _| false), quitting);
+        worker.enqueue(&id);
+        wait(&worker);
+        let f = storage.lock().unwrap().read_meeting_file(&id).unwrap();
+        assert_eq!(f.status, MeetingStatus::Transcribing);
+        assert!(f.error.is_none());
+    }
+
+    #[test]
+    fn the_same_error_without_quitting_still_fails_the_meeting() {
+        let (_d, storage, id, worker, _) = setup_quitting(true, 1, Box::new(|_, _, _| Ok(Box::new(DiesWhenQuitting(Arc::default())))), Arc::new(|_, _| false), Arc::default());
+        worker.enqueue(&id);
+        wait(&worker);
+        assert_eq!(storage.lock().unwrap().read_meeting_file(&id).unwrap().status, MeetingStatus::Failed);
+    }
+
+    #[test]
+    fn nothing_starts_once_talaan_is_quitting() {
+        let (_d, storage, id, worker, _) = setup_quitting(true, 1, Box::new(|_, _, _| Ok(Box::new(Echoes("Hi.")))), Arc::new(|_, _| false), Arc::new(AtomicBool::new(true)));
+        worker.enqueue(&id);
+        wait(&worker);
+        assert_eq!(storage.lock().unwrap().read_meeting_file(&id).unwrap().status, MeetingStatus::Transcribing);
+    }
+
+    #[test]
     fn meetings_not_waiting_are_left_alone() {
         let (_d, storage, id, worker) = setup(true, "x");
         storage.lock().unwrap().update_meeting_file(&id, |f| f.status = MeetingStatus::Ready).unwrap();
@@ -710,9 +1041,15 @@ mod tests {
     #[test]
     fn settings_pick_the_model_language_and_gpu() {
         let c = Config::from_settings(Some(&json!({ "activeSpeechModel": "parakeet-v3", "meetingLanguage": "es", "useGpu": false })));
-        assert_eq!((c.model.id, c.language.as_deref(), c.use_gpu, c.reuse), ("parakeet-v3", Some("es"), false, true));
+        assert_eq!((c.model.id, c.language.as_deref(), c.use_gpu), ("parakeet-v3", Some("es"), false));
         let d = Config::from_settings(Some(&json!({ "activeSpeechModel": "parakeet", "meetingLanguage": "auto" })));
-        assert_eq!((d.model.id, d.language), (DEFAULT_MODEL, None));
-        assert_eq!(Config::from_settings(None).model.id, DEFAULT_MODEL);
+        assert_eq!((d.model.id, d.language), (DEFAULT_SPEECH, None));
+        assert_eq!(Config::from_settings(None).model.id, DEFAULT_SPEECH);
+        // A model that isn't a speech model (voice detection, speaker separation) is the default too.
+        for id in ["vad", "diarization", "qwen3.5-4b"] {
+            assert_eq!(Config::from_settings(Some(&json!({ "activeSpeechModel": id }))).model.id, DEFAULT_SPEECH, "{id}");
+        }
+        // The engine's newer ids are speech models like the rest.
+        assert_eq!(Config::from_settings(Some(&json!({ "activeSpeechModel": "whisper-small-en" }))).model.id, "whisper-small-en");
     }
 }

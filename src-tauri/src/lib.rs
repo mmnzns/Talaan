@@ -6,15 +6,16 @@ mod commands;
 mod deeplink;
 mod eta;
 mod gpu;
-mod helper;
 mod i18n;
 mod importer;
 mod keys;
 #[cfg(test)]
 mod log_scan;
 mod logging;
+mod models;
 mod notion;
 mod platform;
+mod quit;
 mod recorder;
 mod storage;
 mod summarizer;
@@ -76,29 +77,6 @@ pub fn run() {
             if std::env::var("TALAAN_DATA_DIR").is_ok_and(|s| !s.trim().is_empty()) {
                 let _ = app.asset_protocol_scope().allow_directory(root.join("meetings"), true);
             }
-            // Windows: models (gigabytes) live in %LOCALAPPDATA%, out of the roaming profile. Renames happen now,
-            // before any worker can open a model; what needs copying is copied after setup, in the background,
-            // and the old folder is read until then. A TALAAN_DATA_DIR run keeps models inside that folder.
-            #[cfg(target_os = "windows")]
-            let models_to_copy = if std::env::var("TALAAN_DATA_DIR").map_or(true, |s| s.trim().is_empty()) {
-                dirs::data_local_dir().map(|local| {
-                    let new = transcriber::models::local_models_root(&local, &app.config().identifier);
-                    transcriber::models::set_models_root(new.clone());
-                    let old = root.join("models");
-                    let left = match transcriber::relocate::prepare(&old, &new) {
-                        Ok(m) => m.left,
-                        Err(e) => {
-                            // The kind only: the error's text names the models folders, which hold the user's name.
-                            let kind = e.kind();
-                            log::warn!("models move failed ({kind}), the old folder is used");
-                            vec![]
-                        }
-                    };
-                    (old, new, left)
-                })
-            } else {
-                None
-            };
             let started = || -> Result<storage::Storage, storage::StorageError> {
                 let mut store = storage::Storage::new(root.clone())?;
                 store.load_policy()?;
@@ -108,9 +86,38 @@ pub fn run() {
                 store.apply_retention(chrono::Utc::now())?;
                 Ok(store)
             };
-            let store = started().inspect_err(|e| log::error!("couldn't open the data folder: {}", e.for_log()))?;
+            let mut store = started().inspect_err(|e| log::error!("couldn't open the data folder: {}", e.for_log()))?;
             logging::set_your_name(store.your_name());
+            let mut settings = store.settings_get().ok().flatten();
+            // The card default, once, before any model loads (no settings file yet means first launch: the first
+            // save from the screens has no `gpuDefaultSet`, so the next start applies it).
+            if let Some(s) = settings.as_mut() {
+                let card = gpu::discrete_card();
+                log::info!("discrete card found: {}", if card.is_some() { "yes" } else { "no" });
+                if gpu::apply_default(s, cfg!(target_os = "macos"), card.as_deref()) {
+                    store.settings_set(s.clone()).inspect_err(|e| log::warn!("couldn't save the card default: {}", e.for_log())).ok();
+                }
+            }
             app.manage(AppState::new(store));
+            // The shared models folder, opened and filled before any worker or helper can open a model:
+            // `move_in` moves Talaan's old models in and must run first. A TALAAN_DATA_DIR run keeps its models
+            // inside that folder, so a test never touches the real shared one.
+            let test_data = std::env::var("TALAAN_DATA_DIR").ok().filter(|s| !s.trim().is_empty()).map(|_| root.clone());
+            let models = models::Models::open(test_data.as_deref())
+                .or_else(|e| {
+                    // The shared folder can't be opened (permissions, a full disk): keep going with models in
+                    // Talaan's own data folder rather than not starting. The kind only: the path holds the user's name.
+                    let kind = e.kind();
+                    log::warn!("couldn't open the shared models folder ({kind}), using Talaan's own folder");
+                    models::Models::open(Some(&root))
+                })
+                .inspect_err(|e| {
+                    let kind = e.kind();
+                    log::error!("couldn't open a models folder ({kind})");
+                })?;
+            let models = std::sync::Arc::new(models);
+            models.start(settings.as_ref());
+            app.manage(models);
             // Off the main thread: on the Mac it asks sw_vers and sysctl.
             let handle = app.handle().clone();
             std::thread::spawn(move || commands::diagnostics::log_startup(&handle));
@@ -132,19 +139,6 @@ pub fn run() {
             #[cfg(feature = "updater-e2e")]
             commands::updater_e2e::start(app.handle());
             commands::tray::setup(app.handle())?;
-            #[cfg(target_os = "windows")]
-            if let Some((old, new, left)) = models_to_copy.filter(|(_, _, left)| !left.is_empty()) {
-                let handle = app.handle().clone();
-                std::thread::spawn(move || {
-                    let r = transcriber::relocate::copy_rest(&old, &new, &left, transcriber::relocate::free_bytes);
-                    if !r.left.is_empty() {
-                        log::info!("models move: {} model(s) left for the next launch", r.left.len());
-                    }
-                    if r.moved > 0 {
-                        commands::transcriber::models_moved(&handle);
-                    }
-                });
-            }
             // Started by a toast click while Talaan wasn't running: open that meeting once the window loads (or,
             // for the update toast, the main window, with a check right away for its banner).
             #[cfg(target_os = "windows")]
@@ -241,6 +235,7 @@ pub fn run() {
             commands::summarizer::meetings_launch_link,
             commands::summarizer::meetings_set_template,
             commands::summarizer::meetings_summarize_as,
+            commands::summarizer::meetings_summarize_in,
             commands::summarizer::meetings_followup_eta,
             commands::summarizer::meetings_draft_followup,
             commands::summarizer::meetings_cancel_followup,
@@ -280,6 +275,9 @@ pub fn run() {
                     if code != Some(tauri::RESTART_EXIT_CODE) {
                         exit_watchdog();
                     }
+                    // The helpers end with the app (Windows can't replace a running helper, and a helper left behind
+                    // would hold the models' memory).
+                    commands::shutdown_helpers(app);
                     rec_cmd::stop_on_exit(app)
                 }
                 // Dock icon clicked while the main window is hidden.

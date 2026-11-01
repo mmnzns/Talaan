@@ -1,13 +1,14 @@
 //! Transcription and speech models: the worker, the model list for Settings, downloads with progress.
 
 use super::{notify, AppState, CmdResult, MEETINGS_CHANGED};
+use crate::i18n::{tr, tr_with};
+use crate::models::{Models, DIARIZATION, SEARCH, VAD};
 use crate::storage::model::MeetingStatus;
 use crate::storage::StorageError;
-use crate::transcriber::download::{clear_cancelled, download_model, mark_cancelled, partial_fraction, was_cancelled, DownloadError};
-use crate::transcriber::models::{find, EngineKind, Location, ModelInfo, ModelStore, CATALOG, VAD};
+use crate::transcriber::models::speech;
 use crate::transcriber::pipeline::Detector;
-use crate::transcriber::vad::Vad;
-use crate::transcriber::worker::{restamp_queue, stamp_estimate, Config, Deps, OnGpu, Worker, NO_MODEL};
+use crate::transcriber::speech::{EngineSplitter, EngineVad};
+use crate::transcriber::worker::{asks_card, restamp_queue, stamp_estimate, Deps, OnGpu, Worker, NO_MODEL};
 use serde::Serialize;
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -15,6 +16,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use tauri::{AppHandle, Emitter, Manager, State};
+use voice_engine_models::{catalog, App, DownloadError, Kind, ModelInfo, Released, Status, StoreError};
 
 pub const MODELS_CHANGED: &str = "models-changed";
 
@@ -22,10 +24,13 @@ pub struct TranscriberState {
     pub worker: Worker,
     data_dir: PathBuf,
     on_gpu: Arc<OnGpu>,
-    /// Model id → (cancel flag, progress 0..1).
-    downloads: Mutex<HashMap<String, (Arc<AtomicBool>, f32)>>,
+    /// Model id → the flag its Cancel sets, while Talaan is downloading it. Progress comes from the engine's status.
+    downloads: Mutex<HashMap<String, Arc<AtomicBool>>>,
     /// Model id → why its last download failed (shown until the next try).
     failed: Mutex<HashMap<String, String>>,
+    /// The one speech helper client of this app run (Windows; the worker's loader holds it too).
+    #[cfg(windows)]
+    stt_client: Arc<voice_engine_client::SttClient>,
 }
 
 impl TranscriberState {
@@ -36,37 +41,67 @@ impl TranscriberState {
     pub fn stamp_estimate(&self, storage: &crate::storage::Storage, id: &str) {
         stamp_estimate(storage, id, self.on_gpu.as_ref());
     }
+    /// Stops the speech helper process now (the app is quitting). Does not wait for a request in progress.
+    #[cfg(windows)]
+    pub fn shutdown_speech_helper(&self) {
+        self.stt_client.shutdown();
+    }
+    /// "Try again" on the graphics card (Windows): the client forgets the failure and stops the processor helper that
+    /// took over; the next request starts on the card, with the model the client remembers loaded into it.
+    #[cfg(windows)]
+    pub fn retry_speech_gpu(&self) {
+        self.stt_client.retry_gpu();
+    }
+    /// Before "Delete all data": nothing queued starts, the running job is cancelled, the loaded models are dropped
+    /// and (Windows) the speech helper ends, so no model file is open when the models are released.
+    pub fn stop_for_wipe(&self) {
+        self.worker.stop_all(Duration::from_secs(10));
+        #[cfg(windows)]
+        self.shutdown_speech_helper();
+    }
     pub fn data_dir(&self) -> &std::path::Path {
         &self.data_dir
     }
-    pub fn download_progress(&self, id: &str) -> Option<f32> {
-        self.downloads.lock().unwrap_or_else(|e| e.into_inner()).get(id).map(|d| d.1)
-    }
-    /// Why the model's last download failed, if it did.
-    pub fn download_error(&self, id: &str) -> Option<String> {
-        self.failed.lock().unwrap_or_else(|e| e.into_inner()).get(id).cloned()
+    /// Why each model's last download failed, until its next try.
+    pub fn download_errors(&self) -> HashMap<String, String> {
+        self.failed.lock().unwrap_or_else(|e| e.into_inner()).clone()
     }
 }
 
-/// A downloadable model: speech (incl. the voice detection file) or local summary AI.
-fn find_any(id: &str) -> Option<&'static crate::transcriber::models::ModelInfo> {
-    find(id).filter(|m| m.id != VAD.id).or_else(|| crate::summarizer::models::find_llm(id))
+/// A downloadable model: speech, speaker separation, search or local AI. Not the voice detection file, which
+/// comes with every speech model.
+fn find_any(id: &str) -> Option<&'static ModelInfo> {
+    catalog::find(id).filter(|m| m.kind != Kind::Vad)
 }
 
 fn err(message: String) -> StorageError {
     StorageError::Refused(message)
 }
 
-/// Whether a speech model runs on the graphics chip: Whisper with "use the GPU" on, through Metal on the Mac and
-/// the Vulkan helper on Windows when `gpu.rs` says it should be used. Parakeet and Nemotron use the processor.
-fn stt_on_gpu(model: &ModelInfo, use_gpu: bool, gpu: &crate::gpu::Gpu) -> bool {
-    if model.engine != EngineKind::Whisper || !use_gpu {
+/// Whether a speech model runs on the graphics chip, for time estimates: the setting asks for it and this
+/// computer has a card path for the model (`asks_card`: Metal on the Mac, Vulkan Whisper or DirectML Parakeet on
+/// Windows). A card failure the engine remembered (`gpu-stt-failures`, Windows Whisper only; Parakeet's DirectML
+/// has no such memory) means the processor does the work.
+fn stt_on_gpu(model: &ModelInfo, use_gpu: bool, data_dir: &std::path::Path) -> bool {
+    if !asks_card(model, use_gpu) {
         return false;
     }
-    if cfg!(target_os = "macos") {
-        return true;
+    !(cfg!(windows) && model.kind == Kind::Whisper && crate::transcriber::helper_speech::stt_card_failed(data_dir, env!("CARGO_PKG_VERSION")))
+}
+
+/// The engine for a model: on Windows, Whisper with the card asked for goes through the speech helper (the client
+/// falls back to the processor helper by itself); everything else loads in this process.
+#[cfg(windows)]
+fn load_engine(client: &Arc<voice_engine_client::SttClient>, model: &'static ModelInfo, handle: voice_engine_models::ModelHandle, use_gpu: bool) -> Result<Box<dyn crate::transcriber::engine::Engine>, String> {
+    if model.kind == Kind::Whisper && use_gpu {
+        return crate::transcriber::helper_speech::HelperSpeech::load(client.clone(), model, handle).map(|e| Box::new(e) as Box<dyn crate::transcriber::engine::Engine>);
     }
-    cfg!(windows) && matches!(gpu.plan(crate::gpu::Kind::Stt, true), crate::gpu::Plan::Gpu { .. })
+    crate::transcriber::speech::EngineSpeech::load(model, handle, use_gpu).map(|e| Box::new(e) as Box<dyn crate::transcriber::engine::Engine>)
+}
+
+#[cfg(not(windows))]
+fn load_engine(model: &'static ModelInfo, handle: voice_engine_models::ModelHandle, use_gpu: bool) -> Result<Box<dyn crate::transcriber::engine::Engine>, String> {
+    crate::transcriber::speech::EngineSpeech::load(model, handle, use_gpu).map(|e| Box::new(e) as Box<dyn crate::transcriber::engine::Engine>)
 }
 
 /// Starts the worker and queues every meeting left `transcribing` (a crash or quit mid-way).
@@ -74,21 +109,32 @@ pub fn setup(app: &AppHandle, data_dir: PathBuf) {
     let state = app.state::<AppState>();
     let changed_app = app.clone();
     let on_gpu: Arc<OnGpu> = {
-        let gpu = crate::gpu::Gpu::shared(&data_dir);
-        Arc::new(move |m: &ModelInfo, use_gpu: bool| stt_on_gpu(m, use_gpu, &gpu))
+        let data_dir = data_dir.clone();
+        Arc::new(move |m: &ModelInfo, use_gpu: bool| stt_on_gpu(m, use_gpu, &data_dir))
+    };
+    // One speech helper client per app run (Windows): it starts the helper on the first Whisper load and keeps it.
+    #[cfg(windows)]
+    let stt_client = {
+        let exe_dir = std::env::current_exe().ok().and_then(|p| p.parent().map(std::path::Path::to_path_buf)).unwrap_or_default();
+        Arc::new(voice_engine_client::SttClient::new(crate::transcriber::helper_speech::config(&exe_dir, &data_dir, env!("CARGO_PKG_VERSION"))))
     };
     let worker = Worker::start(Deps {
         storage: state.shared(),
-        data_dir: data_dir.clone(),
+        models: app.state::<Arc<Models>>().inner().clone(),
         changed: Arc::new(move || notify(&changed_app, MEETINGS_CHANGED)),
-        // Whisper on the GPU helper on Windows when it should be used, the processor behind it (fallback.rs).
+        // Whisper on the card through the speech helper on Windows (helper_speech.rs), everything else in process.
         load_engine: {
-            let gpu = crate::gpu::Gpu::shared(&data_dir);
-            Box::new(move |m, dir, use_gpu| crate::transcriber::fallback::load(m, dir, use_gpu, &gpu))
+            #[cfg(windows)]
+            let client = stt_client.clone();
+            Box::new(move |m, handle, use_gpu| {
+                #[cfg(windows)]
+                return load_engine(&client, m, handle, use_gpu);
+                #[cfg(not(windows))]
+                return load_engine(m, handle, use_gpu);
+            })
         },
-        load_detector: Box::new(|path| Vad::load(path).map(|v| Box::new(v) as Box<dyn Detector + Send>)),
-        load_splitter: Box::new(|path| crate::transcriber::diarize::Diarizer::load(path).map(|d| Box::new(d) as Box<dyn crate::transcriber::diarize::SpeakerSplitter>)),
-        reuse_roots: None,
+        load_detector: Box::new(|handle| Ok(Box::new(EngineVad::new(handle)) as Box<dyn Detector + Send>)),
+        load_splitter: Box::new(|handle| EngineSplitter::load(handle).map(|d| Box::new(d) as Box<dyn crate::transcriber::diarize::SpeakerSplitter>)),
         transcribed: {
             let app = app.clone();
             Arc::new(move |id: &str| app.state::<super::summarizer::SummarizerState>().enqueue_auto(id))
@@ -98,6 +144,7 @@ pub fn setup(app: &AppHandle, data_dir: PathBuf) {
             Arc::new(move |id: &str, title: &str| super::summarizer::notify_done(&app, id, "notify.transcript_ready", title))
         },
         on_gpu: on_gpu.clone(),
+        quitting: crate::quit::flag(),
     });
     let storage = state.lock();
     let waiting = storage.ids_with_status(MeetingStatus::Transcribing).unwrap_or_default();
@@ -107,16 +154,15 @@ pub fn setup(app: &AppHandle, data_dir: PathBuf) {
         worker.enqueue(id);
     }
     drop(storage);
-    app.manage(TranscriberState { worker, data_dir, on_gpu, downloads: Mutex::default(), failed: Mutex::default() });
-}
-
-/// Windows: models finished moving out of Roaming (`relocate::copy_rest`). Meetings or summaries that found no
-/// model meanwhile try again, and Settings refreshes.
-#[cfg_attr(not(target_os = "windows"), allow(dead_code))]
-pub fn models_moved(app: &AppHandle) {
-    requeue_waiting_for_model(app);
-    super::summarizer::requeue_waiting(app);
-    let _ = app.emit(MODELS_CHANGED, ());
+    app.manage(TranscriberState {
+        worker,
+        data_dir,
+        on_gpu,
+        downloads: Mutex::default(),
+        failed: Mutex::default(),
+        #[cfg(windows)]
+        stt_client,
+    });
 }
 
 /// Queues meetings that failed only because no model was there.
@@ -163,11 +209,10 @@ pub fn meetings_retry(app: AppHandle, state: State<AppState>, t: State<Transcrib
 /// Transcribe a finished meeting again with another speech model (this meeting only). Edits and the summary
 /// are dropped, speaker names stay, and the new transcript is summarized like a new call.
 #[tauri::command]
-pub fn meetings_retranscribe(app: AppHandle, state: State<AppState>, t: State<TranscriberState>, id: String, model: String) -> CmdResult<()> {
-    let m = find(&model).filter(|m| m.engine.is_speech()).ok_or_else(|| err(format!("No speech model called {model}")))?;
+pub fn meetings_retranscribe(app: AppHandle, state: State<AppState>, t: State<TranscriberState>, models: State<Arc<Models>>, id: String, model: String) -> CmdResult<()> {
+    let m = catalog::find(&model).filter(|m| m.is_speech()).ok_or_else(|| err(format!("No speech model called {model}")))?;
     let storage = state.lock();
-    let config = Config::from_settings(storage.settings_get()?.as_ref());
-    if ModelStore::new(&t.data_dir, config.reuse).locate(m) == Location::Missing {
+    if models.ready_dir(m.id).is_none() {
         return Err(err(crate::i18n::tr_with("error.download_speech_model", &[("name", m.name)])));
     }
     app.state::<super::summarizer::SummarizerState>().cancel_if_running(&id);
@@ -185,12 +230,16 @@ pub struct ModelRow {
     name: &'static str,
     maker: &'static str,
     note: &'static str,
+    /// whisper | parakeet | diarization | search
     engine: &'static str,
     size_mb: u64,
     speed: u8,
     accuracy: u8,
     languages: &'static str,
-    /// not_downloaded | downloading | downloaded | on_this_mac
+    /// SPDX id ("MIT", "CC-BY-4.0").
+    licence: &'static str,
+    english_only: bool,
+    /// not_downloaded | downloading | downloaded. A model another app downloaded shows as downloaded.
     state: &'static str,
     #[serde(skip_serializing_if = "Option::is_none")]
     progress: Option<f32>,
@@ -205,47 +254,57 @@ pub struct ModelRow {
     cancelled: bool,
 }
 
-/// The catalog with what is on disk right now.
-#[tauri::command]
-pub fn models_list(state: State<AppState>, t: State<TranscriberState>) -> CmdResult<Vec<ModelRow>> {
-    let config = Config::from_settings(state.lock().settings_get()?.as_ref());
-    let store = ModelStore::new(&t.data_dir, config.reuse);
-    let downloads = t.downloads.lock().unwrap_or_else(|e| e.into_inner());
-    let failed = t.failed.lock().unwrap_or_else(|e| e.into_inner());
-    Ok(CATALOG
-        .iter()
-        .chain([&crate::transcriber::models::DIARIZATION, &crate::transcriber::models::SEARCH])
+/// What a model's row shows for the engine's status: (state, progress, partial, cancelled).
+pub fn state(status: &Status) -> (&'static str, Option<f32>, Option<f32>, bool) {
+    match status {
+        Status::Installed { .. } => ("downloaded", None, None, false),
+        Status::Downloading { fraction, .. } => ("downloading", Some(*fraction), None, false),
+        Status::Partial { fraction, cancelled, .. } => ("not_downloaded", None, Some(*fraction), *cancelled),
+        Status::Missing => ("not_downloaded", None, None, false),
+    }
+}
+
+/// The speech models in Talaan's order, then speaker separation and search, with what is on disk right now.
+pub fn model_rows(models: &Models, failed: &HashMap<String, String>) -> Vec<ModelRow> {
+    let extras = [DIARIZATION, SEARCH].into_iter().filter_map(catalog::find);
+    speech()
+        .into_iter()
+        .chain(extras)
         .map(|m| {
-            let (state, progress) = match (downloads.get(m.id), store.locate(m)) {
-                (Some((_, p)), _) => ("downloading", Some(*p)),
-                (None, Location::Own(_)) => ("downloaded", None),
-                (None, Location::OnThisMac(_)) => ("on_this_mac", None),
-                (None, Location::Missing) => ("not_downloaded", None),
-            };
+            let (state, progress, partial, cancelled) = state(&models.status(m.id));
             ModelRow {
                 id: m.id,
                 name: m.name,
                 maker: m.maker,
                 note: m.note,
-                engine: match m.engine {
-                    crate::transcriber::models::EngineKind::Parakeet | crate::transcriber::models::EngineKind::ParakeetUnified | crate::transcriber::models::EngineKind::Nemotron => "parakeet",
-                    crate::transcriber::models::EngineKind::Whisper => "whisper",
-                    crate::transcriber::models::EngineKind::Llm => "llm",
-                    crate::transcriber::models::EngineKind::Diarization => "diarization",
-                    crate::transcriber::models::EngineKind::Embedding => "search",
+                engine: match m.kind {
+                    Kind::Parakeet | Kind::ParakeetUnified | Kind::Nemotron => "parakeet",
+                    Kind::Whisper => "whisper",
+                    Kind::Diarization => "diarization",
+                    Kind::Embedding => "search",
+                    Kind::Vad => "vad",
+                    Kind::Llm => "llm",
                 },
                 size_mb: m.size().div_ceil(1_000_000),
                 speed: m.speed,
                 accuracy: m.accuracy,
                 languages: m.languages,
+                licence: m.licence.spdx,
+                english_only: m.english_only,
                 state,
                 progress,
-                partial: if state == "not_downloaded" { partial_fraction(m, &store.own_dir(m)) } else { None },
-                cancelled: state == "not_downloaded" && was_cancelled(&store.own_dir(m)),
+                partial,
+                cancelled,
                 error: failed.get(m.id).cloned(),
             }
         })
-        .collect())
+        .collect()
+}
+
+/// The catalog with what is on disk right now.
+#[tauri::command]
+pub fn models_list(models: State<Arc<Models>>, t: State<TranscriberState>) -> CmdResult<Vec<ModelRow>> {
+    Ok(model_rows(&models, &t.download_errors()))
 }
 
 /// A model download failed (not cancelled): `{ id, message }`. The reason also stays in models_list until the
@@ -264,101 +323,374 @@ struct DownloadProgress {
     progress: f32,
 }
 
+/// What to tell the person about a failed download; None when they cancelled it.
+fn download_message(name: &str, e: &StoreError) -> Option<String> {
+    match e {
+        StoreError::Download(DownloadError::Cancelled) => None,
+        StoreError::Download(DownloadError::Stalled) => Some(tr_with("download.stalled", &[("name", name)])),
+        StoreError::Download(DownloadError::Offline) | StoreError::Download(DownloadError::Refused { .. }) => {
+            Some(tr_with("download.network", &[("name", name), ("error", &tr("download.offline"))]))
+        }
+        StoreError::Download(DownloadError::Checksum { .. }) => Some(tr_with("download.corrupt", &[("name", name)])),
+        StoreError::Download(DownloadError::DiskFull) => Some(tr("download.disk_full")),
+        StoreError::DownloadingElsewhere => Some(tr_with("download.elsewhere", &[("name", name)])),
+        other => Some(tr_with("download.save_failed", &[("error", &crate::logging::text(other.to_string()).to_string())])),
+    }
+}
+
 /// Downloads a model (and the voice detection file if it's missing) in the background.
 #[tauri::command]
-pub fn models_download(app: AppHandle, t: State<TranscriberState>, id: String) -> CmdResult<()> {
+pub fn models_download(app: AppHandle, t: State<TranscriberState>, models: State<Arc<Models>>, id: String) -> CmdResult<()> {
     let model = find_any(&id).ok_or_else(|| err(format!("No model called {id}")))?;
-    let is_llm = model.engine == crate::transcriber::models::EngineKind::Llm;
     let cancel = Arc::new(AtomicBool::new(false));
     {
         let mut d = t.downloads.lock().unwrap_or_else(|e| e.into_inner());
         if d.contains_key(&id) {
             return Ok(());
         }
-        d.insert(id.clone(), (cancel.clone(), 0.0));
+        d.insert(id.clone(), cancel.clone());
     }
     t.failed.lock().unwrap_or_else(|e| e.into_inner()).remove(&id);
-    clear_cancelled(&ModelStore::new(&t.data_dir, false).own_dir(model));
     let _ = app.emit(MODELS_CHANGED, ());
-    let data_dir = t.data_dir.clone();
+    let models = models.inner().clone();
     std::thread::spawn(move || {
         log::info!("downloading model {id}");
         let started = Instant::now();
-        let store = ModelStore::new(&data_dir, false);
         let mut last = Instant::now();
-        let mut report = |p: f32| {
-            if last.elapsed() >= Duration::from_millis(250) || p >= 1.0 {
+        let mut report = |p: voice_engine_models::Progress| {
+            if last.elapsed() >= Duration::from_millis(250) || p.fraction >= 1.0 {
                 last = Instant::now();
-                if let Some(e) = app.state::<TranscriberState>().downloads.lock().unwrap_or_else(|e| e.into_inner()).get_mut(&id) {
-                    e.1 = p;
-                }
-                let _ = app.emit("model-download", DownloadProgress { id: id.clone(), progress: p });
+                let _ = app.emit("model-download", DownloadProgress { id: id.clone(), progress: p.fraction });
             }
         };
         // Speech models need the voice detector too; the add-on models don't.
-        let speech = model.engine.is_speech();
-        let vad_missing = speech && store.locate(&VAD) == Location::Missing && ModelStore::new(&data_dir, true).locate(&VAD) == Location::Missing;
+        let speech = model.is_speech();
         let mut result = Ok(());
-        if vad_missing {
-            result = download_model(&VAD, &store.own_dir(&VAD), &cancel, &mut |_| {});
+        if speech && models.ready_dir(VAD).is_none() {
+            result = models.store().download(VAD, &cancel, &mut |_| {}).map(|_| ());
         }
         if result.is_ok() {
-            result = download_model(model, &store.own_dir(model), &cancel, &mut report);
+            result = models.store().download(&id, &cancel, &mut report).map(|_| ());
         }
         let t = app.state::<TranscriberState>();
         t.downloads.lock().unwrap_or_else(|e| e.into_inner()).remove(&id);
-        if let Err(e) = &result {
-            if *e != DownloadError::Cancelled {
-                t.failed.lock().unwrap_or_else(|e| e.into_inner()).insert(id.clone(), e.user_message());
-            }
+        let message = result.as_ref().err().and_then(|e| download_message(model.name, e));
+        if let Some(m) = &message {
+            t.failed.lock().unwrap_or_else(|e| e.into_inner()).insert(id.clone(), m.clone());
         }
         let _ = app.emit(MODELS_CHANGED, ());
         match &result {
             Ok(()) => log::info!("model {id} downloaded in {:.0}s", started.elapsed().as_secs_f32()),
-            Err(DownloadError::Cancelled) => log::info!("model {id} download cancelled"),
+            Err(StoreError::Download(DownloadError::Cancelled)) => log::info!("model {id} download cancelled"),
             Err(e) => log::warn!("model {id} download failed: {}", crate::logging::text(e)),
         }
         match result {
-            Ok(()) if is_llm => super::summarizer::requeue_waiting(&app),
-            Ok(()) if model.engine == EngineKind::Embedding => super::ask::reindex_soon(&app),
+            Ok(()) if model.kind == Kind::Llm => super::summarizer::requeue_waiting(&app),
+            Ok(()) if model.kind == Kind::Embedding => super::ask::reindex_soon(&app),
             Ok(()) if speech => requeue_waiting_for_model(&app),
-            Ok(()) => {}
-            Err(DownloadError::Cancelled) => {}
-            Err(e) => {
-                let _ = app.emit(DOWNLOAD_FAILED, DownloadFailed { id: id.clone(), message: e.user_message() });
-            }
+            _ => {}
+        }
+        if let Some(message) = message {
+            let _ = app.emit(DOWNLOAD_FAILED, DownloadFailed { id: id.clone(), message });
         }
     });
     Ok(())
 }
 
+/// Stops Talaan's download of a model. The engine keeps what arrived and marks it cancelled, so Download resumes.
 #[tauri::command]
 pub fn models_cancel(app: AppHandle, t: State<TranscriberState>, id: String) -> CmdResult<()> {
-    if let Some((flag, _)) = t.downloads.lock().unwrap_or_else(|e| e.into_inner()).get(&id) {
+    if let Some(flag) = t.downloads.lock().unwrap_or_else(|e| e.into_inner()).get(&id) {
         flag.store(true, Ordering::Relaxed);
-        if let Some(m) = find_any(&id) {
-            mark_cancelled(&ModelStore::new(&t.data_dir, false).own_dir(m));
-        }
     }
     let _ = app.emit(MODELS_CHANGED, ());
     Ok(())
 }
 
-/// Deletes Talaan's own copy of a model (never another app's).
+/// What Delete did, for the toast: `erased` when the file is gone (or goes once nothing has it open), otherwise
+/// the other apps that still use it ("Ensayo", "Parlato").
+#[derive(Serialize, Debug, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct Deleted {
+    pub erased: bool,
+    pub other_apps: Vec<&'static str>,
+}
+
+fn app_name(app: &App) -> Option<&'static str> {
+    match app {
+        App::Talaan => None,
+        App::Ensayo => Some("Ensayo"),
+        App::Parlato => Some("Parlato"),
+    }
+}
+
+/// Talaan stops using a model. The engine erases the file once no app uses it; another app's copy stays.
+/// `in_use`: whether a meeting is being transcribed with that model right now. `unload`: lets go of the model if
+/// Talaan has it loaded (an idle engine, or a helper, holds the file open, which keeps the engine from erasing it).
+pub fn delete_model(models: &Models, in_use: impl Fn(&str) -> bool, unload: impl Fn(&ModelInfo), id: &str) -> CmdResult<Deleted> {
+    let model = find_any(id).ok_or_else(|| err(format!("No model called {id}")))?;
+    if in_use(model.id) {
+        return Err(err(tr("error.model_in_use")));
+    }
+    unload(model);
+    let released = models.store().release(model.id).map_err(|e| err(crate::i18n::tr_err("error.delete_model", e)))?;
+    // The move left a hard link of each file in Talaan's old folder (for 1.1.1): without removing those the bytes
+    // stay on the disk.
+    models.remove_legacy_copy(model.id);
+    Ok(match released {
+        Released::Erased | Released::NotUsing => Deleted { erased: true, other_apps: vec![] },
+        // Not erased yet: other apps still use it (named), or one has it open right now (none named) and the
+        // engine erases it when it lets go. Never "erased" for these.
+        Released::Kept { users } => Deleted { erased: false, other_apps: users.iter().filter_map(app_name).collect() },
+    })
+}
+
+/// Talaan stops using a model (Delete). Refused while a meeting is being transcribed with it.
 #[tauri::command]
-pub fn models_delete(app: AppHandle, t: State<TranscriberState>, id: String) -> CmdResult<()> {
-    let model = find_any(&id).ok_or_else(|| err(format!("No model called {id}")))?;
-    // The current folder and, while the Windows move isn't finished, the old one. Under the move's lock, so a
-    // copy in progress can't put the model back.
-    let dirs = ModelStore::new(&t.data_dir, false).own_dirs(model);
-    crate::transcriber::relocate::forget(model.id, || -> CmdResult<()> {
-        for dir in &dirs {
-            if dir.exists() {
-                std::fs::remove_dir_all(dir).map_err(|e| err(crate::i18n::tr_err("error.delete_model", e)))?;
+pub fn models_delete(app: AppHandle, t: State<TranscriberState>, models: State<Arc<Models>>, id: String) -> CmdResult<Deleted> {
+    let unload = |m: &ModelInfo| match m.kind {
+        // The AI helpers hold the model file. Stopping them lets go of it (the clients start one again when needed),
+        // unless a summary or a draft is using the helper right now (then the file goes once that is done: "pending").
+        Kind::Llm | Kind::Embedding => {
+            if !app.state::<super::summarizer::SummarizerState>().busy() {
+                crate::summarizer::local::shutdown_all();
             }
         }
-        Ok(())
-    })?;
+        _ => t.worker.unload_model(m.id),
+    };
+    let deleted = delete_model(&models, |m| t.worker.is_using(m), unload, &id)?;
     let _ = app.emit(MODELS_CHANGED, ());
-    Ok(())
+    Ok(deleted)
+}
+
+/// A model's files at the catalog's exact sizes (sparse), so the engine counts it as installed.
+#[cfg(test)]
+pub(super) fn install_for_test(models: &Models, id: &str) {
+    for f in catalog::find(id).unwrap().files {
+        let path = models.root().join(id).join(f.name);
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::File::create(path).unwrap().set_len(f.size).unwrap();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::Path;
+
+    fn sparse(path: &Path, size: u64) {
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::File::create(path).unwrap().set_len(size).unwrap();
+    }
+
+    fn install(models: &Models, id: &str) {
+        install_for_test(models, id);
+    }
+
+    fn temp() -> (tempfile::TempDir, Models) {
+        let data = tempfile::tempdir().unwrap();
+        let models = Models::open(Some(data.path())).unwrap();
+        (data, models)
+    }
+
+    fn row<'a>(rows: &'a [ModelRow], id: &str) -> &'a ModelRow {
+        rows.iter().find(|r| r.id == id).unwrap()
+    }
+
+    #[test]
+    fn the_list_shows_what_is_on_disk() {
+        let (_d, models) = temp();
+        install(&models, "whisper-small");
+        // An interrupted download: half of the file, still named .part.
+        let base = catalog::find("whisper-base").unwrap();
+        sparse(&models.root().join("whisper-base").join(format!("{}.part", base.files[0].name)), base.files[0].size / 2);
+        let rows = model_rows(&models, &HashMap::new());
+
+        let done = row(&rows, "whisper-small");
+        assert_eq!((done.state, done.progress, done.partial, done.cancelled), ("downloaded", None, None, false));
+        let part = row(&rows, "whisper-base");
+        assert_eq!((part.state, part.progress, part.cancelled), ("not_downloaded", None, false));
+        assert!(part.partial.is_some_and(|f| (0.4..0.6).contains(&f)), "{:?}", part.partial);
+        let none = row(&rows, "whisper-tiny");
+        assert_eq!((none.state, none.progress, none.partial), ("not_downloaded", None, None));
+    }
+
+    #[test]
+    fn the_list_is_the_speech_catalog_in_talaans_order_then_the_add_ons() {
+        let (_d, models) = temp();
+        let rows = model_rows(&models, &HashMap::new());
+        let ids: Vec<_> = rows.iter().map(|r| r.id).collect();
+        assert_eq!(&ids[..3], ["whisper-turbo", "parakeet-v3", "whisper-small"]);
+        assert_eq!(&ids[ids.len() - 2..], ["diarization", "search"]);
+        assert_eq!(ids.len(), catalog::speech().count() + 2);
+        assert!(!ids.contains(&"vad"));
+        let small_en = row(&rows, "whisper-small-en");
+        assert!(small_en.english_only && !row(&rows, "whisper-small").english_only);
+        assert_eq!((row(&rows, "whisper-turbo").engine, row(&rows, "parakeet-v3").engine, row(&rows, "diarization").engine, row(&rows, "search").engine), ("whisper", "parakeet", "diarization", "search"));
+        assert_eq!(row(&rows, "whisper-turbo").licence, catalog::find("whisper-turbo").unwrap().licence.spdx);
+    }
+
+    #[test]
+    fn the_rows_say_why_the_last_download_failed() {
+        let (_d, models) = temp();
+        let failed = HashMap::from([("whisper-tiny".to_string(), "no internet".to_string())]);
+        let rows = model_rows(&models, &failed);
+        assert_eq!(row(&rows, "whisper-tiny").error.as_deref(), Some("no internet"));
+        assert_eq!(row(&rows, "whisper-base").error, None);
+    }
+
+    #[test]
+    fn the_serialized_row_keeps_the_names_the_screen_reads() {
+        let (_d, models) = temp();
+        let v = serde_json::to_value(model_rows(&models, &HashMap::new())).unwrap();
+        let first = v[0].as_object().unwrap();
+        for key in ["id", "name", "maker", "note", "engine", "sizeMb", "speed", "accuracy", "languages", "licence", "englishOnly", "state"] {
+            assert!(first.contains_key(key), "{key}");
+        }
+        for gone in ["progress", "partial", "error", "cancelled", "onThisMac"] {
+            assert!(!first.contains_key(gone), "{gone}");
+        }
+    }
+
+    #[test]
+    fn deleting_a_model_only_talaan_uses_erases_it() {
+        let (_d, models) = temp();
+        install(&models, "whisper-small");
+        models.store().use_model("whisper-small").unwrap();
+        let rows = model_rows(&models, &HashMap::new());
+        assert_eq!(row(&rows, "whisper-small").state, "downloaded");
+        assert_eq!(delete_model(&models, |_| false, |_| {}, "whisper-small").unwrap(), Deleted { erased: true, other_apps: vec![] });
+        assert!(!models.root().join("whisper-small").exists());
+        assert_eq!(row(&model_rows(&models, &HashMap::new()), "whisper-small").state, "not_downloaded");
+        // Again: nothing to do, still fine.
+        assert_eq!(delete_model(&models, |_| false, |_| {}, "whisper-small").unwrap().erased, true);
+    }
+
+    #[test]
+    fn deleting_a_model_another_app_uses_keeps_the_file_and_names_the_app() {
+        let (_d, models) = temp();
+        install(&models, "whisper-small");
+        models.store().use_model("whisper-small").unwrap();
+        let users = models.root().join(".engine/users/whisper-small");
+        std::fs::write(users.join("ensayo"), b"").unwrap();
+        std::fs::write(users.join("parlato"), b"").unwrap();
+        let d = delete_model(&models, |_| false, |_| {}, "whisper-small").unwrap();
+        assert_eq!(d, Deleted { erased: false, other_apps: vec!["Ensayo", "Parlato"] });
+        assert_eq!(models.status("whisper-small"), Status::Installed { dir: models.root().join("whisper-small"), users: vec![App::Ensayo, App::Parlato], used_by_me: false });
+        assert_eq!(serde_json::to_value(&d).unwrap(), serde_json::json!({"erased": false, "otherApps": ["Ensayo", "Parlato"]}));
+    }
+
+    #[test]
+    fn a_model_something_has_loaded_is_let_go_before_it_is_deleted() {
+        let (_d, models) = temp();
+        install(&models, "whisper-small");
+        models.store().use_model("whisper-small").unwrap();
+        // An idle engine keeps its model held: nothing can be erased.
+        let held = Mutex::new(Some(models.hold("whisper-small").unwrap()));
+        let stuck = delete_model(&models, |_| false, |_| {}, "whisper-small").unwrap();
+        assert_eq!(stuck, Deleted { erased: false, other_apps: vec![] }, "not claimed as erased");
+        assert_eq!(serde_json::to_value(&stuck).unwrap(), serde_json::json!({"erased": false, "otherApps": []}));
+        assert!(models.root().join("whisper-small").exists());
+        // Talaan still uses it (the marker was removed by the first try): use it again, and let go first this time.
+        models.store().use_model("whisper-small").unwrap();
+        let unloaded = std::cell::Cell::new(0);
+        let d = delete_model(&models, |_| false, |m| {
+            assert_eq!(m.id, "whisper-small");
+            unloaded.set(unloaded.get() + 1);
+            held.lock().unwrap().take();
+        }, "whisper-small")
+        .unwrap();
+        assert_eq!(d, Deleted { erased: true, other_apps: vec![] });
+        assert_eq!(unloaded.get(), 1);
+        assert!(!models.root().join("whisper-small").exists());
+    }
+
+    #[test]
+    fn a_model_in_use_by_a_meeting_is_not_deleted() {
+        let (_d, models) = temp();
+        install(&models, "whisper-small");
+        models.store().use_model("whisper-small").unwrap();
+        let e = delete_model(&models, |id| id == "whisper-small", |_| {}, "whisper-small").unwrap_err();
+        assert!(e.to_string().contains("transcribed"), "{e}");
+        assert!(models.ready_dir("whisper-small").is_some());
+        // Unknown ids and the voice detection file (never offered) are refused too.
+        assert!(delete_model(&models, |_| false, |_| {}, "nope").is_err());
+        assert!(delete_model(&models, |_| false, |_| {}, "vad").is_err());
+    }
+
+    #[test]
+    fn the_privacy_tab_counts_only_installed_models_talaan_uses() {
+        let (_d, models) = temp();
+        install(&models, "whisper-small");
+        install(&models, "whisper-base");
+        install(&models, "whisper-tiny");
+        models.store().use_model("whisper-small").unwrap();
+        models.store().use_model("whisper-base").unwrap();
+        // whisper-tiny: installed, but only another app uses it.
+        sparse(&models.root().join(".engine/users/whisper-tiny/ensayo"), 0);
+        let want = catalog::find("whisper-small").unwrap().size() + catalog::find("whisper-base").unwrap().size();
+        assert_eq!(super::super::settings::models_bytes(&models), want);
+    }
+
+    #[test]
+    fn deleting_a_model_also_removes_talaans_old_copy_of_it() {
+        let (d, models) = temp();
+        let old = d.path().join("old/models");
+        let models = models.with_legacy(vec![old.clone()]);
+        install(&models, "whisper-small");
+        models.store().use_model("whisper-small").unwrap();
+        // What the move leaves: the same bytes, linked into the old folder (for two models).
+        for id in ["whisper-small", "whisper-base"] {
+            let file = catalog::find(id).unwrap().files[0].name;
+            std::fs::create_dir_all(old.join(id)).unwrap();
+            std::fs::write(old.join(id).join(file), b"bytes").unwrap();
+        }
+        assert_eq!(delete_model(&models, |_| false, |_| {}, "whisper-small").unwrap().erased, true);
+        assert!(!old.join("whisper-small").exists());
+        assert!(old.join("whisper-base").exists(), "another model's copy stays");
+    }
+
+    #[test]
+    fn the_privacy_tab_does_not_count_a_model_twice() {
+        let (d, models) = temp();
+        // The Mac: the old models folder is inside the data folder, holding links to the same files.
+        let root = d.path().join("Talaan");
+        let old = root.join("models");
+        let models = models.with_legacy(vec![old.clone()]);
+        install(&models, "whisper-small");
+        models.store().use_model("whisper-small").unwrap();
+        let size = catalog::find("whisper-small").unwrap().size();
+        let file = catalog::find("whisper-small").unwrap().files[0].name;
+        std::fs::create_dir_all(old.join("whisper-small")).unwrap();
+        std::fs::hard_link(models.root().join("whisper-small").join(file), old.join("whisper-small").join(file)).unwrap();
+        std::fs::write(root.join("settings.json"), [0u8; 10]).unwrap();
+        assert!(crate::storage::io::dir_size(&root) >= size, "the link is there to be counted");
+        assert_eq!(super::super::settings::data_bytes(&root, &models), size + 10);
+    }
+
+    #[test]
+    fn a_failed_download_says_what_to_do() {
+        use DownloadError as D;
+        let msg = |e: StoreError| download_message("Whisper Small", &e);
+        assert_eq!(msg(StoreError::Download(D::Cancelled)), None);
+        assert!(msg(StoreError::Download(D::Stalled)).unwrap().contains("30 seconds"));
+        for e in [D::Offline, D::Refused { status: 503 }] {
+            let m = msg(StoreError::Download(e)).unwrap();
+            assert!(m.contains("Whisper Small") && m.contains("no internet connection"), "{m}");
+        }
+        assert!(msg(StoreError::Download(D::Checksum { file: "f".into() })).unwrap().contains("damaged"));
+        assert!(msg(StoreError::Download(D::DiskFull)).unwrap().contains("free space"));
+        assert!(msg(StoreError::DownloadingElsewhere).unwrap().contains("Another app is downloading Whisper Small"));
+        let other = msg(StoreError::Io("disk".into())).unwrap();
+        assert!(other.starts_with("Couldn't save the model"), "{other}");
+    }
+
+    #[test]
+    fn statuses_map_to_the_states_the_screen_knows() {
+        let d = PathBuf::new();
+        assert_eq!(state(&Status::Installed { dir: d, users: vec![], used_by_me: false }), ("downloaded", None, None, false));
+        assert_eq!(state(&Status::Downloading { fraction: 0.5, bytes: 1, by_me: true }), ("downloading", Some(0.5), None, false));
+        assert_eq!(state(&Status::Partial { fraction: 0.25, bytes: 1, cancelled: true }), ("not_downloaded", None, Some(0.25), true));
+        assert_eq!(state(&Status::Missing), ("not_downloaded", None, None, false));
+    }
 }

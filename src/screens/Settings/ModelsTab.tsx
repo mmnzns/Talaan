@@ -6,29 +6,25 @@ import { useLang, useT } from "../../lib/i18n/I18nProvider";
 import type { MessageKey } from "../../lib/i18n";
 import { modelNote, splitByTier, tierOf } from "../../lib/modelTiers";
 import { Button, Chip, Radio, Select, Switch, cn, useToast } from "../../ui";
+import { DeleteModelLink } from "./DeleteModelLink";
 import { Dots, Group, Row, SectionIntro } from "./parts";
 import type { TabProps } from "./tabProps";
 
 const SOURCE = {
-  on_this_mac: "settings.source_on_this_mac",
   downloaded: "settings.source_downloaded",
   downloading: "settings.source_downloading",
   not_downloaded: "settings.source_not_downloaded",
 } as const satisfies Record<SpeechModel["state"], MessageKey>;
 
 const size = (mb: number) => `${(mb / 1000).toFixed(1)} GB`;
-const installed = (m: SpeechModel) => m.state === "on_this_mac" || m.state === "downloaded";
+const installed = (m: SpeechModel) => m.state === "downloaded";
 
 export function ModelsTab({ settings: s, update }: TabProps) {
   const t = useT();
-  const reused = s.speechModels.filter((m) => m.state === "on_this_mac");
   const { tiered, more } = splitByTier(s.speechModels);
   // "More models" starts open when the model in use is one of them, so the choice is never hidden.
   const [showMore, setMore] = useState<boolean>();
   const moreOpen = showMore ?? more.some((m) => m.id === s.activeSpeechModel);
-  const reuseDesc = reused.length
-    ? t("settings.reuse_found", { count: reused.length, size: size(reused.reduce((a, m) => a + m.sizeMb, 0)) })
-    : t("settings.reuse_none");
 
   return (
     <div className="flex flex-col gap-6">
@@ -66,9 +62,6 @@ export function ModelsTab({ settings: s, update }: TabProps) {
       </Group>
 
       <Group>
-        <Row title={t("settings.reuse_title")} desc={reuseDesc}>
-          <Switch aria-label={t("settings.reuse_title")} checked={s.reuseModels} onChange={(v) => update({ reuseModels: v })} />
-        </Row>
         <Row title={t("settings.meeting_language_title")} desc={t("settings.meeting_language_desc")}>
           <Select label={t("settings.meeting_language_title")} wrapperClassName="w-40" value={s.meetingLanguage} onChange={(e) => update({ meetingLanguage: e.target.value })}>
             <option value="auto">{t("settings.lang_auto")}</option>
@@ -92,7 +85,7 @@ function ModelCard({ model: m, settings: s, update }: { model: SpeechModel } & T
   const toast = useToast();
   const t = useT();
   const lang = useLang();
-  const run = (p: Promise<void>) => p.catch((e) => toast(describeError(e)));
+  const run = (p: Promise<unknown>) => p.catch((e) => toast(describeError(e)));
   const on = s.activeSpeechModel === m.id;
   const tier = tierOf(m.id);
   const pct = Math.round((m.progress ?? 0) * 100);
@@ -119,6 +112,7 @@ function ModelCard({ model: m, settings: s, update }: { model: SpeechModel } & T
           <span className="font-bold">{tier ? t(tier.label) : m.name}</span>
           {!tier && <span className="text-xs text-subtle">{m.maker}</span>}
           <Chip tone={installed(m) ? "gold" : "default"}>{t(SOURCE[m.state])}</Chip>
+          {m.englishOnly && <Chip>{t("settings.english_only")}</Chip>}
         </div>
         {tier && <span className="text-xs text-subtle">{t("settings.model_tech", { name: m.name, maker: m.maker })}</span>}
         <span className="text-xs text-subtle">{modelNote(lang, m)}</span>
@@ -142,9 +136,7 @@ function ModelCard({ model: m, settings: s, update }: { model: SpeechModel } & T
           </span>
         )}
         {m.state === "downloaded" && !on && (
-          <button type="button" className="cursor-pointer border-0 bg-transparent p-0 text-xs text-subtle underline" onClick={() => run(store.deleteModel(m.id))}>
-            {t("settings.delete")}
-          </button>
+          <DeleteModelLink id={m.id} name={m.name} sizeMb={m.sizeMb} />
         )}
       </div>
     </div>
@@ -156,7 +148,7 @@ function ExtraModelRow({ model: m, title, desc, on, onToggle }: { model: SpeechM
   const store = useSettingsStore();
   const toast = useToast();
   const t = useT();
-  const run = (p: Promise<void>) => p.catch((e) => toast(describeError(e)));
+  const run = (p: Promise<unknown>) => p.catch((e) => toast(describeError(e)));
   const pct = Math.round((m.progress ?? 0) * 100);
   return (
     <Row title={title} desc={desc}>
@@ -177,9 +169,7 @@ function ExtraModelRow({ model: m, title, desc, on, onToggle }: { model: SpeechM
       {installed(m) && (
         <span className="flex items-center gap-3">
           {m.state === "downloaded" && (
-            <button type="button" className="cursor-pointer border-0 bg-transparent p-0 text-xs text-subtle underline" onClick={() => run(store.deleteModel(m.id))}>
-              {t("settings.delete")}
-            </button>
+            <DeleteModelLink id={m.id} name={title} sizeMb={m.sizeMb} />
           )}
           {onToggle ? <Switch aria-label={title} checked={!!on} onChange={onToggle} /> : <Chip tone="gold">{t("settings.on")}</Chip>}
         </span>

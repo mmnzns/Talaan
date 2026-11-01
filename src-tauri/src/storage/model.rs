@@ -93,6 +93,10 @@ pub struct Summary {
     /// The meeting type it was written as (`summarizer::templates`); none for summaries from before meeting types.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub template: Option<String>,
+    /// The language it was written in (a `summarizer::prompt` language code); none for summaries from before the
+    /// language switch.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub language: Option<String>,
     /// The meeting type's sections couldn't be written this time (the reply was cut off and the plain summary was
     /// asked for instead); the summary card offers to try again.
     #[serde(default, skip_serializing_if = "is_false")]
@@ -202,6 +206,10 @@ pub struct MeetingFile {
     /// The meeting type to summarize it as (`summarizer::templates`); none = the Settings default.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub template: Option<String>,
+    /// The language to write this meeting's summaries in (a `summary_languages` code), picked on the meeting; none = the
+    /// Settings default.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub summary_language: Option<String>,
     /// "Transcribe again" with this speech model; cleared once the new transcript is saved.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub retranscribe_model: Option<String>,
@@ -253,6 +261,12 @@ pub struct TranscriptionInfo {
     pub speech_ms: u64,
     pub took_ms: u64,
     pub finished_at: String,
+    /// The setting asked for the graphics card and the model could not use it, so the processor did the work.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub gpu_fell_back: bool,
+    /// The graphics card's name, when the model ran on one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub device: Option<String>,
 }
 
 /// A list row (matches `MeetingListItem`).
@@ -310,6 +324,9 @@ pub struct Meeting {
     /// The meeting type chosen for this meeting, when one was (otherwise the Settings default applies).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub template: Option<String>,
+    /// The summary language chosen for this meeting, when one was (otherwise the Settings default applies).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub summary_language: Option<String>,
 }
 
 #[cfg(test)]
@@ -317,6 +334,17 @@ mod tests {
     use super::*;
 
     const FIXTURE: &str = include_str!("../../../fixtures/meeting.sample.json");
+
+    #[test]
+    fn a_summary_from_before_the_language_switch_still_loads_and_stays_without_one() {
+        let old = r#"{"recap":"R.","decisions":[],"actionItems":[],"openQuestions":[],"engine":"x"}"#;
+        let s: Summary = serde_json::from_str(old).unwrap();
+        assert_eq!(s.language, None);
+        assert!(!serde_json::to_string(&s).unwrap().contains("language"));
+        let new: Summary = serde_json::from_str(r#"{"recap":"R.","decisions":[],"actionItems":[],"openQuestions":[],"engine":"x","language":"fil"}"#).unwrap();
+        assert_eq!(new.language.as_deref(), Some("fil"));
+        assert!(serde_json::to_string(&new).unwrap().contains(r#""language":"fil""#));
+    }
 
     #[test]
     fn sample_meeting_round_trips_unchanged() {

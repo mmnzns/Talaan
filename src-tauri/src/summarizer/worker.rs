@@ -47,7 +47,12 @@ impl Config {
         }
     }
 
-    pub fn language_for(&self, meeting_language: &str) -> String {
+    /// The language a summary (or follow-up email) is written in: the one picked on the meeting, else the Settings
+    /// language, else, for "Same as meeting", the language the meeting was detected in.
+    pub fn language_for(&self, chosen: Option<&str>, meeting_language: &str) -> String {
+        if let Some(c) = chosen.filter(|c| !c.trim().is_empty()) {
+            return c.to_string();
+        }
         if self.language == "meeting" { meeting_language.to_string() } else { self.language.clone() }
     }
 
@@ -73,6 +78,9 @@ pub struct Deps {
     pub unsummarized: Arc<dyn Fn(&str, &str) + Send + Sync>,
     /// How a summary with these settings is timed on this computer (`eta::summary_profile`).
     pub profile: Box<dyn Fn(&Config) -> Profile + Send + Sync>,
+    /// Set when Talaan is quitting (`crate::quit`): a summary that fails then is left `summarizing` (it resumes at
+    /// the next launch) instead of ending without one.
+    pub quitting: Arc<std::sync::atomic::AtomicBool>,
 }
 
 /// Other work that needs the local AI (a follow-up draft): run on this thread between summaries, so only one
@@ -171,6 +179,12 @@ impl Worker {
         Ahead { summary: q.current.clone(), jobs: before + usize::from(q.running_job.is_some()) }
     }
 
+    /// Whether a summary or a draft is being written or waits for the AI.
+    pub fn busy(&self) -> bool {
+        let q = self.queue.0.lock().unwrap_or_else(|e| e.into_inner());
+        q.current.is_some() || q.running_job.is_some() || !q.jobs.is_empty()
+    }
+
     /// The meeting whose summary is being written right now.
     #[cfg(test)]
     pub fn current(&self) -> Option<String> {
@@ -243,6 +257,11 @@ fn without_summary(deps: &Deps, id: &str, auto: bool, code: &str, message: Strin
 }
 
 fn without_summary_detail(deps: &Deps, id: &str, auto: bool, code: &str, message: String, detail: Option<String>) {
+    // The AI helper was stopped because Talaan is quitting: not a failure of the summary.
+    if code == FAILED && deps.quitting.load(Ordering::SeqCst) {
+        log::info!("summary interrupted by quitting: meeting {id} stays as it is");
+        return;
+    }
     match &detail {
         Some(d) => log::warn!("no summary for meeting {id} ({code}): {} | helper: {}", crate::logging::text(&message), crate::logging::text(d)),
         None if code == TOO_SHORT => log::info!("no summary for meeting {id}: too little speech"),
@@ -297,7 +316,7 @@ fn process(deps: &Deps, id: &str, auto: bool, cancel: &AtomicBool) {
     };
     log::info!("summary engine ready in {:.1}s: {}", job.elapsed().as_secs_f32(), engine.label());
 
-    let language = config.language_for(&meeting.language);
+    let language = config.language_for(meeting.summary_language.as_deref(), &meeting.language);
     let opts = config.options_for(meeting.template.as_deref());
     let mut last_report = Instant::now() - Duration::from_secs(10);
     let mut first_report: Option<Instant> = None;
@@ -369,6 +388,10 @@ mod tests {
     }
 
     fn setup_profile(make: Box<EngineFactory>, profile: Box<dyn Fn(&Config) -> Profile + Send + Sync>) -> (tempfile::TempDir, Arc<Mutex<Storage>>, String, Worker, Arc<Mutex<Vec<String>>>) {
+        setup_quitting(make, profile, Arc::default())
+    }
+
+    fn setup_quitting(make: Box<EngineFactory>, profile: Box<dyn Fn(&Config) -> Profile + Send + Sync>, quitting: Arc<AtomicBool>) -> (tempfile::TempDir, Arc<Mutex<Storage>>, String, Worker, Arc<Mutex<Vec<String>>>) {
         let dir = tempfile::tempdir().unwrap();
         let mut storage = Storage::new(dir.path().to_path_buf()).unwrap();
         let f = storage.create_meeting("zoom", "Zoom", chrono::DateTime::parse_from_rfc3339("2026-10-14T14:30:00-07:00").unwrap()).unwrap();
@@ -388,6 +411,7 @@ mod tests {
             // "Transcript ready" is told apart from "Summary ready" by a prefix.
             unsummarized: Arc::new(move |_, t| d3.lock().unwrap().push(format!("transcript: {t}"))),
             profile,
+            quitting,
         });
         (dir, storage, f.id, worker, done)
     }
@@ -440,7 +464,7 @@ mod tests {
                 Box::new(move |c| eta::summary_profile(&c.engine, "qwen3.5-4b", gpu.load(Ordering::Relaxed))),
             );
             storage.lock().unwrap().update_meeting_file(&id, |f| {
-                f.transcription = Some(crate::storage::model::TranscriptionInfo { model: "whisper-turbo".into(), echo_lines_removed: 0, speech_ms: 600_000, took_ms: 1, finished_at: String::new() });
+                f.transcription = Some(crate::storage::model::TranscriptionInfo { model: "whisper-turbo".into(), echo_lines_removed: 0, speech_ms: 600_000, took_ms: 1, finished_at: String::new(), gpu_fell_back: false, device: None });
             }).unwrap();
             w.enqueue(&id);
             wait(&w);
@@ -527,6 +551,24 @@ mod tests {
         wait(&w);
         assert_eq!(storage.lock().unwrap().get_meeting(&id).unwrap().summary_error.unwrap().code, FAILED);
         assert!(done.lock().unwrap().is_empty(), "the reason is on screen; no notification");
+    }
+
+    #[test]
+    fn a_summary_cut_short_by_quitting_stays_summarizing() {
+        let quitting = Arc::new(AtomicBool::new(false));
+        let q2 = quitting.clone();
+        // The helper dies as Talaan quits: the engine fails with the flag already set.
+        let make: Box<EngineFactory> = Box::new(move |_| {
+            q2.store(true, Ordering::SeqCst);
+            Ok(Box::new(Dies))
+        });
+        let (_d, storage, id, w, done) = setup_quitting(make, Box::new(|c| eta::summary_profile(&c.engine, "test", false)), quitting);
+        w.enqueue(&id);
+        wait(&w);
+        let f = storage.lock().unwrap().read_meeting_file(&id).unwrap();
+        assert_eq!(f.status, MeetingStatus::Summarizing);
+        assert!(f.summary_error.is_none());
+        assert!(done.lock().unwrap().is_empty());
     }
 
     /// An engine that fails the way the local AI does when its helper dies.
@@ -719,8 +761,65 @@ mod tests {
     #[test]
     fn summary_language_follows_the_setting() {
         let c = Config::from_settings(Some(&json!({ "summaryLanguage": "es" })));
-        assert_eq!(c.language_for("en"), "es");
+        assert_eq!(c.language_for(None, "en"), "es");
         let m = Config::from_settings(Some(&json!({})));
-        assert_eq!((m.engine.as_str(), m.language_for("tl").as_str()), ("local", "tl"));
+        assert_eq!((m.engine.as_str(), m.language_for(None, "tl").as_str()), ("local", "tl"));
+        // A blank choice is no choice.
+        assert_eq!(c.language_for(Some(" "), "en"), "es");
+    }
+
+    #[test]
+    fn the_meetings_language_beats_the_settings_language() {
+        let c = Config::from_settings(Some(&json!({ "summaryLanguage": "es" })));
+        assert_eq!(c.language_for(Some("fil"), "en"), "fil");
+        let same = Config::from_settings(Some(&json!({})));
+        assert_eq!(same.language_for(Some("ja"), "tl"), "ja");
+    }
+
+    #[test]
+    fn a_summary_is_written_in_the_meetings_language_and_records_it() {
+        let seen = Arc::new(Mutex::new(vec![]));
+        let seen2 = seen.clone();
+        struct Spy(Arc<Mutex<Vec<String>>>);
+        impl SummaryEngine for Spy {
+            fn complete(&mut self, p: &crate::summarizer::prompt::Prompt, _s: &str, _m: u32, _c: &AtomicBool) -> Result<String, EngineError> {
+                self.0.lock().unwrap().push(p.system.clone());
+                Ok(reply("Plan", "Habang."))
+            }
+            fn context_tokens(&self) -> usize {
+                16_384
+            }
+            fn label(&self) -> String {
+                "Spy".into()
+            }
+        }
+        let (_d, storage, id, w, _) = setup(Box::new(move |_| Ok(Box::new(Spy(seen2.clone())))));
+        {
+            let mut s = storage.lock().unwrap();
+            // Settings say Spanish, the meeting was heard in Filipino, the user picked Japanese for it.
+            s.settings_set(json!({ "summaryEngine": "local", "summaryLanguage": "es" })).unwrap();
+            s.update_meeting_file(&id, |f| {
+                f.language = "tl".into();
+                f.summary_language = Some("ja".into());
+            })
+            .unwrap();
+        }
+        w.enqueue(&id);
+        wait(&w);
+        let s = storage.lock().unwrap().get_meeting(&id).unwrap().summary.unwrap();
+        assert_eq!(s.language.as_deref(), Some("ja"));
+        assert!(seen.lock().unwrap()[0].contains("Write everything in Japanese."));
+        // No choice on the meeting: the Settings language, and the summary says so.
+        {
+            let s = storage.lock().unwrap();
+            s.update_meeting_file(&id, |f| {
+                f.summary_language = None;
+                f.status = MeetingStatus::Summarizing;
+            })
+            .unwrap();
+        }
+        w.enqueue(&id);
+        wait(&w);
+        assert_eq!(storage.lock().unwrap().get_meeting(&id).unwrap().summary.unwrap().language.as_deref(), Some("es"));
     }
 }

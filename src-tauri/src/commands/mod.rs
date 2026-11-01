@@ -56,6 +56,22 @@ pub fn notify(app: &AppHandle, event: &str) {
     }
 }
 
+/// The app is quitting (or an update is about to replace the helpers): says so first, so a job that ends because the
+/// helpers go is left as it is (it resumes at the next launch) rather than marked failed; then stops the AI helpers
+/// and, on Windows, the speech helper.
+pub fn shutdown_helpers(app: &AppHandle) {
+    use tauri::Manager;
+    crate::quit::begin();
+    if let Some(t) = app.try_state::<transcriber::TranscriberState>() {
+        t.worker.cancel_running();
+    }
+    crate::summarizer::local::shutdown_all();
+    #[cfg(windows)]
+    if let Some(t) = app.try_state::<transcriber::TranscriberState>() {
+        t.shutdown_speech_helper();
+    }
+}
+
 /// Where Talaan keeps its data: `TALAAN_DATA_DIR` if set, otherwise the OS data folder.
 pub fn resolve_data_dir(env_override: Option<String>, os_data_dir: Option<std::path::PathBuf>) -> std::path::PathBuf {
     match env_override.filter(|s| !s.trim().is_empty()) {

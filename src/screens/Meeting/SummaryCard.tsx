@@ -7,7 +7,7 @@ import { openSettings } from "../../lib/windows";
 import { ownerName } from "../../lib/transcript";
 import { meetingNotes } from "../../lib/share";
 import { templateName } from "../../lib/templates";
-import { useT } from "../../lib/i18n/I18nProvider";
+import { useLang, useT } from "../../lib/i18n/I18nProvider";
 import { etaText, useNotificationsAllowed, useNow, type Eta } from "../../lib/eta";
 import { useSettings } from "../../data/hooks";
 import { Button, Checkbox, Chip, Editable, Label, SectionLabel, Timestamp, cn, useToast } from "../../ui";
@@ -16,6 +16,8 @@ import { FollowUpSheet } from "./FollowUpSheet";
 import { NotesSection } from "./NotesSection";
 import { useConfirmRewrite } from "./ConfirmRewrite";
 import { StatusButton } from "./StatusBanner";
+import { SummarizeInSheet } from "./SummarizeInSheet";
+import { languageLabel, writtenLanguage } from "../../lib/summaryLanguages";
 
 interface Props {
   meeting: Meeting;
@@ -31,7 +33,11 @@ export function SummaryCard({ meeting, activeAt, editing, onJump }: Props) {
   const store = useStore();
   const toast = useToast();
   const t = useT();
+  const lang = useLang();
   const { summary, status } = meeting;
+  const [changingLanguage, setChangingLanguage] = useState(false);
+  const closeChangeLanguage = useCallback(() => setChangingLanguage(false), []);
+  const written = writtenLanguage(summary);
   const busy = status === "summarizing" || status === "transcribing";
   const [notesChanged, setNotesChanged] = useState(false);
   const [followUp, setFollowUp] = useState(false);
@@ -188,8 +194,23 @@ export function SummaryCard({ meeting, activeAt, editing, onJump }: Props) {
         ) : null}
         {summary && notes}
         {summary ? (
-          <div className="-mt-3">
+          <div className="-mt-3 flex flex-col gap-1">
             <Label className="normal-case">{t("meeting.writtenBy", { engine: summary.engine })}</Label>
+            {(written || (status === "ready" && !editing)) && (
+              <span className="flex flex-wrap items-center gap-x-1.5 text-xs text-subtle">
+                {written && <span>{t("meeting.writtenIn", { language: languageLabel(written, lang) })}</span>}
+                {written && status === "ready" && !editing && <span aria-hidden="true">·</span>}
+                {status === "ready" && !editing && (
+                  <button
+                    type="button"
+                    onClick={() => setChangingLanguage(true)}
+                    className="cursor-pointer border-0 bg-transparent p-0 font-[inherit] text-xs font-semibold text-ink underline underline-offset-2"
+                  >
+                    {t("meeting.changeLanguage")}
+                  </button>
+                )}
+              </span>
+            )}
           </div>
         ) : busy ? (
           <Progress label={status === "summarizing" ? t("meeting.writingSummary") : t("meeting.transcribingAudio")} value={meeting.progress} eta={meeting.eta} />
@@ -212,6 +233,7 @@ export function SummaryCard({ meeting, activeAt, editing, onJump }: Props) {
         )}
       </div>
       {summary && <FollowUpSheet meeting={meeting} open={followUp} onClose={closeFollowUp} />}
+      {summary && <SummarizeInSheet meeting={meeting} open={changingLanguage} onClose={closeChangeLanguage} />}
       {rewrite.sheet}
     </section>
   );

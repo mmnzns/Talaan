@@ -13,8 +13,14 @@ vi.mock("@tauri-apps/api/event", () => ({
 const fire = (event: string, payload?: unknown) => listeners.get(event)!({ payload });
 
 const MODELS = [
-  { id: "whisper-turbo", name: "Whisper Large Turbo", maker: "OpenAI", note: "", engine: "whisper", sizeMb: 575, speed: 2, accuracy: 3, languages: "99 languages", state: "not_downloaded" },
-  { id: "diarization", name: "Speaker separation", maker: "NVIDIA", note: "", engine: "diarization", sizeMb: 401, speed: 3, accuracy: 2, languages: "Any language", state: "downloaded" },
+  { id: "whisper-turbo", name: "Whisper Large Turbo", maker: "OpenAI", note: "", engine: "whisper", sizeMb: 575, speed: 2, accuracy: 3, languages: "99 languages", licence: "MIT", englishOnly: false, state: "not_downloaded" },
+  { id: "diarization", name: "Speaker separation", maker: "NVIDIA", note: "", engine: "diarization", sizeMb: 401, speed: 3, accuracy: 2, languages: "Any language", licence: "OpenMDW-1.1", englishOnly: false, state: "downloaded" },
+];
+
+const LLMS = [
+  { id: "qwen3.5-4b", name: "Qwen3.5 4B", note: "", sizeMb: 2741, recommended: true, licence: "Apache-2.0", memoryGb: 3.3, state: "not_downloaded" },
+  { id: "qwen3.5-9b", name: "Qwen3.5 9B", note: "", sizeMb: 5681, recommended: false, licence: "Apache-2.0", memoryGb: 6.8, state: "not_downloaded" },
+  { id: "granite-4.2-3b", name: "Granite 4.2 3B", note: "", sizeMb: 2245, recommended: false, licence: "Apache-2.0", memoryGb: 2.7, state: "not_downloaded" },
 ];
 
 /** Answers `settings_get` with each of `settings` in turn, `models_list` with MODELS, everything else with undefined. */
@@ -22,7 +28,7 @@ function backend(...settings: unknown[]) {
   invoke.mockImplementation((cmd: string) => {
     if (cmd === "settings_get") return Promise.resolve(settings.length > 1 ? settings.shift() : settings[0]);
     if (cmd === "models_list") return Promise.resolve(structuredClone(MODELS));
-    if (cmd === "llm_models_list") return Promise.resolve([{ id: "qwen3.5-4b", choice: "recommended", name: "Qwen3.5 4B", note: "", sizeMb: 2741, state: "not_downloaded" }]);
+    if (cmd === "llm_models_list") return Promise.resolve(structuredClone(LLMS));
     if (cmd === "keys_save") return Promise.resolve({ ok: true, message: "Connected." });
     return Promise.resolve(undefined);
   });
@@ -178,6 +184,36 @@ describe("TauriSettingsStore", () => {
   it("an unknown active model id falls back to the default", async () => {
     backend({ activeSpeechModel: "parakeet" });
     expect((await new TauriSettingsStore().get()).activeSpeechModel).toBe("whisper-turbo");
+  });
+
+  it("the local model setting from older versions becomes a model id", async () => {
+    backend({ localModel: "recommended" });
+    expect((await new TauriSettingsStore().get()).localModel).toBe("qwen3.5-4b");
+    backend({ localModel: "larger" });
+    expect((await new TauriSettingsStore().get()).localModel).toBe("qwen3.5-9b");
+    backend({ localModel: "granite-4.2-3b" });
+    expect((await new TauriSettingsStore().get()).localModel).toBe("granite-4.2-3b");
+    backend({ localModel: "no-such-model" });
+    expect((await new TauriSettingsStore().get()).localModel).toBe("qwen3.5-4b");
+  });
+
+  it("drops the stored reuseModels switch, and never writes it back", async () => {
+    backend({ reuseModels: false, localModel: "larger" } as never);
+    const store = new TauriSettingsStore();
+    expect("reuseModels" in (await store.get())).toBe(false);
+    await store.update({ useGpu: false });
+    const sets = invoke.mock.calls.filter((c) => c[0] === "settings_set");
+    const saved = (sets[sets.length - 1][1] as { value: Record<string, unknown> }).value;
+    expect("reuseModels" in saved).toBe(false);
+    expect(saved.localModel).toBe("qwen3.5-9b");
+  });
+
+  it("deleting a model says whether it was erased or another app keeps it", async () => {
+    backend({});
+    const store = new TauriSettingsStore();
+    invoke.mockResolvedValueOnce({ erased: false, otherApps: ["Ensayo"] });
+    expect(await store.deleteModel("whisper-turbo")).toEqual({ erased: false, otherApps: ["Ensayo"] });
+    expect(invoke).toHaveBeenCalledWith("models_delete", { id: "whisper-turbo" });
   });
 
   it("speech models come from disk, with live download progress", async () => {

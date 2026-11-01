@@ -1,3 +1,4 @@
+import type { ExportScope } from "../lib/share";
 import type { NotionDestination } from "./settings";
 import type {
   AskAnswer,
@@ -51,6 +52,12 @@ export interface MeetingStore {
   setTemplate(id: MeetingId, template?: string): Promise<void>;
   /** "Summarize as…": remembers the type and writes the summary again (it replaces the old one and its edits). */
   summarizeAs(id: MeetingId, template: string): Promise<void>;
+  /**
+   * "Summarize in…" / "Change language": remembers the language on the meeting and writes the summary again from the
+   * transcript in it (never a translation of the old one; it replaces the old one and its edits). Rejects a code that
+   * isn't in lib/summaryLanguages, and a meeting without a finished transcript.
+   */
+  summarizeIn(id: MeetingId, language: string): Promise<void>;
   /** The user's notes (marks with a note), edited in the meeting view. Marked moments stay. Not while recording. */
   setNotes(id: MeetingId, notes: Mark[]): Promise<void>;
   /** When a follow-up draft for this meeting should be done; `waiting`: the local AI finishes a summary first. */
@@ -79,7 +86,7 @@ export interface MeetingStore {
   listTags(): Promise<string[]>;
   ask(question: string, scope: AskScope): Promise<AskAnswer>;
   /** Sends the meeting to Notion; returns the new page's URL. */
-  exportToNotion(id: MeetingId, destination: NotionDestination, includeTranscript: boolean): Promise<string>;
+  exportToNotion(id: MeetingId, destination: NotionDestination, scope: ExportScope): Promise<string>;
   /** Fires on any change. Returns an unsubscribe function. */
   subscribe(listener: () => void): () => void;
 }

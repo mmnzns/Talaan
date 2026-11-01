@@ -20,14 +20,14 @@ describe("the setup step's models", () => {
     expect(setupItems({ ...fresh, summaryEngine: "byok" }).summary).toBeUndefined();
   });
 
-  it("keep a speech model that is already on this computer", () => {
-    const s = { ...fresh, activeSpeechModel: "parakeet-v3", speechModels: fresh.speechModels.map((m) => (m.id === "parakeet-v3" ? { ...m, state: "on_this_mac" as const } : m)) };
+  it("keep a speech model that is already downloaded (by Talaan or another app)", () => {
+    const s = { ...fresh, activeSpeechModel: "parakeet-v3", speechModels: fresh.speechModels.map((m) => (m.id === "parakeet-v3" ? { ...m, state: "downloaded" as const } : m)) };
     expect(setupItems(s).speech?.id).toBe("parakeet-v3");
   });
 
   it("count only what isn't on this computer yet, less what an interrupted download left", () => {
     expect(missingMb([item("a", 575, "not_downloaded"), item("b", 2741, "not_downloaded")])).toBe(3316);
-    expect(missingMb([item("a", 575, "on_this_mac"), item("b", 2741, "not_downloaded")])).toBe(2741);
+    expect(missingMb([item("a", 575, "downloaded"), item("b", 2741, "not_downloaded")])).toBe(2741);
     expect(missingMb([item("a", 1000, "not_downloaded", { partial: 0.25 })])).toBe(750);
     expect(missingMb([item("a", 575, "downloaded"), item("b", 2741, "downloaded")])).toBe(0);
   });

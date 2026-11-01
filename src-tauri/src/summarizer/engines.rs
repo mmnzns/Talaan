@@ -1,7 +1,7 @@
 //! The summary engines. Request bodies and reply parsing are pure functions (tested with recorded shapes);
 //! the network call is one small function. Only transcript text is ever sent, never audio.
 
-use super::local::LocalAi;
+use super::local::{record_outcome, to_summary_error};
 use crate::i18n::tr_with;
 use super::prompt::Prompt;
 use super::summarize::{EngineError, SummaryEngine};
@@ -9,7 +9,9 @@ use serde_json::{json, Value};
 use std::path::PathBuf;
 use std::sync::atomic::AtomicBool;
 use std::time::Duration;
-use talaan_llm_protocol::Completion;
+use std::sync::Arc;
+use voice_engine_client::{EngineError as ClientError, LlmClient};
+use voice_engine_protocol::Completion;
 
 /// Context used with local models and local servers: room for ~45 minutes of talk per part on a laptop.
 pub const LOCAL_CONTEXT: usize = 16_384;
@@ -107,13 +109,60 @@ impl Provider {
 // ---------- local model through the helper ----------
 
 pub struct LocalEngine {
-    pub ai: LocalAi,
+    /// The app's one client for summaries and follow-ups (`local::summary_client`).
+    pub ai: Arc<LlmClient>,
     pub model_path: PathBuf,
     pub model_name: String,
+    /// From settings, per call: the engine decides GPU or processor, not the client.
+    pub use_gpu: bool,
+    /// The last error, `{:?}`, for `failure_detail`.
+    detail: Option<String>,
+}
+
+impl LocalEngine {
+    pub fn new(ai: Arc<LlmClient>, model_path: PathBuf, model_name: String, use_gpu: bool) -> Self {
+        LocalEngine { ai, model_path, model_name, use_gpu, detail: None }
+    }
+}
+
+/// How often a cancel is repeated while the call still runs.
+const CANCEL_EVERY: Duration = Duration::from_secs(1);
+
+/// Asks the client to cancel when `cancel` turns true while `call` runs. The client ignores a cancel that arrives
+/// before its request is sent (the helper may still be starting), so it asks again every second until the call
+/// returns, however long that takes (the call ending is what stops the asking).
+fn with_cancel<T>(ai: &LlmClient, cancel: &AtomicBool, call: impl FnOnce() -> T) -> T {
+    repeat_while(cancel, CANCEL_EVERY, || ai.cancel(), call)
+}
+
+/// Runs `call`, and while it runs calls `ask` once `cancel` is true and then every `every`, until `call` returns.
+fn repeat_while<T>(cancel: &AtomicBool, every: Duration, ask: impl Fn() + Sync, call: impl FnOnce() -> T) -> T {
+    use std::sync::atomic::Ordering;
+    let done = AtomicBool::new(false);
+    std::thread::scope(|scope| {
+        let watcher = scope.spawn(|| {
+            let mut last: Option<std::time::Instant> = None;
+            while !done.load(Ordering::Relaxed) {
+                if cancel.load(Ordering::Relaxed) && last.is_none_or(|t| t.elapsed() >= every) {
+                    ask();
+                    last = Some(std::time::Instant::now());
+                }
+                std::thread::park_timeout(Duration::from_millis(200).min(every));
+            }
+        });
+        let result = call();
+        done.store(true, Ordering::Relaxed);
+        watcher.thread().unpark();
+        result
+    })
 }
 
 impl SummaryEngine for LocalEngine {
     fn complete(&mut self, p: &Prompt, schema: &str, max_tokens: u32, cancel: &AtomicBool) -> Result<String, EngineError> {
+        self.detail = None;
+        if cancel.load(std::sync::atomic::Ordering::Relaxed) {
+            return Err(EngineError::Cancelled);
+        }
         let c = Completion {
             model_path: self.model_path.to_string_lossy().into(),
             n_ctx: LOCAL_CONTEXT as u32,
@@ -122,12 +171,24 @@ impl SummaryEngine for LocalEngine {
             json_schema: Some(schema.into()),
             max_tokens,
             temperature: 0.2,
-            gpu: true,
+            gpu: self.use_gpu,
+            // Talaan's prompts and schemas are tuned with thinking off; a model that thinks first would be slower
+            // and answer differently.
+            thinking: false,
+            thinking_budget: None,
+            seed: None,
         };
-        match self.ai.complete(&c, cancel, &mut |_, _, _| {}) {
-            Ok(r) => Ok(r.text),
-            Err(e) if e == "cancelled" => Err(EngineError::Cancelled),
-            Err(e) => Err(EngineError::Failed(e)),
+        match with_cancel(&self.ai, cancel, || self.ai.complete(c, &mut |_| {})) {
+            Ok(o) => {
+                record_outcome(&o.backend.backend, o.fallback);
+                Ok(o.value.text)
+            }
+            Err(e) => {
+                if !matches!(e, ClientError::Cancelled) {
+                    self.detail = Some(crate::logging::text(format!("{e:?}")).to_string());
+                }
+                Err(to_summary_error(e))
+            }
         }
     }
     fn context_tokens(&self) -> usize {
@@ -137,7 +198,7 @@ impl SummaryEngine for LocalEngine {
         format!("Local AI · {}", self.model_name)
     }
     fn failure_detail(&mut self) -> Option<String> {
-        self.ai.take_detail()
+        self.detail.take()
     }
 }
 
@@ -426,6 +487,42 @@ pub fn compatible_base(address: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_cancel_is_repeated_until_the_call_returns() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        let asked = AtomicUsize::new(0);
+        let cancel = AtomicBool::new(true);
+        // A slow call: far more than 3 repeats fit, and none of them stops the asking.
+        let out = repeat_while(&cancel, Duration::from_millis(20), || { asked.fetch_add(1, Ordering::SeqCst); }, || {
+            std::thread::sleep(Duration::from_millis(600));
+            7
+        });
+        assert_eq!(out, 7);
+        let n = asked.load(Ordering::SeqCst);
+        assert!(n > 5, "{n} asks");
+        // The call has returned: no more asks.
+        std::thread::sleep(Duration::from_millis(100));
+        assert_eq!(asked.load(Ordering::SeqCst), n);
+    }
+
+    #[test]
+    fn nothing_is_asked_unless_cancel_is_set() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        let asked = AtomicUsize::new(0);
+        let cancel = AtomicBool::new(false);
+        repeat_while(&cancel, Duration::from_millis(10), || { asked.fetch_add(1, Ordering::SeqCst); }, || std::thread::sleep(Duration::from_millis(100)));
+        assert_eq!(asked.load(Ordering::SeqCst), 0);
+        // Set during the call: it starts asking then.
+        let cancel = AtomicBool::new(false);
+        repeat_while(&cancel, Duration::from_millis(10), || { asked.fetch_add(1, Ordering::SeqCst); }, || {
+            std::thread::sleep(Duration::from_millis(50));
+            cancel.store(true, Ordering::Relaxed);
+            std::thread::sleep(Duration::from_millis(300));
+        });
+        assert!(asked.load(Ordering::SeqCst) >= 2);
+    }
+
     use crate::summarizer::prompt::SCHEMA;
 
     fn engine(provider: Provider) -> HttpEngine {

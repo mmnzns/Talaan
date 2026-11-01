@@ -19,7 +19,7 @@ import { TestRecordingWatcher } from "../Onboarding/TestRecording";
 
 export function MainWindow({ route }: { route: Route }) {
   const [importing, setImporting] = useState(false);
-  const [dropped, setDropped] = useState<string>();
+  const [dropped, setDropped] = useState<string[]>();
   const recording = useRecording();
 
   useEffect(() => {
@@ -39,6 +39,8 @@ export function MainWindow({ route }: { route: Route }) {
     if (!inTauri()) return;
     const offs = [
       onEvent<string>("open-meeting", (id) => navigate(routes.meeting(id))),
+      // The menu bar's Export: the meeting opens with the Export sheet showing.
+      onEvent<string>("export-meeting", (id) => navigate(routes.meeting(id, undefined, true))),
       // Stop in the menu bar: the toast with the time estimate shows here, where the meeting opens.
       onEvent<string>("recording-saved", (id) => void recording.announceSaved(id)),
       onEvent("record-request", () => recording.start()),
@@ -62,7 +64,7 @@ export function MainWindow({ route }: { route: Route }) {
     return startAutoSave(meetingStore, settingsStore, (cb) => onEvent<{ id: string; finished: boolean }>("autosave-due", cb));
   }, [meetingStore, settingsStore]);
 
-  // Drop an audio file anywhere on the window to import it.
+  // Drop audio files anywhere on the window to import them, one after another.
   useEffect(() => {
     if (!inTauri()) return;
     let off: (() => void) | undefined;
@@ -70,9 +72,9 @@ export function MainWindow({ route }: { route: Route }) {
       getCurrentWebview()
         .onDragDropEvent((e) => {
           if (e.payload.type === "over") setImporting(true);
-          if (e.payload.type === "drop" && e.payload.paths[0]) {
+          if (e.payload.type === "drop" && e.payload.paths.length > 0) {
             setImporting(true);
-            setDropped(e.payload.paths[0]);
+            setDropped([...e.payload.paths]);
           }
         })
         .then((unlisten) => (off = unlisten)),
@@ -94,7 +96,7 @@ export function MainWindow({ route }: { route: Route }) {
           {route.name === "ask" ? (
             <AskScreen meetingId={selectedId} />
           ) : route.name === "meeting" ? (
-            <MeetingPane id={route.id} jumpTo={route.t} />
+            <MeetingPane id={route.id} jumpTo={route.t} openExport={route.export} />
           ) : (
             <MeetingPane />
           )}
@@ -103,6 +105,7 @@ export function MainWindow({ route }: { route: Route }) {
       <ImportSheet
         open={importing}
         dropped={dropped}
+        onShow={() => setImporting(true)}
         onClose={() => {
           setImporting(false);
           setDropped(undefined);

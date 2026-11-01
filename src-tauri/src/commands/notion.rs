@@ -3,7 +3,7 @@
 use super::{AppState, CmdResult};
 use crate::i18n::{tr, tr_err};
 use crate::keys;
-use crate::notion::{blocks, Destination, Notion, API, KEY_ID};
+use crate::notion::{blocks, Destination, Notion, Scope, API, KEY_ID};
 use crate::storage::StorageError;
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Manager};
@@ -60,11 +60,11 @@ pub struct Target {
 
 /// Sends the meeting (as the user sees it, edits included) and returns the new page's URL.
 #[tauri::command]
-pub async fn notion_export(app: AppHandle, id: String, destination: Target, include_transcript: bool) -> CmdResult<String> {
+pub async fn notion_export(app: AppHandle, id: String, destination: Target, scope: Scope) -> CmdResult<String> {
     let meeting = app.state::<AppState>().lock().get_meeting(&id)?;
     blocking(move || {
         let dest = Destination { id: destination.id, kind: destination.kind, title: destination.title };
-        client()?.export(&dest, &meeting.item.title, &blocks(&meeting, include_transcript)).map_err(refused)
+        client()?.export(&dest, &meeting.item.title, &blocks(&meeting, scope)).map_err(refused)
     })
     .await
 }

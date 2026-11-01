@@ -13,7 +13,7 @@ export function exportAllFiles(meetings: Meeting[]): { name: string; text: strin
       let name = `${base}.md`;
       for (let n = 2; used.has(name.toLowerCase()); n++) name = `${base} (${n}).md`;
       used.add(name.toLowerCase());
-      return { name, text: toMarkdown(m, true) };
+      return { name, text: toMarkdown(m, "both") };
     });
 }
 

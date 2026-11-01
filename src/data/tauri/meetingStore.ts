@@ -1,3 +1,4 @@
+import type { ExportScope } from "../../lib/share";
 import type { NotionDestination } from "../settings";
 import type { FollowUpDraft, FollowUpEta, MeetingFilter, MeetingStore } from "../store";
 import type { AskAnswer, AskScope, Folder, Mark, Meeting, MeetingId, MeetingListItem, Speaker, Summary } from "../types";
@@ -59,6 +60,10 @@ export class TauriMeetingStore implements MeetingStore {
 
   summarizeAs(id: MeetingId, template: string) {
     return call<void>("meetings_summarize_as", { id, template });
+  }
+
+  summarizeIn(id: MeetingId, language: string) {
+    return call<void>("meetings_summarize_in", { id, language });
   }
 
   setNotes(id: MeetingId, notes: Mark[]) {
@@ -128,8 +133,8 @@ export class TauriMeetingStore implements MeetingStore {
     return call("tags_list");
   }
 
-  exportToNotion(id: MeetingId, destination: NotionDestination, includeTranscript: boolean): Promise<string> {
-    return call<string>("notion_export", { id, destination, includeTranscript });
+  exportToNotion(id: MeetingId, destination: NotionDestination, scope: ExportScope): Promise<string> {
+    return call<string>("notion_export", { id, destination, scope });
   }
 
   ask(question: string, scope: AskScope): Promise<AskAnswer> {

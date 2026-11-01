@@ -14,7 +14,7 @@
 - **Transcript, Me and Them.** Your mic is "Me", the call is "Them"; optionally split into Speaker 1, 2, 3 and rename them once.
 - **Summary in one format.** Recap, decisions with times, action items with owner and due date, open questions. Click any time to jump there and play it.
 - **Ask your meetings.** Questions across all your meetings, answered with links to the exact moment.
-- **Edit, copy, export.** Fix a word, copy as text, export Markdown, PDF, plain text or to Notion. Import a Voice Memo.
+- **Edit, copy, export.** Fix a word, then export Markdown, PDF, plain text or to Notion, or copy it as text: the summary, the transcript or both. Import a Voice Memo.
 - **Organize.** Folders, tags, calendar titles and attendees.
 
 ## Privacy
@@ -29,7 +29,7 @@ Everything runs on your computer by default: speech recognition, speaker separat
 | Your calendar (Windows) | Downloaded from the private iCal address you paste, when a recording starts (at most every 15 minutes). Nothing is sent. |
 | Usage data, analytics | Never collected. |
 
-Audio is kept 7 days by default (1 day to forever, or not at all), then deleted; choose **Keep audio forever** on a meeting to keep its audio. Meetings are plain files, readable without the app: `~/Library/Application Support/Talaan` on the Mac, `%APPDATA%\Talaan` on Windows. Settings › Privacy › Delete everything removes it all, including models and keys.
+Audio is kept 7 days by default (1 day to forever, or not at all), then deleted; choose **Keep audio forever** on a meeting to keep its audio. Meetings are plain files, readable without the app: `~/Library/Application Support/Talaan` on the Mac, `%APPDATA%\Talaan` on Windows. Settings › Privacy › Delete everything removes your meetings, settings and keys, and Talaan's claim on its models (a model another Craft Concepts Digital app still uses stays).
 
 ## Install
 
@@ -42,15 +42,15 @@ Then follow the setup: allow the microphone (and system audio on the Mac), pick 
 
 ## Models
 
-Downloaded on demand, checked by checksum, kept on your computer. Licenses in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+Downloaded on demand, checked by checksum, kept on your computer in a folder shared with Craft Concepts Digital's other apps (so a model downloads once). Speech and local AI run on the shared [voice-engine](https://github.com/mmnzns/voice-engine). Licenses in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 
 | Job | Model | Size |
 |---|---|---|
 | Speech, "Best for most people" (recommended) | Whisper Large Turbo (OpenAI) | 575 MB |
-| Speech, "Fastest" (25 European languages; much quicker on a PC without a graphics card) | Parakeet v3 (NVIDIA) | 671 MB |
+| Speech, "Fastest" (25 European languages; much quicker on a PC without a separate graphics card) | Parakeet v3 (NVIDIA) | 671 MB |
 | Speech, "For older computers" | Whisper Small (OpenAI) | 488 MB |
-| Speech (more choices) | Whisper Large v3, Large v2, Medium, Base, Tiny (OpenAI); Parakeet Ultra, Parakeet v2, Parakeet Unified, Nemotron 3.5 (NVIDIA) | 78 MB to 2.6 GB |
-| Summaries | Qwen3.5 4B (recommended) or 9B | 2.7 / 5.7 GB |
+| Speech (more choices) | Whisper Large v3, Large v2, Medium, Base, Tiny and English-only Small to Tiny (OpenAI); full-size Whisper and Parakeet; Parakeet Ultra, Parakeet v2, Parakeet Unified, Nemotron 3.5 (NVIDIA) | 78 MB to about 3 GB |
+| Summaries | Qwen3.5 4B (recommended), Qwen3.5 9B or Granite 4.2 3B | 2.7 / 5.7 / 2.2 GB |
 | Speaker separation (optional) | Nemotron 3 Diarization (NVIDIA) | 401 MB |
 | Search by meaning (optional) | Qwen3-Embedding 0.6B | 640 MB |
 
