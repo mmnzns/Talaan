@@ -17,7 +17,7 @@ name: Release
 # bump the version and CHANGELOG, push a tag, wait for updater-json, check the draft (six files, latest.json with four
 # keys), publish. scripts/release-local.sh + upload-mac-release.sh stay as the fallback when CI's Mac job can't run.
 # The helper programs (talaan-llm, talaan-stt, and on Windows x64 their -vulkan variants) are built by the engine's
-# reusable workflow (the `helpers` job, voice-engine v0.3.0: its .cargo/config.toml CPU baseline applies there) and
+# reusable workflow (the `helpers` job, voice-engine v0.3.3: its .cargo/config.toml CPU baseline applies there) and
 # downloaded by the jobs that build the app, as Tauri sidecars in src-tauri/binaries. Those jobs set
 # TALAAN_HELPERS_PREBUILT=1 so scripts/build-llm-helper.* and scripts/release-windows.ps1 build no helper themselves.
 #
@@ -53,9 +53,9 @@ jobs:
   helpers:
     permissions:
       contents: read
-    uses: mmnzns/voice-engine/.github/workflows/build-helpers.yml@v0.3.0
+    uses: mmnzns/voice-engine/.github/workflows/build-helpers.yml@v0.3.3
     with:
-      engine-ref: v0.3.0
+      engine-ref: v0.3.3
       # What Talaan ships and downloads below: Mac Apple silicon and Windows x64. No Windows ARM64 build.
       targets: x86_64-pc-windows-msvc,aarch64-apple-darwin
       helpers: ${{ inputs.platform == 'mac' && 'llm' || 'llm,stt,llm-vulkan,stt-vulkan' }}

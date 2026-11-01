@@ -11,8 +11,8 @@ name = "talaan-stt"
 path = "src/main.rs"
 
 [dependencies]
-voice-engine-stt = { git = "https://github.com/mmnzns/voice-engine", tag = "v0.3.0" }
-voice-engine-protocol = { git = "https://github.com/mmnzns/voice-engine", tag = "v0.3.0" }
+voice-engine-stt = { git = "https://github.com/mmnzns/voice-engine", tag = "v0.3.3" }
+voice-engine-protocol = { git = "https://github.com/mmnzns/voice-engine", tag = "v0.3.3" }
 
 [features]
 # Windows GPU build (talaan-stt-vulkan.exe), never linked into talaan.exe: needs the Vulkan SDK (VULKAN_SDK) to
