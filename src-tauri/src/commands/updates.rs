@@ -292,18 +292,97 @@ pub fn open_banner(app: &AppHandle) {
     let _ = app.emit(SHOW_UPDATE, ());
 }
 
+/// The argument the login item starts Talaan with: it stays in the menu bar / tray, window closed.
+pub const BACKGROUND_FLAG: &str = "--background";
+
+/// Written in the data folder once the login item has been registered with `BACKGROUND_FLAG`. Items made by
+/// 1.1.x have no flag and no marker, so they are registered once more.
+const LOGIN_MARKER: &str = "login-item-v2";
+
+/// Whether the main window stays closed at start: the OS started Talaan at login, unless the first-run setup is
+/// still unfinished (nothing else to look at then).
+pub fn start_hidden(args: impl IntoIterator<Item = String>, onboarding_done: bool) -> bool {
+    onboarding_done && args.into_iter().any(|a| a == BACKGROUND_FLAG)
+}
+
+#[derive(Debug, PartialEq, Eq)]
+enum LoginAction {
+    Enable,
+    Disable,
+    Nothing,
+}
+
+/// What to do to the login item. An item that exists without the marker predates the flag: enabling it again
+/// rewrites it. Not on every launch, because macOS can announce a changed login item.
+fn login_action(want: bool, have: bool, marker: bool) -> LoginAction {
+    match (want, have, marker) {
+        (true, false, _) | (true, true, false) => LoginAction::Enable,
+        (false, true, _) => LoginAction::Disable,
+        _ => LoginAction::Nothing,
+    }
+}
+
 /// Makes the login item match the setting (default on). Called at launch and whenever settings change.
 pub fn apply_login_item(app: &AppHandle) {
     let want = setting(app, "launchAtLogin");
     let auto = app.autolaunch();
     let have = auto.is_enabled().unwrap_or(false);
+    let marker = app.state::<AppState>().lock().root().join(LOGIN_MARKER);
     // Only a real app bundle should register itself (not `tauri dev`).
-    if want != have && !cfg!(debug_assertions) {
-        let _ = if want { auto.enable() } else { auto.disable() };
+    if cfg!(debug_assertions) {
+        return;
+    }
+    match login_action(want, have, marker.exists()) {
+        LoginAction::Enable => {
+            if auto.enable().is_ok() {
+                let _ = std::fs::write(&marker, "");
+            }
+        }
+        LoginAction::Disable => {
+            let _ = auto.disable();
+            let _ = std::fs::remove_file(&marker);
+        }
+        LoginAction::Nothing => {
+            if !want {
+                let _ = std::fs::remove_file(&marker);
+            }
+        }
     }
 }
 
 /// "Delete all Talaan data" also removes the login item.
 pub fn remove_login_item(app: &AppHandle) {
     let _ = app.autolaunch().disable();
+    let _ = std::fs::remove_file(app.state::<AppState>().lock().root().join(LOGIN_MARKER));
+}
+
+#[cfg(test)]
+mod login_tests {
+    use super::*;
+
+    fn args(a: &[&str]) -> Vec<String> {
+        a.iter().map(|s| s.to_string()).collect()
+    }
+
+    #[test]
+    fn starts_hidden_only_from_the_login_item_after_setup() {
+        assert!(start_hidden(args(&["/Applications/Talaan.app/Contents/MacOS/Talaan", BACKGROUND_FLAG]), true));
+        assert!(!start_hidden(args(&["Talaan"]), true));
+        assert!(!start_hidden(args(&["Talaan", "talaan://meeting/abc"]), true));
+        assert!(!start_hidden(args(&["Talaan", BACKGROUND_FLAG]), false));
+        assert!(!start_hidden(Vec::new(), true));
+    }
+
+    #[test]
+    fn login_item_is_registered_again_once_for_the_flag() {
+        use LoginAction::*;
+        assert_eq!(login_action(true, false, false), Enable);
+        assert_eq!(login_action(true, false, true), Enable);
+        assert_eq!(login_action(true, true, false), Enable);
+        assert_eq!(login_action(true, true, true), Nothing);
+        assert_eq!(login_action(false, true, true), Disable);
+        assert_eq!(login_action(false, true, false), Disable);
+        assert_eq!(login_action(false, false, true), Nothing);
+        assert_eq!(login_action(false, false, false), Nothing);
+    }
 }
