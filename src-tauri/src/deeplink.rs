@@ -71,6 +71,11 @@ pub fn meeting_id(arg: &str) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn the_background_flag_is_not_a_link() {
+        assert_eq!(link_in_args(&["Talaan", "--background"]), None);
+    }
+
     use super::*;
 
     #[test]

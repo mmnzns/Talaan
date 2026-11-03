@@ -62,16 +62,20 @@ pub fn run() {
     let builder = builder.plugin(tauri_plugin_single_instance::init(|app, args, _cwd| match deeplink::link_in_args(&args) {
         Some(deeplink::Link::Meeting(id)) => commands::summarizer::open_meeting(app, &id),
         Some(deeplink::Link::Update) => commands::updates::open_banner(app),
+        // A login launch while Talaan already runs has nothing to show.
+        None if args.iter().any(|a| a == commands::updates::BACKGROUND_FLAG) => {}
         None => commands::tray::show_main(app),
     }));
     builder
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
-        .plugin(tauri_plugin_autostart::init(tauri_plugin_autostart::MacosLauncher::LaunchAgent, None))
+        .plugin(tauri_plugin_autostart::init(tauri_plugin_autostart::MacosLauncher::LaunchAgent, Some(vec![commands::updates::BACKGROUND_FLAG])))
         .setup(|app| {
             logging::init(&logging::resolve_dir(std::env::var("TALAAN_DATA_DIR").ok(), dirs::home_dir(), dirs::data_local_dir()));
             let root = commands::resolve_data_dir(std::env::var("TALAAN_DATA_DIR").ok(), dirs::data_dir());
+            // An update restarted Talaan: show the window even if this run inherited the login flag.
+            let after_update = std::fs::remove_file(root.join(commands::updates::SHOW_AFTER_UPDATE)).is_ok();
             // Playback reads meeting audio through the asset protocol, whose static scope is the usual data folder;
             // a TALAAN_DATA_DIR run (tests, a second profile) allows its own meetings folder too.
             if std::env::var("TALAAN_DATA_DIR").is_ok_and(|s| !s.trim().is_empty()) {
@@ -157,6 +161,11 @@ pub fn run() {
                     commands::notify(&handle, MEETINGS_CHANGED);
                 }
             });
+            // The window starts hidden (tauri.conf.json): shown now unless the OS started Talaan at login.
+            let onboarding_done = settings.as_ref().and_then(|s| s["onboardingDone"].as_bool()).unwrap_or(false);
+            if after_update || !commands::updates::start_hidden(std::env::args(), onboarding_done) {
+                commands::tray::show_main(app.handle());
+            }
             Ok(())
         })
         .on_window_event(commands::tray::on_window_event)

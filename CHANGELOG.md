@@ -21,6 +21,7 @@
 
 **Easier to use**
 - **Keyboard focus stays inside dialogs:** Tab no longer wanders to the window behind, Escape closes only the top dialog, and focus returns to where you were.
+- **Open at login stays out of the way:** Talaan now starts in the menu bar or system tray with the window closed, instead of opening the window. Call detection is ready as soon as you log in.
 
 ## 1.1.1 (2026-10-19)
 
