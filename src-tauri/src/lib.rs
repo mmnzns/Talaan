@@ -74,6 +74,8 @@ pub fn run() {
         .setup(|app| {
             logging::init(&logging::resolve_dir(std::env::var("TALAAN_DATA_DIR").ok(), dirs::home_dir(), dirs::data_local_dir()));
             let root = commands::resolve_data_dir(std::env::var("TALAAN_DATA_DIR").ok(), dirs::data_dir());
+            // An update restarted Talaan: show the window even if this run inherited the login flag.
+            let after_update = std::fs::remove_file(root.join(commands::updates::SHOW_AFTER_UPDATE)).is_ok();
             // Playback reads meeting audio through the asset protocol, whose static scope is the usual data folder;
             // a TALAAN_DATA_DIR run (tests, a second profile) allows its own meetings folder too.
             if std::env::var("TALAAN_DATA_DIR").is_ok_and(|s| !s.trim().is_empty()) {
@@ -161,7 +163,7 @@ pub fn run() {
             });
             // The window starts hidden (tauri.conf.json): shown now unless the OS started Talaan at login.
             let onboarding_done = settings.as_ref().and_then(|s| s["onboardingDone"].as_bool()).unwrap_or(false);
-            if !commands::updates::start_hidden(std::env::args(), onboarding_done) {
+            if after_update || !commands::updates::start_hidden(std::env::args(), onboarding_done) {
                 commands::tray::show_main(app.handle());
             }
             Ok(())

@@ -178,6 +178,8 @@ async fn install(app: &AppHandle) -> CmdResult<()> {
     super::shutdown_helpers(&app);
     update.install(bytes).inspect_err(|e| log::error!("update install failed: {}", crate::logging::text(e))).map_err(|e| refused(tr_err("update.install_failed", e)))?;
     log::info!("update installed, restarting");
+    // The restart keeps this run's arguments: a Talaan started at login would come back with its window closed.
+    let _ = std::fs::write(app.state::<AppState>().lock().root().join(SHOW_AFTER_UPDATE), "");
     app.restart()
 }
 
@@ -298,6 +300,9 @@ pub const BACKGROUND_FLAG: &str = "--background";
 /// Written in the data folder once the login item has been registered with `BACKGROUND_FLAG`. Items made by
 /// 1.1.x have no flag and no marker, so they are registered once more.
 const LOGIN_MARKER: &str = "login-item-v2";
+
+/// Written just before an update restarts Talaan, so the window opens after it even when this run started at login.
+pub const SHOW_AFTER_UPDATE: &str = "show-after-update";
 
 /// Whether the main window stays closed at start: the OS started Talaan at login, unless the first-run setup is
 /// still unfinished (nothing else to look at then).
