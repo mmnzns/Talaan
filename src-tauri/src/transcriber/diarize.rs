@@ -1,19 +1,9 @@
-//! Named speakers: splitting the "Them" track into Speaker 1, 2, 3 with NVIDIA's Nemotron 3 Diarization
-//! (a streaming Sortformer, up to 8 speakers, OpenMDW-1.1), through parakeet-rs.
-//!
-//! A streaming model needs to hear a voice before it can tell it apart, so a speaker's first turns tend to be
-//! absorbed by whoever it already knows. Feeding it the start of the call first (and throwing those
-//! predictions away) fills its speaker memory; on a three-voice test that took the result from 8/12 to 12/12
-//! turns right. Each transcript sentence then gets the speaker most active over its span.
+//! Named speakers: splitting the "Them" track into Speaker 1, 2, 3. The model (NVIDIA's Nemotron 3 Diarization, a
+//! streaming Sortformer) runs in voice-engine (`speech::EngineSplitter`, with its 10-minute warm-up); this file
+//! turns its per-10 ms activity into a speaker for each transcript sentence: the one most active over its span.
 
 use super::merge::{Timed, Track};
-use std::path::Path;
 
-pub const RATE: usize = 16_000;
-/// Warm-up: the first 10 minutes (or the whole call when shorter).
-const WARMUP: usize = 10 * 60 * RATE;
-/// Audio per inference call, so memory stays flat on long calls. A multiple of the 160-sample hop.
-const CHUNK: usize = 5 * 60 * RATE;
 /// A sentence needs at least this mean activity on its best speaker to be assigned.
 const MIN_ACTIVITY: f32 = 0.2;
 
@@ -22,37 +12,6 @@ pub type Activity = Vec<Vec<f32>>;
 
 pub trait SpeakerSplitter: Send {
     fn activity(&mut self, them: &[f32]) -> Result<Activity, String>;
-}
-
-pub struct Diarizer {
-    model: parakeet_rs::sortformer::Sortformer,
-}
-
-impl Diarizer {
-    pub fn load(path: &Path) -> Result<Self, String> {
-        let model = parakeet_rs::sortformer::Sortformer::new(path).map_err(|e| format!("couldn't load speaker separation: {e}"))?;
-        Ok(Diarizer { model })
-    }
-}
-
-impl SpeakerSplitter for Diarizer {
-    fn activity(&mut self, them: &[f32]) -> Result<Activity, String> {
-        let err = |e: parakeet_rs::Error| format!("speaker separation failed: {e}");
-        self.model.reset_state();
-        if them.is_empty() {
-            return Ok(vec![]);
-        }
-        let warm = &them[..them.len().min(WARMUP)];
-        self.model.diarize_chunk_raw(warm).map_err(err)?;
-        let mut rows: Activity = Vec::with_capacity(them.len() / 160 + 1);
-        for chunk in them.chunks(CHUNK) {
-            let p = self.model.diarize_chunk_raw(chunk).map_err(err)?;
-            for r in 0..p.num_valid_frames {
-                rows.push(p.predictions.row(r).to_vec());
-            }
-        }
-        Ok(rows)
-    }
 }
 
 /// The most active speaker over `[start_ms, end_ms)`, or None when nobody clearly is.
@@ -149,18 +108,18 @@ mod tests {
     }
 
     /// Real model on the three-voice fixture (Karen / Daniel / Rishi, 12 turns).
-    /// `cargo test --release diarize_smoke -- --ignored --nocapture`
+    /// `TALAAN_SMOKE_DATA=<scratch> cargo test --release diarize_smoke -- --ignored --nocapture`
     #[test]
     #[ignore]
     fn diarize_smoke() {
-        let model = dirs::data_dir().unwrap().join("Talaan/models/diarization/nemotron3_diar_v3.onnx");
         // Three synthetic voices (Karen, Daniel, Rishi), 12 turns; truth.json has who spoke when.
         let dir = concat!(env!("CARGO_MANIFEST_DIR"), "/../fixtures/three-speakers/");
-        let audio = crate::transcriber::vad::read_track(Path::new(&format!("{dir}them.wav"))).unwrap();
+        let audio = crate::transcriber::vad::read_track(std::path::Path::new(&format!("{dir}them.wav"))).unwrap();
         let truth: Vec<serde_json::Value> = serde_json::from_str(&std::fs::read_to_string(format!("{dir}truth.json")).unwrap()).unwrap();
         let mut pieces: Vec<Timed> = truth.iter().map(|t| Timed { track: Track::Them, speaker: 0, start_ms: t["start_ms"].as_u64().unwrap(), end_ms: t["end_ms"].as_u64().unwrap(), text: t["speaker"].as_str().unwrap().into() }).collect();
         let t = std::time::Instant::now();
-        let act = Diarizer::load(&model).unwrap().activity(&audio).unwrap();
+        let mut splitter = crate::transcriber::speech::EngineSplitter::load(crate::transcriber::speech::smoke_models().hold(crate::models::DIARIZATION).unwrap()).unwrap();
+        let act = splitter.activity(&audio).unwrap();
         let n = assign_speakers(&mut pieces, &act);
         eprintln!("{n} speakers in {:.1}s: {}", t.elapsed().as_secs_f32(), pieces.iter().map(|p| format!("{}={}", &p.text[..1], p.speaker)).collect::<Vec<_>>().join(" "));
         assert_eq!(n, 3);

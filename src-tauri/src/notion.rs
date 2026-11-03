@@ -41,24 +41,34 @@ fn when(at: Option<u64>) -> String {
     at.map(|a| format!(" ({})", stamp(a))).unwrap_or_default()
 }
 
-/// The page body: a meta line, the summary, and the transcript when asked for. Uses the edited text the user sees.
-pub fn blocks(m: &Meeting, include_transcript: bool) -> Vec<Value> {
+/// What goes to Notion (and matches the Export sheet's choice): the summary with the user's notes, the transcript, or both.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Scope {
+    Summary,
+    Transcript,
+    Both,
+}
+
+/// The page body: a meta line, then the summary and/or the transcript as `scope` says. Uses the edited text the user sees.
+pub fn blocks(m: &Meeting, scope: Scope) -> Vec<Value> {
+    let (summary, transcript) = (scope != Scope::Transcript, scope != Scope::Summary);
     let mut out = vec![];
     let meta = format!("{} · {} · {} · {}", m.item.app_label, m.item.started_at.get(..10).unwrap_or(""), stamp(m.item.duration_ms), tr("notion.recorded_with"));
     out.push(json!({ "object": "block", "type": "paragraph", "paragraph": { "rich_text": [{ "type": "text", "text": { "content": meta }, "annotations": { "italic": true, "color": "gray" } }] } }));
-    if let Some(s) = &m.summary {
+    if let Some(s) = m.summary.as_ref().filter(|_| summary) {
         out.push(block("heading_2", &tr("notion.recap")));
         out.push(block("paragraph", s.recap.trim()));
     }
     let notes: Vec<_> = m.marks.iter().filter_map(|k| k.note_text().map(|n| (k, n))).collect();
-    if !notes.is_empty() {
+    if summary && !notes.is_empty() {
         out.push(block("heading_2", &tr("notion.your_notes")));
         for (k, n) in notes {
             let at = if k.later { format!(" ({})", tr("notion.after_call")) } else { when(Some(k.at)) };
             out.push(block("bulleted_list_item", &format!("{n}{at}")));
         }
     }
-    if let Some(s) = &m.summary {
+    if let Some(s) = m.summary.as_ref().filter(|_| summary) {
         if !s.decisions.is_empty() {
             out.push(block("heading_2", &tr("notion.decisions")));
             out.extend(s.decisions.iter().map(|d| block("bulleted_list_item", &format!("{}{}", d.text.trim(), when(d.at)))));
@@ -90,7 +100,7 @@ pub fn blocks(m: &Meeting, include_transcript: bool) -> Vec<Value> {
             out.extend(s.highlights.iter().map(|h| block("bulleted_list_item", &format!("{}{}", h.text.trim(), when(h.at)))));
         }
     }
-    if include_transcript && !m.transcript.is_empty() {
+    if transcript && !m.transcript.is_empty() {
         out.push(block("heading_2", &tr("notion.transcript")));
         out.extend(m.transcript.iter().map(|l| block("paragraph", &format!("[{}] {}: {}", stamp(l.at), speaker_name(m, &l.speaker), l.text.trim()))));
     }
@@ -207,7 +217,7 @@ mod tests {
         let s = m.summary.as_mut().unwrap();
         s.sections = vec![SummarySection { id: "s0".into(), title: "Blockers".into(), items: vec![SummaryItem { id: "s0i0".into(), text: "Dana: legal".into(), at: None }] }];
         s.highlights = vec![SummaryItem { id: "h0".into(), text: "Budget agreed.".into(), at: Some(5_000) }];
-        let texts: Vec<String> = blocks(&m, false).iter().map(|b| {
+        let texts: Vec<String> = blocks(&m, Scope::Summary).iter().map(|b| {
             let kind = b["type"].as_str().unwrap();
             b[kind]["rich_text"].as_array().map(|r| r.iter().map(|t| t["text"]["content"].as_str().unwrap_or("")).collect::<String>()).unwrap_or_default()
         }).collect();
@@ -221,13 +231,37 @@ mod tests {
 
     #[test]
     fn the_body_has_the_summary_and_optionally_the_transcript() {
-        let b = blocks(&sample(), false);
+        let b = blocks(&sample(), Scope::Summary);
         let types: Vec<&str> = b.iter().map(|x| x["type"].as_str().unwrap()).collect();
         assert_eq!(types, vec!["paragraph", "heading_2", "paragraph", "heading_2", "bulleted_list_item", "heading_2", "to_do"]);
         assert_eq!(b[4]["bulleted_list_item"]["rich_text"][0]["text"]["content"], "Ship onboarding first (00:21)");
         assert_eq!(b[6]["to_do"]["rich_text"][0]["text"]["content"], "Send wireframes — Me");
-        let with = blocks(&sample(), true);
+        let with = blocks(&sample(), Scope::Both);
         assert_eq!(with.last().unwrap()["paragraph"]["rich_text"][0]["text"]["content"], "[00:04] Priya: Pricing moves to Q1.");
+        assert_eq!(with.len(), types.len() + 3);
+    }
+
+    #[test]
+    fn transcript_only_has_no_summary_or_notes() {
+        let mut m = sample();
+        m.marks = vec![crate::storage::model::Mark { id: "k0".into(), at: 61_000, note: Some("ask about legal".into()), later: false }];
+        let b = blocks(&m, Scope::Transcript);
+        let kinds: Vec<&str> = b.iter().map(|x| x["type"].as_str().unwrap()).collect();
+        assert_eq!(kinds, vec!["paragraph", "heading_2", "paragraph", "paragraph"]);
+        let text = |i: usize, kind: &str| b[i][kind]["rich_text"][0]["text"]["content"].as_str().unwrap().to_string();
+        assert_eq!(text(1, "heading_2"), "Transcript");
+        assert_eq!(text(2, "paragraph"), "[00:00] Me: Hi.");
+        assert_eq!(text(3, "paragraph"), "[00:04] Priya: Pricing moves to Q1.");
+        assert!(!format!("{b:?}").contains("ask about legal"));
+    }
+
+    #[test]
+    fn summary_only_has_no_transcript_and_the_scope_comes_from_the_sheet_as_text() {
+        let b = blocks(&sample(), Scope::Summary);
+        assert!(!format!("{b:?}").contains("Pricing moves to Q1."));
+        assert_eq!(serde_json::from_str::<Scope>("\"summary\"").unwrap(), Scope::Summary);
+        assert_eq!(serde_json::from_str::<Scope>("\"transcript\"").unwrap(), Scope::Transcript);
+        assert_eq!(serde_json::from_str::<Scope>("\"both\"").unwrap(), Scope::Both);
     }
 
     #[test]

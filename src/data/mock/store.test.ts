@@ -191,6 +191,32 @@ describe("notes, meeting types and the follow-up draft", () => {
     expect(m.summary?.highlights?.length).toBe(1);
   });
 
+  it("summarizes again in another language, remembers it, and records it on the new summary", async () => {
+    vi.useFakeTimers();
+    const before = (await store.getMeeting("m-q4"))!;
+    expect(before.summary?.language).toBeUndefined();
+    await store.summarizeIn("m-q4", "fil");
+    const busy = (await store.getMeeting("m-q4"))!;
+    expect(busy.status).toBe("summarizing");
+    expect(busy.summaryLanguage).toBe("fil");
+    await vi.advanceTimersByTimeAsync(3000);
+    const m = (await store.getMeeting("m-q4"))!;
+    expect(m.status).toBe("ready");
+    expect(m.summary?.language).toBe("fil");
+    // Summarize again (no language given) keeps the one chosen for the meeting.
+    await store.generateSummary("m-q4");
+    await vi.advanceTimersByTimeAsync(3000);
+    expect((await store.getMeeting("m-q4"))?.summary?.language).toBe("fil");
+  });
+
+  it("refuses a language that isn't offered, changing nothing", async () => {
+    await expect(store.summarizeIn("m-q4", "klingon")).rejects.toThrow();
+    await expect(store.summarizeIn("m-q4", "tl")).rejects.toThrow();
+    const m = (await store.getMeeting("m-q4"))!;
+    expect(m.status).toBe("ready");
+    expect(m.summaryLanguage).toBeUndefined();
+  });
+
   it("drafts a follow-up email to the invitees, and can be cancelled", async () => {
     const quick = new MockMeetingStore(NOW, { askDelayMs: 0, followUpDelayMs: 0 });
     const d = await quick.draftFollowUp("m-q4", "r1");

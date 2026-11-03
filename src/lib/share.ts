@@ -90,39 +90,52 @@ export function toMailto(m: Meeting, limit = MAILTO_LIMIT): { url: string; trunc
   return { url: head + enc(cut.trimEnd() + tail), truncated: true };
 }
 
-/** Full meeting as Markdown. The transcript is optional; the summary is always included. */
-export function toMarkdown(m: Meeting, includeTranscript: boolean): string {
+/** What an export carries: the summary (with your notes), the transcript, or both. */
+export type ExportScope = "summary" | "transcript" | "both";
+export const EXPORT_SCOPES: ExportScope[] = ["summary", "transcript", "both"];
+
+/** Full meeting as Markdown: the title line, then the summary and/or the transcript as `scope` says. */
+export function toMarkdown(m: Meeting, scope: ExportScope): string {
   const out = [`# ${m.title}`, "", `${m.appLabel} · ${formatDate(m.startedAt)} · ${formatDuration(m.durationMs)}`, ""];
-  const s = m.summary;
-  out.push(`## ${t("meeting.shSummary")}`, "");
-  if (!s) {
-    out.push(`_${t("meeting.shNoSummary")}_`);
-  } else {
-    out.push(s.recap);
+  if (scope !== "transcript") {
+    const s = m.summary;
+    out.push(`## ${t("meeting.shSummary")}`, "");
+    if (!s) {
+      out.push(`_${t("meeting.shNoSummary")}_`);
+    } else {
+      out.push(s.recap);
+    }
+    const notes = meetingNotes(m);
+    if (notes.length) out.push("", `### ${t("meeting.shYourNotes")}`, "", ...notes.map((k) => `- ${k.note!.trim()}${noteWhen(k)}`));
+    if (s) {
+      if (s.decisions.length) out.push("", `### ${t("meeting.shDecisions")}`, "", ...s.decisions.map((d) => `- ${d.text}${when(d.at)}`));
+      if (s.actionItems.length)
+        out.push("", `### ${t("meeting.shActionItems")}`, "", ...s.actionItems.map((a) => `- [${a.done ? "x" : " "}] ${a.text}${owner(a.owner && ownerName(m, a.owner))}${due(a.due)}${when(a.at)}`));
+      if (s.openQuestions.length) out.push("", `### ${t("meeting.shOpenQuestions")}`, "", ...s.openQuestions.map((q) => `- ${q.text}`));
+      for (const sec of s.sections ?? []) out.push("", `### ${sec.title}`, "", ...sec.items.map((i) => `- ${i.text}${when(i.at)}`));
+      if (s.highlights?.length) out.push("", `### ${t("meeting.shHighlights")}`, "", ...s.highlights.map((h) => `- ${h.text}${when(h.at)}`));
+    }
   }
-  const notes = meetingNotes(m);
-  if (notes.length) out.push("", `### ${t("meeting.shYourNotes")}`, "", ...notes.map((k) => `- ${k.note!.trim()}${noteWhen(k)}`));
-  if (s) {
-    if (s.decisions.length) out.push("", `### ${t("meeting.shDecisions")}`, "", ...s.decisions.map((d) => `- ${d.text}${when(d.at)}`));
-    if (s.actionItems.length)
-      out.push("", `### ${t("meeting.shActionItems")}`, "", ...s.actionItems.map((a) => `- [${a.done ? "x" : " "}] ${a.text}${owner(a.owner && ownerName(m, a.owner))}${due(a.due)}${when(a.at)}`));
-    if (s.openQuestions.length) out.push("", `### ${t("meeting.shOpenQuestions")}`, "", ...s.openQuestions.map((q) => `- ${q.text}`));
-    for (const sec of s.sections ?? []) out.push("", `### ${sec.title}`, "", ...sec.items.map((i) => `- ${i.text}${when(i.at)}`));
-    if (s.highlights?.length) out.push("", `### ${t("meeting.shHighlights")}`, "", ...s.highlights.map((h) => `- ${h.text}${when(h.at)}`));
-  }
-  if (includeTranscript && m.transcript.length) {
-    out.push("", `## ${t("meeting.shTranscript")}`, "", ...m.transcript.map((l) => `**${formatTime(l.at)} ${nameOf(m, l.speaker)}:** ${l.text}`));
+  if (scope === "transcript" || (scope === "both" && m.transcript.length)) {
+    out.push(...(scope === "both" ? [""] : []), `## ${t("meeting.shTranscript")}`, "");
+    if (m.transcript.length) out.push(...m.transcript.map((l) => `**${formatTime(l.at)} ${nameOf(m, l.speaker)}:** ${l.text}`));
+    else out.push(`_${t("meeting.shNoTranscript")}_`);
   }
   return out.join("\n") + "\n";
 }
 
 /** Same content as Markdown without the markup. */
-export function toPlainText(m: Meeting, includeTranscript: boolean): string {
-  return toMarkdown(m, includeTranscript)
+export function toPlainText(m: Meeting, scope: ExportScope): string {
+  return toMarkdown(m, scope)
     .replace(/^#{1,3} /gm, "")
     .replace(/\*\*(.+?)\*\*/g, "$1")
     .replace(/^_(.+)_$/gm, "$1")
     .replace(/- \[[ x]\] /g, "- ");
+}
+
+/** What "Copy as text" puts on the clipboard: the bulleted summary as before, or plain text with the transcript. */
+export function toCopyText(m: Meeting, scope: ExportScope): string {
+  return scope === "summary" ? toShareText(m) : toPlainText(m, scope);
 }
 
 export const safeFileName = (title: string) => title.replace(/[\\/:*?"<>|]+/g, "").trim() || "Meeting";

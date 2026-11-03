@@ -1,6 +1,6 @@
 import type { Meeting } from "../data/types";
 import { t } from "./i18n";
-import { safeFileName, toMarkdown, toPlainText } from "./share";
+import { safeFileName, toMarkdown, toPlainText, type ExportScope } from "./share";
 import { routes } from "./router";
 import { inTauri } from "./windows";
 
@@ -11,12 +11,12 @@ export type FileFormat = "md" | "txt" | "pdf";
  * PDF opens a print-styled page and the macOS print sheet (Save as PDF is built in).
  * Returns where the file went, or undefined when the user cancelled (or for PDF, which the sheet handles).
  */
-export async function exportMeeting(meeting: Meeting, format: FileFormat, withTranscript: boolean): Promise<string | undefined> {
+export async function exportMeeting(meeting: Meeting, format: FileFormat, scope: ExportScope): Promise<string | undefined> {
   if (format === "pdf") {
-    await openPrint(meeting.id, withTranscript);
+    await openPrint(meeting.id, scope);
     return undefined;
   }
-  const text = format === "md" ? toMarkdown(meeting, withTranscript) : toPlainText(meeting, withTranscript);
+  const text = format === "md" ? toMarkdown(meeting, scope) : toPlainText(meeting, scope);
   const name = `${safeFileName(meeting.title)}.${format}`;
   if (!inTauri()) {
     const a = document.createElement("a");
@@ -37,8 +37,8 @@ export async function exportMeeting(meeting: Meeting, format: FileFormat, withTr
   return path;
 }
 
-async function openPrint(id: string, withTranscript: boolean) {
-  const hash = routes.print(id, withTranscript);
+async function openPrint(id: string, scope: ExportScope) {
+  const hash = routes.print(id, scope);
   if (!inTauri()) {
     window.open(`${location.pathname}${hash}`, "_blank");
     return;

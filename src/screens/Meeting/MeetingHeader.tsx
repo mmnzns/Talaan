@@ -1,5 +1,5 @@
-import { AudioLines, Calendar, FolderOpen, LayoutList, Mail, MessageCircle, MoreHorizontal, Pin, Sparkles, Trash2, VolumeX, X } from "lucide-react";
-import { useState } from "react";
+import { AudioLines, Calendar, FolderOpen, Languages, LayoutList, Mail, MessageCircle, MoreHorizontal, Pin, Sparkles, Trash2, VolumeX, X } from "lucide-react";
+import { useCallback, useState } from "react";
 import { useFolders, useSettings } from "../../data/hooks";
 import { useStore } from "../../data/StoreProvider";
 import type { Meeting } from "../../data/types";
@@ -10,6 +10,7 @@ import { useT } from "../../lib/i18n/I18nProvider";
 import { useLang } from "../../lib/i18n/I18nProvider";
 import { describeError } from "../../data/errors";
 import { SummarizeAsSheet } from "./SummarizeAsSheet";
+import { SummarizeInSheet } from "./SummarizeInSheet";
 import { useConfirmRewrite } from "./ConfirmRewrite";
 
 interface Props {
@@ -18,11 +19,12 @@ interface Props {
   canRevert: boolean;
   onToggleEdit: () => void;
   onRevert: () => void;
-  onCopy: (kind: "text" | "email") => void;
+  onCopyEmail: () => void;
   onExport: () => void;
   /** "Email this summary": opens the mail app. */
   onEmail: () => void;
-  copied?: "text" | "email";
+  /** "Copy for email" just ran. */
+  copiedEmail?: boolean;
 }
 
 const languageName = (code: string, ui: string) => {
@@ -33,7 +35,7 @@ const languageName = (code: string, ui: string) => {
   }
 };
 
-export function MeetingHeader({ meeting, editing, canRevert, onToggleEdit, onRevert, onCopy, onExport, onEmail, copied }: Props) {
+export function MeetingHeader({ meeting, editing, canRevert, onToggleEdit, onRevert, onCopyEmail, onExport, onEmail, copiedEmail }: Props) {
   const store = useStore();
   const toast = useToast();
   const t = useT();
@@ -47,6 +49,9 @@ export function MeetingHeader({ meeting, editing, canRevert, onToggleEdit, onRev
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [retranscribing, setRetranscribing] = useState(false);
   const [summarizingAs, setSummarizingAs] = useState(false);
+  const [summarizingIn, setSummarizingIn] = useState(false);
+  // Stable: the sheet takes focus again whenever this changes, which would pull it out of the search box.
+  const closeSummarizingIn = useCallback(() => setSummarizingIn(false), []);
   const rewrite = useConfirmRewrite(meeting.summary);
   const { settings } = useSettings();
   const speechModel = meeting.transcription && (settings?.speechModels.find((m) => m.id === meeting.transcription!.model)?.name ?? meeting.transcription.model);
@@ -154,9 +159,8 @@ export function MeetingHeader({ meeting, editing, canRevert, onToggleEdit, onRev
             <Button variant={editing ? "strong" : "default"} onClick={onToggleEdit}>
               {editing ? t("meeting.doneEditing") : t("meeting.edit")}
             </Button>
-            <Button onClick={onExport}>{t("meeting.export")}</Button>
-            <Button variant="primary" onClick={() => onCopy("text")}>
-              {copied === "text" ? t("meeting.copied") : t("meeting.copyText")}
+            <Button variant="primary" onClick={onExport}>
+              {t("meeting.export")}
             </Button>
             <Popover
               className="max-h-[50vh] w-64 overflow-y-auto"
@@ -170,11 +174,11 @@ export function MeetingHeader({ meeting, editing, canRevert, onToggleEdit, onRev
                 <>
                   <MenuItem
                     onClick={() => {
-                      onCopy("email");
+                      onCopyEmail();
                       close();
                     }}
                   >
-                    {copied === "email" ? t("meeting.copiedEmail") : t("meeting.copyEmail")}
+                    {copiedEmail ? t("meeting.copiedEmail") : t("meeting.copyEmail")}
                   </MenuItem>
                   <MenuItem
                     onClick={() => {
@@ -210,6 +214,15 @@ export function MeetingHeader({ meeting, editing, canRevert, onToggleEdit, onRev
                     }}
                   >
                     <LayoutList size={14} aria-hidden="true" /> {t("meeting.summarizeAs")}
+                  </MenuItem>
+                  <MenuItem
+                    disabled={meeting.transcript.length === 0}
+                    onClick={() => {
+                      setSummarizingIn(true);
+                      close();
+                    }}
+                  >
+                    <Languages size={14} aria-hidden="true" /> {t("meeting.summarizeIn")}
                   </MenuItem>
                   <MenuItem
                     disabled={!meeting.hasAudio}
@@ -264,6 +277,7 @@ export function MeetingHeader({ meeting, editing, canRevert, onToggleEdit, onRev
                     <div className="mt-1 flex flex-col gap-1 border-t border-line px-2.5 pb-1 pt-2.5 text-xs text-subtle">
                       <Label>{t("meeting.madeWith")}</Label>
                       {speechModel && <span>{t("meeting.madeWithSpeech", { model: speechModel })}</span>}
+                      {meeting.transcription?.gpuFellBack && <span>{t("meeting.gpuFellBack")}</span>}
                       {meeting.summary && <span>{t("meeting.madeWithSummary", { engine: meeting.summary.engine })}</span>}
                     </div>
                   )}
@@ -285,6 +299,7 @@ export function MeetingHeader({ meeting, editing, canRevert, onToggleEdit, onRev
 
       <RetranscribeSheet meeting={meeting} open={retranscribing} onClose={() => setRetranscribing(false)} />
       <SummarizeAsSheet meeting={meeting} open={summarizingAs} onClose={() => setSummarizingAs(false)} />
+      <SummarizeInSheet meeting={meeting} open={summarizingIn} onClose={closeSummarizingIn} />
       {rewrite.sheet}
 
       <Sheet open={confirmDelete} title={t("meeting.deleteTitle")} onClose={() => setConfirmDelete(false)}>
@@ -319,7 +334,7 @@ function RetranscribeSheet({ meeting, open, onClose }: { meeting: Meeting; open:
   const store = useStore();
   const toast = useToast();
   const { settings } = useSettings();
-  const ready = (settings?.speechModels ?? []).filter((m) => m.state === "downloaded" || m.state === "on_this_mac");
+  const ready = (settings?.speechModels ?? []).filter((m) => m.state === "downloaded");
   const used = meeting.transcription?.model;
   const [choice, setChoice] = useState<string>();
   const model = choice ?? ready.find((m) => m.id !== used)?.id ?? ready[0]?.id;

@@ -106,6 +106,8 @@ the copy and waits for it to let go (`relocate::stop`). `ModelStore` reads the o
 removes the new folder too, and the Privacy tab's size counts it. Tested with temp folders only (a file held open
 without delete sharing is copied instead of renamed; a file nobody may open makes the copy fail cleanly).
 
+> **Moved to voice-engine v0.2.2 (2026-10-30):** the models folder, the move and `relocate.rs` are now the engine's `SharedStore` (`%LOCALAPPDATA%\Craft Concepts Digital\Models`, shared with the other apps, moved in once by `move_in`); see docs/plans/2026-10-30-engine-v0.2.2.md.
+
 **Dev note:** the single-instance guard is Windows only. On Windows, `npm run tauri dev` exits immediately if the installed
 Talaan is running; quit it first.
 
@@ -196,6 +198,8 @@ values; with the box ticked `%APPDATA%\Talaan`, `%LOCALAPPDATA%\com.craftconcept
 `notion.Talaan` and `calendar-ics.Talaan` keys and the publisher registry key are gone too. **Not checked:** a clean PC
 (Windows Sandbox isn't enabled on this PC), toasts and Delete everything in the installed app (need the UI).
 
+> **Moved to voice-engine v0.2.2 (2026-10-30):** Windows' own `DirectML.dll` is used; Talaan no longer bundles it.
+
 **Smoke tests** (all `#[ignore]`; run from `src-tauri/`, most need a working mic):
 
 | Test | Command |
@@ -242,6 +246,8 @@ CI uses `C:\tg` for path length), with the x86-64-v3 baseline; `release-windows.
 `vulkan-1.dll` (dumpbin). CI: `.github/actions/vulkan-sdk` (LunarG 1.4.363.0, cached); Release › Run workflow uploads
 the installer and the bare helpers; CI › Run workflow adds `windows-gpu`. **Not verified locally:** the Vulkan builds
 themselves (no Vulkan SDK on the PC by decision); CI builds them. Hand checks: docs/TESTING.md, "GPU on Windows (G1)".
+
+> **Moved to voice-engine v0.2.2 (2026-10-30):** the Vulkan helpers, `gpu.rs`/`gpu.json`, `LocalAi::with_gpu` and `fallback.rs` are the engine's helpers, client and failure files; Talaan keeps the card default (on only with a discrete card).
 
 **Whisper on the GPU, measured (2026-10-16, Miguel's PC, `gpu_whisper_live`).** The CI-built `talaan-stt-vulkan.exe`
 (copied from the installed app) through `transcriber::fallback::load`, the app's own path, on

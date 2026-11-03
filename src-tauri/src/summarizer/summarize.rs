@@ -127,6 +127,7 @@ fn finish(draft: &Draft, meeting: &Meeting, engine: &dyn SummaryEngine, parts: u
     summary.sections = to_sections(draft, &meeting.transcript, template, language);
     summary.highlights = to_highlights(draft, meeting);
     summary.template = Some(template.id.to_string());
+    summary.language = Some(language.to_string());
     summary.sections_missing = !template.is_general() && summary.sections.is_empty() && reply.plain.load(Ordering::Relaxed);
     Outcome { summary, title: usable_title(&draft.title), parts }
 }
@@ -243,6 +244,14 @@ pub(crate) mod tests {
         assert_eq!(e.0[0], crate::summarizer::prompt::SCHEMA);
         assert!(out.summary.sections.is_empty() && out.summary.highlights.is_empty());
         assert_eq!(out.summary.template.as_deref(), Some("general"));
+    }
+
+    #[test]
+    fn a_new_summary_carries_the_language_it_was_asked_for() {
+        let mut e = Scripted { replies: vec![Ok(reply("Plan", "Ang buod."))], prompts: vec![], context: 16_384 };
+        let out = summarize(&short(), &mut e, "fil", &Options::default(), &AtomicBool::new(false), &mut |_| {}).unwrap();
+        assert_eq!(out.summary.language.as_deref(), Some("fil"));
+        assert!(e.prompts[0].system.contains("Write everything in Filipino."));
     }
 
     #[test]
@@ -367,7 +376,6 @@ mod long_smoke {
     use super::*;
     use crate::storage::model::TranscriptLine;
     use crate::summarizer::engines::LocalEngine;
-    use crate::summarizer::local::{helper_file, LocalAi};
     use crate::summarizer::prompt::tests::meeting;
 
     #[test]
@@ -382,9 +390,10 @@ mod long_smoke {
         let mut m = meeting(lines);
         m.speakers = serde_json::from_value(fixture["speakers"].clone()).unwrap();
         m.item.duration_ms = 13 * span;
-        let exe = std::env::current_exe().unwrap().parent().unwrap().parent().unwrap().join(helper_file());
         let model_path = std::path::PathBuf::from(std::env::var("TALAAN_LLM_MODEL").unwrap());
-        let mut engine = LocalEngine { ai: LocalAi::new(&exe), model_path, model_name: "test".into() };
+        let tmp = tempfile::tempdir().unwrap();
+        let client = std::sync::Arc::new(crate::summarizer::local::client(tmp.path(), "test", "summary"));
+        let mut engine = LocalEngine::new(client, model_path, "test".into(), true);
         let t = std::time::Instant::now();
         let out = summarize(&m, &mut engine, "en", &Options::default(), &AtomicBool::new(false), &mut |p| eprintln!("progress {:.0}% at {:.0}s", p * 100.0, t.elapsed().as_secs_f32())).unwrap();
         eprintln!("== {} min call, {} parts, {:.0}s", m.item.duration_ms / 60_000, out.parts, t.elapsed().as_secs_f32());

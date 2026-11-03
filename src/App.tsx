@@ -23,7 +23,7 @@ export default function App() {
   // The menu bar popover and the call prompts are their own small windows.
   if (route.name === "tray") return <TrayWindow />;
   if (route.name === "prompt") return <PromptWindow />;
-  if (route.name === "print") return <PrintView id={route.id} withTranscript={route.withTranscript} />;
+  if (route.name === "print") return <PrintView id={route.id} scope={route.scope} />;
   if (!settings.onboardingDone) return <OnboardingScreen />;
   return <MainWindow route={route} />;
 }

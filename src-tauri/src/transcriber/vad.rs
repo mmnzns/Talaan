@@ -132,46 +132,6 @@ fn data_offset(b: &[u8]) -> Option<usize> {
     None
 }
 
-/// Silero speech detection through whisper.cpp's VAD.
-pub struct Vad {
-    ctx: whisper_rs::WhisperVadContext,
-}
-
-impl Vad {
-    pub fn load(model: &Path) -> Result<Self, String> {
-        let mut p = whisper_rs::WhisperVadContextParams::new();
-        // More threads make VAD much slower: 16 threads measured 9-13 s vs 0.3-0.5 s.
-        p.set_n_threads(4);
-        p.set_use_gpu(false);
-        let ctx = whisper_rs::WhisperVadContext::new(&model.to_string_lossy(), p).map_err(|e| format!("couldn't load voice detection: {e}"))?;
-        Ok(Vad { ctx })
-    }
-
-    /// Raw speech spans in samples.
-    pub fn detect(&mut self, samples: &[f32]) -> Result<Vec<Span>, String> {
-        if samples.is_empty() {
-            return Ok(vec![]);
-        }
-        let mut params = whisper_rs::WhisperVadParams::new();
-        params.set_threshold(0.5);
-        params.set_min_speech_duration(250);
-        params.set_min_silence_duration(300);
-        params.set_speech_pad(0);
-        let segs = self.ctx.segments_from_samples(params, samples).map_err(|e| format!("voice detection failed: {e}"))?;
-        let mut out = vec![];
-        for i in 0..segs.num_segments() {
-            let (Some(t0), Some(t1)) = (segs.get_segment_start_timestamp(i), segs.get_segment_end_timestamp(i)) else { continue };
-            // whisper.cpp reports centiseconds.
-            let start = ((t0 as f64 / 100.0) * RATE as f64) as usize;
-            let end = (((t1 as f64 / 100.0) * RATE as f64) as usize).min(samples.len());
-            if end > start {
-                out.push(Span { start, end });
-            }
-        }
-        Ok(out)
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -242,18 +202,16 @@ mod tests {
         assert_eq!(s[1], -0.5);
     }
 
-    /// `TALAAN_SMOKE_MEETING=<meeting dir> cargo test vad_smoke -- --ignored --nocapture`
+    /// `TALAAN_SMOKE_DATA=<scratch> TALAAN_SMOKE_MEETING=<meeting dir> cargo test --release vad_smoke -- --ignored --nocapture`
     #[test]
     #[ignore]
     fn vad_smoke() {
         let dir = std::path::PathBuf::from(std::env::var("TALAAN_SMOKE_MEETING").unwrap());
-        let data = dirs::data_dir().unwrap().join("Talaan");
-        let model = data.join("models/vad/ggml-silero-v6.2.0.bin");
-        let mut vad = Vad::load(&model).unwrap();
+        let mut vad = crate::transcriber::speech::EngineVad::new(crate::transcriber::speech::smoke_models().hold(crate::models::VAD).unwrap());
         for track in ["me.wav", "them.wav"] {
             let samples = read_track(&dir.join(track)).unwrap();
             let t = std::time::Instant::now();
-            let raw = vad.detect(&samples).unwrap();
+            let raw = crate::transcriber::pipeline::Detector::detect(&mut vad, &samples).unwrap();
             let spans = shape(&raw, &samples, Shape::default());
             let speech: usize = spans.iter().map(|s| s.len()).sum();
             eprintln!(

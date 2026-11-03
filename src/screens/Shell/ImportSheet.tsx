@@ -1,64 +1,93 @@
 import { FileAudio } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { describeError } from "../../data/errors";
-import { onEvent } from "../../data/tauri/invoke";
+import { call, onEvent } from "../../data/tauri/invoke";
+import { ImportQueue, partitionImports, type BatchSummary, type ImportOutcome, type QueueSnapshot } from "../../lib/importQueue";
 import { navigate, routes } from "../../lib/router";
 import { inTauri } from "../../lib/windows";
 import { useT } from "../../lib/i18n/I18nProvider";
-import { Button, Label, Sheet } from "../../ui";
+import { Button, Label, Sheet, useToast } from "../../ui";
 
 interface Props {
   open: boolean;
-  /** A file dropped on the main window: import it right away. */
-  dropped?: string;
+  /** Files dropped on the main window: imported right away, one after another. A new array is a new drop. */
+  dropped?: string[];
   onClose: () => void;
+  /** Called when files failed, so the reasons are in front of the user even if the sheet was hidden. */
+  onShow: () => void;
 }
 
 type ImportEvent = { state: "progress"; progress: number } | { state: "done"; id: string } | { state: "failed"; message: string };
-type Phase = { kind: "idle" } | { kind: "working"; name: string; progress: number } | { kind: "failed"; message: string };
 
-const fileName = (path: string) => path.split("/").pop() ?? path;
-
-export function ImportSheet({ open, dropped, onClose }: Props) {
+export function ImportSheet({ open, dropped, onClose, onShow }: Props) {
   const t = useT();
-  const [phase, setPhase] = useState<Phase>({ kind: "idle" });
+  const toast = useToast();
+  const [snap, setSnap] = useState<QueueSnapshot>();
+  const [fileProgress, setFileProgress] = useState(0);
+  const [notice, setNotice] = useState<string>();
+  const waiter = useRef<(o: ImportOutcome) => void>(undefined);
+  const extensions = useRef<Promise<string[] | null>>(undefined);
+
+  // The queue outlives renders; it reads the latest callbacks through this ref.
+  const latest = useRef({ t, toast, onClose, onShow });
+  latest.current = { t, toast, onClose, onShow };
+
+  const queue = useRef<ImportQueue>(undefined);
+  if (!queue.current) {
+    queue.current = new ImportQueue({
+      importOne: (path) =>
+        new Promise<ImportOutcome>((resolve) => {
+          setFileProgress(0);
+          waiter.current = resolve;
+          call("meetings_import", { path }).catch((e) => resolve({ ok: false, message: describeError(e) }));
+        }),
+      onChange: setSnap,
+      onFinish: (summary) => finish(summary, latest.current),
+    });
+  }
 
   useEffect(() => {
     if (!inTauri()) return;
     return onEvent<ImportEvent>("import-audio", (e) => {
-      if (e.state === "progress") setPhase((p) => (p.kind === "working" ? { ...p, progress: e.progress } : p));
-      if (e.state === "failed") setPhase({ kind: "failed", message: e.message });
-      if (e.state === "done") {
-        setPhase({ kind: "idle" });
-        onClose();
-        navigate(routes.meeting(e.id));
-      }
+      if (e.state === "progress") setFileProgress(e.progress);
+      if (e.state === "done") waiter.current?.({ ok: true, id: e.id });
+      if (e.state === "failed") waiter.current?.({ ok: false, message: e.message });
     });
-  }, [onClose]);
+  }, []);
 
-  const start = async (path: string) => {
-    setPhase({ kind: "working", name: fileName(path), progress: 0 });
-    const { invoke } = await import("@tauri-apps/api/core");
-    await invoke("meetings_import", { path }).catch((e) => setPhase({ kind: "failed", message: describeError(e) }));
+  const addFiles = async (paths: string[]) => {
+    setNotice(undefined);
+    extensions.current ??= call<string[]>("import_extensions").catch(() => null);
+    const allowed = await extensions.current;
+    const { accepted, unsupported } = allowed ? partitionImports(paths, allowed) : { accepted: [...new Set(paths)], unsupported: [] };
+    queue.current?.add(accepted, unsupported);
   };
 
   useEffect(() => {
-    if (dropped) void start(dropped);
+    if (dropped?.length) void addFiles(dropped);
   }, [dropped]);
 
   const choose = async () => {
-    if (!inTauri()) return setPhase({ kind: "failed", message: t("shell.importOnlyApp") });
-    const { invoke } = await import("@tauri-apps/api/core");
+    if (!inTauri()) return setNotice(t("shell.importOnlyApp"));
     const { open: openDialog } = await import("@tauri-apps/plugin-dialog");
-    const extensions = await invoke<string[]>("import_extensions");
-    const path = await openDialog({ multiple: false, directory: false, filters: [{ name: t("shell.importAudioFilter"), extensions }] });
-    if (typeof path === "string") await start(path);
+    const allowed = await call<string[]>("import_extensions");
+    const picked = await openDialog({ multiple: true, directory: false, filters: [{ name: t("shell.importAudioFilter"), extensions: allowed }] });
+    if (Array.isArray(picked)) await addFiles(picked);
+    else if (typeof picked === "string") await addFiles([picked]);
   };
 
+  const working = !!snap?.running;
   const close = () => {
-    if (phase.kind !== "working") setPhase({ kind: "idle" });
+    if (!working) {
+      setSnap(undefined);
+      setNotice(undefined);
+    }
     onClose();
   };
+
+  const total = Math.max(snap?.total ?? 1, 1);
+  const barPct = snap ? Math.round((Math.min(snap.finished + fileProgress, total) / total) * 100) : 0;
+  const failures = !working && snap ? snap.failures : [];
 
   return (
     <Sheet open={open} title={t("shell.importTitle")} onClose={close}>
@@ -69,31 +98,57 @@ export function ImportSheet({ open, dropped, onClose }: Props) {
         </div>
         <div className="grid place-items-center gap-2 rounded-card border border-dashed border-input bg-surface px-4 py-10 text-center">
           <FileAudio size={28} aria-hidden="true" className="text-subtle" />
-          {phase.kind === "working" ? (
+          {working ? (
             <div className="flex w-64 flex-col gap-2" role="status">
-              <span className="truncate text-[13px] font-semibold">{t("shell.importReading", { name: phase.name })}</span>
+              <span className="truncate text-[13px] font-semibold">{t("shell.importReading", { name: snap?.current ?? "" })}</span>
+              {total > 1 && <span className="font-mono text-[11px] text-subtle">{t("shell.importCount", { n: Math.min((snap?.finished ?? 0) + 1, total), total })}</span>}
               <span className="h-[5px] overflow-hidden rounded-full bg-line">
-                <span className="block h-full bg-ink" style={{ width: `${Math.round(phase.progress * 100)}%` }} />
+                <span className="block h-full bg-ink" style={{ width: `${barPct}%` }} />
               </span>
             </div>
           ) : (
             <>
               <span className="text-[13px] font-semibold">{t("shell.importDrag")}</span>
               <Label>.m4a · .mp3 · .wav · .aiff · .flac</Label>
-              <Button onClick={() => void choose()}>{t("shell.importChoose")}</Button>
+              <Button data-autofocus onClick={() => void choose()}>
+                {t("shell.importChoose")}
+              </Button>
             </>
           )}
-          {phase.kind === "failed" && (
+          {notice && (
             <span role="alert" className="text-xs font-semibold text-danger">
-              {phase.message}
+              {notice}
             </span>
+          )}
+          {failures.length > 0 && (
+            <ul role="alert" className="m-0 flex max-h-32 w-full list-none flex-col gap-1 overflow-auto p-0 text-left text-xs text-danger">
+              {failures.map((f, i) => (
+                <li key={i} className="break-words">
+                  <span className="font-semibold">{f.name}</span>: {f.unsupported ? t("shell.importUnsupported") : f.message}
+                </li>
+              ))}
+            </ul>
           )}
         </div>
         <p className="m-0 text-xs text-subtle">{t("shell.importNote")}</p>
         <div className="flex justify-end">
-          <Button onClick={close}>{phase.kind === "working" ? t("shell.hide") : t("common.cancel")}</Button>
+          <Button onClick={close}>{working ? t("shell.hide") : t("common.cancel")}</Button>
         </div>
       </div>
     </Sheet>
   );
+}
+
+type Latest = { t: ReturnType<typeof useT>; toast: (m: string) => void; onClose: () => void; onShow: () => void };
+
+/** What happens when the queue runs dry: one meeting opens it; several say how many; failures stay on screen. */
+function finish({ total, imported, failures }: BatchSummary, { t, toast, onClose, onShow }: Latest) {
+  if (failures.length > 0) {
+    if (total > 1) toast(imported.length > 0 ? t("shell.importPartial", { ok: imported.length, total }) : t("shell.importNone", { total }));
+    onShow();
+    return;
+  }
+  onClose();
+  if (imported.length === 1) navigate(routes.meeting(imported[0]));
+  else toast(t("shell.importedMany", { count: imported.length }));
 }

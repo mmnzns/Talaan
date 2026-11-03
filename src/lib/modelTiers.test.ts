@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { defaultSettings } from "../data/defaultSettings";
+import { messages } from "./i18n";
 import { modelNote, splitByTier, tierOf, TIERS } from "./modelTiers";
 
 describe("speech model tiers", () => {
@@ -8,6 +9,14 @@ describe("speech model tiers", () => {
     expect(tiered.map((m) => m.id)).toEqual(["whisper-turbo", "parakeet-v3", "whisper-small"]);
     expect(more.map((m) => m.id)).toEqual(defaultSettings.speechModels.filter((m) => !tierOf(m.id)).map((m) => m.id));
     expect(tiered.length + more.length).toBe(defaultSettings.speechModels.length);
+  });
+
+  it("has a plain-words note in every language for every model, so none falls back to the catalog's sentence", () => {
+    for (const m of [...defaultSettings.speechModels, defaultSettings.speakerModel, defaultSettings.searchModel, ...defaultSettings.localModels]) {
+      for (const lang of ["en", "fr", "es"] as const) {
+        expect(messages[lang][`settings.model_note_${m.id}`], `${lang} ${m.id}`).toBeTruthy();
+      }
+    }
   });
 
   it("names a model in every tier that exists in the catalog, the default first", () => {

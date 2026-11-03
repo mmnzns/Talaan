@@ -1,11 +1,15 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { describeError } from "../../data/errors";
 import { useSettingsStore } from "../../data/StoreProvider";
 import { byokModels } from "../../data/byokModels";
-import { hasByokKey, type ByokProvider, type SummaryEngineKind } from "../../data/settings";
+import { hasByokKey, type ByokProvider, type LocalModel, type SummaryEngineKind } from "../../data/settings";
 import { useLang, useT } from "../../lib/i18n/I18nProvider";
-import { messageOr, type MessageKey } from "../../lib/i18n";
-import { Button, Chip, Field, Label, Select, Switch, cn, useToast } from "../../ui";
+import { messageOr, type MessageKey, type T } from "../../lib/i18n";
+import { Button, Chip, Field, Label, Select, Sheet, Switch, cn, useToast } from "../../ui";
+import { DeleteModelLink } from "./DeleteModelLink";
+import { ChevronDown } from "lucide-react";
+import { settingLanguageView } from "../../lib/summaryLanguages";
+import { LanguagePicker } from "../LanguagePicker";
 import { Group, Row, SectionIntro } from "./parts";
 import type { TabProps } from "./tabProps";
 import { TEMPLATES, isTemplate, templateName } from "../../lib/templates";
@@ -101,15 +105,7 @@ export function SummaryAITab({ settings: s, update }: TabProps) {
             <Switch aria-label={t("settings.summarize_auto")} checked={s.summarizeAutomatically} onChange={(v) => update({ summarizeAutomatically: v })} />
           </Row>
           <Row title={t("settings.summary_language")}>
-            <Select label={t("settings.summary_language")} wrapperClassName="w-44" value={s.summaryLanguage} onChange={(e) => update({ summaryLanguage: e.target.value })}>
-              <option value="meeting">{t("settings.summary_language_meeting")}</option>
-              <option value="en">{t("settings.lang_en")}</option>
-              <option value="tl">{t("settings.lang_tl")}</option>
-              <option value="es">{t("settings.lang_es")}</option>
-              <option value="fr">{t("settings.lang_fr")}</option>
-              <option value="de">{t("settings.lang_de")}</option>
-              <option value="pt">{t("settings.lang_pt")}</option>
-            </Select>
+            <SummaryLanguageSetting value={s.summaryLanguage} localModel={s.summaryEngine === "local" ? s.localModel : undefined} onChange={(code) => update({ summaryLanguage: code })} />
           </Row>
           <Row title={t("settings.default_type")} desc={t("settings.default_type_desc")}>
             <Select
@@ -157,21 +153,32 @@ function Instructions({ value, onSave }: { value: string; onSave: (v: string) =>
 
 const gb = (mb: number) => `${(mb / 1000).toFixed(1)} GB`;
 
+/** One line in the Local model list: the name (with Recommended on the one Talaan suggests), the download size,
+ *  the memory it needs and its licence. */
+export function localOption(t: T, m: Pick<LocalModel, "name" | "sizeMb" | "memoryGb" | "licence" | "recommended">): string {
+  return t("settings.local_option", {
+    name: m.recommended ? `${m.name} (${t("settings.local_recommended")})` : m.name,
+    size: gb(m.sizeMb),
+    memory: `${m.memoryGb.toFixed(1)} GB`,
+    licence: m.licence,
+  });
+}
+
 function LocalPanel({ settings: s, update }: TabProps) {
   const store = useSettingsStore();
   const toast = useToast();
   const t = useT();
   const lang = useLang();
-  const run = (p: Promise<void>) => p.catch((e) => toast(describeError(e)));
-  const model = s.localModels.find((m) => m.choice === s.localModel) ?? s.localModels[0];
+  const run = (p: Promise<unknown>) => p.catch((e) => toast(describeError(e)));
+  const model = s.localModels.find((m) => m.id === s.localModel) ?? s.localModels[0];
   const pct = Math.round((model?.progress ?? 0) * 100);
   return (
     <Group>
       <Row title={t("settings.local_model_title")} desc={t("settings.local_model_desc")}>
-        <Select label={t("settings.local_model_title")} wrapperClassName="w-72" value={s.localModel} onChange={(e) => update({ localModel: e.target.value as "recommended" | "larger" })}>
+        <Select label={t("settings.local_model_title")} wrapperClassName="w-96 max-w-full" value={model?.id ?? s.localModel} onChange={(e) => update({ localModel: e.target.value })}>
           {s.localModels.map((m) => (
-            <option key={m.id} value={m.choice}>
-              {t("settings.local_option", { choice: m.choice === "recommended" ? t("settings.local_recommended") : t("settings.local_larger"), name: m.name, size: gb(m.sizeMb) })}
+            <option key={m.id} value={m.id}>
+              {localOption(t, m)}
             </option>
           ))}
         </Select>
@@ -181,9 +188,7 @@ function LocalPanel({ settings: s, update }: TabProps) {
           {model.state === "downloaded" && (
             <span className="flex items-center gap-2">
               <Chip tone="gold">{t("settings.installed")}</Chip>
-              <button type="button" className="cursor-pointer border-0 bg-transparent p-0 text-xs text-subtle underline" onClick={() => run(store.deleteModel(model.id))}>
-                {t("settings.delete")}
-              </button>
+              <DeleteModelLink id={model.id} name={model.name} sizeMb={model.sizeMb} />
             </span>
           )}
           {model.state === "not_downloaded" && <Button onClick={() => run(store.downloadModel(model.id))}>{t("settings.download_size", { size: gb(model.sizeMb) })}</Button>}
@@ -359,5 +364,45 @@ function ByokPanel({ settings: s, update }: TabProps) {
         </div>
       </Row>
     </Group>
+  );
+}
+
+/** Summary language: a button showing the choice, and the searchable language list in a sheet ("Same as meeting" on top). */
+function SummaryLanguageSetting({ value, localModel, onChange }: { value: string; localModel?: string; onChange: (code: string) => void }) {
+  const t = useT();
+  const lang = useLang();
+  const [open, setOpen] = useState(false);
+  const close = useCallback(() => setOpen(false), []);
+  const view = settingLanguageView(value, lang, t("settings.summary_language_meeting"));
+  return (
+    <>
+      <button
+        type="button"
+        aria-haspopup="dialog"
+        aria-label={`${t("settings.summary_language")}: ${view.label}`}
+        onClick={() => setOpen(true)}
+        className="relative inline-flex h-8 w-52 max-w-full cursor-pointer items-center rounded-control border border-input bg-paper pl-2.5 pr-8 text-left font-[inherit] text-[13px] text-ink outline-none focus:border-edge"
+      >
+        <span className="min-w-0 flex-1 truncate">{view.label}</span>
+        <ChevronDown aria-hidden="true" size={14} className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-subtle" />
+      </button>
+      <Sheet open={open} title={t("settings.summary_language")} onClose={close}>
+        <div className="flex flex-col gap-3 p-5">
+          <h2 className="m-0 font-display text-xl font-bold tracking-[-0.02em]">{t("settings.summary_language")}</h2>
+          <LanguagePicker
+            value={view.current}
+            extra={view.extra}
+            localModel={localModel}
+            onPick={(code) => {
+              close();
+              onChange(code);
+            }}
+          />
+          <div className="flex justify-end">
+            <Button onClick={close}>{t("common.cancel")}</Button>
+          </div>
+        </div>
+      </Sheet>
+    </>
   );
 }

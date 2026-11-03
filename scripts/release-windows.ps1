@@ -1,42 +1,72 @@
 # Builds the Windows release: Talaan_<version>_x64-setup.exe and, when TAURI_SIGNING_PRIVATE_KEY is set (CI),
 # its updater signature (.exe.sig). The release workflow runs this on windows-latest; run it on the PC to check
 # the same build before tagging. Output: src-tauri\target\release\bundle\nsis.
-#
-# GPU (docs/plans/G1-windows-gpu.md): with the Vulkan SDK (VULKAN_SDK set; TALAAN_GPU=1 makes it required) the
-# installer also carries talaan-llm-vulkan.exe and talaan-stt-vulkan.exe next to talaan.exe. talaan.exe itself
-# never links Vulkan: the script fails if it (or the CPU talaan-llm.exe) imports vulkan-1.dll.
+
+# Helpers: Talaan spawns talaan-llm, talaan-stt, talaan-llm-vulkan and talaan-stt-vulkan next to talaan.exe; Tauri
+# bundles them as sidecars (tauri.windows.conf.json externalBin, src-tauri\binaries\<name>-<triple>.exe). The release
+# workflow downloads them from the engine's build-helpers.yml and sets TALAAN_HELPERS_PREBUILT=1; this script then
+# builds none. Without it (a local check on the PC) scripts/build-llm-helper.ps1 builds them, and without the Vulkan
+# SDK its -vulkan files are processor copies (dev only), so the Vulkan checks below are skipped.
+# talaan.exe never links Vulkan: the script fails if it (or a processor helper) imports vulkan-1.dll.
 $ErrorActionPreference = 'Stop'
 Set-Location (Join-Path $PSScriptRoot '..')
 $version = node -p "require('./src-tauri/tauri.conf.json').version"
 if ($env:GITHUB_REF_TYPE -eq 'tag' -and $env:GITHUB_REF_NAME -ne "v$version") { throw "Tag $env:GITHUB_REF_NAME but tauri.conf.json says $version" }
+$triple = ((rustc -vV) | Where-Object { $_ -like 'host: *' }).Substring(6)
+$prebuilt = $env:TALAAN_HELPERS_PREBUILT -eq '1'
 
-# whisper.cpp and llama.cpp for a fixed CPU baseline, not this machine's (scripts/cpu-baseline.ps1).
-. (Join-Path $PSScriptRoot 'cpu-baseline.ps1')
-Reset-StaleGgml 'src-tauri/Cargo.toml' 'src-tauri/target'
+# The app's own in-process whisper.cpp (voice-engine-stt) is built for the CPU baseline in the root .cargo/config.toml
+# (GGML_* in [env]); these read it back from the CMake caches. A cache made before that file applied (native CPU,
+# AVX-512, no optimization) is not rebuilt by cargo on its own, so it is cleaned first.
+$cargoConfig = Get-Content (Join-Path $PWD '.cargo\config.toml')
+$expected = @{}
+foreach ($l in $cargoConfig) { if ($l -match '^(GGML_[A-Z0-9_]+)\s*=\s*\{\s*value\s*=\s*"(ON|OFF)"') { $expected[$Matches[1]] = $Matches[2] } }
+if (-not $expected.ContainsKey('GGML_NATIVE') -or -not $expected.ContainsKey('GGML_AVX2')) { throw ".cargo/config.toml has no GGML_NATIVE / GGML_AVX2 settings" }
+
+# The CMake caches of whisper.cpp and llama.cpp under a target folder (release profile).
+function Get-GgmlCaches([string]$target) {
+  $build = Join-Path $target 'release\build'
+  if (-not (Test-Path $build)) { return @() }
+  Get-ChildItem $build -Directory |
+    Where-Object { $_.Name -match '^(whisper-rs-sys|llama-cpp-sys-2)-' } |
+    ForEach-Object { Join-Path $_.FullName 'out\build\CMakeCache.txt' } | Where-Object { Test-Path $_ }
+}
+# Problems with a cache: a GGML_* option that differs from .cargo/config.toml, AVX-512 on, or no AVX2 entry at all.
+function Test-GgmlBaseline([string]$cache) {
+  $text = Get-Content $cache
+  $bad = @()
+  foreach ($k in $expected.Keys) {
+    $m = @($text | Where-Object { $_ -match "^$($k):BOOL=(ON|OFF)" })
+    if ($m.Count -gt 0 -and $m[0] -notmatch "BOOL=$($expected[$k])$") { $bad += "$k is not $($expected[$k])" }
+  }
+  if ($text | Where-Object { $_ -match '^GGML_AVX512[A-Z0-9_]*:BOOL=ON' }) { $bad += 'AVX-512 is on' }
+  if (-not ($text | Where-Object { $_ -match '^GGML_AVX2:BOOL=' })) { $bad += 'GGML_AVX2 is missing' }
+  $bad
+}
+$stale = @(Get-GgmlCaches 'src-tauri\target' | Where-Object { @(Test-GgmlBaseline $_).Count -gt 0 })
+if ($stale.Count -gt 0) {
+  Write-Host "Rebuilding whisper.cpp and llama.cpp for the baseline in .cargo/config.toml"
+  cargo clean --manifest-path src-tauri/Cargo.toml --release -p whisper-rs-sys -p llama-cpp-sys-2
+  if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+}
 
 $gpu = [bool]$env:VULKAN_SDK
-if ($env:TALAAN_GPU -eq '1' -and -not $gpu) { throw "TALAAN_GPU=1 needs the Vulkan SDK, and VULKAN_SDK is not set" }
-# The helpers, CPU and GPU (tauri build runs this again as beforeBuildCommand; by then it's a no-op).
-powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-llm-helper.ps1
-if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-
-# ONNX Runtime (Parakeet, diarization) is linked statically but imports DirectML.dll. ort-sys's build script
-# drops it next to the binaries (as a link into its cache); copy the real file where the bundle can take it.
-cargo build --release --manifest-path src-tauri/Cargo.toml -p ort-sys
-if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-New-Item -ItemType Directory -Force src-tauri\binaries | Out-Null
-Copy-Item src-tauri\target\release\DirectML.dll src-tauri\binaries\DirectML.dll -Force
-
-# Release-only config: updater artifacts when the key is there, DirectML.dll beside talaan.exe, and the GPU helpers.
-$signed = [bool]$env:TAURI_SIGNING_PRIVATE_KEY
-$resources = @{ 'binaries/DirectML.dll' = 'DirectML.dll' }
-if ($gpu) {
-  foreach ($h in 'talaan-llm-vulkan.exe', 'talaan-stt-vulkan.exe') {
-    if (-not (Test-Path "src-tauri\binaries\$h")) { throw "GPU helper missing: src-tauri\binaries\$h" }
-    $resources["binaries/$h"] = $h
-  }
+if ($env:TALAAN_GPU -eq '1' -and -not $gpu -and -not $prebuilt) { throw "TALAAN_GPU=1 needs the Vulkan SDK, and VULKAN_SDK is not set" }
+# The four helpers: downloaded (prebuilt) or built here. tauri build runs the dev script again as beforeBuildCommand;
+# with TALAAN_HELPERS_PREBUILT=1 that is a no-op, otherwise it finds everything built.
+if (-not $prebuilt) {
+  powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-llm-helper.ps1
+  if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 }
-$conf = @{ bundle = @{ createUpdaterArtifacts = $signed; resources = $resources } } | ConvertTo-Json -Depth 5
+$helperNames = 'talaan-llm', 'talaan-stt', 'talaan-llm-vulkan', 'talaan-stt-vulkan'
+foreach ($h in $helperNames) {
+  if (-not (Test-Path "src-tauri\binaries\$h-$triple.exe")) { throw "Helper missing: src-tauri\binaries\$h-$triple.exe" }
+}
+
+# Release-only config: updater artifacts when the key is there. (DirectML.dll comes from Windows' System32; the
+# helpers are externalBin entries in tauri.windows.conf.json.)
+$signed = [bool]$env:TAURI_SIGNING_PRIVATE_KEY
+$conf = @{ bundle = @{ createUpdaterArtifacts = $signed } } | ConvertTo-Json -Depth 5
 $confPath = Join-Path $env:TEMP 'talaan-release.conf.json'
 [IO.File]::WriteAllText($confPath, $conf)
 # Test builds only (.github/workflows/updater-test.yml): TALAAN_TEST_CONFIG names one more config, merged last
@@ -64,8 +94,8 @@ function Test-Baseline($caches) {
     if ($bad.Count -gt 0) { throw "Not built for the x86-64-v3 baseline: $c ($($bad -join '; '))" }
   }
 }
-function Test-BothBuilt($caches, [string]$what) {
-  if (@($caches | Where-Object { $_ -match 'whisper-rs-sys' }).Count -eq 0 -or @($caches | Where-Object { $_ -match 'llama-cpp-sys-2' }).Count -eq 0) { throw "No CMake cache for $what whisper.cpp or llama.cpp" }
+function Test-WhisperBuilt($caches) {
+  if (@($caches | Where-Object { $_ -match 'whisper-rs-sys' }).Count -eq 0) { throw "No CMake cache for the app's whisper.cpp" }
 }
 function Test-Vulkan($caches, [bool]$on) {
   foreach ($c in $caches) {
@@ -75,20 +105,20 @@ function Test-Vulkan($caches, [bool]$on) {
 }
 
 $caches = @(Get-GgmlCaches 'src-tauri\target')
-Test-BothBuilt $caches 'the'
+Test-WhisperBuilt $caches
 Test-Optimized $caches
 Test-Baseline $caches
 Test-Vulkan $caches $false
-Write-Host "whisper.cpp and llama.cpp built with -O2 for x86-64-v3 (AVX2, no AVX-512, not native), without Vulkan"
+Write-Host "The app's whisper.cpp built with -O2 and the baseline of .cargo/config.toml (AVX2, no AVX-512, not native), without Vulkan"
 
-if ($gpu) {
+if ($gpu -and -not $prebuilt) {
   $gpuTarget = if ($env:TALAAN_GPU_TARGET_DIR) { $env:TALAAN_GPU_TARGET_DIR } else { 'src-tauri\target\gpu' }
   $gpuCaches = @(Get-GgmlCaches $gpuTarget)
-  Test-BothBuilt $gpuCaches 'the GPU helpers'
+  Test-WhisperBuilt $gpuCaches
   Test-Optimized $gpuCaches
   Test-Baseline $gpuCaches
   Test-Vulkan $gpuCaches $true
-  Write-Host "GPU helpers: whisper.cpp and llama.cpp built with Vulkan, -O2 and the x86-64-v3 baseline for their CPU code"
+  Write-Host "GPU helpers: whisper.cpp and llama.cpp built with Vulkan, -O2 and the baseline for their CPU code"
 }
 
 # talaan.exe must start on a PC without a GPU driver: it may never import vulkan-1.dll (only the helpers do).
@@ -102,10 +132,10 @@ function Get-Imports([string]$file) {
   if (-not (Test-Path $file)) { throw "Missing $file" }
   & $dumpbin /nologo /dependents $file | ForEach-Object { $_.Trim() } | Where-Object { $_ -match '\.dll$' }
 }
-foreach ($f in 'src-tauri\target\release\talaan.exe', 'src-tauri\target\release\talaan-llm.exe') {
-  if (@(Get-Imports $f) -contains 'vulkan-1.dll') { throw "$f imports vulkan-1.dll; only the GPU helpers may" }
+foreach ($f in 'src-tauri\target\release\talaan.exe', "src-tauri\binaries\talaan-llm-$triple.exe", "src-tauri\binaries\talaan-stt-$triple.exe") {
+  if (@(Get-Imports $f) -contains 'vulkan-1.dll') { throw "$f imports vulkan-1.dll; only the -vulkan helpers may" }
 }
-Write-Host "talaan.exe and talaan-llm.exe don't import vulkan-1.dll"
+Write-Host "talaan.exe, talaan-llm.exe and talaan-stt.exe don't import vulkan-1.dll"
 
 # The updater test's hook (src-tauri/src/commands/updater_e2e.rs, feature updater-e2e) never ships: a release
 # talaan.exe must not contain its variable's name. A test build must, or the test would prove nothing.
@@ -120,11 +150,13 @@ if ($env:TALAAN_TEST_CONFIG) {
 } else {
   Write-Host "talaan.exe has no test hook"
 }
-if ($gpu) {
-  foreach ($h in 'talaan-llm-vulkan.exe', 'talaan-stt-vulkan.exe') {
-    if (-not (@(Get-Imports "src-tauri\binaries\$h") -contains 'vulkan-1.dll')) { throw "$h doesn't import vulkan-1.dll: not a Vulkan build" }
+if ($gpu -or $prebuilt) {
+  foreach ($h in 'talaan-llm-vulkan', 'talaan-stt-vulkan') {
+    if (-not (@(Get-Imports "src-tauri\binaries\$h-$triple.exe") -contains 'vulkan-1.dll')) { throw "$h doesn't import vulkan-1.dll: not a Vulkan build" }
   }
   Write-Host "talaan-llm-vulkan.exe and talaan-stt-vulkan.exe are Vulkan builds"
+} else {
+  Write-Host "No Vulkan SDK and no prebuilt helpers: the -vulkan helpers are processor copies (dev only), not checked"
 }
 
 $out = 'src-tauri\target\release\bundle\nsis'

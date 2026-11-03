@@ -43,7 +43,9 @@ jobs:
           node-version: 22
           cache: npm
       - uses: dtolnay/rust-toolchain@stable
-      # Like the release's Windows build, without the Vulkan SDK (the GPU helpers don't take part in an update).
+      # Like the release's Windows build, but the helpers come from scripts/build-llm-helper.ps1 (called by
+      # release-windows.ps1), not the engine's workflow: without the Vulkan SDK the -vulkan helpers are processor
+      # copies, which is enough, since helpers don't take part in an update but must exist for the bundle.
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: src-tauri

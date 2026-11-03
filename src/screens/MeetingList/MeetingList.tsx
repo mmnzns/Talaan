@@ -8,6 +8,8 @@ import { Button, Field, Label } from "../../ui";
 import { FolderNav } from "./FolderNav";
 import { MeetingItem } from "./MeetingItem";
 
+type DayBucket = { key: string; label: string; items: MeetingListItem[] };
+
 export function MeetingList({ selectedId }: { selectedId?: string }) {
   const t = useT();
   const [folderId, setFolderId] = useState<string | undefined>();
@@ -27,12 +29,12 @@ export function MeetingList({ selectedId }: { selectedId?: string }) {
   };
 
   // Meetings by day, newest first (the list already comes sorted).
-  const days: { key: string; label: string; first: MeetingListItem; items: MeetingListItem[] }[] = [];
+  const days: DayBucket[] = [];
   for (const m of meetings) {
     const g = dayGroup(m.startedAt);
     const last = days[days.length - 1];
     if (last?.key === g.key) last.items.push(m);
-    else days.push({ ...g, first: m, items: [m] });
+    else days.push({ ...g, items: [m] });
   }
 
   return (
@@ -61,25 +63,38 @@ export function MeetingList({ selectedId }: { selectedId?: string }) {
         {!loading && meetings.length === 0 ? (
           <EmptyState firstRun={all.meetings.length === 0 && !all.loading} filtering={filtering} onClear={clear} />
         ) : (
-          days.map((d) => {
-            const mark = dayMark(d.first.startedAt);
-            return (
-              <section key={d.key} aria-label={d.label} className="grid grid-cols-[40px_minmax(0,1fr)] items-start gap-2.5">
-                <div className="flex flex-col items-center gap-0.5 pt-0.5" aria-hidden="true">
-                  <span className="font-display text-xl leading-[22px] font-bold tracking-[-0.02em]">{mark.day}</span>
-                  <Label className="text-[10px]">{mark.weekday}</Label>
-                </div>
-                <div className="flex min-w-0 flex-col gap-1">
-                  {d.items.map((m) => (
-                    <MeetingItem key={m.id} meeting={m} selected={m.id === selectedId} />
-                  ))}
-                </div>
-              </section>
-            );
-          })
+          <MeetingDays days={days} selectedId={selectedId} />
         )}
       </div>
     </nav>
+  );
+}
+
+/** One section per day for screen readers, but every row carries its own date so a second meeting that day never
+ *  reads as missing one. */
+export function MeetingDays({ days, selectedId }: { days: DayBucket[]; selectedId?: string }) {
+  return (
+    <>
+      {days.map((d) => (
+        <section key={d.key} aria-label={d.label} className="flex flex-col gap-1">
+          {d.items.map((m) => {
+            // An unreadable meeting has no start time, so no date to show.
+            const mark = m.startedAt ? dayMark(m.startedAt) : undefined;
+            return (
+              <div key={m.id} className="grid grid-cols-[40px_minmax(0,1fr)] items-start gap-2.5">
+                <div className="flex flex-col items-center gap-0.5 pt-0.5" aria-hidden="true">
+                  <span className="font-display text-xl leading-[22px] font-bold tracking-[-0.02em]">{mark?.day}</span>
+                  <Label className="text-[10px]">{mark?.weekday}</Label>
+                </div>
+                <div className="min-w-0">
+                  <MeetingItem meeting={m} selected={m.id === selectedId} />
+                </div>
+              </div>
+            );
+          })}
+        </section>
+      ))}
+    </>
   );
 }
 

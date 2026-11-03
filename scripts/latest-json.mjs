@@ -11,6 +11,7 @@ import { mkdtempSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
+import { changelogSection, plainNotes } from "./release-notes.mjs";
 
 export function platformsFor(name) {
   if (/_x64-setup\.exe\.sig$/.test(name)) return ["windows-x86_64", "windows-x86_64-nsis"];
@@ -26,6 +27,20 @@ export function buildLatest({ repo, tag, notes, pubDate, sigs }) {
   }
   if (Object.keys(platforms).length === 0) throw new Error("no updater signatures on the release");
   return { version: tag.replace(/^v/, ""), notes, pub_date: pubDate, platforms };
+}
+
+/**
+ * The updater's `notes`: this version's CHANGELOG.md section as plain text (cut to a sane length, with a link to the
+ * full release notes), or just the link when the changelog has no section (release.yml's draft job already fails
+ * then; this keeps a hand-run upload working).
+ */
+export function updaterNotes({ changelog, repo, tag }) {
+  const link = `https://github.com/${repo}/releases/tag/${tag}`;
+  try {
+    return plainNotes(changelogSection(changelog, tag), { moreUrl: link });
+  } catch {
+    return `What's new: ${link}`;
+  }
 }
 
 /** Platform keys that `sigs` (the release's .sig files) call for but `latest` lacks or signs differently. */
@@ -58,7 +73,7 @@ function download(repo, tag, withLatest) {
 async function main([tag, flag, dir]) {
   if (!tag) throw new Error("usage: node scripts/latest-json.mjs v1.0.0 [--dir DIR]");
   const repo = process.env.GITHUB_REPOSITORY || "mmnzns/Talaan";
-  const notes = `What's new: https://github.com/${repo}/releases/tag/${tag}`;
+  const notes = updaterNotes({ changelog: readFileSync(new URL("../CHANGELOG.md", import.meta.url), "utf8"), repo, tag });
   const pubDate = new Date().toISOString();
   if (flag === "--dir") return console.log(JSON.stringify(buildLatest({ repo, tag, notes, pubDate, sigs: readSigs(dir) }), null, 2));
   for (let attempt = 1; ; attempt++) {

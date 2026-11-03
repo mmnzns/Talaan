@@ -1,29 +1,20 @@
 [package]
 name = "talaan-stt"
-version = "1.0.0"
-description = "Talaan's Whisper code, shared by the app (processor) and its Windows GPU helper (talaan-stt-vulkan)"
+version = "1.2.0"
+description = "Talaan's speech helper (Whisper on Windows): the engine's helper with Talaan's prefix; talaan-stt-vulkan is its Vulkan build"
 edition = "2024"
 license = "MIT"
 publish = false
-
-[lib]
-name = "talaan_stt"
-path = "src/lib.rs"
 
 [[bin]]
 name = "talaan-stt"
 path = "src/main.rs"
 
 [dependencies]
-talaan-llm-protocol = { path = "../llm-protocol" }
-serde_json = "1"
-# raw-api: ggml's device list (whisper_rs::whisper_rs_sys), to choose the GPU.
-whisper-rs = { version = "0.16.0", features = ["raw-api"] }
-
-[dev-dependencies]
-tempfile = "3.27.0"
+voice-engine-stt = { git = "https://github.com/mmnzns/voice-engine", tag = "v0.3.3" }
+voice-engine-protocol = { git = "https://github.com/mmnzns/voice-engine", tag = "v0.3.3" }
 
 [features]
 # Windows GPU build (talaan-stt-vulkan.exe), never linked into talaan.exe: needs the Vulkan SDK (VULKAN_SDK) to
 # build and vulkan-1.dll to run. scripts/build-llm-helper.ps1 builds it only when VULKAN_SDK is set.
-vulkan = ["whisper-rs/vulkan"]
+vulkan = ["voice-engine-stt/vulkan"]

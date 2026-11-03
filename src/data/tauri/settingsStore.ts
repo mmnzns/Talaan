@@ -3,6 +3,15 @@ import type { AutoSaveResult, AutoSaveStatus, BrowserState, ByokProvider, Calend
 import { call, onEvent } from "./invoke";
 
 
+/** Older settings files: the local model was "recommended" or "larger" (now its id), and "reuseModels" is gone
+ *  (every app shares one models folder now). */
+function migrated(stored: Partial<Settings>): Partial<Settings> {
+  const { reuseModels: _reuse, ...rest } = stored as Partial<Settings> & { reuseModels?: unknown };
+  if (rest.localModel === "recommended") rest.localModel = "qwen3.5-4b";
+  else if (rest.localModel === "larger") rest.localModel = "qwen3.5-9b";
+  return rest;
+}
+
 /**
  * SettingsStore backed by `settings.json`. Speech models are not stored there: their list and state come from
  * what is on disk (`models_list`), so a settings file can never claim a model that isn't there.
@@ -65,7 +74,7 @@ export class TauriSettingsStore implements SettingsStore {
     if (!this.state) {
       const stored = await call<Partial<Settings> | null>("settings_get");
       // No settings file yet means this is the first launch: show onboarding.
-      this.state = stored ? withDefaults(stored) : { ...structuredClone(defaultSettings), onboardingDone: false };
+      this.state = stored ? withDefaults(migrated(stored)) : { ...structuredClone(defaultSettings), onboardingDone: false };
     }
     return this.state;
   }
@@ -74,7 +83,8 @@ export class TauriSettingsStore implements SettingsStore {
     const [s, speechModels, localModels] = await Promise.all([this.load(), this.loadModels(), this.loadLocalModels()]);
     // A model id that no longer exists (older builds used other ids) means the default, as Rust does.
     const activeSpeechModel = speechModels.some((m) => m.id === s.activeSpeechModel) ? s.activeSpeechModel : defaultSettings.activeSpeechModel;
-    return structuredClone({ ...s, speechModels, ...this.extraModels(), localModels, activeSpeechModel });
+    const localModel = localModels.some((m) => m.id === s.localModel) ? s.localModel : defaultSettings.localModel;
+    return structuredClone({ ...s, speechModels, ...this.extraModels(), localModels, activeSpeechModel, localModel });
   }
 
   async update(patch: Partial<Settings>): Promise<Settings> {
@@ -95,8 +105,8 @@ export class TauriSettingsStore implements SettingsStore {
     return call<void>("models_cancel", { id });
   }
 
-  deleteModel(id: string): Promise<void> {
-    return call<void>("models_delete", { id });
+  deleteModel(id: string): Promise<{ erased: boolean; otherApps: string[] }> {
+    return call<{ erased: boolean; otherApps: string[] }>("models_delete", { id });
   }
 
   async testApiKey(provider: ByokProvider, key: string) {

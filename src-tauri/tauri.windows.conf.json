@@ -5,6 +5,12 @@
   },
   "bundle": {
     "targets": ["nsis"],
+    "externalBin": [
+      "binaries/talaan-llm",
+      "binaries/talaan-stt",
+      "binaries/talaan-llm-vulkan",
+      "binaries/talaan-stt-vulkan"
+    ],
     "publisher": "Craft Concepts Digital",
     "homepage": "https://github.com/mmnzns/Talaan",
     "copyright": "© 2026 Craft Concepts Digital. MIT License.",

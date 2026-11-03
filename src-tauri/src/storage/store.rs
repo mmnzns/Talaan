@@ -90,6 +90,7 @@ impl Storage {
                         summary_error: None,
                         transcript_only: false,
                         template: None,
+                        summary_language: None,
                         retranscribe_model: None,
                         exported_copy: None,
                         autosave_pending: None,
@@ -202,6 +203,7 @@ impl Storage {
             transcription: file.transcription.clone(),
             transcript_only: file.transcript_only,
             template: file.template.clone(),
+            summary_language: file.summary_language.clone(),
             item: list_item(&file),
         })
     }
@@ -379,6 +381,7 @@ pub(crate) mod tests {
             sections: vec![],
             highlights: vec![],
             template: None,
+            language: None,
             sections_missing: false,
             engine: "Local AI".into(),
             edited: false,

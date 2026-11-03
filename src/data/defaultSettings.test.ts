@@ -17,6 +17,25 @@ describe("Mac-only apps", () => {
   });
 });
 
+describe("the model lists", () => {
+  it("list every speech model of the engine catalog, with licence and English-only", () => {
+    expect(defaultSettings.speechModels).toHaveLength(22);
+    expect(defaultSettings.speechModels.slice(0, 3).map((m) => m.id)).toEqual(["whisper-turbo", "parakeet-v3", "whisper-small"]);
+    for (const m of defaultSettings.speechModels) expect(m.licence, m.id).toBeTruthy();
+    const english = defaultSettings.speechModels.filter((m) => m.englishOnly).map((m) => m.id);
+    expect(english).toContain("whisper-small-en");
+    expect(english).toContain("parakeet-v2");
+    expect(english).not.toContain("whisper-turbo");
+  });
+
+  it("offer three local AI models, Qwen3.5 4B recommended and in use", () => {
+    expect(defaultSettings.localModels.map((m) => m.id)).toEqual(["qwen3.5-4b", "qwen3.5-9b", "granite-4.2-3b"]);
+    expect(defaultSettings.localModels.filter((m) => m.recommended).map((m) => m.id)).toEqual(["qwen3.5-4b"]);
+    expect(defaultSettings.localModel).toBe("qwen3.5-4b");
+    expect("reuseModels" in defaultSettings).toBe(false);
+  });
+});
+
 describe("withDefaults", () => {
   it("drops the old plain-text calendar address", () => {
     const s = withDefaults({ theme: "dark", calendarConnected: true, calendarIcsUrl: "https://example.com/secret.ics" } as never);

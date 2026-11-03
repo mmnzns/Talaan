@@ -5,7 +5,7 @@
 //! measured after each job (`learn`, stored per machine in `speed.json`). While a job runs, the time it has taken
 //! so far for the share it has done takes over from the estimate (`remaining`).
 
-use crate::transcriber::models::{EngineKind, ModelInfo};
+use voice_engine_models::{Kind, ModelInfo};
 
 /// Where the work runs. `Remote`: a cloud service or a local AI server, whose speed Talaan can't know.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -48,16 +48,20 @@ impl Profile {
 /// Measured: Whisper Large Turbo ran at about 3.3x real time on a Windows processor (0.3), Parakeet at about
 /// 160 s per hour of audio (0.045); Metal and Vulkan Whisper are well under a minute per hour.
 pub fn stt_profile(model: &ModelInfo, on_gpu: bool) -> Profile {
-    let device = if on_gpu && model.engine == EngineKind::Whisper { Device::Gpu } else { Device::Cpu };
-    let cpu = match model.id {
+    let device = if on_gpu && model.kind == Kind::Whisper { Device::Gpu } else { Device::Cpu };
+    // The engine's newer ids run like their family: "-full" is the uncompressed file of a model Talaan already
+    // timed, "-en" the English-only version of a multilingual one. Both keep their own `speed.json` key.
+    let family = model.id.trim_end_matches("-full");
+    let family = if model.kind == Kind::Whisper { family.trim_end_matches("-en") } else { family };
+    let cpu = match family {
         "whisper-tiny" => 0.04,
         "whisper-base" => 0.07,
         "whisper-small" => 0.18,
         "whisper-medium" => 0.55,
         "whisper-large-v2" | "whisper-large-v3" => 1.0,
-        _ => match model.engine {
-            EngineKind::Whisper => 0.3,
-            EngineKind::Nemotron => 0.08,
+        _ => match model.kind {
+            Kind::Whisper => 0.3,
+            Kind::Nemotron => 0.08,
             _ if model.id == "parakeet-ultra" => 0.09,
             _ => 0.045,
         },
@@ -122,7 +126,7 @@ pub fn remaining(total: f64, elapsed: f64, progress: f64, running: f64) -> f64 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::transcriber::models::find;
+    use voice_engine_models::catalog::find;
 
     #[test]
     fn whisper_on_the_processor_is_much_slower_than_on_the_graphics_chip() {

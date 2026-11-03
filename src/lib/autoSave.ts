@@ -12,7 +12,7 @@ export async function saveCopy(store: Pick<MeetingStore, "getMeeting">, settings
   if (!s.autoSaveFolder) return "off";
   const m = await store.getMeeting(id);
   if (!m || m.status !== "ready") return "not_ready";
-  return settings.writeAutoSave(id, toMarkdown(m, s.autoSaveTranscript || !m.summary), finished);
+  return settings.writeAutoSave(id, toMarkdown(m, s.autoSaveTranscript || !m.summary ? "both" : "summary"), finished);
 }
 
 /** Writes the copies still pending (kept in meeting.json): at launch, after a copy that works, and with Check setup's

@@ -23,8 +23,21 @@ describe("parseRoute", () => {
 });
 
 describe("print route", () => {
-  it("round-trips the meeting and the transcript choice", () => {
-    expect(parseRoute(routes.print("2026-10-14_1431_yv57", true))).toEqual({ name: "print", id: "2026-10-14_1431_yv57", withTranscript: true });
-    expect(parseRoute(routes.print("m1", false))).toEqual({ name: "print", id: "m1", withTranscript: false });
+  it("round-trips the meeting and the summary / transcript choice", () => {
+    expect(parseRoute(routes.print("2026-10-14_1431_yv57", "both"))).toEqual({ name: "print", id: "2026-10-14_1431_yv57", scope: "both" });
+    expect(parseRoute(routes.print("m1", "summary"))).toEqual({ name: "print", id: "m1", scope: "summary" });
+    expect(parseRoute(routes.print("m1", "transcript"))).toEqual({ name: "print", id: "m1", scope: "transcript" });
+  });
+  it("prints the summary when the choice is missing or unknown", () => {
+    expect(parseRoute("#/print/m1")).toEqual({ name: "print", id: "m1", scope: "summary" });
+    expect(parseRoute("#/print/m1?scope=nope")).toEqual({ name: "print", id: "m1", scope: "summary" });
+  });
+});
+
+describe("meeting route with the export sheet", () => {
+  it("round-trips ?export=1", () => {
+    expect(parseRoute(routes.meeting("m1", undefined, true))).toEqual({ name: "meeting", id: "m1", t: undefined, export: true });
+    expect(parseRoute(routes.meeting("m1")).name).toBe("meeting");
+    expect((parseRoute(routes.meeting("m1")) as { export?: boolean }).export).toBeFalsy();
   });
 });

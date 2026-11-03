@@ -5,7 +5,7 @@ use super::echo::remove_echo;
 use super::engine::Engine;
 use super::diarize::{assign_speakers, SpeakerSplitter};
 use super::merge::{merge, Timed, Track};
-use super::vad::{read_track, shape, Span, Vad};
+use super::vad::{read_track, shape, Span};
 use crate::storage::model::TranscriptLine;
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -13,12 +13,6 @@ use std::sync::atomic::{AtomicBool, Ordering};
 /// Finds speech in a track (the real one is Silero; tests use a fake).
 pub trait Detector {
     fn detect(&mut self, samples: &[f32]) -> Result<Vec<Span>, String>;
-}
-
-impl Detector for Vad {
-    fn detect(&mut self, samples: &[f32]) -> Result<Vec<Span>, String> {
-        Vad::detect(self, samples)
-    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -335,29 +329,43 @@ mod tests {
         assert_eq!(detect_language(&[line("ok")]), None);
     }
 
-    /// `TALAAN_SMOKE_MEETING=<dir> cargo test --release pipeline_smoke -- --ignored --nocapture`
+    /// `TALAAN_SMOKE_DATA=<scratch> TALAAN_SMOKE_MEETING=<dir> [TALAAN_SMOKE_MODEL=id] [TALAAN_SMOKE_SPEAKERS=1] [TALAAN_SMOKE_GPU=0] cargo test --release pipeline_smoke -- --ignored --nocapture`
+    /// The models come from `<scratch>/shared-models/<id>/<file>`. Prints counts and timings only, never the text.
     #[test]
     #[ignore]
     fn pipeline_smoke() {
-        use crate::transcriber::models::{ModelStore, CATALOG};
+        use crate::models::{DIARIZATION, VAD};
+        use crate::transcriber::speech::{smoke_models, EngineSpeech, EngineSplitter, EngineVad};
         let dir = std::path::PathBuf::from(std::env::var("TALAAN_SMOKE_MEETING").unwrap());
-        let data = dirs::data_dir().unwrap().join("Talaan");
-        let store = ModelStore::new(&data, false);
-        let mut vad = Vad::load(&data.join("models/vad/ggml-silero-v6.2.0.bin")).unwrap();
+        let models = smoke_models();
+        let mut vad = EngineVad::new(models.hold(VAD).unwrap());
         let only = std::env::var("TALAAN_SMOKE_MODEL").ok();
-        for m in CATALOG.iter().filter(|m| only.as_deref().is_none_or(|o| o == m.id)) {
-            let Some(d) = store.locate(m).dir().map(|d| d.to_path_buf()) else { continue };
-            let mut engine = crate::transcriber::engine::load(m, &d, true).unwrap();
+        let gpu = std::env::var("TALAAN_SMOKE_GPU").map_or(true, |v| v != "0");
+        for m in voice_engine_models::catalog::speech().filter(|m| only.as_deref().is_none_or(|o| o == m.id)) {
+            let Ok(handle) = models.hold(m.id) else { continue };
             let t = std::time::Instant::now();
+            let mut engine = EngineSpeech::load(m, handle, gpu).unwrap();
+            let load_s = t.elapsed().as_secs_f32();
             // TALAAN_SMOKE_SPEAKERS=1 also splits the Them track with the speaker model.
-            let mut split = std::env::var("TALAAN_SMOKE_SPEAKERS")
-                .is_ok()
-                .then(|| crate::transcriber::diarize::Diarizer::load(&data.join("models/diarization/nemotron3_diar_v3.onnx")).unwrap());
-            let splitter = split.as_mut().map(|d| d as &mut dyn crate::transcriber::diarize::SpeakerSplitter);
-            let out = run(&dir, engine.as_mut(), &mut vad, None, splitter, &AtomicBool::new(false), &mut |_| {}).unwrap();
-            eprintln!("== {}: {:.1}s, {} lines, {} echo removed, language {:?}, {:.0}s speech, {} speakers", m.id, t.elapsed().as_secs_f32(), out.lines.len(), out.echo_removed, out.language, out.speech_ms as f32 / 1000.0, out.speakers);
-            for l in out.lines.iter().take(std::env::var("TALAAN_SMOKE_LINES").ok().and_then(|n| n.parse().ok()).unwrap_or(usize::MAX)) {
-                eprintln!("   {:>6.1} {:<6} {}", l.at as f32 / 1000.0, l.speaker, l.text);
+            let t = std::time::Instant::now();
+            let mut split = std::env::var("TALAAN_SMOKE_SPEAKERS").is_ok().then(|| EngineSplitter::load(models.hold(DIARIZATION).unwrap()).unwrap());
+            let split_load_s = t.elapsed().as_secs_f32();
+            let splitter = split.as_mut().map(|d| d as &mut dyn SpeakerSplitter);
+            let t = std::time::Instant::now();
+            let out = run(&dir, &mut engine, &mut vad, None, splitter, &AtomicBool::new(false), &mut |_| {}).unwrap();
+            eprintln!(
+                "== {}: load {load_s:.1}s (speakers {split_load_s:.1}s), run {:.1}s, {:?}, {} lines, {} echo removed, language {:?}, {:.0}s speech, {} speakers",
+                m.id,
+                t.elapsed().as_secs_f32(),
+                crate::transcriber::engine::Engine::backend(&engine),
+                out.lines.len(),
+                out.echo_removed,
+                out.language,
+                out.speech_ms as f32 / 1000.0,
+                out.speakers
+            );
+            if let (Some(first), Some(last)) = (out.lines.first(), out.lines.last()) {
+                eprintln!("   lines span {:.1}s to {:.1}s", first.at as f32 / 1000.0, last.end as f32 / 1000.0);
             }
         }
     }

@@ -7,16 +7,17 @@ import type { Meeting } from "../../data/types";
 import { formatDate } from "../../lib/format";
 import { SunCorner } from "../../brand/SunCorner";
 import { exportMeeting } from "../../lib/exportFile";
-import { copyText, toEmailBody, toMailto, toPlainText, toShareText } from "../../lib/share";
+import { copyText, toCopyText, toEmailBody, toMailto, type ExportScope } from "../../lib/share";
 import { describeError } from "../../data/errors";
 import { openLink, openSettings } from "../../lib/windows";
 import { useT } from "../../lib/i18n/I18nProvider";
 import type { MessageKey } from "../../lib/i18n";
-import { Label, Button, Radio, Select, Sheet, Switch, cn } from "../../ui";
+import { Label, Button, Radio, Select, Sheet, cn } from "../../ui";
 
 export type ExportFormat = "copy" | "md" | "pdf" | "txt" | "email" | "notion";
 
 // Copy as text first: what most people want (UX audit P1 #23). Brand names stay as they are.
+// Export is the one way out of a meeting: every format below takes the same Summary / Transcript / Both choice.
 const FORMATS: { id: ExportFormat; name: MessageKey | string; note: MessageKey }[] = [
   { id: "copy", name: "meeting.fmtCopyName", note: "meeting.fmtCopyNote" },
   { id: "email", name: "meeting.fmtEmailName", note: "meeting.fmtEmailNote" },
@@ -24,6 +25,11 @@ const FORMATS: { id: ExportFormat; name: MessageKey | string; note: MessageKey }
   { id: "pdf", name: "PDF", note: "meeting.fmtPdfNote" },
   { id: "txt", name: "meeting.fmtTxtName", note: "meeting.fmtTxtNote" },
   { id: "notion", name: "Notion", note: "meeting.fmtNotionNote" },
+];
+const SCOPES: { id: ExportScope; name: MessageKey }[] = [
+  { id: "summary", name: "meeting.scopeSummary" },
+  { id: "transcript", name: "meeting.scopeTranscript" },
+  { id: "both", name: "meeting.scopeBoth" },
 ];
 const CTA: Record<ExportFormat, MessageKey> = {
   copy: "meeting.ctaCopy",
@@ -62,7 +68,7 @@ export function ExportSheet({ open, meeting, onClose, initialFormat, startTooLon
     setFormat(initialFormat ?? "copy");
     setTooLong(Boolean(startTooLong));
   }, [open, initialFormat, startTooLong]);
-  const [withTranscript, setWithTranscript] = useState(false);
+  const [scope, setScope] = useState<ExportScope>("both");
   const settingsStore = useSettingsStore();
   const store = useStore();
   const [places, setPlaces] = useState<NotionDestination[]>();
@@ -95,19 +101,19 @@ export function ExportSheet({ open, meeting, onClose, initialFormat, startTooLon
     try {
       if (format === "notion") {
         if (!destination) return;
-        const url = await store.exportToNotion(meeting.id, destination, withTranscript);
+        const url = await store.exportToNotion(meeting.id, destination, scope);
         setLink(url || undefined);
         return setDone(t("meeting.sentToNotion", { title: destination.title }));
       }
       if (format === "copy") {
-        await copyText(withTranscript ? toPlainText(meeting, true) : toShareText(meeting));
+        await copyText(toCopyText(meeting, scope));
         return setDone(t("meeting.copiedDone"));
       }
       if (format === "email") {
         const { truncated } = await emailSummary(meeting);
         return truncated ? setTooLong(true) : setDone(t("meeting.emailOpened"));
       }
-      const where = await exportMeeting(meeting, format, withTranscript);
+      const where = await exportMeeting(meeting, format, scope);
       if (format === "pdf") return close(); // the print sheet takes it from here
       if (where) setDone(t("meeting.savedFile", { file: where.split("/").pop() ?? where }));
     } catch (e) {
@@ -201,11 +207,29 @@ export function ExportSheet({ open, meeting, onClose, initialFormat, startTooLon
 
           <div className="flex flex-col px-[26px]">
             <div className={cn("flex items-center justify-between gap-5 border-t border-line py-4", format === "email" && "hidden")}>
-              <div>
-                <div className="font-semibold">{t("meeting.includeTranscript")}</div>
-                <div className="text-xs text-subtle">{t("meeting.summaryAlways")}</div>
+              <div role="radiogroup" aria-label={t("meeting.scopeLabel")} className="flex w-full items-center justify-between gap-5">
+                <div className="font-semibold">{t("meeting.scopeLabel")}</div>
+                <div className="flex gap-1.5">
+                  {SCOPES.map((o) => {
+                    const on = o.id === scope;
+                    return (
+                      <button
+                        key={o.id}
+                        type="button"
+                        role="radio"
+                        aria-checked={on}
+                        onClick={() => setScope(o.id)}
+                        className={cn(
+                          "cursor-pointer rounded-lg border px-3 py-1.5 font-[inherit] text-[13px] font-semibold text-ink",
+                          on ? "border-gold bg-gold-soft" : "border-line bg-surface hover:border-edge",
+                        )}
+                      >
+                        {t(o.name)}
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
-              <Switch aria-label={t("meeting.includeTranscript")} checked={withTranscript} onChange={setWithTranscript} />
             </div>
 
             {format === "notion" &&

@@ -169,7 +169,7 @@ export function OnboardingScreen() {
   );
 }
 
-const ready = (state: string) => state === "downloaded" || state === "on_this_mac";
+const ready = (state: string) => state === "downloaded";
 
 /** The step's Continue reads "Skip for now" while what it offers isn't downloaded (or downloading). */
 function skippable(at: StepId, s: Settings): boolean {
@@ -178,7 +178,7 @@ function skippable(at: StepId, s: Settings): boolean {
     return [speech, summary].every((m) => !m || m.state === "not_downloaded");
   }
   if (at === "speech") return s.speechModels.find((m) => m.id === s.activeSpeechModel)?.state === "not_downloaded";
-  if (at === "summary") return s.summaryEngine === "local" && s.localModels.find((m) => m.choice === (s.localModel ?? "recommended"))?.state === "not_downloaded";
+  if (at === "summary") return s.summaryEngine === "local" && s.localModels.find((m) => m.id === s.localModel)?.state === "not_downloaded";
   return false;
 }
 
@@ -472,7 +472,6 @@ function ModelStep({ settings: s, update }: StepProps) {
   const lang = useLang();
   const store = useSettingsStore();
   const status = (m: Settings["speechModels"][number]) => {
-    if (m.state === "on_this_mac") return t("onboarding.modelOnThisComputer");
     if (m.state === "downloaded") return t("onboarding.modelDownloaded");
     if (m.state === "downloading") return t("onboarding.modelDownloading", { pct: Math.round((m.progress ?? 0) * 100) });
     return t("onboarding.modelSize", { size: gb(m.sizeMb) });
@@ -587,7 +586,7 @@ function SummaryStep({ settings: s, update }: StepProps) {
   const t = useT();
   const store = useSettingsStore();
   const local = s.summaryEngine === "local";
-  const model = s.localModels.find((m) => m.choice === (s.localModel ?? "recommended")) ?? s.localModels[0];
+  const model = s.localModels.find((m) => m.id === s.localModel) ?? s.localModels[0];
 
   return (
     <StepBody
@@ -718,7 +717,7 @@ function Done({ systemAudio, settings: s, name, setName }: { systemAudio: Perm; 
   const platform = usePlatform();
   const [skipped, setSkipped] = useState(false);
   const speech = s.speechModels.find((m) => m.id === s.activeSpeechModel);
-  const local = s.localModels.find((m) => m.choice === (s.localModel ?? "recommended"));
+  const local = s.localModels.find((m) => m.id === s.localModel);
   const noSpeech = !s.speechModels.some((m) => m.state !== "not_downloaded");
   const downloading = speech?.state === "downloading" || (s.summaryEngine === "local" && local?.state === "downloading");
   const noSummary = s.summaryEngine === "local" && local?.state === "not_downloaded";

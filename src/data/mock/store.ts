@@ -12,6 +12,7 @@ import type {
 } from "../types";
 import { withYourName } from "../../lib/transcript";
 import { mockAsk } from "./askAnswers";
+import { isSummaryLanguage } from "../../lib/summaryLanguages";
 import { sampleFollowUp, sampleSummary, sampleTranscript, seedFolders, seedMeetings } from "./seed";
 
 const clone = <T>(v: T): T => structuredClone(v);
@@ -257,7 +258,7 @@ export class MockMeetingStore implements MeetingStore {
   async generateSummary(id: MeetingId) {
     this.simulate(id, "summarizing", (m) => {
       m.status = "ready";
-      m.summary = sampleSummary(m.template ?? "general", m.marks);
+      m.summary = { ...sampleSummary(m.template ?? "general", m.marks), language: m.summaryLanguage ?? m.language };
       this.originals.get(id)!.summary = clone(m.summary);
     });
   }
@@ -268,6 +269,15 @@ export class MockMeetingStore implements MeetingStore {
 
   async summarizeAs(id: MeetingId, template: string) {
     this.mutate(id, (m) => (m.template = template));
+    await this.generateSummary(id);
+  }
+
+  async summarizeIn(id: MeetingId, language: string) {
+    if (!isSummaryLanguage(language)) throw new Error("Unknown summary language.");
+    const m = this.meetings.get(id);
+    if (!m || m.transcript.length === 0) throw new Error("There's no transcript to summarize yet.");
+    if (m.status === "recording" || m.status === "transcribing") throw new Error("Wait for the transcript to finish first.");
+    this.mutate(id, (x) => (x.summaryLanguage = language));
     await this.generateSummary(id);
   }
 

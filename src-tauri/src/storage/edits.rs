@@ -212,6 +212,20 @@ mod tests {
     }
 
     #[test]
+    fn an_edited_summary_keeps_the_language_it_was_written_in() {
+        let (_d, s, id) = setup();
+        let mut first = s.get_meeting(&id).unwrap().summary.unwrap();
+        first.language = Some("fil".into());
+        s.save_summary(&id, &first).unwrap();
+        let mut edited = s.get_meeting(&id).unwrap().summary.unwrap();
+        assert_eq!(edited.language.as_deref(), Some("fil"));
+        edited.recap = "My recap.".into();
+        s.update_summary(&id, &edited).unwrap();
+        let got = s.get_meeting(&id).unwrap().summary.unwrap();
+        assert_eq!((got.edited, got.language.as_deref()), (true, Some("fil")));
+    }
+
+    #[test]
     fn ticking_an_action_item_is_not_an_edit_but_persists() {
         let (d, s, id) = setup();
         let mut sum = s.get_meeting(&id).unwrap().summary.unwrap();

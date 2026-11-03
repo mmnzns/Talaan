@@ -1,10 +1,8 @@
-import { useRef, useState } from "react";
+import { useRef } from "react";
 import { useMeetings, useNextMeeting } from "../../data/hooks";
 import type { NextMeeting } from "../../data/settings";
 import { startsIn } from "../../lib/nextMeeting";
-import { useStore } from "../../data/StoreProvider";
 import { dayGroup, formatClock } from "../../lib/format";
-import { copyText, toShareText } from "../../lib/share";
 import { openSettings } from "../../lib/windows";
 import { navigate, routes } from "../../lib/router";
 import { Button, Chip, Label, useToast } from "../../ui";
@@ -21,6 +19,8 @@ interface Props {
   next?: NextMeeting | null;
   /** Open a meeting in the main window (the popover is its own window in the app). */
   onOpenMeeting?: (id: string) => void;
+  /** Open a meeting in the main window with its Export sheet showing. */
+  onExportMeeting?: (id: string) => void;
   onOpenApp?: () => void;
   onQuit?: () => void;
   /** A recording is running: Update now is off (the tray shows the recording popover then, so this is a guard). */
@@ -28,25 +28,15 @@ interface Props {
 }
 
 /** Menu bar popover when nothing is recording. */
-export function MenuBarPopover({ onStart, onOpenMeeting, onOpenApp, onQuit, next: given, recording = false }: Props) {
+export function MenuBarPopover({ onStart, onOpenMeeting, onExportMeeting, onOpenApp, onQuit, next: given, recording = false }: Props) {
   const t = useT();
-  const store = useStore();
   const toast = useToast();
   const { meetings } = useMeetings();
-  const [copied, setCopied] = useState<string>();
   const recent = meetings.slice(0, 3);
   const now = useNow();
   const fetched = useNextMeeting();
   const candidate = given !== undefined ? given : fetched;
   const next = candidate && startsIn(candidate, now) !== "ended" ? candidate : undefined;
-
-  const copy = async (id: string) => {
-    const m = await store.getMeeting(id);
-    if (!m) return;
-    await copyText(toShareText(m));
-    setCopied(id);
-    setTimeout(() => setCopied(undefined), 1800);
-  };
 
   const item = "flex items-center gap-3 rounded-[10px] px-3 py-2.5 hover:bg-hover";
 
@@ -100,10 +90,10 @@ export function MenuBarPopover({ onStart, onOpenMeeting, onOpenApp, onQuit, next
               {m.status === "ready" && (
                 <button
                   type="button"
-                  onClick={() => copy(m.id)}
+                  onClick={() => (onExportMeeting ? onExportMeeting(m.id) : navigate(routes.meeting(m.id, undefined, true)))}
                   className="h-[26px] cursor-pointer whitespace-nowrap rounded-[7px] border border-edge bg-surface px-2.5 font-[inherit] text-xs font-semibold text-ink hover:bg-hover"
                 >
-                  {copied === m.id ? t("recording.copied") : t("recording.copyAsText")}
+                  {t("recording.exportMeeting")}
                 </button>
               )}
             </div>

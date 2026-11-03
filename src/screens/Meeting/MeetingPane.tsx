@@ -1,12 +1,13 @@
 import { useEffect, useState } from "react";
 import { useMeeting, useMeetings } from "../../data/hooks";
-import { copyText, toEmail, toShareText } from "../../lib/share";
+import { copyText, toEmail } from "../../lib/share";
 import { useStore } from "../../data/StoreProvider";
 import type { Meeting, Ms } from "../../data/types";
 import { usePlayer } from "./usePlayer";
 import { ExportSheet, emailSummary } from "./ExportSheet";
 import { Button, useToast } from "../../ui";
 import { describeError } from "../../data/errors";
+import { navigate, routes } from "../../lib/router";
 import { useStartRecording } from "../Shell/RecordingPanel";
 import { MeetingHeader } from "./MeetingHeader";
 import { StatusBanner } from "./StatusBanner";
@@ -16,7 +17,7 @@ import { SunCorner } from "../../brand/SunCorner";
 import { useT } from "../../lib/i18n/I18nProvider";
 import { TestMeetingBanner, TestRecordingCard, useTestRecordingActive } from "../Onboarding/TestRecording";
 
-export function MeetingPane({ id, jumpTo }: { id?: string; jumpTo?: Ms }) {
+export function MeetingPane({ id, jumpTo, openExport }: { id?: string; jumpTo?: Ms; openExport?: boolean }) {
   const { meeting, loading } = useMeeting(id);
   const t = useT();
 
@@ -32,7 +33,7 @@ export function MeetingPane({ id, jumpTo }: { id?: string; jumpTo?: Ms }) {
       </div>
     );
   }
-  return <MeetingView key={meeting.id} meeting={meeting} jumpTo={jumpTo} />;
+  return <MeetingView key={meeting.id} meeting={meeting} jumpTo={jumpTo} openExport={openExport} />;
 }
 
 function EmptyPane() {
@@ -68,13 +69,13 @@ function EmptyPane() {
   );
 }
 
-function MeetingView({ meeting, jumpTo }: { meeting: Meeting; jumpTo?: Ms }) {
+function MeetingView({ meeting, jumpTo, openExport }: { meeting: Meeting; jumpTo?: Ms; openExport?: boolean }) {
   const store = useStore();
   const [editing, setEditing] = useState(false);
   const [activeAt, setActiveAt] = useState<Ms | undefined>(jumpTo);
   const [jumpSeq, setJumpSeq] = useState(0);
   const player = usePlayer(meeting, (at) => setActiveAt(at));
-  const [copied, setCopied] = useState<"text" | "email">();
+  const [copiedEmail, setCopiedEmail] = useState(false);
   const [exporting, setExporting] = useState<false | "sheet" | "email-too-long">(false);
   const toast = useToast();
   // "Email this summary" from the meeting menu: straight to the mail app, or the sheet when the link is too long.
@@ -101,11 +102,18 @@ function MeetingView({ meeting, jumpTo }: { meeting: Meeting; jumpTo?: Ms }) {
     setJumpSeq((n) => n + 1);
   }, [jumpTo]);
 
-  const copy = async (kind: "text" | "email") => {
-    await copyText(kind === "text" ? toShareText(meeting) : toEmail(meeting));
-    setCopied(kind);
-    setTimeout(() => setCopied(undefined), 2000);
+  const copyEmail = async () => {
+    await copyText(toEmail(meeting));
+    setCopiedEmail(true);
+    setTimeout(() => setCopiedEmail(false), 2000);
   };
+
+  // The menu bar's Export opens this meeting with the sheet showing. The flag leaves the address so asking again works.
+  useEffect(() => {
+    if (!openExport) return;
+    setExporting("sheet");
+    navigate(routes.meeting(meeting.id));
+  }, [openExport, meeting.id]);
 
   const canRevert = Boolean(meeting.summary?.edited) || meeting.transcript.some((l) => l.edited);
 
@@ -118,10 +126,10 @@ function MeetingView({ meeting, jumpTo }: { meeting: Meeting; jumpTo?: Ms }) {
         canRevert={canRevert}
         onToggleEdit={() => setEditing((e) => !e)}
         onRevert={() => store.revertEdits(meeting.id)}
-        onCopy={copy}
+        onCopyEmail={() => void copyEmail()}
         onExport={() => setExporting("sheet")}
         onEmail={() => void email()}
-        copied={copied}
+        copiedEmail={copiedEmail}
       />
       <StatusBanner meeting={meeting} />
       <TestMeetingBanner meeting={meeting} />

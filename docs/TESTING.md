@@ -12,7 +12,7 @@ app (`scripts/build-signed-debug.sh` → `src-tauri/target/debug/bundle/macos/Ta
 - [ ] A real meeting end to end: Stop → transcribing → summarizing → ready, title replaced. Read the summary: is anything wrong or missing?
 - [ ] macOS asks to allow notifications the first time a summary finishes; "Summary ready" opens the meeting.
 - [ ] Settings › Speech models: download / cancel / delete a model; switch to Parakeet and back.
-- [ ] Settings › Summary AI: Local AI (already downloaded), Larger model download, Ollama / LM Studio if installed.
+- [ ] Settings › Summary AI: Local AI (already downloaded), the other local models (Qwen 3.5 9B, Granite 4.2 3B), Ollama / LM Studio if installed.
 - [ ] Your own key (Claude, OpenAI, Gemini, Groq, Cerebras, Mistral or OpenRouter): paste, Test (it should name the model it picked), pick a model from the menu or type one with "Other model ID…", record a call, check the summary says that provider and model.
 
 ## Call detection and menu bar (M6)
@@ -195,7 +195,44 @@ permissions across an update (the test app is ad-hoc signed), and SmartScreen / 
 The first run on a branch builds everything from scratch (an hour or more per platform); later runs on that branch
 reuse the Rust cache (kept even when the test fails).
 
+## Models and the graphics card (shared engine, v0.3.3)
+
+Use temp copies of data (`TALAAN_DATA_DIR`) for anything that writes, except the one-time move, which needs the real
+folders on a machine that has the previous Talaan.
+
+**The Status tab** (Settings › Status › the graphics row)
+- [ ] Mac: says Metal (state `metal`). Switch Speed up with the graphics chip off: it says Off (`off`), and a
+  transcript and a summary still work. Switch it back on.
+- [ ] Windows with a separate card: names the card (`in_use`). On a PC with only built-in graphics, a new install
+  has it off, and turning it on says no separate graphics card (`unavailable`).
+- [ ] Windows, forced failure (the engine's own failure switch for the helpers, see the engine README): the Whisper
+  transcript and a summary still finish on the processor; the row says "The graphics card failed for speech, AI, so
+  the processor did the work." (`failed`) with Try again; the failure files `gpu-stt-failures`, `gpu-summary-failures`
+  and `gpu-search-failures` appear in `%APPDATA%\Talaan`. Try again removes them and the row names the card again.
+- [ ] Parakeet on a Windows card: Settings › Speech models, Parakeet, transcribe a call; the card is busy in Task
+  Manager and the words match the processor's.
+
+**Models and the shared folder**
+- [ ] Settings › Speech models and Summary AI list every catalog model with size, memory needed and licence (Qwen 3.5
+  4B and 9B, Granite 4.2 3B; full-size and English-only Whisper; Parakeet full-size). English-only models show the
+  English only chip once, not also in the note.
+- [ ] Download a small model (Whisper Tiny): it appears in the shared folder (`~/Library/Application Support/Craft
+  Concepts Digital/Models`; Windows `%LOCALAPPDATA%\Craft Concepts Digital\Models`), not in Talaan's data folder.
+- [ ] Delete it in Talaan: gone from Talaan's list. If another Craft Concepts Digital app uses it, the file stays in
+  the shared folder; if none does, it is erased.
+- [ ] No "Reuse models already on this computer" setting anywhere.
+
+**The one-time move on update** (a machine with the previous Talaan and its models; back up nothing, it only links)
+- [ ] Update, start Talaan: the models it had are in the shared folder (the folder above). Old folders keep hard links
+  (the same files, no second copy: the disk's free space barely changes). Nothing downloads again.
+- [ ] Settings › Speech models and Summary AI still show those models as downloaded; a call transcribes and
+  summarizes without a download prompt.
+- [ ] Start a second time: nothing moves again.
+
 ## GPU on Windows (G1)
+
+> Superseded for models and the card by the section above (voice-engine v0.2.2 moved the Vulkan helpers, `gpu.json` and
+> model folders into the engine). Kept for the helper smoke tests.
 
 Builds: Actions › **Release** › Run workflow on `gpu-windows` makes two artifacts, `talaan-windows-installer`
 (the setup .exe with the GPU helpers) and `talaan-gpu-helpers` (`talaan-llm-vulkan.exe`, `talaan-stt-vulkan.exe`
