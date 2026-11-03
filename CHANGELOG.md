@@ -1,6 +1,6 @@
 # Changelog
 
-## 1.2.0 (2026-10-31)
+## 1.2.0 (2026-11-02)
 
 **Models and speed**
 - **Models are shared:** they now live in a folder shared with Craft Concepts Digital's other apps, so a model is downloaded once. The first start after updating moves the models you already have in by itself, without downloading anything again. Delete means Talaan stops using a model; the file is erased only when no other app uses it, and Talaan tells you when it stays. The "Reuse models already on this computer" setting is gone, because the shared folder does it.
