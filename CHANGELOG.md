@@ -4,6 +4,7 @@
 
 **Fixes**
 - **A graphics driver update gives the card another chance (Windows):** if the graphics card failed before, Talaan tries it again after the driver is updated.
+- **No Dock icon when Talaan opens at login (Mac):** it stays in the menu bar until you open the window.
 
 ## 1.2.0 (2026-11-02)
 
