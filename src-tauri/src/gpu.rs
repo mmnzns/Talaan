@@ -8,38 +8,35 @@ use voice_engine_client::Fallback;
 
 /// The PC's discrete graphics card, by the name the driver gives it. Windows only (a cheap DXGI listing; no helper
 /// starts). None on the Mac, with built-in graphics only, or when the check fails.
-/// The listing runs once per process; every later call gets the same answer.
 pub fn discrete_card() -> Option<String> {
-    static CARD: OnceLock<Option<String>> = OnceLock::new();
+    card().0.clone()
+}
+
+/// The discrete card's driver version, as Windows shows it. None elsewhere or when Windows doesn't say.
+fn driver_version() -> Option<String> {
+    card().1.clone()
+}
+
+/// (name, driver version) of the discrete card. The listing runs once per process; every later call gets the same
+/// answer.
+fn card() -> &'static (Option<String>, Option<String>) {
+    static CARD: OnceLock<(Option<String>, Option<String>)> = OnceLock::new();
     CARD.get_or_init(|| {
         #[cfg(windows)]
         {
-            voice_engine_stt::discrete_card().map(|d| d.description)
+            match voice_engine_stt::discrete_card() {
+                Some(d) => {
+                    let driver = voice_engine_stt::driver_version(&d);
+                    (Some(d.description), driver)
+                }
+                None => (None, None),
+            }
         }
         #[cfg(not(windows))]
         {
-            None
+            (None, None)
         }
     })
-    .clone()
-}
-
-/// The graphics driver version of the discrete card, as Windows shows it. Windows only; None elsewhere or when
-/// Windows doesn't say. Looked up once per process.
-fn driver_version() -> Option<String> {
-    static DRIVER: OnceLock<Option<String>> = OnceLock::new();
-    DRIVER
-        .get_or_init(|| {
-            #[cfg(windows)]
-            {
-                voice_engine_stt::discrete_card().and_then(|d| voice_engine_stt::driver_version(&d))
-            }
-            #[cfg(not(windows))]
-            {
-                None
-            }
-        })
-        .clone()
 }
 
 /// The key the engine remembers a card failure under: the app version, plus the driver version when there is one,
