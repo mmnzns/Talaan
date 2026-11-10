@@ -24,6 +24,38 @@ pub fn discrete_card() -> Option<String> {
     .clone()
 }
 
+/// The graphics driver version of the discrete card, as Windows shows it. Windows only; None elsewhere or when
+/// Windows doesn't say. Looked up once per process.
+fn driver_version() -> Option<String> {
+    static DRIVER: OnceLock<Option<String>> = OnceLock::new();
+    DRIVER
+        .get_or_init(|| {
+            #[cfg(windows)]
+            {
+                voice_engine_stt::discrete_card().and_then(|d| voice_engine_stt::driver_version(&d))
+            }
+            #[cfg(not(windows))]
+            {
+                None
+            }
+        })
+        .clone()
+}
+
+/// The key the engine remembers a card failure under: the app version, plus the driver version when there is one,
+/// so a driver update tries the card again.
+pub fn failure_key(version: &str, driver: Option<&str>) -> String {
+    match driver {
+        Some(d) => format!("{version}+driver.{d}"),
+        None => version.to_string(),
+    }
+}
+
+/// `failure_key` for this PC's card. Off Windows it is the version itself.
+pub fn gpu_key(version: &str) -> String {
+    failure_key(version, driver_version().as_deref())
+}
+
 /// Whether the card is on by default: always on the Mac; on a PC only with a discrete card.
 pub fn default_on(mac: bool, card: Option<&str>) -> bool {
     mac || card.is_some()
@@ -115,6 +147,22 @@ pub fn clear_fallbacks() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_failure_key_is_the_version_alone_without_a_driver_version() {
+        assert_eq!(failure_key("1.2.1", None), "1.2.1");
+    }
+
+    #[test]
+    fn the_failure_key_carries_the_driver_version() {
+        assert_eq!(failure_key("1.2.1", Some("32.0.15.6614")), "1.2.1+driver.32.0.15.6614");
+    }
+
+    #[test]
+    fn a_different_driver_gives_a_different_key() {
+        assert_ne!(failure_key("1.2.1", Some("32.0.15.6614")), failure_key("1.2.1", Some("32.0.15.7000")));
+        assert_ne!(failure_key("1.2.1", Some("32.0.15.6614")), failure_key("1.2.1", None));
+    }
 
     #[test]
     fn only_a_failed_or_out_of_memory_card_counts_as_a_card_failure() {

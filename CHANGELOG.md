@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.2.1 (unreleased)
+
+**Fixes**
+- **A graphics driver update gives the card another chance (Windows):** if the graphics card failed before, Talaan tries it again after the driver is updated.
+
 ## 1.2.0 (2026-11-02)
 
 **Models and speed**

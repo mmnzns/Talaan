@@ -130,7 +130,7 @@ mod tests {
     fn remembered_failures_are_read_for_this_version_and_cleared_files_do_not_count() {
         let dir = tempfile::tempdir().unwrap();
         assert_eq!(remembered(dir.path()), (false, false));
-        std::fs::write(dir.path().join(crate::summarizer::local::failures_file("search")), env!("CARGO_PKG_VERSION")).unwrap();
+        std::fs::write(dir.path().join(crate::summarizer::local::failures_file("search")), crate::gpu::gpu_key(env!("CARGO_PKG_VERSION"))).unwrap();
         assert_eq!(remembered(dir.path()), (false, true));
         std::fs::write(dir.path().join(crate::transcriber::helper_speech::FAILURES_FILE), "0.0.0-other").unwrap();
         assert_eq!(remembered(dir.path()), (false, true));
