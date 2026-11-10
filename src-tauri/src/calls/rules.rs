@@ -93,11 +93,13 @@ impl Detector {
         }
         self.dismissed.retain(|app| self.holding.contains_key(app));
 
-        // The recording ended (Stop, Discard, auto-stop): forget the call.
+        // The recording ended (Stop, Discard, auto-stop): forget the call. Apps still on the mic are left alone
+        // until they let go of it, so Stop stays stopped even when the rule is Always.
         if self.was_recording && !recording {
             if self.prompt_until.take().is_some() {
                 out.push(Action::ClosePrompt);
             }
+            self.dismissed.extend(self.holding.keys().cloned());
             self.recording_app = None;
             self.released_since = None;
             self.kept = false;
@@ -322,6 +324,28 @@ mod tests {
         s.run(5, &[]);
         s.recording = false;
         assert_eq!(s.run(1, &[]), vec![Action::ClosePrompt]);
+    }
+
+    #[test]
+    fn stopping_by_hand_during_an_always_call_stays_stopped_until_the_next_call() {
+        let mut s = Sim::new();
+        s.run(3, &["zoom"]);
+        s.run(60, &["zoom"]);
+        s.recording = false; // Stop, Zoom still on the call
+        assert!(s.run(60, &["zoom"]).is_empty());
+        assert!(!s.recording);
+        // Next call in Zoom records again.
+        s.run(1, &[]);
+        assert_eq!(s.run(3, &["zoom"]), vec![Action::AutoStart { app: "zoom".into() }]);
+    }
+
+    #[test]
+    fn stopping_a_manual_recording_doesnt_auto_start_an_app_already_on_the_mic() {
+        let mut s = Sim::new();
+        s.recording = true;
+        s.run(5, &["zoom"]);
+        s.recording = false;
+        assert!(s.run(30, &["zoom"]).is_empty());
     }
 
     #[test]
