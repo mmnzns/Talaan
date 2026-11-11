@@ -165,6 +165,8 @@ pub fn run() {
             let onboarding_done = settings.as_ref().and_then(|s| s["onboardingDone"].as_bool()).unwrap_or(false);
             if after_update || !commands::updates::start_hidden(std::env::args(), onboarding_done) {
                 commands::tray::show_main(app.handle());
+            } else {
+                commands::tray::hide_dock(app.handle());
             }
             Ok(())
         })

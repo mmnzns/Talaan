@@ -40,7 +40,7 @@ pub fn client(data_dir: &Path, version: &str, which: &str) -> LlmClient {
         env: vec![],
         gpu_env: vec![("VK_LOADER_LAYERS_DISABLE".into(), "~implicit~".into())],
         gpu_failures: Some(data_dir.join(failures_file(which))),
-        gpu_key: version.to_string(),
+        gpu_key: crate::gpu::gpu_key(version),
         idle_secs: Some(120),
         // Loading a 9B model from a slow disk takes well under this.
         limits: Limits { stall: Duration::from_secs(5 * 60), ..Limits::default() },
@@ -125,9 +125,9 @@ pub fn record_outcome(backend: &str, fallback: Option<Fallback>) {
     }
 }
 
-/// Whether the engine remembers a card failure for this app version for the job (`which`: "summary" or "search").
+/// Whether the engine remembers a card failure for this app version and driver for the job (`which`: "summary" or "search").
 pub fn card_failed(data_dir: &Path, which: &str) -> bool {
-    std::fs::read_to_string(data_dir.join(failures_file(which))).is_ok_and(|t| t.trim() == env!("CARGO_PKG_VERSION"))
+    std::fs::read_to_string(data_dir.join(failures_file(which))).is_ok_and(|t| t.trim() == crate::gpu::gpu_key(env!("CARGO_PKG_VERSION")))
 }
 
 pub fn failures_file(which: &str) -> String {

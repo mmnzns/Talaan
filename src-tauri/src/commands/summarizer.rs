@@ -161,11 +161,7 @@ pub fn notifications_allowed() -> Option<bool> {
 
 /// Clicking a "Summary ready" notification: bring Talaan forward on that meeting.
 pub fn open_meeting(app: &AppHandle, id: &str) {
-    if let Some(w) = app.get_webview_window("main") {
-        let _ = w.unminimize();
-        let _ = w.show();
-        let _ = w.set_focus();
-    }
+    super::tray::show_main(app);
     let _ = app.emit(OPEN_MEETING, id);
 }
 

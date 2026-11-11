@@ -32,7 +32,7 @@ pub fn config(exe_dir: &Path, data_dir: &Path, version: &str) -> SttConfig {
         env: vec![],
         gpu_env: vec![("VK_LOADER_LAYERS_DISABLE".into(), "~implicit~".into())],
         gpu_failures: Some(data_dir.join(FAILURES_FILE)),
-        gpu_key: version.into(),
+        gpu_key: crate::gpu::gpu_key(version),
         // No events arrive while Whisper decodes a chunk, and Talaan's Whisper chunks are up to
         // `Shape::whisper().max_len`, so the stall limit sits well above the longest decode.
         limits: Limits { stall: Duration::from_secs(10 * 60), ..Limits::default() },
@@ -52,10 +52,10 @@ pub fn keep_card_failure(before: Option<Fallback>, now: Option<Fallback>) -> Opt
     }
 }
 
-/// Whether the engine remembers a card failure for this app version (the file holds the key it failed with; the
+/// Whether the engine remembers a card failure for this app version and driver (the file holds the key it failed with; the
 /// engine compares it to `gpu_key`). Time estimates use this to say "processor" once the card has failed.
 pub fn stt_card_failed(data_dir: &Path, version: &str) -> bool {
-    std::fs::read_to_string(data_dir.join(FAILURES_FILE)).is_ok_and(|t| t.trim() == version)
+    std::fs::read_to_string(data_dir.join(FAILURES_FILE)).is_ok_and(|t| t.trim() == crate::gpu::gpu_key(version))
 }
 
 /// Words for the user from what the speech helper said (matched on the kind of error). The error's own text goes
@@ -211,7 +211,7 @@ mod tests {
     fn config_carries_talaans_settings() {
         let c = config(Path::new("/app"), Path::new("/data"), "1.2.3");
         assert_eq!(c.gpu_failures, Some(Path::new("/data").join("gpu-stt-failures")));
-        assert_eq!(c.gpu_key, "1.2.3");
+        assert_eq!(c.gpu_key, crate::gpu::gpu_key("1.2.3"));
         assert!(c.env.is_empty());
         assert_eq!(c.gpu_env, vec![("VK_LOADER_LAYERS_DISABLE".to_string(), "~implicit~".to_string())]);
         assert_eq!(c.limits.stall, Duration::from_secs(600));
@@ -223,7 +223,7 @@ mod tests {
     fn a_remembered_card_failure_counts_only_for_its_version() {
         let data = tempfile::tempdir().unwrap();
         assert!(!stt_card_failed(data.path(), "1.2.3"));
-        std::fs::write(data.path().join(FAILURES_FILE), "1.2.3").unwrap();
+        std::fs::write(data.path().join(FAILURES_FILE), crate::gpu::gpu_key("1.2.3")).unwrap();
         assert!(stt_card_failed(data.path(), "1.2.3"));
         assert!(!stt_card_failed(data.path(), "1.2.4"));
     }
