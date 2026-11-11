@@ -3,7 +3,12 @@
 ## 1.2.1 (unreleased)
 
 **Fixes**
+- **Stop means stop for call apps set to Always:** pressing Stop during a call no longer starts a new recording a second later. Talaan records that app automatically again on its next call.
+- **A graphics driver update gives the card another chance (Windows):** if the graphics card failed before, Talaan tries it again after the driver is updated.
+- **No Dock icon when Talaan opens at login (Mac):** it stays in the menu bar until you open the window.
 - **Stricter security for the app window:** Talaan's windows can now load only Talaan's own files, so nothing from the internet can run inside the app.
+
+## 1.2.0 (2026-11-02)
 
 ## 1.2.0 (2026-10-31)
 
@@ -26,6 +31,7 @@
 
 **Easier to use**
 - **Keyboard focus stays inside dialogs:** Tab no longer wanders to the window behind, Escape closes only the top dialog, and focus returns to where you were.
+- **Open at login stays out of the way:** Talaan now starts in the menu bar or system tray with the window closed, instead of opening the window. Call detection is ready as soon as you log in.
 
 ## 1.1.1 (2026-10-19)
 

@@ -3034,6 +3034,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "num_cpus"
+version = "1.17.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "91df4bbde75afed763b708b7eee1e8e7651e02d97f6d5dd763e89367e957b23b"
+dependencies = [
+ "hermit-abi",
+ "libc",
+]
+
+[[package]]
 name = "num_enum"
 version = "0.7.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6436,8 +6446,8 @@ dependencies = [
 
 [[package]]
 name = "voice-engine-client"
-version = "0.3.0"
-source = "git+https://github.com/mmnzns/voice-engine?tag=v0.3.0#d91005dc9e84da87d69e113217f170f416c8ecec"
+version = "0.3.3"
+source = "git+https://github.com/mmnzns/voice-engine?tag=v0.3.3#f5ea4ecc3f41163111cc067535dfc060e2e8292d"
 dependencies = [
  "reqwest 0.12.28",
  "serde_json",
@@ -6446,18 +6456,19 @@ dependencies = [
 
 [[package]]
 name = "voice-engine-llm"
-version = "0.3.0"
-source = "git+https://github.com/mmnzns/voice-engine?tag=v0.3.0#d91005dc9e84da87d69e113217f170f416c8ecec"
+version = "0.3.3"
+source = "git+https://github.com/mmnzns/voice-engine?tag=v0.3.3#f5ea4ecc3f41163111cc067535dfc060e2e8292d"
 dependencies = [
  "llama-cpp-2",
+ "num_cpus",
  "serde_json",
  "voice-engine-protocol",
 ]
 
 [[package]]
 name = "voice-engine-models"
-version = "0.3.0"
-source = "git+https://github.com/mmnzns/voice-engine?tag=v0.3.0#d91005dc9e84da87d69e113217f170f416c8ecec"
+version = "0.3.3"
+source = "git+https://github.com/mmnzns/voice-engine?tag=v0.3.3#f5ea4ecc3f41163111cc067535dfc060e2e8292d"
 dependencies = [
  "dirs 7.0.0",
  "reqwest 0.12.28",
@@ -6466,8 +6477,8 @@ dependencies = [
 
 [[package]]
 name = "voice-engine-protocol"
-version = "0.3.0"
-source = "git+https://github.com/mmnzns/voice-engine?tag=v0.3.0#d91005dc9e84da87d69e113217f170f416c8ecec"
+version = "0.3.3"
+source = "git+https://github.com/mmnzns/voice-engine?tag=v0.3.3#f5ea4ecc3f41163111cc067535dfc060e2e8292d"
 dependencies = [
  "base64 0.22.1",
  "serde",
@@ -6476,8 +6487,8 @@ dependencies = [
 
 [[package]]
 name = "voice-engine-stt"
-version = "0.3.0"
-source = "git+https://github.com/mmnzns/voice-engine?tag=v0.3.0#d91005dc9e84da87d69e113217f170f416c8ecec"
+version = "0.3.3"
+source = "git+https://github.com/mmnzns/voice-engine?tag=v0.3.3#f5ea4ecc3f41163111cc067535dfc060e2e8292d"
 dependencies = [
  "ort",
  "parakeet-rs",

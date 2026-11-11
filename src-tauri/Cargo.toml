@@ -37,10 +37,10 @@ dirs = "7.0.0"
 rand = "0.10.3"
 thiserror = "2.0.21"
 # The shared engine (docs/plans/2026-10-30-engine-v0.2.2.md). The old speech and AI code stays until the later tasks remove it.
-voice-engine-protocol = { git = "https://github.com/mmnzns/voice-engine", tag = "v0.3.0" }
-voice-engine-models = { git = "https://github.com/mmnzns/voice-engine", tag = "v0.3.0" }
-voice-engine-client = { git = "https://github.com/mmnzns/voice-engine", tag = "v0.3.0" }
-voice-engine-stt = { git = "https://github.com/mmnzns/voice-engine", tag = "v0.3.0" }
+voice-engine-protocol = { git = "https://github.com/mmnzns/voice-engine", tag = "v0.3.3" }
+voice-engine-models = { git = "https://github.com/mmnzns/voice-engine", tag = "v0.3.3" }
+voice-engine-client = { git = "https://github.com/mmnzns/voice-engine", tag = "v0.3.3" }
+voice-engine-stt = { git = "https://github.com/mmnzns/voice-engine", tag = "v0.3.3" }
 cpal = "0.18.2"
 rtrb = "0.4.0"
 rubato = "5.0.1"
@@ -88,7 +88,7 @@ objc2-event-kit = "0.3.2"
 [target.'cfg(target_os = "windows")'.dependencies]
 keyring = { version = "3.6.3", features = ["windows-native"] }
 # Parakeet on the PC's discrete card, in Talaan's own process, and discrete_card() for the graphics card default.
-voice-engine-stt = { git = "https://github.com/mmnzns/voice-engine", tag = "v0.3.0", features = ["directml"] }
+voice-engine-stt = { git = "https://github.com/mmnzns/voice-engine", tag = "v0.3.3", features = ["directml"] }
 wasapi = "0.26.0"
 winreg = "0.56.0"
 windows = { version = "0.62", features = [

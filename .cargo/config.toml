@@ -1,4 +1,4 @@
-# voice-engine's build settings, copied from its README ("Build settings an app must copy", v0.3.0; unchanged since v0.2.2). A git dependency
+# voice-engine's build settings, copied from its README ("Build settings an app must copy", v0.3.3; unchanged since v0.2.2). A git dependency
 # never gets the engine's own .cargo/config.toml. This file sits at the repo root so cargo finds it both from the root
 # (CI: --manifest-path src-tauri/Cargo.toml) and from src-tauri (tauri build).
 # cmake-rs strips /O flags from CMAKE_<LANG>_FLAGS_RELEASE under the Visual Studio generator (whisper.cpp and llama.cpp
