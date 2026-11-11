@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.2.1 (unreleased)
+
+**Fixes**
+- **Stop means stop for call apps set to Always:** pressing Stop during a call no longer starts a new recording a second later. Talaan records that app automatically again on its next call.
+
 ## 1.2.0 (2026-11-02)
 
 **Models and speed**
