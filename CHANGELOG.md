@@ -3,6 +3,7 @@
 ## 1.2.1 (unreleased)
 
 **Fixes**
+- **Stop means stop for call apps set to Always:** pressing Stop during a call no longer starts a new recording a second later. Talaan records that app automatically again on its next call.
 - **A graphics driver update gives the card another chance (Windows):** if the graphics card failed before, Talaan tries it again after the driver is updated.
 - **No Dock icon when Talaan opens at login (Mac):** it stays in the menu bar until you open the window.
 
