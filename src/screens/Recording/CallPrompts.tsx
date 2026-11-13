@@ -93,6 +93,26 @@ export function AlwaysBanner({ app = "Zoom", elapsedMs, onStop, onChangeRule }: 
   );
 }
 
+/** An automatic start (an app set to Always) that failed. `message` is Rust's sentence, already in the app language. */
+export function StartFailedPrompt({ app = "Zoom", message, onDismiss }: { app?: string; message: string; onDismiss: () => void }) {
+  const t = useT();
+  return (
+    <div role="alertdialog" aria-label={t("recording.startFailedTitle")} className={card}>
+      <SunCorner size={96} className="absolute right-0 top-0" />
+      <div className="relative flex flex-col gap-2 px-[22px] py-5">
+        <Label className="normal-case">{app}</Label>
+        <span className="font-display text-xl font-bold leading-6 tracking-[-0.02em]">{t("recording.startFailedTitle")}</span>
+        <span className="text-xs leading-[17px] text-subtle">{message}</span>
+        <div className="mt-2.5 flex gap-2">
+          <Button variant="primary" onClick={onDismiss}>
+            {t("recording.dismiss")}
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /** "Call ended. Stop recording?" with a 30 second auto-stop. */
 export function CallEndedPrompt({
   app = "Zoom",

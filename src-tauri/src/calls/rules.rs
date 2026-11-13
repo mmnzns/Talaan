@@ -71,6 +71,15 @@ impl Detector {
         self.kept = false;
     }
 
+    /// Starting the recording for `app` failed after `AutoStart` (or an accepted nudge): forget the call, and leave
+    /// the app alone until it lets go of the mic, so it isn't retried every second.
+    pub fn start_failed(&mut self, app: &str) {
+        if self.recording_app.as_deref() == Some(app) {
+            self.recording_app = None;
+        }
+        self.dismissed.insert(app.to_string());
+    }
+
     pub fn dismissed(&mut self, app: &str) {
         self.dismissed.insert(app.to_string());
         if self.nudged.as_deref() == Some(app) {
@@ -289,6 +298,20 @@ mod tests {
         // Next call in Slack asks again.
         s.run(1, &[]);
         assert_eq!(s.run(3, &["slack"]), vec![nudge("slack")]);
+    }
+
+    #[test]
+    fn a_failed_automatic_start_is_not_retried_until_the_next_call() {
+        let mut s = Sim::new();
+        assert_eq!(s.run(3, &["zoom"]), vec![Action::AutoStart { app: "zoom".into() }]);
+        // The start failed: Talaan isn't recording.
+        s.recording = false;
+        s.d.start_failed("zoom");
+        assert!(s.run(30, &["zoom"]).is_empty(), "no second AutoStart while Zoom keeps the mic");
+        assert!(!s.recording);
+        // Zoom lets go; the next call starts automatically again.
+        assert!(s.run(5, &[]).is_empty());
+        assert_eq!(s.run(3, &["zoom"]), vec![Action::AutoStart { app: "zoom".into() }]);
     }
 
     #[test]

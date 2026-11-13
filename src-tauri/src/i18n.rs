@@ -395,6 +395,14 @@ const TABLE: &[(&str, &str, &str, &str)] = &[
         "Talaan installe une mise à jour et redémarre dans un instant. Enregistrez ensuite.",
         "Talaan está instalando una actualización y se reinicia en un momento. Graba después.",
     ),
+    // Call detection (an automatic start that failed)
+    (
+        "calls.start_failed",
+        "Talaan couldn't start recording {app}: {reason}. Press Record to try again.",
+        "Talaan n’a pas pu démarrer l’enregistrement de {app} : {reason}. Appuyez sur Enregistrer pour réessayer.",
+        "Talaan no pudo empezar a grabar {app}: {reason}. Pulsa Grabar para intentarlo de nuevo.",
+    ),
+    ("calls.start_failed_reason", "something went wrong", "une erreur s’est produite", "algo salió mal"),
     ("recorder.already_recording", "Already recording", "Enregistrement déjà en cours", "Ya se está grabando"),
     ("recorder.not_recording", "Not recording", "Aucun enregistrement en cours", "No se está grabando"),
     ("recorder.no_mic_found", "No microphone found", "Aucun microphone trouvé", "No se encontró ningún micrófono"),

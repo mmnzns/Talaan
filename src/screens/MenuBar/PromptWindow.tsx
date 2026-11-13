@@ -5,14 +5,16 @@ import { onEvent } from "../../data/tauri/invoke";
 import { useRecorder } from "../../data/useRecorder";
 import { useFitWindow, useTransparentPage } from "../../lib/floatingWindow";
 import { openSettings } from "../../lib/windows";
-import { AlwaysBanner, CallEndedPrompt, Nudge } from "../Recording/CallPrompts";
+import { AlwaysBanner, CallEndedPrompt, Nudge, StartFailedPrompt } from "../Recording/CallPrompts";
 import { useSettings } from "../../data/hooks";
 
 interface Prompt {
-  kind: "nudge" | "banner" | "ended";
+  kind: "nudge" | "banner" | "ended" | "failed";
   app: string;
   label: string;
   deadline?: number;
+  /** "failed": what went wrong, in the app language. */
+  message?: string;
 }
 
 /** The floating call prompt window (`#/prompt`): Record this call?, Recording [app], Call ended. */
@@ -36,6 +38,12 @@ export function PromptWindow() {
     void invoke<Prompt | null>("calls_prompt").then(setPrompt);
     return onEvent<Prompt | null>("call-prompt", setPrompt);
   }, []);
+
+  // A failed automatic start is answered by pressing Record anywhere: once recording, it has nothing left to say.
+  const recording = rec.state.state !== "idle";
+  useEffect(() => {
+    if (prompt?.kind === "failed" && recording) void invoke("calls_hide");
+  }, [prompt?.kind, recording]);
 
   if (!prompt) return null;
   const stop = () => void invoke("calls_stop").catch(() => {});
@@ -62,6 +70,7 @@ export function PromptWindow() {
           }}
         />
       )}
+      {prompt.kind === "failed" && <StartFailedPrompt app={prompt.label} message={prompt.message ?? ""} onDismiss={() => void invoke("calls_hide")} />}
       {prompt.kind === "ended" && (
         <CallEndedPrompt
           key={prompt.deadline}
