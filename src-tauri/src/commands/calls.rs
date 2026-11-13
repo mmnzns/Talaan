@@ -228,7 +228,9 @@ fn run(app: &AppHandle, action: Action) {
         }
         Action::CallEnded { app: id } => show_prompt(app, Prompt { kind: "ended", label: label_of(&id), app: id, deadline: Some(epoch_ms() + COUNTDOWN_MS) }),
         Action::AutoStop => {
-            let _ = stop_recording(app);
+            if let Err(e) = stop_recording(app) {
+                log::warn!("couldn't save the recording when the call ended: {}", e.for_log());
+            }
             hide_prompt(app);
         }
     }

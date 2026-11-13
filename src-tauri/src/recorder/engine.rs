@@ -231,27 +231,43 @@ impl Engine {
         Some((a.session, elapsed))
     }
 
-    /// Finishes the recording and marks the meeting ready. Returns its id.
+    /// Finishes the recording and marks the meeting ready. Returns its id. The sources are already shut down when
+    /// the final save fails, so the meeting is left in needs_recovery (see `save_finished`) and the error is returned.
     pub fn stop(&mut self, storage: &Storage, now_ns: u64) -> Result<String, String> {
         let (session, _) = self.shutdown(now_ns).ok_or_else(|| crate::i18n::tr("recorder.not_recording"))?;
         let s = session.lock().unwrap_or_else(|e| e.into_inner());
-        storage
-            .update_meeting_file(&s.meeting_id, |f| {
-                s.apply(f, now_ns);
-                // The transcriber picks it up from here.
-                f.status = MeetingStatus::Transcribing;
-                f.progress = Some(0.0);
-            })
-            .map_err(|e| e.to_string())?;
+        save_finished(|status| {
+            storage
+                .update_meeting_file(&s.meeting_id, |f| {
+                    s.apply(f, now_ns);
+                    f.progress = (status == MeetingStatus::Transcribing).then_some(0.0);
+                    // Transcribing: the transcriber picks it up from here.
+                    f.status = status;
+                })
+                .map_err(|e| e.to_string())
+        })?;
         Ok(s.meeting_id.clone())
     }
 
-    /// Stops and deletes everything recorded.
+    /// Stops and deletes everything recorded. If the folder can't be removed, what is left is marked
+    /// needs_recovery rather than "recording" (the sources are already off), and the error is returned.
     pub fn discard(&mut self, storage: &Storage, now_ns: u64) -> Result<(), String> {
         let (session, _) = self.shutdown(now_ns).ok_or_else(|| crate::i18n::tr("recorder.not_recording"))?;
         let id = session.lock().unwrap_or_else(|e| e.into_inner()).meeting_id.clone();
-        storage.delete_meeting(&id).map_err(|e| e.to_string())
+        storage.delete_meeting(&id).map_err(|e| {
+            let _ = storage.set_status(&id, MeetingStatus::NeedsRecovery);
+            e.to_string()
+        })
     }
+}
+
+/// Writes the finished meeting.json through `write`, which sets the status it is given. A failed write is tried
+/// once more; if that fails too the meeting goes to needs_recovery (the audio is closed and safe, and launch
+/// already offers Recover) instead of staying "recording" with nothing running. The first error is returned.
+fn save_finished(mut write: impl FnMut(MeetingStatus) -> Result<(), String>) -> Result<(), String> {
+    write(MeetingStatus::Transcribing).or_else(|_| write(MeetingStatus::Transcribing)).inspect_err(|_| {
+        let _ = write(MeetingStatus::NeedsRecovery);
+    })
 }
 
 #[cfg(test)]
@@ -322,6 +338,43 @@ pub(crate) mod tests {
     }
 
     const MS: u64 = 1_000_000;
+
+    #[test]
+    fn a_failed_final_save_is_tried_again_then_left_recoverable() {
+        let mut tried = Vec::new();
+        let r = save_finished(|status| {
+            tried.push(status);
+            if tried.len() == 1 { Err("disk busy".into()) } else { Ok(()) }
+        });
+        assert_eq!(r, Ok(()), "the retry worked");
+        assert_eq!(tried, [MeetingStatus::Transcribing, MeetingStatus::Transcribing]);
+
+        let mut tried = Vec::new();
+        let r = save_finished(|status| {
+            tried.push(status);
+            if status == MeetingStatus::NeedsRecovery { Ok(()) } else { Err("disk full".into()) }
+        });
+        assert_eq!(r, Err("disk full".into()), "the caller still hears about it");
+        assert_eq!(tried, [MeetingStatus::Transcribing, MeetingStatus::Transcribing, MeetingStatus::NeedsRecovery]);
+    }
+
+    #[test]
+    fn a_stop_that_cannot_save_still_ends_the_recording() {
+        let (_d, storage) = storage();
+        let mut e = Engine::default();
+        let (mic, _me) = fake(false);
+        let (sys, _them) = fake(false);
+        e.start(&storage, "other", "Call", mic, sys, 0, at()).unwrap();
+        let id = e.status(0).meeting_id.unwrap();
+        // meeting.json can't be read back: the final save fails.
+        let json = storage.dir(&id).unwrap().join("meeting.json");
+        std::fs::remove_file(&json).unwrap();
+        std::fs::create_dir(&json).unwrap();
+        assert!(e.stop(&storage, 100 * MS).is_err());
+        assert!(!e.is_active());
+        assert_eq!(e.status(0).state, "idle");
+    }
+
 
     /// Pushes 10 ms buffers of 16 kHz audio from `from_ms` to `to_ms` (host time).
     pub fn push(h: &Handle, from_ms: u64, to_ms: u64, value: f32) {
