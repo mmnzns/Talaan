@@ -23,7 +23,8 @@ pub fn settings_set(app: AppHandle, state: State<AppState>, models: State<Arc<Mo
     let renamed = storage.your_name() != name_before;
     crate::logging::set_your_name(storage.your_name());
     // A changed retention setting takes effect right away.
-    let report = storage.apply_retention(chrono::Utc::now())?;
+    // The setting is already saved: a pass that can't run is logged, not an error for the Save.
+    let report = storage.apply_retention(chrono::Utc::now()).inspect_err(|e| log::warn!("couldn't apply retention: {}", e.for_log())).unwrap_or_default();
     drop(storage);
     // A model the new settings point to that another app installed: Talaan uses it from now on.
     models.claim(Some(&claim));

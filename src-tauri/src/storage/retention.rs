@@ -11,6 +11,7 @@ use super::paths::{is_valid_id, meetings_dir, ME_WAV, META, PLAYBACK_WAV, THEM_W
 use super::{Result, Storage};
 use chrono::{DateTime, Duration, Utc};
 use std::fs;
+use std::path::Path;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum AudioPolicy {
@@ -65,60 +66,84 @@ impl Policy {
 pub struct RetentionReport {
     pub audio_deleted: Vec<String>,
     pub meetings_deleted: Vec<String>,
+    /// Meetings the pass couldn't finish (a locked file, a failed write); each is logged and the pass went on.
+    pub errors: usize,
 }
 
 impl Storage {
+    /// Deletes what the policy says is expired. One meeting that can't be processed (a sync client or antivirus
+    /// holding a file, say) is logged by id and skipped; only an unreadable meetings folder is an error.
     pub fn apply_retention(&self, now: DateTime<Utc>) -> Result<RetentionReport> {
+        self.retention_pass(now)
+    }
+
+    fn retention_pass(&self, now: DateTime<Utc>) -> Result<RetentionReport> {
         let mut report = RetentionReport::default();
         for entry in fs::read_dir(meetings_dir(&self.root))? {
-            let entry = entry?;
-            let id = entry.file_name().to_string_lossy().to_string();
-            if !entry.file_type()?.is_dir() || !is_valid_id(&id) {
-                continue;
-            }
-            let Ok(mut file) = self.read_meeting_file(&id) else { continue };
-            let busy = matches!(file.status, MeetingStatus::Recording | MeetingStatus::NeedsRecovery | MeetingStatus::Transcribing | MeetingStatus::Summarizing);
-            if file.pinned || busy {
-                continue;
-            }
-            let Ok(started) = DateTime::parse_from_rfc3339(&file.started_at) else { continue };
-            // An import is as old as the day it came in, not the day the audio was recorded.
-            let came_in = file.imported_at.as_deref().and_then(|t| DateTime::parse_from_rfc3339(t).ok()).map_or(started, |i| started.max(i));
-            let age_ends = |days: u32| came_in.with_timezone(&Utc) + Duration::days(days as i64) <= now;
-
-            if let TranscriptPolicy::Days(d) = self.policy.transcripts {
-                if age_ends(d) {
-                    fs::remove_dir_all(entry.path())?;
-                    report.meetings_deleted.push(id);
+            let entry = match entry {
+                Ok(e) => e,
+                Err(e) => {
+                    let kind = e.kind();
+                    log::warn!("retention: couldn't read a meetings folder entry ({kind})");
+                    report.errors += 1;
                     continue;
                 }
-            }
-
-            let expired = match self.policy.audio {
-                AudioPolicy::Forever => false,
-                // Audio that has no transcript yet (a failed first try waiting for a model) is the only way to make one.
-                AudioPolicy::Days(d) => age_ends(d) && file.status != MeetingStatus::Failed && entry.path().join(TRANSCRIPT).exists(),
-                AudioPolicy::Never => file.status != MeetingStatus::Failed,
             };
-            if expired && !file.audio_deleted {
-                let mut removed = false;
-                for name in [ME_WAV, THEM_WAV, PLAYBACK_WAV] {
-                    match fs::remove_file(entry.path().join(name)) {
-                        Ok(()) => removed = true,
-                        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
-                        Err(e) => return Err(e.into()),
-                    }
-                }
-                file.audio_deleted = true;
-                write_json_atomic(&entry.path().join(META), &file)?;
-                if removed {
-                    report.audio_deleted.push(id);
-                }
+            let id = entry.file_name().to_string_lossy().to_string();
+            if !entry.file_type().is_ok_and(|t| t.is_dir()) || !is_valid_id(&id) {
+                continue;
+            }
+            if let Err(e) = self.retain_meeting(&entry.path(), &id, now, &mut report) {
+                log::warn!("retention: skipped meeting {id}: {}", e.for_log());
+                report.errors += 1;
             }
         }
         report.audio_deleted.sort();
         report.meetings_deleted.sort();
         Ok(report)
+    }
+
+    fn retain_meeting(&self, dir: &Path, id: &str, now: DateTime<Utc>, report: &mut RetentionReport) -> Result<()> {
+        let Ok(mut file) = self.read_meeting_file(id) else { return Ok(()) };
+        let busy = matches!(file.status, MeetingStatus::Recording | MeetingStatus::NeedsRecovery | MeetingStatus::Transcribing | MeetingStatus::Summarizing);
+        if file.pinned || busy {
+            return Ok(());
+        }
+        let Ok(started) = DateTime::parse_from_rfc3339(&file.started_at) else { return Ok(()) };
+        // An import is as old as the day it came in, not the day the audio was recorded.
+        let came_in = file.imported_at.as_deref().and_then(|t| DateTime::parse_from_rfc3339(t).ok()).map_or(started, |i| started.max(i));
+        let age_ends = |days: u32| came_in.with_timezone(&Utc) + Duration::days(days as i64) <= now;
+
+        if let TranscriptPolicy::Days(d) = self.policy.transcripts {
+            if age_ends(d) {
+                fs::remove_dir_all(dir)?;
+                report.meetings_deleted.push(id.to_string());
+                return Ok(());
+            }
+        }
+
+        let expired = match self.policy.audio {
+            AudioPolicy::Forever => false,
+            // Audio that has no transcript yet (a failed first try waiting for a model) is the only way to make one.
+            AudioPolicy::Days(d) => age_ends(d) && file.status != MeetingStatus::Failed && dir.join(TRANSCRIPT).exists(),
+            AudioPolicy::Never => file.status != MeetingStatus::Failed,
+        };
+        if expired && !file.audio_deleted {
+            let mut removed = false;
+            for name in [ME_WAV, THEM_WAV, PLAYBACK_WAV] {
+                match fs::remove_file(dir.join(name)) {
+                    Ok(()) => removed = true,
+                    Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+                    Err(e) => return Err(e.into()),
+                }
+            }
+            file.audio_deleted = true;
+            write_json_atomic(&dir.join(META), &file)?;
+            if removed {
+                report.audio_deleted.push(id.to_string());
+            }
+        }
+        Ok(())
     }
 }
 
@@ -343,5 +368,48 @@ mod pass_tests {
         s.set_status(&failed, MeetingStatus::Ready).unwrap();
         s.save_transcript(&failed, &[]).unwrap();
         assert_eq!(s.apply_retention(now()).unwrap().audio_deleted, vec![failed]);
+    }
+
+    /// Makes a meeting folder read-only so deleting anything in it fails (Unix); the guard restores it.
+    #[cfg(unix)]
+    struct Locked(PathBuf);
+    #[cfg(unix)]
+    impl Locked {
+        fn new(dir: &Path) -> Self {
+            use std::os::unix::fs::PermissionsExt;
+            fs::set_permissions(dir, fs::Permissions::from_mode(0o555)).unwrap();
+            Locked(dir.to_path_buf())
+        }
+    }
+    #[cfg(unix)]
+    impl Drop for Locked {
+        fn drop(&mut self) {
+            use std::os::unix::fs::PermissionsExt;
+            let _ = fs::set_permissions(&self.0, fs::Permissions::from_mode(0o755));
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_meeting_that_cant_be_processed_does_not_stop_the_others() {
+        let (_d, mut s) = storage();
+        s.set_policy(policy("7d", "90d"));
+        let (_stuck_old, stuck_old_dir) = meeting(&s, 120);
+        let (old, old_dir) = meeting(&s, 120);
+        let (stuck_audio, stuck_audio_dir) = meeting(&s, 30);
+        s.save_transcript(&stuck_audio, &[]).unwrap();
+        let (aged, aged_dir) = meeting(&s, 30);
+        s.save_transcript(&aged, &[]).unwrap();
+        let _locks = [Locked::new(&stuck_old_dir), Locked::new(&stuck_audio_dir)];
+        // Where the OS ignores permissions (running as root) there is nothing to force a failure with.
+        if fs::File::create(stuck_audio_dir.join("probe")).is_ok() {
+            return;
+        }
+        let r = s.apply_retention(now()).unwrap();
+        assert_eq!(r.errors, 2);
+        assert_eq!(r.meetings_deleted, vec![old]);
+        assert_eq!(r.audio_deleted, vec![aged]);
+        assert!(!old_dir.exists() && !aged_dir.join(ME_WAV).exists());
+        assert!(stuck_old_dir.exists() && stuck_audio_dir.join(ME_WAV).exists());
     }
 }

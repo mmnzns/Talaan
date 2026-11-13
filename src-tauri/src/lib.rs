@@ -85,9 +85,10 @@ pub fn run() {
                 let mut store = storage::Storage::new(root.clone())?;
                 store.load_policy()?;
                 commands::calendar::remove_legacy_address(&mut store);
-                // Anything still marked "recording" was interrupted; expired audio goes now.
-                store.scan_for_interrupted()?;
-                store.apply_retention(chrono::Utc::now())?;
+                // Anything still marked "recording" was interrupted; expired audio goes now. Neither may keep Talaan
+                // from opening: a folder that can't be read is logged and the next launch tries again.
+                store.scan_for_interrupted().inspect_err(|e| log::warn!("couldn't scan for interrupted meetings: {}", e.for_log())).ok();
+                store.apply_retention(chrono::Utc::now()).inspect_err(|e| log::warn!("couldn't apply retention at launch: {}", e.for_log())).ok();
                 Ok(store)
             };
             let mut store = started().inspect_err(|e| log::error!("couldn't open the data folder: {}", e.for_log()))?;
