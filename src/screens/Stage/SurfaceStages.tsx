@@ -7,7 +7,7 @@ import { openSettings } from "../../lib/windows";
 import { Button, Label, Switch, useToast } from "../../ui";
 import { MenuBarPopover } from "../Recording/MenuBarPopover";
 import { RecordingPopover } from "../Recording/RecordingPopover";
-import { AlwaysBanner, CallEndedPrompt, Nudge } from "../Recording/CallPrompts";
+import { AlwaysBanner, CallEndedPrompt, Nudge, StartFailedPrompt } from "../Recording/CallPrompts";
 
 function Caption({ title, note }: { title: string; note: string }) {
   return (
@@ -147,6 +147,9 @@ export function PromptsStage() {
       </Frame>
       <Frame label="Always · the app is set to record automatically">
         <AlwaysBanner onStop={() => toast("Stopped and saved")} onChangeRule={() => openSettings("apps")} />
+      </Frame>
+      <Frame label="Always · the automatic start failed">
+        <StartFailedPrompt message="Talaan couldn't start recording Zoom: No microphone found. Press Record to try again." onDismiss={() => toast("Dismissed")} />
       </Frame>
       <Frame label="Call ended · auto-stops after 30 seconds">
         <CallEndedPrompt onStop={() => toast("Stopped and saved")} onKeep={() => toast("Still recording")} />

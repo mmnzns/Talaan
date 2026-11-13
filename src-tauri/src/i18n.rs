@@ -158,6 +158,12 @@ const TABLE: &[(&str, &str, &str, &str)] = &[
         "Talaan no pudo escribir su archivo de registro en esta computadora, así que no hay carpeta de registro que abrir.",
     ),
     ("error.save_file", "Couldn't save the file: {error}", "Impossible d’enregistrer le fichier : {error}", "No se pudo guardar el archivo: {error}"),
+    (
+        "error.delete_recording",
+        "Stop the recording before deleting this meeting.",
+        "Arrêtez l’enregistrement avant de supprimer cette réunion.",
+        "Detén la grabación antes de eliminar esta reunión.",
+    ),
     ("error.wait_meeting", "Wait for this meeting to finish first.", "Attendez d’abord que cette réunion soit terminée.", "Primero espera a que termine esta reunión."),
     (
         "error.audio_gone",
@@ -389,6 +395,14 @@ const TABLE: &[(&str, &str, &str, &str)] = &[
         "Talaan installe une mise à jour et redémarre dans un instant. Enregistrez ensuite.",
         "Talaan está instalando una actualización y se reinicia en un momento. Graba después.",
     ),
+    // Call detection (an automatic start that failed)
+    (
+        "calls.start_failed",
+        "Talaan couldn't start recording {app}: {reason}. Press Record to try again.",
+        "Talaan n’a pas pu démarrer l’enregistrement de {app} : {reason}. Appuyez sur Enregistrer pour réessayer.",
+        "Talaan no pudo empezar a grabar {app}: {reason}. Presiona Grabar para intentarlo de nuevo.",
+    ),
+    ("calls.start_failed_reason", "something went wrong", "une erreur s’est produite", "algo salió mal"),
     ("recorder.already_recording", "Already recording", "Enregistrement déjà en cours", "Ya se está grabando"),
     ("recorder.not_recording", "Not recording", "Aucun enregistrement en cours", "No se está grabando"),
     ("recorder.no_mic_found", "No microphone found", "Aucun microphone trouvé", "No se encontró ningún micrófono"),

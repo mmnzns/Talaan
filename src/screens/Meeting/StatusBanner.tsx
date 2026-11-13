@@ -15,7 +15,7 @@ export function StatusBanner({ meeting }: { meeting: Meeting }) {
   const run = (p: Promise<void>) => p.catch((e) => toast(describeError(e)));
   const leave = async () => {
     navigate(routes.meetings());
-    await store.deleteMeeting(meeting.id);
+    await store.deleteMeeting(meeting.id).catch((e) => toast(describeError(e)));
   };
 
   if (meeting.status === "needs_recovery") {

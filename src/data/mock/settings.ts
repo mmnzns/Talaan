@@ -277,6 +277,10 @@ export class MockSettingsStore implements SettingsStore {
     return { path: "~/Library/Application Support/Talaan", bytes: 1_200_000_000 };
   }
 
+  async retentionPreview() {
+    return { audio: 0, meetings: 0 };
+  }
+
   async revealData(): Promise<void> {}
 
   async deleteAllData(): Promise<void> {

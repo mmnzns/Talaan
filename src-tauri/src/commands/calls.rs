@@ -18,13 +18,16 @@ pub const PROMPT_EVENT: &str = "call-prompt";
 #[derive(Serialize, Clone, Debug, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct Prompt {
-    /// "nudge" | "banner" | "ended"
+    /// "nudge" | "banner" | "ended" | "failed"
     pub kind: &'static str,
     pub app: String,
     pub label: String,
     /// For "ended": when the countdown stops the recording (ms since the Unix epoch).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub deadline: Option<u64>,
+    /// For "failed": what went wrong, in the app language (the prompt shows it as is).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub message: Option<String>,
 }
 
 pub struct CallsState {
@@ -134,8 +137,21 @@ fn size_of(kind: &str) -> (f64, f64) {
     match kind {
         "banner" => (420.0, 96.0),
         "ended" => (380.0, 168.0),
+        "failed" => (420.0, 150.0),
         _ => (380.0, 148.0),
     }
+}
+
+/// "Talaan couldn't start recording {app}: {reason}. Press Record to try again." The reason is the refusal's own
+/// words (translated, or an operating system detail left in English); anything else gets a general one.
+fn start_failed_message(lang: crate::i18n::Lang, app: &str, e: &crate::storage::StorageError) -> String {
+    use crate::i18n::tr_in;
+    use crate::storage::StorageError::{NotYetAvailable, Refused};
+    let reason = match e {
+        Refused(m) | NotYetAvailable(m) => m.trim().trim_end_matches('.').to_string(),
+        _ => tr_in(lang, "calls.start_failed_reason", &[]),
+    };
+    tr_in(lang, "calls.start_failed", &[("app", app), ("reason", &reason)])
 }
 
 fn show_prompt(app: &AppHandle, prompt: Prompt) {
@@ -217,18 +233,26 @@ fn run(app: &AppHandle, action: Action) {
         Action::Nudge { .. } | Action::AutoStart { .. } if super::updates::installing(app) => {
             log::info!("call detection: not recording, an update is installing");
         }
-        Action::Nudge { app: id } => show_prompt(app, Prompt { kind: "nudge", label: label_of(&id), app: id, deadline: None }),
+        Action::Nudge { app: id } => show_prompt(app, Prompt { kind: "nudge", label: label_of(&id), app: id, deadline: None, message: None }),
         Action::CloseNudge | Action::ClosePrompt => hide_prompt(app),
         Action::AutoStart { app: id } => {
             let label = label_of(&id);
             match start_recording(app, &id, &label) {
-                Ok(_) => show_prompt(app, Prompt { kind: "banner", app: id, label, deadline: None }),
-                Err(e) => log::warn!("couldn't start recording {id} automatically: {}", e.for_log()),
+                Ok(_) => show_prompt(app, Prompt { kind: "banner", app: id, label, deadline: None, message: None }),
+                Err(e) => {
+                    log::warn!("couldn't start recording {id} automatically: {}", e.for_log());
+                    // Not tried again until the app lets go of the mic, and the person is told (Record starts it by hand).
+                    app.state::<CallsState>().detector.lock().unwrap_or_else(|e| e.into_inner()).start_failed(&id);
+                    let message = Some(start_failed_message(crate::i18n::current(), &label, &e));
+                    show_prompt(app, Prompt { kind: "failed", app: id, label, deadline: None, message });
+                }
             }
         }
-        Action::CallEnded { app: id } => show_prompt(app, Prompt { kind: "ended", label: label_of(&id), app: id, deadline: Some(epoch_ms() + COUNTDOWN_MS) }),
+        Action::CallEnded { app: id } => show_prompt(app, Prompt { kind: "ended", label: label_of(&id), app: id, deadline: Some(epoch_ms() + COUNTDOWN_MS), message: None }),
         Action::AutoStop => {
-            let _ = stop_recording(app);
+            if let Err(e) = stop_recording(app) {
+                log::warn!("couldn't save the recording when the call ended: {}", e.for_log());
+            }
             hide_prompt(app);
         }
     }
@@ -378,7 +402,7 @@ pub fn calls_accept(app: AppHandle, state: State<CallsState>, app_id: String) ->
     log::info!("call detection: the user chose Record for {app_id}");
     let label = label_of(&app_id);
     start_recording(&app, &app_id, &label)?;
-    show_prompt(&app, Prompt { kind: "banner", app: app_id, label, deadline: None });
+    show_prompt(&app, Prompt { kind: "banner", app: app_id, label, deadline: None, message: None });
     Ok(())
 }
 
@@ -416,6 +440,20 @@ pub fn calls_hide(app: AppHandle) {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn a_failed_automatic_start_tells_the_app_and_the_reason_in_each_language() {
+        use crate::i18n::Lang;
+        use crate::storage::StorageError;
+        let refused = StorageError::Refused("No microphone found.".into());
+        assert_eq!(start_failed_message(Lang::En, "Zoom", &refused), "Talaan couldn't start recording Zoom: No microphone found. Press Record to try again.");
+        assert!(start_failed_message(Lang::Fr, "Zoom", &refused).contains("Zoom : No microphone found. "));
+        assert!(start_failed_message(Lang::Es, "Zoom", &refused).contains("Zoom: No microphone found. "));
+        let other = StorageError::InvalidId("x".into());
+        let en = start_failed_message(Lang::En, "Zoom", &other);
+        assert!(en.starts_with("Talaan couldn't start recording Zoom: ") && !en.contains("invalid id"), "{en}");
+        assert!(!start_failed_message(Lang::Es, "Zoom", &other).contains("couldn't"));
+    }
 
     #[test]
     fn a_browser_is_installed_when_any_candidate_exists() {

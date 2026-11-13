@@ -23,7 +23,8 @@ pub fn settings_set(app: AppHandle, state: State<AppState>, models: State<Arc<Mo
     let renamed = storage.your_name() != name_before;
     crate::logging::set_your_name(storage.your_name());
     // A changed retention setting takes effect right away.
-    let report = storage.apply_retention(chrono::Utc::now())?;
+    // The setting is already saved: a pass that can't run is logged, not an error for the Save.
+    let report = storage.apply_retention(chrono::Utc::now()).inspect_err(|e| log::warn!("couldn't apply retention: {}", e.for_log())).unwrap_or_default();
     drop(storage);
     // A model the new settings point to that another app installed: Talaan uses it from now on.
     models.claim(Some(&claim));
@@ -35,6 +36,20 @@ pub fn settings_set(app: AppHandle, state: State<AppState>, models: State<Arc<Mo
         notify(&app, MEETINGS_CHANGED);
     }
     Ok(())
+}
+
+/// What choosing these retention values would delete right now, for the Privacy tab's confirmation. Deletes nothing.
+#[derive(serde::Serialize)]
+pub struct RetentionPreview {
+    pub audio: usize,
+    pub meetings: usize,
+}
+
+#[tauri::command(async)]
+pub fn retention_preview(state: State<AppState>, audio: String, transcripts: String) -> CmdResult<RetentionPreview> {
+    let policy = crate::storage::retention::Policy::from_settings(&audio, &transcripts);
+    let report = state.lock().retention_preview(policy, chrono::Utc::now())?;
+    Ok(RetentionPreview { audio: report.audio_deleted.len(), meetings: report.meetings_deleted.len() })
 }
 
 /// Deletes everything, then quits (as the Privacy tab says). The next launch starts at onboarding.

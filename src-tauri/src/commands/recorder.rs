@@ -275,8 +275,22 @@ pub fn stop_recording(app: &AppHandle) -> CmdResult<String> {
     let mut engine = rec.lock();
     let storage = state.lock();
     let elapsed = engine.status(platform::host_now_ns()).elapsed_ms;
-    let id = engine.stop(&storage, platform::host_now_ns()).map_err(err)?;
+    let stopped = engine.stop(&storage, platform::host_now_ns());
     drop(engine);
+    let id = match stopped {
+        Ok(id) => id,
+        Err(e) => {
+            // The sources are off and the engine idle even when the final save failed (the meeting is left
+            // needs_recovery): every window has to hear that the recording is over, or they show it forever.
+            drop(storage);
+            log::warn!("recording stopped but couldn't be saved: {}", crate::logging::text(&e));
+            *rec.test.lock().unwrap_or_else(|e| e.into_inner()) = None;
+            notify(app, MEETINGS_CHANGED);
+            emit_state(app);
+            super::updates::recording_ended(app);
+            return Err(err(e));
+        }
+    };
     let transcriber = app.state::<super::transcriber::TranscriberState>();
     transcriber.stamp_estimate(&storage, &id);
     drop(storage);
@@ -304,15 +318,19 @@ pub fn is_recording(app: &AppHandle) -> bool {
 pub fn recorder_discard(app: AppHandle, state: State<AppState>, rec: State<RecorderState>) -> CmdResult<()> {
     let mut engine = rec.lock();
     let storage = state.lock();
-    engine.discard(&storage, platform::host_now_ns()).map_err(err)?;
+    let discarded = engine.discard(&storage, platform::host_now_ns());
     drop(storage);
     drop(engine);
     *rec.test.lock().unwrap_or_else(|e| e.into_inner()) = None;
-    log::info!("recording discarded");
+    match &discarded {
+        Ok(()) => log::info!("recording discarded"),
+        Err(e) => log::warn!("recording stopped but couldn't be deleted: {}", crate::logging::text(e)),
+    }
+    // Over either way: the sources are off, so the windows are told even when the folder couldn't be removed.
     notify(&app, MEETINGS_CHANGED);
     emit_state(&app);
     super::updates::recording_ended(&app);
-    Ok(())
+    discarded.map_err(err)
 }
 
 #[tauri::command(async)]

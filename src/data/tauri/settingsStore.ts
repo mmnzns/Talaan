@@ -1,5 +1,5 @@
 import { defaultSettings, withDefaults } from "../defaultSettings";
-import type { AutoSaveResult, AutoSaveStatus, BrowserState, ByokProvider, CalendarAccess, GpuStatus, LocalModel, NextMeeting, NotionDestination, Settings, SettingsStore, SpeechModel } from "../settings";
+import type { RetentionChoice, TranscriptRetention, AutoSaveResult, AutoSaveStatus, BrowserState, ByokProvider, CalendarAccess, GpuStatus, LocalModel, NextMeeting, NotionDestination, Settings, SettingsStore, SpeechModel } from "../settings";
 import { call, onEvent } from "./invoke";
 
 
@@ -217,6 +217,10 @@ export class TauriSettingsStore implements SettingsStore {
 
   dataInfo(): Promise<{ path: string; bytes: number }> {
     return call("data_info");
+  }
+
+  retentionPreview(audio: RetentionChoice, transcripts: TranscriptRetention): Promise<{ audio: number; meetings: number }> {
+    return call("retention_preview", { audio, transcripts });
   }
 
   revealData(): Promise<void> {

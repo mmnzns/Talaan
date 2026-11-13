@@ -70,6 +70,7 @@ impl Storage {
                         app: app.to_string(),
                         app_label: app_label.to_string(),
                         started_at: started_at.to_rfc3339(),
+                        imported_at: None,
                         duration_ms: 0,
                         language: "en".to_string(),
                         status: MeetingStatus::Recording,
