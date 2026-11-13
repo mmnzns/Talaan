@@ -246,6 +246,8 @@ export interface SettingsStore {
   retryGpu(): Promise<GpuStatus>;
   /** Where the data lives and how much space it uses. */
   dataInfo(): Promise<{ path: string; bytes: number }>;
+  /** What choosing these retention values would delete right now (nothing is deleted): meetings with audio that would go, and whole meetings. */
+  retentionPreview(audio: RetentionChoice, transcripts: TranscriptRetention): Promise<{ audio: number; meetings: number }>;
   /** Shows the data folder in the file manager. */
   revealData(): Promise<void>;
   /** "Delete all Talaan data": meetings, audio, models, settings and keys. */

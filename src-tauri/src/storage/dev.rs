@@ -45,6 +45,7 @@ impl Storage {
             app: m.item.app.clone(),
             app_label: m.item.app_label.clone(),
             started_at: m.item.started_at.clone(),
+            imported_at: None,
             duration_ms: m.item.duration_ms,
             language: m.language.clone(),
             status,

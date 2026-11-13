@@ -7,19 +7,22 @@ use std::fs;
 
 impl Storage {
     /// Flips every `recording` meeting to `needs_recovery` and returns their ids.
-    /// Nothing can legitimately be recording when the app starts. Unreadable meetings are skipped.
+    /// Nothing can legitimately be recording when the app starts. Unreadable meetings are skipped, and so is one
+    /// that can't be saved (logged by id): only an unreadable meetings folder is an error.
     pub fn scan_for_interrupted(&self) -> Result<Vec<String>> {
         let mut flipped = vec![];
         for entry in fs::read_dir(meetings_dir(&self.root))? {
-            let entry = entry?;
+            let Ok(entry) = entry else { continue };
             let id = entry.file_name().to_string_lossy().to_string();
-            if !entry.file_type()?.is_dir() || !is_valid_id(&id) {
+            if !entry.file_type().is_ok_and(|t| t.is_dir()) || !is_valid_id(&id) {
                 continue;
             }
             let Ok(file) = self.read_meeting_file(&id) else { continue };
             if file.status == MeetingStatus::Recording {
-                self.set_status(&id, MeetingStatus::NeedsRecovery)?;
-                flipped.push(id);
+                match self.set_status(&id, MeetingStatus::NeedsRecovery) {
+                    Ok(()) => flipped.push(id),
+                    Err(e) => log::warn!("recovery scan: couldn't mark meeting {id}: {}", e.for_log()),
+                }
             }
         }
         flipped.sort();
@@ -67,5 +70,26 @@ mod tests {
     fn an_empty_library_is_fine() {
         let (_d, s) = storage();
         assert!(s.scan_for_interrupted().unwrap().is_empty());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_meeting_that_cant_be_saved_does_not_stop_the_scan() {
+        use std::os::unix::fs::PermissionsExt;
+        let (_d, s) = storage();
+        let stuck = s.create_meeting("zoom", "Zoom", at("2026-10-14T09:00:00-07:00")).unwrap();
+        let other = s.create_meeting("zoom", "Zoom", at("2026-10-15T09:00:00-07:00")).unwrap();
+        let locked = s.dir(&stuck.id).unwrap();
+        fs::set_permissions(&locked, fs::Permissions::from_mode(0o555)).unwrap();
+        // Running as root ignores permissions: nothing to force a failure with.
+        let forced = fs::File::create(locked.join("probe")).is_err();
+        let result = s.scan_for_interrupted();
+        fs::set_permissions(&locked, fs::Permissions::from_mode(0o755)).unwrap();
+        if !forced {
+            return;
+        }
+        assert_eq!(result.unwrap(), vec![other.id.clone()]);
+        assert_eq!(s.get_meeting(&other.id).unwrap().item.status, MeetingStatus::NeedsRecovery);
+        assert_eq!(s.get_meeting(&stuck.id).unwrap().item.status, MeetingStatus::Recording);
     }
 }

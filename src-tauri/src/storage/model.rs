@@ -162,6 +162,10 @@ pub struct MeetingFile {
     pub app_label: String,
     /// RFC 3339 with the local offset.
     pub started_at: String,
+    /// RFC 3339: when an imported file came into Talaan. `started_at` is when it was recorded, so retention ages the
+    /// meeting from the later of the two. Absent on recorded meetings and on files from before this field.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub imported_at: Option<String>,
     #[serde(default)]
     pub duration_ms: u64,
     pub language: String,

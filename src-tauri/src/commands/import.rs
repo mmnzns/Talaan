@@ -65,6 +65,8 @@ pub fn meetings_import(app: AppHandle, path: String) -> CmdResult<()> {
             std::fs::rename(&tmp, dir.join(THEM_WAV))?;
             storage.update_meeting_file(&f.id, |m| {
                 m.title = format!("Imported: {name}");
+                // Retention counts from now, whatever the file's date says.
+                m.imported_at = Some(chrono::Local::now().to_rfc3339());
                 m.duration_ms = duration;
                 m.status = MeetingStatus::Transcribing;
                 m.progress = Some(0.0);
