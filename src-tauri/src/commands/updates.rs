@@ -176,10 +176,13 @@ async fn install(app: &AppHandle) -> CmdResult<()> {
     }
     // Windows can't replace a running helper: stop the AI and speech helpers first.
     super::shutdown_helpers(&app);
-    update.install(bytes).inspect_err(|e| log::error!("update install failed: {}", crate::logging::text(e))).map_err(|e| refused(tr_err("update.install_failed", e)))?;
-    log::info!("update installed, restarting");
     // The restart keeps this run's arguments: a Talaan started at login would come back with its window closed.
-    let _ = std::fs::write(app.state::<AppState>().lock().root().join(SHOW_AFTER_UPDATE), "");
+    // The marker is written before `install`, which on Windows quits Talaan itself once the installer has started.
+    let root = app.state::<AppState>().lock().root().to_path_buf();
+    install_with_marker(&root, || update.install(bytes))
+        .inspect_err(|e| log::error!("update install failed: {}", crate::logging::text(e)))
+        .map_err(|e| refused(tr_err("update.install_failed", e)))?;
+    log::info!("update installed, restarting");
     app.restart()
 }
 
@@ -304,6 +307,19 @@ const LOGIN_MARKER: &str = "login-item-v2";
 /// Written just before an update restarts Talaan, so the window opens after it even when this run started at login.
 pub const SHOW_AFTER_UPDATE: &str = "show-after-update";
 
+/// Runs `install` with the marker in place. On Windows the updater starts the installer and quits Talaan inside
+/// `install`, so nothing after it runs: the marker has to exist before. A failed install removes it again, so a
+/// failed update doesn't make the next launch show the window.
+fn install_with_marker<T, E>(root: &std::path::Path, install: impl FnOnce() -> Result<T, E>) -> Result<T, E> {
+    let marker = root.join(SHOW_AFTER_UPDATE);
+    let _ = std::fs::write(&marker, "");
+    let result = install();
+    if result.is_err() {
+        let _ = std::fs::remove_file(&marker);
+    }
+    result
+}
+
 /// Whether the main window stays closed at start: the OS started Talaan at login, unless the first-run setup is
 /// still unfinished (nothing else to look at then).
 pub fn start_hidden(args: impl IntoIterator<Item = String>, onboarding_done: bool) -> bool {
@@ -359,6 +375,31 @@ pub fn apply_login_item(app: &AppHandle) {
 pub fn remove_login_item(app: &AppHandle) {
     let _ = app.autolaunch().disable();
     let _ = std::fs::remove_file(app.state::<AppState>().lock().root().join(LOGIN_MARKER));
+}
+
+#[cfg(test)]
+mod marker_tests {
+    use super::*;
+
+    #[test]
+    fn the_marker_exists_while_the_installer_runs_and_is_gone_after_a_failed_install() {
+        let dir = tempfile::tempdir().unwrap();
+        let marker = dir.path().join(SHOW_AFTER_UPDATE);
+        // Windows never comes back from `install` on success: the marker must already be there.
+        let r: Result<(), &str> = install_with_marker(dir.path(), || {
+            assert!(marker.exists());
+            Ok(())
+        });
+        assert!(r.is_ok() && marker.exists(), "kept after a good install (the restart reads it)");
+        std::fs::remove_file(&marker).unwrap();
+
+        let r: Result<(), &str> = install_with_marker(dir.path(), || {
+            assert!(marker.exists());
+            Err("bad signature")
+        });
+        assert_eq!(r, Err("bad signature"));
+        assert!(!marker.exists(), "a failed update leaves nothing behind");
+    }
 }
 
 #[cfg(test)]
