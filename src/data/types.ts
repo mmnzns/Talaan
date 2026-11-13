@@ -117,6 +117,8 @@ export interface Meeting extends MeetingListItem {
    * `too_short`: too little speech to summarize; `waiting`: transcript only until the user asks (Generate summary).
    */
   summaryError?: { code: string; message: string; detail?: string };
+  /** The recording stopped saving part way (the disk was full or couldn't be written to); the audio and transcript end at `atMs`. */
+  recordingIssue?: { kind: string; atMs: Ms };
   /** This meeting waits for Generate summary instead of being summarized by itself. */
   transcriptOnly?: boolean;
   /** The meeting type chosen for it (lib/templates); absent = the default from Settings › Summary AI. */

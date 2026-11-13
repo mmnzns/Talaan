@@ -6,8 +6,10 @@ import { openSettings } from "../../lib/windows";
 import { describeError } from "../../data/errors";
 import { Button, useToast } from "../../ui";
 import { useT } from "../../lib/i18n/I18nProvider";
+import { formatTime } from "../../lib/format";
 
-/** Shown above the meeting when it needs the user: interrupted recording or failed processing. */
+/** Shown above the meeting when it needs the user: interrupted recording or failed processing; or says a recording
+ *  stopped saving part way. */
 export function StatusBanner({ meeting }: { meeting: Meeting }) {
   const store = useStore();
   const toast = useToast();
@@ -37,6 +39,14 @@ export function StatusBanner({ meeting }: { meeting: Meeting }) {
       </Banner>
     );
   }
+  if (meeting.status === "failed" && meeting.error?.code === "write_failed") {
+    // The recording itself failed (a full disk): there is no audio to try again, only the meeting to delete.
+    return (
+      <Banner title={t("meeting.writeFailedTitle")} text={t("meeting.writeFailedText")}>
+        <Button variant="primary" onClick={leave}>{t("meeting.delete")}</Button>
+      </Banner>
+    );
+  }
   if (meeting.status === "failed") {
     // Only the transcriber fails a meeting (a summary that fails leaves the transcript). The audio is promised safe,
     // and Try again offered, only while it's still there.
@@ -51,6 +61,10 @@ export function StatusBanner({ meeting }: { meeting: Meeting }) {
         <StatusButton />
       </Banner>
     );
+  }
+  if (meeting.recordingIssue) {
+    // The saved part is transcribed as usual; this says why it ends early.
+    return <Banner title={t("meeting.recordingIssueTitle")} text={t("meeting.recordingIssueText", { time: formatTime(meeting.recordingIssue.atMs) })}>{null}</Banner>;
   }
   return null;
 }
