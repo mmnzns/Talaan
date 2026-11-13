@@ -400,7 +400,7 @@ const TABLE: &[(&str, &str, &str, &str)] = &[
         "calls.start_failed",
         "Talaan couldn't start recording {app}: {reason}. Press Record to try again.",
         "Talaan n’a pas pu démarrer l’enregistrement de {app} : {reason}. Appuyez sur Enregistrer pour réessayer.",
-        "Talaan no pudo empezar a grabar {app}: {reason}. Pulsa Grabar para intentarlo de nuevo.",
+        "Talaan no pudo empezar a grabar {app}: {reason}. Presiona Grabar para intentarlo de nuevo.",
     ),
     ("calls.start_failed_reason", "something went wrong", "une erreur s’est produite", "algo salió mal"),
     ("recorder.already_recording", "Already recording", "Enregistrement déjà en cours", "Ya se está grabando"),
