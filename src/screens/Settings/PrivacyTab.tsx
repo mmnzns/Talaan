@@ -1,15 +1,19 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useMeetings } from "../../data/hooks";
 import { describeError } from "../../data/errors";
 import { useSettingsStore, useStore } from "../../data/StoreProvider";
 import { exportAll } from "../../lib/exportAll";
-import type { RetentionChoice, TranscriptRetention } from "../../data/settings";
+import type { RetentionChoice, Settings, TranscriptRetention } from "../../data/settings";
 import { formatBytes, tildePath } from "../../lib/format";
+import type { MessageKey } from "../../lib/i18n";
 import { useT } from "../../lib/i18n/I18nProvider";
 import { Button, Select, Sheet, useToast } from "../../ui";
 import { LeavesTable } from "./LeavesTable";
 import { Group, Row } from "./parts";
 import type { TabProps } from "./tabProps";
+
+/** A retention choice that would delete something now, waiting for a yes. */
+type Pending = { patch: Partial<Settings>; kind: "audio" | "meetings"; count: number; period: MessageKey | null };
 
 export function PrivacyTab({ settings: s, update }: TabProps) {
   const store = useSettingsStore();
@@ -22,6 +26,34 @@ export function PrivacyTab({ settings: s, update }: TabProps) {
   const meetingStore = useStore();
   const [info, setInfo] = useState<{ path: string; bytes: number }>();
 
+  const [pending, setPending] = useState<Pending>();
+  const asked = useRef(0);
+
+  // A new limit saves at once unless it would delete something right now (the Rust rules count it): then it waits
+  // for a yes. Picking an option moves the setting only after the save, so the select shows the old value meanwhile.
+  const choose = async (patch: Partial<Settings>, kind: Pending["kind"]) => {
+    const mine = ++asked.current;
+    const audio = patch.retention ?? s.retention;
+    const transcripts = patch.transcriptRetention ?? s.transcriptRetention;
+    try {
+      const n = await store.retentionPreview(audio, transcripts);
+      if (mine !== asked.current) return; // a newer pick (arrowing through the options) took over
+      const count = kind === "audio" ? n.audio : n.meetings;
+      if (count === 0) return void update(patch);
+      const periods: Record<string, MessageKey> = { "1d": "settings.keep_1d", "7d": "settings.keep_7d", "30d": "settings.keep_30d", "1y": "settings.keep_1y", "90d": "settings.keep_90d" };
+      const period = periods[kind === "audio" ? audio : transcripts];
+      setPending({ patch, kind, count, period: period ?? null });
+    } catch (e) {
+      // Without the count there's no honest confirmation, so nothing is saved.
+      if (mine === asked.current) toast(describeError(e));
+    }
+  };
+  const confirmPending = async () => {
+    if (!pending) return;
+    setPending(undefined);
+    await update(pending.patch).catch((e) => toast(describeError(e)));
+  };
+
   useEffect(() => {
     store.dataInfo().then(setInfo, () => setInfo(undefined));
   }, [store, meetings.length]);
@@ -31,7 +63,7 @@ export function PrivacyTab({ settings: s, update }: TabProps) {
       <Group>
         <LeavesTable settings={s} />
         <Row title={t("settings.audio_title")} desc={t("settings.audio_desc")}>
-          <Select label={t("settings.audio_title")} wrapperClassName="w-40" value={s.retention} onChange={(e) => update({ retention: e.target.value as RetentionChoice })}>
+          <Select label={t("settings.audio_title")} wrapperClassName="w-40" value={s.retention} onChange={(e) => void choose({ retention: e.target.value as RetentionChoice }, "audio")}>
             <option value="1d">{t("settings.keep_1d")}</option>
             <option value="7d">{t("settings.keep_7d")}</option>
             <option value="30d">{t("settings.keep_30d")}</option>
@@ -40,7 +72,7 @@ export function PrivacyTab({ settings: s, update }: TabProps) {
           </Select>
         </Row>
         <Row title={t("settings.transcripts_title")} desc={t("settings.transcripts_desc")}>
-          <Select label={t("settings.transcripts_aria")} wrapperClassName="w-40" value={s.transcriptRetention} onChange={(e) => update({ transcriptRetention: e.target.value as TranscriptRetention })}>
+          <Select label={t("settings.transcripts_aria")} wrapperClassName="w-40" value={s.transcriptRetention} onChange={(e) => void choose({ transcriptRetention: e.target.value as TranscriptRetention }, "meetings")}>
             <option value="forever">{t("settings.keep_forever")}</option>
             <option value="1y">{t("settings.keep_1y")}</option>
             <option value="90d">{t("settings.keep_90d")}</option>
@@ -93,6 +125,27 @@ export function PrivacyTab({ settings: s, update }: TabProps) {
           </Button>
         </Row>
       </Group>
+
+      <Sheet open={!!pending} title={t("settings.retention_title")} onClose={() => setPending(undefined)}>
+        {pending && (
+          <div className="flex flex-col gap-3 p-5">
+            <h2 className="m-0 font-display text-xl font-bold tracking-[-0.02em]">{t(`settings.retention_${pending.kind}_heading`, { count: pending.count })}</h2>
+            <p className="m-0 text-[13px] text-subtle">
+              {pending.period
+                ? t(`settings.retention_${pending.kind}_body`, { period: t(pending.period) })
+                : t("settings.retention_audio_body_none")}
+            </p>
+            <div className="flex justify-end gap-2">
+              <Button data-autofocus onClick={() => setPending(undefined)}>
+                {t("settings.cancel")}
+              </Button>
+              <Button variant="danger" onClick={confirmPending}>
+                {pending.kind === "audio" ? t("settings.retention_audio_button") : t("settings.retention_meetings_button", { count: pending.count })}
+              </Button>
+            </div>
+          </div>
+        )}
+      </Sheet>
 
       <Sheet open={confirm} title={t("settings.wipe_title")} onClose={() => !deleting && setConfirm(false)}>
         <div className="flex flex-col gap-3 p-5">

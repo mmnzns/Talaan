@@ -74,10 +74,16 @@ impl Storage {
     /// Deletes what the policy says is expired. One meeting that can't be processed (a sync client or antivirus
     /// holding a file, say) is logged by id and skipped; only an unreadable meetings folder is an error.
     pub fn apply_retention(&self, now: DateTime<Utc>) -> Result<RetentionReport> {
-        self.retention_pass(now)
+        self.retention_pass(now, self.policy, false)
     }
 
-    fn retention_pass(&self, now: DateTime<Utc>) -> Result<RetentionReport> {
+    /// What `apply_retention(now)` would delete if `policy` were the setting, deleting nothing: the same rules,
+    /// so a confirmation can say how many meetings or recordings a stricter choice would remove right now.
+    pub fn retention_preview(&self, policy: Policy, now: DateTime<Utc>) -> Result<RetentionReport> {
+        self.retention_pass(now, policy, true)
+    }
+
+    fn retention_pass(&self, now: DateTime<Utc>, policy: Policy, dry_run: bool) -> Result<RetentionReport> {
         let mut report = RetentionReport::default();
         for entry in fs::read_dir(meetings_dir(&self.root))? {
             let entry = match entry {
@@ -93,7 +99,7 @@ impl Storage {
             if !entry.file_type().is_ok_and(|t| t.is_dir()) || !is_valid_id(&id) {
                 continue;
             }
-            if let Err(e) = self.retain_meeting(&entry.path(), &id, now, &mut report) {
+            if let Err(e) = self.retain_meeting(&entry.path(), &id, now, policy, dry_run, &mut report) {
                 log::warn!("retention: skipped meeting {id}: {}", e.for_log());
                 report.errors += 1;
             }
@@ -103,7 +109,7 @@ impl Storage {
         Ok(report)
     }
 
-    fn retain_meeting(&self, dir: &Path, id: &str, now: DateTime<Utc>, report: &mut RetentionReport) -> Result<()> {
+    fn retain_meeting(&self, dir: &Path, id: &str, now: DateTime<Utc>, policy: Policy, dry_run: bool, report: &mut RetentionReport) -> Result<()> {
         let Ok(mut file) = self.read_meeting_file(id) else { return Ok(()) };
         let busy = matches!(file.status, MeetingStatus::Recording | MeetingStatus::NeedsRecovery | MeetingStatus::Transcribing | MeetingStatus::Summarizing);
         if file.pinned || busy {
@@ -114,23 +120,33 @@ impl Storage {
         let came_in = file.imported_at.as_deref().and_then(|t| DateTime::parse_from_rfc3339(t).ok()).map_or(started, |i| started.max(i));
         let age_ends = |days: u32| came_in.with_timezone(&Utc) + Duration::days(days as i64) <= now;
 
-        if let TranscriptPolicy::Days(d) = self.policy.transcripts {
+        if let TranscriptPolicy::Days(d) = policy.transcripts {
             if age_ends(d) {
-                fs::remove_dir_all(dir)?;
+                if !dry_run {
+                    fs::remove_dir_all(dir)?;
+                }
                 report.meetings_deleted.push(id.to_string());
                 return Ok(());
             }
         }
 
-        let expired = match self.policy.audio {
+        let expired = match policy.audio {
             AudioPolicy::Forever => false,
             // Audio that has no transcript yet (a failed first try waiting for a model) is the only way to make one.
             AudioPolicy::Days(d) => age_ends(d) && file.status != MeetingStatus::Failed && dir.join(TRANSCRIPT).exists(),
             AudioPolicy::Never => file.status != MeetingStatus::Failed,
         };
         if expired && !file.audio_deleted {
+            let names = [ME_WAV, THEM_WAV, PLAYBACK_WAV];
+            if dry_run {
+                // Only audio that is still on disk is something to lose.
+                if names.iter().any(|n| dir.join(n).exists()) {
+                    report.audio_deleted.push(id.to_string());
+                }
+                return Ok(());
+            }
             let mut removed = false;
-            for name in [ME_WAV, THEM_WAV, PLAYBACK_WAV] {
+            for name in names {
                 match fs::remove_file(dir.join(name)) {
                     Ok(()) => removed = true,
                     Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
@@ -411,5 +427,39 @@ mod pass_tests {
         assert_eq!(r.audio_deleted, vec![aged]);
         assert!(!old_dir.exists() && !aged_dir.join(ME_WAV).exists());
         assert!(stuck_old_dir.exists() && stuck_audio_dir.join(ME_WAV).exists());
+    }
+
+    #[test]
+    fn a_preview_counts_what_the_pass_would_delete_and_deletes_nothing() {
+        let (_d, mut s) = storage();
+        s.set_policy(policy("forever", "forever"));
+        let (old, old_dir) = meeting(&s, 120);
+        let (aged, aged_dir) = meeting(&s, 30);
+        s.save_transcript(&aged, &[]).unwrap();
+        let (_recent, _) = meeting(&s, 5);
+        let (pinned, _) = meeting(&s, 200);
+        s.set_pinned(&pinned, true).unwrap();
+        let (imp, _) = imported(&s, 400, 1);
+
+        let p = s.retention_preview(policy("7d", "90d"), now()).unwrap();
+        assert_eq!(p.meetings_deleted, vec![old.clone()]);
+        assert_eq!(p.audio_deleted, vec![aged.clone()]);
+        assert!(old_dir.exists() && aged_dir.join(ME_WAV).exists());
+        assert!(!p.meetings_deleted.contains(&imp));
+
+        // The real pass under the same policy deletes exactly that.
+        s.set_policy(policy("7d", "90d"));
+        let r = s.apply_retention(now()).unwrap();
+        assert_eq!((r.meetings_deleted, r.audio_deleted), (p.meetings_deleted, p.audio_deleted));
+    }
+
+    #[test]
+    fn a_preview_does_not_count_audio_that_is_already_gone() {
+        let (_d, mut s) = storage();
+        s.set_policy(policy("7d", "forever"));
+        let (id, _dir) = meeting(&s, 30);
+        s.save_transcript(&id, &[]).unwrap();
+        s.apply_retention(now()).unwrap();
+        assert_eq!(s.retention_preview(policy("1d", "forever"), now()).unwrap(), RetentionReport::default());
     }
 }

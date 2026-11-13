@@ -38,6 +38,20 @@ pub fn settings_set(app: AppHandle, state: State<AppState>, models: State<Arc<Mo
     Ok(())
 }
 
+/// What choosing these retention values would delete right now, for the Privacy tab's confirmation. Deletes nothing.
+#[derive(serde::Serialize)]
+pub struct RetentionPreview {
+    pub audio: usize,
+    pub meetings: usize,
+}
+
+#[tauri::command(async)]
+pub fn retention_preview(state: State<AppState>, audio: String, transcripts: String) -> CmdResult<RetentionPreview> {
+    let policy = crate::storage::retention::Policy::from_settings(&audio, &transcripts);
+    let report = state.lock().retention_preview(policy, chrono::Utc::now())?;
+    Ok(RetentionPreview { audio: report.audio_deleted.len(), meetings: report.meetings_deleted.len() })
+}
+
 /// Deletes everything, then quits (as the Privacy tab says). The next launch starts at onboarding.
 #[tauri::command]
 pub fn data_delete_all(app: AppHandle, state: State<AppState>, models: State<Arc<Models>>, t: State<super::transcriber::TranscriberState>) -> CmdResult<()> {
