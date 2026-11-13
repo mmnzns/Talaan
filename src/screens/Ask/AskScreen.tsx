@@ -12,8 +12,6 @@ import { SunCorner } from "../../brand/SunCorner";
 
 type Turn = { id: number; question: string; scope: string; allScope: boolean; state: "loading" | "done" | "error"; answer?: AskAnswer; error?: string };
 
-const SUGGESTIONS = ["shell.suggest1", "shell.suggest2", "shell.suggest3", "shell.suggest4"] as const;
-
 export function AskScreen({ meetingId }: { meetingId?: string }) {
   const t = useT();
   const store = useStore();
@@ -58,6 +56,17 @@ export function AskScreen({ meetingId }: { meetingId?: string }) {
       setTurns((t) => t.map((x) => (x.id === id ? { ...x, state: "error", error: describeError(e) } : x)));
     }
   };
+
+  // Questions that make sense for any user's data; the tag one only when they have a tag.
+  const suggestions =
+    scope.kind === "meeting"
+      ? [t("shell.suggestMeetingDecided"), t("shell.suggestMeetingActions"), t("shell.suggestPromised")]
+      : [
+          t("shell.suggestActions"),
+          t("shell.suggestDecidedWeek"),
+          t("shell.suggestPromised"),
+          ...(tags.length > 0 ? [t("shell.suggestTag", { tag: tags[0] })] : []),
+        ];
 
   const local = !settings || settings.summaryEngine !== "byok";
   const pill = (active: boolean) =>
@@ -130,9 +139,9 @@ export function AskScreen({ meetingId }: { meetingId?: string }) {
         ))}
 
         <div className="flex flex-wrap gap-2">
-          {SUGGESTIONS.map((k) => (
-            <Chip key={k} onClick={() => ask(t(k))} className="px-3 py-1.5 font-sans text-[13px] normal-case text-ink">
-              {t(k)}
+          {suggestions.map((q) => (
+            <Chip key={q} onClick={() => ask(q)} className="px-3 py-1.5 font-sans text-[13px] normal-case text-ink">
+              {q}
             </Chip>
           ))}
         </div>
