@@ -13,7 +13,7 @@ pub fn free_space(path: &Path) -> Option<u64> {
         return None;
     }
     let stats = unsafe { stats.assume_init() };
-    Some(stats.f_bavail as u64 * stats.f_frsize as u64)
+    Some(stats.f_bavail as u64 * stats.f_frsize)
 }
 
 #[cfg(test)]

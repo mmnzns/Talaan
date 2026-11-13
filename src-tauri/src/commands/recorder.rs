@@ -2,7 +2,8 @@
 
 use super::{notify, AppState, CmdResult, MEETINGS_CHANGED};
 use crate::platform;
-use crate::recorder::engine::{Engine, Status};
+use crate::recorder::engine::{Engine, Status, WriteFailure};
+use crate::recorder::space::DiskWatch;
 use crate::recorder::mic::MicSource;
 use crate::storage::StorageError;
 use serde::Serialize;
@@ -132,6 +133,21 @@ fn emit_state(app: &AppHandle) {
     let p = payload(&rec.lock(), on_speakers);
     super::tray::update(app, &p.status);
     let _ = app.emit(STATE, p);
+}
+
+/// The warning for a disk with about `minutes` of recording left.
+fn disk_almost_full_text(minutes: u64) -> String {
+    if minutes <= 1 {
+        crate::i18n::tr("notice.disk_almost_full_minute")
+    } else {
+        crate::i18n::tr_with("notice.disk_almost_full", &[("minutes", &minutes.to_string())])
+    }
+}
+
+/// The notice for a track that stopped saving: a full disk in the app's words, anything else as the system says it.
+fn write_failed_text(f: &WriteFailure) -> String {
+    let reason = if f.kind == std::io::ErrorKind::StorageFull { crate::i18n::tr("notice.reason_disk_full") } else { f.reason.clone() };
+    crate::i18n::tr_with("notice.write_failed", &[("reason", &reason), ("time", &crate::storage::markdown::format_time(f.saved_ms))])
 }
 
 fn notice(app: &AppHandle, text: String, kind: &'static str, settings_pane: Option<&'static str>) {
@@ -488,6 +504,9 @@ pub fn setup(app: &AppHandle) {
         let mut call_sound = SoundLatch::default();
         // System audio gave up mid-recording (it reconnects on its own first). Said once per recording.
         let mut warned_lost = false;
+        // The disk filling up (a look at the start, then every 30 s) and a writer that failed: each said once per recording.
+        let mut disk = DiskWatch::default();
+        let mut warned_write = false;
         loop {
             std::thread::sleep(Duration::from_millis(100));
             let rec = app.state::<RecorderState>();
@@ -501,12 +520,15 @@ pub fn setup(app: &AppHandle) {
                     call_sound = SoundLatch::default();
                 }
                 warned_lost = false;
+                disk = DiskWatch::default();
+                warned_write = false;
                 continue;
             }
             let (me, them) = engine.levels();
             let status = engine.status(platform::host_now_ns());
             let paused = status.state == "paused";
             let system_failed = engine.system_failed();
+            let write_failed = engine.failed_track();
             drop(engine);
             let test = rec.test.lock().unwrap_or_else(|e| e.into_inner()).clone();
             if test_limit_reached(test.as_ref(), &status) {
@@ -523,6 +545,21 @@ pub fn setup(app: &AppHandle) {
             } else if !system_failed {
                 // Back (an output switch restarted it): a later failure warns again.
                 warned_lost = false;
+            }
+
+            if let Some(f) = write_failed.filter(|_| !warned_write) {
+                warned_write = true;
+                log::warn!("shown: notice.write_failed (the {} track stopped saving at {} ms: {})", f.track, f.saved_ms, f.kind);
+                notice(&app, write_failed_text(&f), "warning", None);
+            }
+
+            if disk.due(Instant::now()) {
+                // The storage lock only for the folder; asking the disk happens outside it.
+                let folder = app.state::<AppState>().lock().root().to_path_buf();
+                if let Some(minutes) = disk.check(platform::free_space(&folder)) {
+                    log::warn!("shown: notice.disk_almost_full (about {minutes} minutes of recording left)");
+                    notice(&app, disk_almost_full_text(minutes), "warning", None);
+                }
             }
 
             heard_them |= them > 0.0;
@@ -616,8 +653,8 @@ pub fn discard_for_wipe(app: &AppHandle) {
 
 #[cfg(test)]
 mod tests {
-    use super::{auto_tag, silence_watch, test_limit_reached, MicOnly, SoundLatch, TestRun};
-    use crate::recorder::engine::Status;
+    use super::{auto_tag, disk_almost_full_text, silence_watch, test_limit_reached, write_failed_text, MicOnly, SoundLatch, TestRun};
+    use crate::recorder::engine::{Status, WriteFailure};
     use crate::recorder::source::AudioSource;
     use serde_json::json;
     use std::time::{Duration, Instant};
@@ -634,6 +671,28 @@ mod tests {
         assert!(l.playing(at(8900), || { probes += 1; false }), "a pause in the talk");
         assert!(!l.playing(at(9100), || { probes += 1; false }), "8 s without sound");
         assert_eq!(probes, 3);
+    }
+
+    #[test]
+    fn the_disk_notices_name_the_minutes_or_say_about_a_minute() {
+        assert_eq!(
+            disk_almost_full_text(12),
+            "Your disk is almost full: about 12 minutes of recording left. Free up some space, or Stop to keep what’s recorded so far."
+        );
+        assert!(disk_almost_full_text(1).contains("about a minute"));
+        assert!(disk_almost_full_text(0).contains("about a minute"));
+    }
+
+    #[test]
+    fn a_failed_track_notice_names_the_reason_and_how_far_it_got() {
+        let full = WriteFailure { track: "them", kind: std::io::ErrorKind::StorageFull, reason: "No space left on device (os error 28)".into(), saved_ms: 1_385_000 };
+        assert_eq!(
+            write_failed_text(&full),
+            "Talaan can’t save the recording anymore (the disk is full). Free up some disk space. What was recorded up to 23:05 is kept."
+        );
+        let other = WriteFailure { track: "me", kind: std::io::ErrorKind::Other, reason: "Input/output error (os error 5)".into(), saved_ms: 61_000 };
+        assert!(write_failed_text(&other).contains("(Input/output error (os error 5))"));
+        assert!(write_failed_text(&other).contains("up to 01:01 is kept"));
     }
 
     #[test]

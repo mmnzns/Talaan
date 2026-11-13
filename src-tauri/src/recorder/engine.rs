@@ -176,19 +176,17 @@ impl Engine {
         now_ns: u64,
         started_at: DateTime<FixedOffset>,
     ) -> Result<Status, String> {
-        self.start_with_sinks(storage, app, app_label, mic, system, now_ns, started_at, WavSink::create)
+        self.start_with_sinks(storage, (app, app_label), mic, system, (now_ns, started_at), WavSink::create)
     }
 
     /// `start`, with the file each track is written to (tests make one that fails).
     fn start_with_sinks<S: TrackSink>(
         &mut self,
         storage: &Storage,
-        app: &str,
-        app_label: &str,
+        (app, app_label): (&str, &str),
         mut mic: Box<dyn AudioSource>,
         mut system: Box<dyn AudioSource>,
-        now_ns: u64,
-        started_at: DateTime<FixedOffset>,
+        (now_ns, started_at): (u64, DateTime<FixedOffset>),
         make_sink: impl Fn(&Path) -> io::Result<S>,
     ) -> Result<Status, String> {
         if self.active.is_some() {
@@ -524,7 +522,7 @@ pub(crate) mod tests {
         let (mic, me) = fake(false);
         let (sys, them) = fake(false);
         let st = e
-            .start_with_sinks(storage, "zoom", "Zoom", mic, sys, 0, at(), |p| Brittle::create(p, if p.ends_with(ME_WAV) { me_limit } else { them_limit }))
+            .start_with_sinks(storage, ("zoom", "Zoom"), mic, sys, (0, at()), |p| Brittle::create(p, if p.ends_with(ME_WAV) { me_limit } else { them_limit }))
             .unwrap();
         (st.meeting_id.unwrap(), me, them)
     }
