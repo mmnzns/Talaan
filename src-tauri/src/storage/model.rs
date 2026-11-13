@@ -201,6 +201,9 @@ pub struct MeetingFile {
     pub error: Option<ProcessingError>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub transcription: Option<TranscriptionInfo>,
+    /// The recording stopped saving part way (a full disk or a failed write); the meeting page says so.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub recording_issue: Option<RecordingIssue>,
     /// Why there is no summary (meeting is `ready`, transcript-only): no engine set up, or the AI failed.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub summary_error: Option<ProcessingError>,
@@ -231,6 +234,16 @@ pub struct MeetingFile {
 
 fn is_false(b: &bool) -> bool {
     !*b
+}
+
+/// What went wrong while recording, for the meeting page.
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct RecordingIssue {
+    /// `write_failed`: the disk was full or couldn't be written to.
+    pub kind: String,
+    /// Where the audio stops, in ms into the recording.
+    pub at_ms: u64,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
@@ -323,6 +336,9 @@ pub struct Meeting {
     /// How the transcript was made (the speech model), once there is one.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub transcription: Option<TranscriptionInfo>,
+    /// The recording stopped saving part way.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub recording_issue: Option<RecordingIssue>,
     #[serde(default, skip_serializing_if = "is_false")]
     pub transcript_only: bool,
     /// The meeting type chosen for this meeting, when one was (otherwise the Settings default applies).

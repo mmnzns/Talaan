@@ -74,6 +74,8 @@ tiny_http = "0.12.0"
 [target.'cfg(target_os = "macos")'.dependencies]
 keyring = { version = "3.6.3", features = ["apple-native"] }
 block2 = "0.6.2"
+# Already in the build through other crates; statvfs for the free-space warning.
+libc = "0.2"
 mach2 = "0.7.0"
 objc2 = "0.6.5"
 objc2-app-kit = "0.3.2"

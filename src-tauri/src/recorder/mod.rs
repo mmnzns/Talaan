@@ -10,6 +10,7 @@ pub mod playback;
 pub mod recovery;
 pub mod resample;
 pub mod session;
+pub mod space;
 pub mod source;
 pub mod timeline;
 pub mod wav;

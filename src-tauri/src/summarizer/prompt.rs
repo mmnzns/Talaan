@@ -390,6 +390,7 @@ pub(crate) mod tests {
             error: None,
             summary_error: None,
             transcription: None,
+            recording_issue: None,
             transcript_only: false,
             template: None,
             summary_language: None,

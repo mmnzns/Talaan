@@ -100,6 +100,30 @@ const TABLE: &[(&str, &str, &str, &str)] = &[
         "L’audio de l’appel ne passe plus, donc seul votre côté est enregistré à partir de maintenant.",
         "El audio de la llamada dejó de llegar, así que desde ahora solo se graba tu lado.",
     ),
+    (
+        "notice.disk_almost_full",
+        "Your disk is almost full: about {minutes} minutes of recording left. Free up some space, or Stop to keep what’s recorded so far.",
+        "Votre disque est presque plein : il reste environ {minutes} minutes d’enregistrement. Libérez de l’espace, ou arrêtez pour conserver ce qui est enregistré jusqu’ici.",
+        "Tu disco está casi lleno: quedan unos {minutes} minutos de grabación. Libera espacio, o detén la grabación para conservar lo grabado hasta ahora.",
+    ),
+    (
+        "notice.disk_almost_full_minute",
+        "Your disk is almost full: about a minute of recording left. Free up some space, or Stop to keep what’s recorded so far.",
+        "Votre disque est presque plein : il reste environ une minute d’enregistrement. Libérez de l’espace, ou arrêtez pour conserver ce qui est enregistré jusqu’ici.",
+        "Tu disco está casi lleno: queda cerca de un minuto de grabación. Libera espacio, o detén la grabación para conservar lo grabado hasta ahora.",
+    ),
+    (
+        "notice.write_failed",
+        "Talaan can’t save the recording anymore ({reason}). Free up some disk space. What was recorded up to {time} is kept.",
+        "Talaan ne peut plus sauvegarder l’enregistrement ({reason}). Libérez de l’espace disque. Ce qui a été enregistré jusqu’à {time} est conservé.",
+        "Talaan ya no puede guardar la grabación ({reason}). Libera espacio en el disco. Lo grabado hasta {time} se conserva.",
+    ),
+    (
+        "notice.reason_disk_full",
+        "the disk is full",
+        "le disque est plein",
+        "el disco está lleno",
+    ),
     ("tray.tooltip_recording", "Talaan · Recording {time}", "Talaan · Enregistrement {time}", "Talaan · Grabando {time}"),
     ("tray.tooltip_paused", "Talaan · Paused {time}", "Talaan · En pause {time}", "Talaan · En pausa {time}"),
     // Windows calendar (its iCal address): errors shown under the address field in Settings › Connections.
