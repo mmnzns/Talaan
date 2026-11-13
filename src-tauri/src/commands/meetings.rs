@@ -58,8 +58,20 @@ pub fn meetings_set_pinned(app: AppHandle, state: State<AppState>, id: String, p
     changed(&app, state.lock().set_pinned(&id, pinned))
 }
 
+/// The meeting being recorded can't be deleted: its folder holds the open audio files, and Stop would have
+/// nothing left to save into.
+fn refuse_while_recording(recording: Option<&str>, id: &str) -> CmdResult<()> {
+    if recording == Some(id) {
+        return Err(StorageError::Refused(crate::i18n::tr("error.delete_recording")));
+    }
+    Ok(())
+}
+
 #[tauri::command]
 pub fn meetings_delete(app: AppHandle, state: State<AppState>, t: State<super::transcriber::TranscriberState>, id: String) -> CmdResult<()> {
+    // Read and released before the storage lock is taken (Stop takes them in this order too).
+    let recording = app.state::<super::recorder::RecorderState>().lock().meeting_id();
+    refuse_while_recording(recording.as_deref(), &id)?;
     t.worker.cancel_if_running(&id);
     app.state::<super::summarizer::SummarizerState>().cancel_if_running(&id);
     changed(&app, state.lock().delete_meeting(&id))
@@ -157,4 +169,17 @@ pub fn meetings_reveal(state: State<AppState>, id: String) -> CmdResult<()> {
 #[tauri::command]
 pub fn export_write(path: String, contents: String) -> CmdResult<()> {
     std::fs::write(&path, contents).map_err(|e| StorageError::Refused(crate::i18n::tr_err("error.save_file", e)))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_meeting_being_recorded_cannot_be_deleted() {
+        let r = refuse_while_recording(Some("2026-10-14_1430_ab12"), "2026-10-14_1430_ab12");
+        assert!(matches!(r, Err(StorageError::Refused(m)) if m == crate::i18n::tr("error.delete_recording")));
+        assert!(refuse_while_recording(Some("2026-10-14_1430_ab12"), "2026-10-13_0900_cd34").is_ok(), "others can");
+        assert!(refuse_while_recording(None, "2026-10-14_1430_ab12").is_ok(), "nothing recording");
+    }
 }

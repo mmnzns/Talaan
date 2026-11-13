@@ -316,7 +316,7 @@ export function MeetingHeader({ meeting, editing, canRevert, onToggleEdit, onRev
               onClick={async () => {
                 setConfirmDelete(false);
                 navigate(routes.meetings());
-                await store.deleteMeeting(meeting.id);
+                await store.deleteMeeting(meeting.id).catch((e) => toast(describeError(e)));
               }}
             >
               {t("meeting.deleteConfirm")}

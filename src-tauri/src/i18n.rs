@@ -158,6 +158,12 @@ const TABLE: &[(&str, &str, &str, &str)] = &[
         "Talaan no pudo escribir su archivo de registro en esta computadora, así que no hay carpeta de registro que abrir.",
     ),
     ("error.save_file", "Couldn't save the file: {error}", "Impossible d’enregistrer le fichier : {error}", "No se pudo guardar el archivo: {error}"),
+    (
+        "error.delete_recording",
+        "Stop the recording before deleting this meeting.",
+        "Arrêtez l’enregistrement avant de supprimer cette réunion.",
+        "Detén la grabación antes de eliminar esta reunión.",
+    ),
     ("error.wait_meeting", "Wait for this meeting to finish first.", "Attendez d’abord que cette réunion soit terminée.", "Primero espera a que termine esta reunión."),
     (
         "error.audio_gone",

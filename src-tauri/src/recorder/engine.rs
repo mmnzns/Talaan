@@ -94,6 +94,11 @@ impl Engine {
         self.active.is_some()
     }
 
+    /// The meeting being recorded (or paused), if any.
+    pub fn meeting_id(&self) -> Option<String> {
+        self.session().map(|s| s.meeting_id.clone())
+    }
+
     pub fn start(
         &mut self,
         storage: &Storage,
@@ -356,6 +361,20 @@ pub(crate) mod tests {
         });
         assert_eq!(r, Err("disk full".into()), "the caller still hears about it");
         assert_eq!(tried, [MeetingStatus::Transcribing, MeetingStatus::Transcribing, MeetingStatus::NeedsRecovery]);
+    }
+
+    #[test]
+    fn the_engine_names_the_meeting_it_is_recording() {
+        let (_d, storage) = storage();
+        let mut e = Engine::default();
+        assert_eq!(e.meeting_id(), None);
+        let (mic, _me) = fake(false);
+        let (sys, _them) = fake(false);
+        e.start(&storage, "other", "Call", mic, sys, 0, at()).unwrap();
+        let id = e.meeting_id().unwrap();
+        assert_eq!(Some(id), e.status(0).meeting_id);
+        e.stop(&storage, 100 * MS).unwrap();
+        assert_eq!(e.meeting_id(), None);
     }
 
     #[test]
