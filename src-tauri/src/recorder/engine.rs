@@ -5,6 +5,7 @@ use super::feed::{feed, FeedConsumer};
 use super::pipeline::TrackPipeline;
 use super::session::Session;
 use super::source::{AudioSource, SharedFeed};
+use super::timeline::SampleSink;
 use super::wav::WavSink;
 use crate::storage::model::{Mark, MeetingStatus};
 use crate::storage::paths::{ME_WAV, THEM_WAV};
@@ -12,7 +13,7 @@ use crate::storage::Storage;
 use chrono::{DateTime, FixedOffset};
 use serde::Serialize;
 use std::io;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
@@ -38,9 +39,52 @@ impl Status {
     }
 }
 
+/// What a writer thread shows the engine while it runs.
+#[derive(Default)]
+struct WriterState {
+    level: AtomicU32,
+    /// 16 kHz samples written so far, so a failure can say how far the file got.
+    written: AtomicU64,
+    /// Set, before the thread ends, when the writer gives up: the error's kind and the system's text.
+    error: Mutex<Option<(io::ErrorKind, String)>>,
+}
+
 struct Track {
-    level: Arc<AtomicU32>,
+    name: &'static str,
+    path: PathBuf,
+    state: Arc<WriterState>,
     handle: JoinHandle<io::Result<u64>>,
+}
+
+impl Track {
+    /// What the writer reported when it ended (it only ends early by failing).
+    fn failure(&self) -> WriteFailure {
+        let (kind, reason) = self.state.error.lock().unwrap_or_else(|e| e.into_inner()).clone().unwrap_or((io::ErrorKind::Other, "the writer stopped".into()));
+        WriteFailure { track: self.name, kind, reason, saved_ms: self.state.written.load(Ordering::Relaxed) * 1000 / RATE as u64 }
+    }
+}
+
+/// A track whose writer stopped before the recording ended (the disk filled up, or a write failed).
+#[derive(Clone, Debug, PartialEq)]
+pub struct WriteFailure {
+    /// "me" or "them".
+    pub track: &'static str,
+    pub kind: io::ErrorKind,
+    /// The system's text for the error (English, no paths).
+    pub reason: String,
+    /// How much of the track is in the file, in ms.
+    pub saved_ms: u64,
+}
+
+/// Where a writer puts its samples, and how it closes the file.
+pub trait TrackSink: SampleSink + Send + 'static {
+    fn close(self) -> io::Result<()>;
+}
+
+impl TrackSink for WavSink {
+    fn close(self) -> io::Result<()> {
+        self.finalize()
+    }
 }
 
 struct Active {
@@ -60,33 +104,44 @@ pub struct Engine {
     active: Option<Active>,
 }
 
-fn spawn_writer(mut consumer: FeedConsumer, path: &Path, session: Arc<Mutex<Session>>, stop: Arc<AtomicBool>, end_pos: Arc<AtomicU64>, level: Arc<AtomicU32>) -> io::Result<JoinHandle<io::Result<u64>>> {
-    let mut pipeline = TrackPipeline::new(WavSink::create(path)?);
-    Ok(std::thread::Builder::new().name("talaan-writer".into()).spawn(move || {
-        let mut buf = Vec::new();
-        let mut last_level = Instant::now();
-        loop {
-            let mut got = false;
-            while let Some(h) = consumer.pop(&mut buf) {
-                got = true;
-                let pos = session.lock().unwrap_or_else(|e| e.into_inner()).clock.position_samples(h.host_ns);
-                pipeline.push(pos, h.rate, h.channels as usize, &buf)?;
-            }
-            if last_level.elapsed() >= Duration::from_millis(50) {
-                level.store(pipeline.level().to_bits(), Ordering::Relaxed);
-                last_level = Instant::now();
-            }
-            if stop.load(Ordering::Acquire) && consumer.is_empty() {
-                pipeline.finish(end_pos.load(Ordering::Acquire))?;
-                let written = pipeline.written();
-                pipeline.into_sink().finalize()?;
-                return Ok(written);
-            }
-            if !got {
-                std::thread::sleep(Duration::from_millis(5));
-            }
+fn spawn_writer<S: TrackSink>(consumer: FeedConsumer, sink: S, session: Arc<Mutex<Session>>, stop: Arc<AtomicBool>, end_pos: Arc<AtomicU64>, state: Arc<WriterState>) -> io::Result<JoinHandle<io::Result<u64>>> {
+    std::thread::Builder::new().name("talaan-writer".into()).spawn(move || {
+        let result = write_track(consumer, sink, &session, &stop, &end_pos, &state);
+        if let Err(e) = &result {
+            *state.error.lock().unwrap_or_else(|e| e.into_inner()) = Some((e.kind(), e.to_string()));
         }
-    })?)
+        result
+    })
+}
+
+/// The writer's loop: drains the feed into the file until told to stop, then pads to `end_pos` and closes it. The
+/// first error ends it (and drops the sink, which closes the file as far as it can).
+fn write_track<S: TrackSink>(mut consumer: FeedConsumer, sink: S, session: &Mutex<Session>, stop: &AtomicBool, end_pos: &AtomicU64, state: &WriterState) -> io::Result<u64> {
+    let mut pipeline = TrackPipeline::new(sink);
+    let mut buf = Vec::new();
+    let mut last_level = Instant::now();
+    loop {
+        let mut got = false;
+        while let Some(h) = consumer.pop(&mut buf) {
+            got = true;
+            let pos = session.lock().unwrap_or_else(|e| e.into_inner()).clock.position_samples(h.host_ns);
+            pipeline.push(pos, h.rate, h.channels as usize, &buf)?;
+            state.written.store(pipeline.written(), Ordering::Relaxed);
+        }
+        if last_level.elapsed() >= Duration::from_millis(50) {
+            state.level.store(pipeline.level().to_bits(), Ordering::Relaxed);
+            last_level = Instant::now();
+        }
+        if stop.load(Ordering::Acquire) && consumer.is_empty() {
+            pipeline.finish(end_pos.load(Ordering::Acquire))?;
+            let written = pipeline.written();
+            pipeline.into_sink().close()?;
+            return Ok(written);
+        }
+        if !got {
+            std::thread::sleep(Duration::from_millis(5));
+        }
+    }
 }
 
 impl Engine {
@@ -104,10 +159,25 @@ impl Engine {
         storage: &Storage,
         app: &str,
         app_label: &str,
+        mic: Box<dyn AudioSource>,
+        system: Box<dyn AudioSource>,
+        now_ns: u64,
+        started_at: DateTime<FixedOffset>,
+    ) -> Result<Status, String> {
+        self.start_with_sinks(storage, app, app_label, mic, system, now_ns, started_at, WavSink::create)
+    }
+
+    /// `start`, with the file each track is written to (tests make one that fails).
+    fn start_with_sinks<S: TrackSink>(
+        &mut self,
+        storage: &Storage,
+        app: &str,
+        app_label: &str,
         mut mic: Box<dyn AudioSource>,
         mut system: Box<dyn AudioSource>,
         now_ns: u64,
         started_at: DateTime<FixedOffset>,
+        make_sink: impl Fn(&Path) -> io::Result<S>,
     ) -> Result<Status, String> {
         if self.active.is_some() {
             return Err(crate::i18n::tr("recorder.already_recording"));
@@ -120,11 +190,13 @@ impl Engine {
 
         let mut tracks = vec![];
         let mut feeds: Vec<SharedFeed> = vec![];
-        for name in [ME_WAV, THEM_WAV] {
+        for (name, file_name) in [("me", ME_WAV), ("them", THEM_WAV)] {
             let (producer, consumer) = feed();
-            let level = Arc::new(AtomicU32::new(0));
-            let handle = spawn_writer(consumer, &dir.join(name), session.clone(), stop.clone(), end_pos.clone(), level.clone()).map_err(|e| e.to_string())?;
-            tracks.push(Track { level, handle });
+            let state = Arc::new(WriterState::default());
+            let path = dir.join(file_name);
+            let sink = make_sink(&path).map_err(|e| e.to_string())?;
+            let handle = spawn_writer(consumer, sink, session.clone(), stop.clone(), end_pos.clone(), state.clone()).map_err(|e| e.to_string())?;
+            tracks.push(Track { name, path, state, handle });
             feeds.push(Arc::new(Mutex::new(producer)));
         }
 
@@ -175,7 +247,7 @@ impl Engine {
 
     pub fn levels(&self) -> (f32, f32) {
         match &self.active {
-            Some(a) => (f32::from_bits(a.tracks[0].level.load(Ordering::Relaxed)), f32::from_bits(a.tracks[1].level.load(Ordering::Relaxed))),
+            Some(a) => (f32::from_bits(a.tracks[0].state.level.load(Ordering::Relaxed)), f32::from_bits(a.tracks[1].state.level.load(Ordering::Relaxed))),
             None => (0.0, 0.0),
         }
     }
@@ -183,6 +255,15 @@ impl Engine {
     /// True once system audio stopped coming through for good during this recording.
     pub fn system_failed(&self) -> bool {
         self.active.as_ref().is_some_and(|a| a.system.failed())
+    }
+
+    /// A track whose writer ended while the recording is still going: it failed, and what comes after it is lost.
+    pub fn failed_track(&self) -> Option<WriteFailure> {
+        let a = self.active.as_ref()?;
+        if a.stop.load(Ordering::Acquire) {
+            return None;
+        }
+        a.tracks.iter().find(|t| t.handle.is_finished()).map(|t| t.failure())
     }
 
     pub fn pause(&mut self, now_ns: u64) -> bool {
@@ -343,6 +424,84 @@ pub(crate) mod tests {
     }
 
     const MS: u64 = 1_000_000;
+
+    /// A WAV sink that starts failing like a full disk once `limit` samples were written (None: never).
+    pub struct Brittle {
+        inner: WavSink,
+        limit: Option<usize>,
+        written: usize,
+    }
+
+    impl Brittle {
+        fn create(path: &Path, limit: Option<usize>) -> io::Result<Self> {
+            Ok(Brittle { inner: WavSink::create(path)?, limit, written: 0 })
+        }
+    }
+
+    impl SampleSink for Brittle {
+        fn write(&mut self, samples: &[i16]) -> io::Result<()> {
+            if self.limit.is_some_and(|l| self.written + samples.len() > l) {
+                return Err(io::Error::from(io::ErrorKind::StorageFull));
+            }
+            self.written += samples.len();
+            self.inner.write(samples)
+        }
+    }
+
+    impl TrackSink for Brittle {
+        fn close(self) -> io::Result<()> {
+            self.inner.close()
+        }
+    }
+
+    /// Starts a recording whose me / them tracks fail after the given number of samples.
+    fn start_brittle(e: &mut Engine, storage: &Storage, me_limit: Option<usize>, them_limit: Option<usize>) -> (String, Handle, Handle) {
+        let (mic, me) = fake(false);
+        let (sys, them) = fake(false);
+        let st = e
+            .start_with_sinks(storage, "zoom", "Zoom", mic, sys, 0, at(), |p| Brittle::create(p, if p.ends_with(ME_WAV) { me_limit } else { them_limit }))
+            .unwrap();
+        (st.meeting_id.unwrap(), me, them)
+    }
+
+    /// Waits up to 2 s for the engine to notice a writer that gave up.
+    fn wait_for_failure(e: &Engine) -> Option<WriteFailure> {
+        for _ in 0..400 {
+            if let Some(f) = e.failed_track() {
+                return Some(f);
+            }
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        None
+    }
+
+    #[test]
+    fn a_writer_whose_disk_fills_up_is_seen_while_still_recording() {
+        let (_d, storage) = storage();
+        let mut e = Engine::default();
+        let (_id, me, them) = start_brittle(&mut e, &storage, None, Some(16_000)); // them: 1 s fits
+        assert_eq!(e.failed_track(), None, "nothing wrong yet");
+        push(&me, 0, 3_000, 0.2);
+        push(&them, 0, 3_000, 0.4);
+        let f = wait_for_failure(&e).expect("the them writer failed");
+        assert_eq!(f.track, "them");
+        assert_eq!(f.kind, io::ErrorKind::StorageFull);
+        assert!(f.saved_ms >= 900 && f.saved_ms <= 1_000, "{}", f.saved_ms);
+        assert!(e.is_active(), "the recording itself goes on");
+        e.discard(&storage, 3_000 * MS).unwrap();
+    }
+
+    #[test]
+    fn a_healthy_recording_never_reports_a_failed_track() {
+        let (_d, storage) = storage();
+        let mut e = Engine::default();
+        let (_id, me, them) = start_brittle(&mut e, &storage, None, None);
+        push(&me, 0, 2_000, 0.2);
+        push(&them, 0, 2_000, 0.4);
+        std::thread::sleep(Duration::from_millis(100));
+        assert_eq!(e.failed_track(), None);
+        e.discard(&storage, 2_000 * MS).unwrap();
+    }
 
     #[test]
     fn a_failed_final_save_is_tried_again_then_left_recoverable() {
