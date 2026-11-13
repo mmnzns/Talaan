@@ -2,11 +2,12 @@
 //!
 //! Rules: pinned meetings are never touched. Meetings that still need their audio (recording, needing
 //! recovery, transcribing, summarizing) are never touched. "Don't keep" also spares failed meetings so
-//! they can be retried. A meeting's age is from the later of when it was recorded and when it was imported.
+//! they can be retried, and so does the day-based limit, which also spares meetings with no transcript yet. A
+//! meeting's age is from the later of when it was recorded and when it was imported.
 
 use super::io::write_json_atomic;
 use super::model::MeetingStatus;
-use super::paths::{is_valid_id, meetings_dir, ME_WAV, META, PLAYBACK_WAV, THEM_WAV};
+use super::paths::{is_valid_id, meetings_dir, ME_WAV, META, PLAYBACK_WAV, THEM_WAV, TRANSCRIPT};
 use super::{Result, Storage};
 use chrono::{DateTime, Duration, Utc};
 use std::fs;
@@ -95,7 +96,8 @@ impl Storage {
 
             let expired = match self.policy.audio {
                 AudioPolicy::Forever => false,
-                AudioPolicy::Days(d) => age_ends(d),
+                // Audio that has no transcript yet (a failed first try waiting for a model) is the only way to make one.
+                AudioPolicy::Days(d) => age_ends(d) && file.status != MeetingStatus::Failed && entry.path().join(TRANSCRIPT).exists(),
                 AudioPolicy::Never => file.status != MeetingStatus::Failed,
             };
             if expired && !file.audio_deleted {
@@ -193,7 +195,8 @@ mod pass_tests {
     fn audio_expires_exactly_at_the_boundary() {
         let (_d, mut s) = storage();
         s.set_policy(policy("7d", "forever"));
-        let (_id, dir) = meeting(&s, 7);
+        let (id, dir) = meeting(&s, 7);
+        s.save_transcript(&id, &[]).unwrap();
         s.apply_retention(now()).unwrap();
         assert!(!dir.join(ME_WAV).exists());
     }
@@ -264,7 +267,8 @@ mod pass_tests {
     fn a_second_pass_finds_nothing_to_do() {
         let (_d, mut s) = storage();
         s.set_policy(policy("7d", "forever"));
-        meeting(&s, 30);
+        let (id, _dir) = meeting(&s, 30);
+        s.save_transcript(&id, &[]).unwrap();
         assert_eq!(s.apply_retention(now()).unwrap().audio_deleted.len(), 1);
         assert_eq!(s.apply_retention(now()).unwrap(), RetentionReport::default());
     }
@@ -320,5 +324,24 @@ mod pass_tests {
         let r = s.apply_retention(now()).unwrap();
         assert_eq!(r.meetings_deleted, vec![old]);
         assert!(!dir.exists());
+    }
+
+    #[test]
+    fn day_based_audio_keeps_failed_meetings_and_those_without_a_transcript() {
+        let (_d, mut s) = storage();
+        s.set_policy(policy("7d", "forever"));
+        let (failed, fdir) = meeting(&s, 30);
+        s.set_status(&failed, MeetingStatus::Failed).unwrap();
+        let (_waiting, wdir) = meeting(&s, 30);
+        let (ready, rdir) = meeting(&s, 30);
+        s.save_transcript(&ready, &[]).unwrap();
+        let r = s.apply_retention(now()).unwrap();
+        assert_eq!(r.audio_deleted, vec![ready]);
+        assert!(fdir.join(ME_WAV).exists() && wdir.join(ME_WAV).exists());
+        assert!(!rdir.join(ME_WAV).exists());
+        // Once the failed one is retried and has its words, the audio can go.
+        s.set_status(&failed, MeetingStatus::Ready).unwrap();
+        s.save_transcript(&failed, &[]).unwrap();
+        assert_eq!(s.apply_retention(now()).unwrap().audio_deleted, vec![failed]);
     }
 }
