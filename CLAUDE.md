@@ -1,6 +1,12 @@
 # Talaan — guide for Claude Code
 
-> Generated from the Notion pages **Talaan Journey** and **Talaan v1 Build Plan** (Vibe Coding Journey). Notion is the source of truth: when a decision changes, update Notion first, then regenerate this file. Never the reverse.
+> Generated from the Notion pages under **Talaan Journey** (Vibe Coding Journey). Notion is the source of truth: when a decision changes, update Notion first, then regenerate this file. Never the reverse.
+>
+> Where things live in Notion (since 2026-11-13): **Talaan Journey** is a short hub with the status box. Under it:
+> **Roadmap and open work** (the only open-work list), **Product: what Talaan is and how it decides** (every
+> decision, dated), **Engineering handbook** (build rules, where things live, how to release, lessons; with Talaan
+> Cloud AI Models and Test checklists under it), **Release history**, and **Archive** (finished plans such as the v1
+> Build Plan, and the full build log). The engine change log is on "Voice Apps Engine Sync".
 
 ## What Talaan is
 
@@ -16,7 +22,7 @@ v1.0 ships Mac (Apple silicon, built on Miguel's MacBook) and Windows (x64, buil
 4. **Baseline first:** empty Tauri app building and running (done in M0), then the full v1 UI with sample data, approved, then components one at a time: Recorder, Transcriber, Meeting history, Summarizer, Call detector.
 5. **Commit after every change that builds and works.** CI must stay green.
 6. **Talaan's own look ("Sinag", UI v3).** Talaan has its own identity reflecting Miguel's Filipino heritage (decided 2026-10-14, replacing the shared Parlato look). Its own token file (`src/styles/tokens.css`) and components. Don't copy Parlato's component files.
-7. **Notion first:** keep the Talaan Journey decisions and Build Log updated as work happens. Repo docs are generated from Notion.
+7. **Notion first:** keep Notion current as work happens: open work on Roadmap and open work, decisions on Product, and when something ships, the status box on Talaan Journey plus a line in Release history. Repo docs are generated from Notion.
 8. **Absolute rule: Sonnet does the heavy lifting.** If Sonnet can handle the development work, Sonnet does it: implementing, tests, routine reviews, docs, searches, reading long pages. Spawn those agents with the Sonnet model. Opus only plans, coordinates, and takes what truly needs deeper judgment (architecture, tricky debugging, final review of risky changes). No exceptions for convenience. Reason: Miguel wants token usage kept down (decided 2026-10-29).
 
 ## How the build runs
