@@ -5,6 +5,7 @@ pub mod calendar;
 pub mod clock;
 pub mod coreaudio;
 pub mod devices;
+pub mod disk;
 pub mod mic_users;
 pub mod notify;
 pub mod permissions;
@@ -15,6 +16,7 @@ pub mod thread;
 pub mod trash;
 
 pub use clock::host_now_ns;
+pub use disk::free_space;
 pub use thread::background_priority;
 
 pub const NAME: &str = "macos";
