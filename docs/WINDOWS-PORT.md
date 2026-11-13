@@ -336,7 +336,7 @@ Windows needs its own title bar treatment.
   the key. Back it up (password manager): if it's lost, installed copies can never be updated again.
 - **Mac code-signing certificate:** "Parlato Code Signing", in the Mac's login keychain (not needed on Windows).
 - **Design files:** Google Drive › Talaan - Meeting Minutes › `Design/UI v3/` (synced to the PC through Drive).
-- **Decisions and Build Log:** Notion "Talaan Journey".
+- **Decisions and Build Log:** Notion "Talaan Journey" (decisions on that page; the original Build Log in Talaan Archive).
 
 ## Done when
 
