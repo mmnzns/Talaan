@@ -64,6 +64,7 @@ impl Storage {
             error: m.error.clone(),
             transcription: m.transcription.clone(),
             summary_error: None,
+            recording_issue: None,
             transcript_only: m.transcript_only,
             template: m.template.clone(),
             summary_language: m.summary_language.clone(),

@@ -7,7 +7,8 @@ use super::session::Session;
 use super::source::{AudioSource, SharedFeed};
 use super::timeline::SampleSink;
 use super::wav::WavSink;
-use crate::storage::model::{Mark, MeetingStatus};
+use super::wav::repair_wav;
+use crate::storage::model::{Mark, MeetingStatus, ProcessingError, RecordingIssue};
 use crate::storage::paths::{ME_WAV, THEM_WAV};
 use crate::storage::Storage;
 use chrono::{DateTime, FixedOffset};
@@ -20,6 +21,9 @@ use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
 const SAVE_EVERY_NS: u64 = 5_000_000_000;
+const TRACKS: usize = 2;
+/// When both tracks failed, less than this saved (per track) isn't worth transcribing.
+const MIN_USABLE_MS: u64 = 1_000;
 
 #[derive(Serialize, Clone, Debug, PartialEq)]
 #[serde(rename_all = "camelCase")]
@@ -87,6 +91,12 @@ impl TrackSink for WavSink {
     }
 }
 
+/// What `shutdown` leaves for `stop`.
+struct Stopped {
+    session: Arc<Mutex<Session>>,
+    failures: Vec<WriteFailure>,
+}
+
 struct Active {
     session: Arc<Mutex<Session>>,
     mic: Box<dyn AudioSource>,
@@ -97,6 +107,8 @@ struct Active {
     end_pos: Arc<AtomicU64>,
     tracks: Vec<Track>,
     last_save_ns: u64,
+    /// How many periodic saves failed this recording (only the first is logged).
+    save_failures: u32,
 }
 
 #[derive(Default)]
@@ -223,6 +235,7 @@ impl Engine {
             end_pos,
             tracks,
             last_save_ns: now_ns,
+            save_failures: 0,
         });
         Ok(self.status(now_ns))
     }
@@ -286,7 +299,18 @@ impl Engine {
         }
         a.last_save_ns = now_ns;
         let s = a.session.lock().unwrap_or_else(|e| e.into_inner());
-        let _ = storage.update_meeting_file(&s.meeting_id, |f| s.apply(f, now_ns));
+        let saved = storage.update_meeting_file(&s.meeting_id, |f| s.apply(f, now_ns));
+        if let Err(e) = &saved {
+            a.save_failures += 1;
+            if a.save_failures == 1 {
+                log::warn!("saving the recording's progress failed (meeting {}, later tries stay quiet): {}", s.meeting_id, crate::logging::text(&e.to_string()));
+            }
+        }
+    }
+
+    #[cfg(test)]
+    fn save_failures(&self) -> u32 {
+        self.active.as_ref().map_or(0, |a| a.save_failures)
     }
 
     pub fn restart_mic(&mut self) -> Result<String, String> {
@@ -303,30 +327,70 @@ impl Engine {
         Ok(name)
     }
 
-    /// Stops sources, lets the writers drain and close the files. Returns the session.
-    fn shutdown(&mut self, now_ns: u64) -> Option<(Arc<Mutex<Session>>, u64)> {
+    /// Stops sources, lets the writers drain and close the files. Returns the session and the tracks whose writer
+    /// failed. With `repair`, a failed track's file is made readable up to where it stopped.
+    fn shutdown(&mut self, now_ns: u64, repair: bool) -> Option<Stopped> {
         let mut a = self.active.take()?;
         a.mic.stop();
         a.system.stop();
         let elapsed = a.session.lock().unwrap_or_else(|e| e.into_inner()).elapsed_ms(now_ns);
         a.end_pos.store(elapsed * RATE as u64 / 1000, Ordering::Release);
         a.stop.store(true, Ordering::Release);
+        let mut failures = vec![];
         for t in a.tracks {
-            let _ = t.handle.join();
+            let (kind, reason) = match t.handle.join() {
+                Ok(Ok(_)) => continue,
+                Ok(Err(e)) => (e.kind(), e.to_string()),
+                Err(_) => (io::ErrorKind::Other, "the writer stopped unexpectedly".to_string()),
+            };
+            let written_ms = t.state.written.load(Ordering::Relaxed) * 1000 / RATE as u64;
+            // The file's own length is the truth: the writer may have got further than it counted, or not.
+            let saved_ms = if repair { repair_wav(&t.path).map_or(0, |samples| samples * 1000 / RATE as u64) } else { written_ms };
+            let track = t.name;
+            log::warn!("the {track} track stopped saving at {saved_ms} ms: {kind}");
+            failures.push(WriteFailure { track: t.name, kind, reason, saved_ms });
         }
-        Some((a.session, elapsed))
+        Some(Stopped { session: a.session, failures })
     }
 
-    /// Finishes the recording and marks the meeting ready. Returns its id. The sources are already shut down when
-    /// the final save fails, so the meeting is left in needs_recovery (see `save_finished`) and the error is returned.
+    /// Finishes the recording and marks the meeting ready. Returns its id. A track whose writer failed (the disk
+    /// filled up) is kept as far as it got and the meeting says so; if both failed and nothing usable was saved the
+    /// meeting is Failed instead of transcribing silence. The sources are already shut down when the final save
+    /// fails, so the meeting is left in needs_recovery (see `save_finished`) and the error is returned.
     pub fn stop(&mut self, storage: &Storage, now_ns: u64) -> Result<String, String> {
-        let (session, _) = self.shutdown(now_ns).ok_or_else(|| crate::i18n::tr("recorder.not_recording"))?;
+        let Stopped { session, failures } = self.shutdown(now_ns, true).ok_or_else(|| crate::i18n::tr("recorder.not_recording"))?;
         let s = session.lock().unwrap_or_else(|e| e.into_inner());
-        save_finished(|status| {
+        let saved = failures.iter().map(|f| f.saved_ms);
+        let lost_all = failures.len() == TRACKS;
+        let usable_ms = saved.clone().max().unwrap_or(0);
+        let nothing_usable = lost_all && usable_ms < MIN_USABLE_MS;
+        let issue = saved.min().map(|at_ms| RecordingIssue { kind: "write_failed".into(), at_ms });
+        if nothing_usable {
+            // Two empty files aren't audio: without them the meeting page doesn't offer a retry on nothing.
+            if let Ok(dir) = storage.dir(&s.meeting_id) {
+                for name in [ME_WAV, THEM_WAV] {
+                    let _ = std::fs::remove_file(dir.join(name));
+                }
+            }
+        }
+        let first = if nothing_usable { MeetingStatus::Failed } else { MeetingStatus::Transcribing };
+        save_finished(first, |status| {
             storage
                 .update_meeting_file(&s.meeting_id, |f| {
                     s.apply(f, now_ns);
+                    if lost_all {
+                        // Each track ended early: that is how much of the call there is.
+                        f.duration_ms = usable_ms;
+                    }
+                    f.recording_issue = issue.clone();
                     f.progress = (status == MeetingStatus::Transcribing).then_some(0.0);
+                    if status == MeetingStatus::Failed {
+                        f.error = Some(ProcessingError {
+                            code: "write_failed".into(),
+                            message: "Nothing could be saved because the disk was full or couldn't be written to.".into(),
+                            detail: None,
+                        });
+                    }
                     // Transcribing: the transcriber picks it up from here.
                     f.status = status;
                 })
@@ -338,7 +402,7 @@ impl Engine {
     /// Stops and deletes everything recorded. If the folder can't be removed, what is left is marked
     /// needs_recovery rather than "recording" (the sources are already off), and the error is returned.
     pub fn discard(&mut self, storage: &Storage, now_ns: u64) -> Result<(), String> {
-        let (session, _) = self.shutdown(now_ns).ok_or_else(|| crate::i18n::tr("recorder.not_recording"))?;
+        let Stopped { session, .. } = self.shutdown(now_ns, false).ok_or_else(|| crate::i18n::tr("recorder.not_recording"))?;
         let id = session.lock().unwrap_or_else(|e| e.into_inner()).meeting_id.clone();
         storage.delete_meeting(&id).map_err(|e| {
             let _ = storage.set_status(&id, MeetingStatus::NeedsRecovery);
@@ -347,11 +411,12 @@ impl Engine {
     }
 }
 
-/// Writes the finished meeting.json through `write`, which sets the status it is given. A failed write is tried
-/// once more; if that fails too the meeting goes to needs_recovery (the audio is closed and safe, and launch
-/// already offers Recover) instead of staying "recording" with nothing running. The first error is returned.
-fn save_finished(mut write: impl FnMut(MeetingStatus) -> Result<(), String>) -> Result<(), String> {
-    write(MeetingStatus::Transcribing).or_else(|_| write(MeetingStatus::Transcribing)).inspect_err(|_| {
+/// Writes the finished meeting.json through `write`, which sets the status it is given (`status`: Transcribing, or
+/// Failed when nothing could be saved). A failed write is tried once more; if that fails too the meeting goes to
+/// needs_recovery (the audio is closed and safe, and launch already offers Recover) instead of staying "recording"
+/// with nothing running. The first error is returned.
+fn save_finished(status: MeetingStatus, mut write: impl FnMut(MeetingStatus) -> Result<(), String>) -> Result<(), String> {
+    write(status).or_else(|_| write(status)).inspect_err(|_| {
         let _ = write(MeetingStatus::NeedsRecovery);
     })
 }
@@ -492,6 +557,81 @@ pub(crate) mod tests {
     }
 
     #[test]
+    fn stop_after_one_track_failed_keeps_what_was_saved_and_says_so() {
+        let (_d, storage) = storage();
+        let mut e = Engine::default();
+        let (id, me, them) = start_brittle(&mut e, &storage, None, Some(16_000));
+        push(&me, 0, 3_000, 0.2);
+        push(&them, 0, 3_000, 0.4);
+        wait_for_failure(&e).expect("the them writer failed");
+        assert_eq!(e.stop(&storage, 3_000 * MS).unwrap(), id);
+
+        let f = storage.read_meeting_file(&id).unwrap();
+        assert_eq!(f.status, MeetingStatus::Transcribing, "the saved part is still transcribed");
+        assert_eq!(f.progress, Some(0.0));
+        assert_eq!(f.duration_ms, 3_000, "the mic track covers the whole call");
+        let issue = f.recording_issue.expect("the meeting says what happened");
+        assert_eq!(issue.kind, "write_failed");
+        assert!(issue.at_ms >= 900 && issue.at_ms <= 1_000, "{}", issue.at_ms);
+
+        let dir = storage.dir(&id).unwrap();
+        let them_ms = wav_duration_ms(&dir.join(THEM_WAV)).expect("the failed track is a readable file");
+        assert!(them_ms >= 900 && them_ms <= 1_000, "{them_ms}");
+        assert_eq!(wav_duration_ms(&dir.join(ME_WAV)), Some(3_000), "the good track is whole");
+        let r = hound::WavReader::open(dir.join(ME_WAV)).unwrap();
+        assert!(r.into_samples::<i16>().all(|s| s.unwrap() != 0), "and still has its audio");
+    }
+
+    #[test]
+    fn a_failure_found_only_at_stop_is_handled_the_same_way() {
+        // The writer is still going when Stop comes; it fails padding to the end (the them track heard nothing).
+        let (_d, storage) = storage();
+        let mut e = Engine::default();
+        let (id, me, _them) = start_brittle(&mut e, &storage, None, Some(16_000));
+        push(&me, 0, 3_000, 0.2);
+        e.stop(&storage, 3_000 * MS).unwrap();
+        let f = storage.read_meeting_file(&id).unwrap();
+        assert_eq!(f.status, MeetingStatus::Transcribing);
+        assert_eq!(f.recording_issue.map(|i| i.kind), Some("write_failed".into()));
+        let ms = wav_duration_ms(&storage.dir(&id).unwrap().join(THEM_WAV)).unwrap();
+        assert!(ms >= 700 && ms <= 1_000, "{ms}"); // the silence is written in 4096-sample steps up to the limit
+    }
+
+    #[test]
+    fn when_both_tracks_fail_with_some_audio_saved_the_duration_is_what_was_saved() {
+        let (_d, storage) = storage();
+        let mut e = Engine::default();
+        let (id, me, them) = start_brittle(&mut e, &storage, Some(32_000), Some(16_000));
+        push(&me, 0, 4_000, 0.2);
+        push(&them, 0, 4_000, 0.4);
+        std::thread::sleep(Duration::from_millis(200));
+        e.stop(&storage, 4_000 * MS).unwrap();
+        let f = storage.read_meeting_file(&id).unwrap();
+        assert_eq!(f.status, MeetingStatus::Transcribing);
+        assert!(f.duration_ms >= 1_900 && f.duration_ms <= 2_000, "{}", f.duration_ms);
+        assert!(f.recording_issue.unwrap().at_ms <= 1_000, "the earlier failure is where it starts");
+    }
+
+    #[test]
+    fn when_both_tracks_fail_and_nothing_was_saved_the_meeting_fails() {
+        let (_d, storage) = storage();
+        let mut e = Engine::default();
+        let (id, me, them) = start_brittle(&mut e, &storage, Some(0), Some(0));
+        push(&me, 0, 2_000, 0.2);
+        push(&them, 0, 2_000, 0.4);
+        std::thread::sleep(Duration::from_millis(200));
+        assert_eq!(e.stop(&storage, 2_000 * MS).unwrap(), id);
+        assert!(!e.is_active());
+        let f = storage.read_meeting_file(&id).unwrap();
+        assert_eq!(f.status, MeetingStatus::Failed);
+        assert_eq!(f.progress, None);
+        assert_eq!(f.error.as_ref().map(|e| e.code.as_str()), Some("write_failed"));
+        assert!(f.error.unwrap().message.contains("disk"));
+        assert_eq!(f.duration_ms, 0);
+        assert!(!storage.get_meeting(&id).unwrap().has_audio, "two empty files aren't audio");
+    }
+
+    #[test]
     fn a_healthy_recording_never_reports_a_failed_track() {
         let (_d, storage) = storage();
         let mut e = Engine::default();
@@ -506,7 +646,7 @@ pub(crate) mod tests {
     #[test]
     fn a_failed_final_save_is_tried_again_then_left_recoverable() {
         let mut tried = Vec::new();
-        let r = save_finished(|status| {
+        let r = save_finished(MeetingStatus::Transcribing, |status| {
             tried.push(status);
             if tried.len() == 1 { Err("disk busy".into()) } else { Ok(()) }
         });
@@ -514,7 +654,7 @@ pub(crate) mod tests {
         assert_eq!(tried, [MeetingStatus::Transcribing, MeetingStatus::Transcribing]);
 
         let mut tried = Vec::new();
-        let r = save_finished(|status| {
+        let r = save_finished(MeetingStatus::Transcribing, |status| {
             tried.push(status);
             if status == MeetingStatus::NeedsRecovery { Ok(()) } else { Err("disk full".into()) }
         });
@@ -667,6 +807,28 @@ pub(crate) mod tests {
         assert_eq!(f.marks.len(), 1);
         assert_eq!(f.status, MeetingStatus::Recording);
         e.discard(&storage, 7_000 * MS).unwrap();
+    }
+
+    #[test]
+    fn a_failed_periodic_save_is_counted_and_the_next_one_still_tries() {
+        let (_d, storage) = storage();
+        let (mic, _) = fake(false);
+        let (sys, _) = fake(false);
+        let mut e = Engine::default();
+        let id = e.start(&storage, "zoom", "Zoom", mic, sys, 0, at()).unwrap().meeting_id.unwrap();
+        let json = storage.dir(&id).unwrap().join("meeting.json");
+        let good = std::fs::read(&json).unwrap();
+        std::fs::remove_file(&json).unwrap();
+        std::fs::create_dir(&json).unwrap();
+        e.tick(&storage, 6_000 * MS);
+        e.tick(&storage, 12_000 * MS);
+        assert_eq!(e.save_failures(), 2);
+        std::fs::remove_dir(&json).unwrap();
+        std::fs::write(&json, good).unwrap();
+        e.tick(&storage, 18_000 * MS);
+        assert_eq!(e.save_failures(), 2, "a save that works isn't a failure");
+        assert_eq!(storage.read_meeting_file(&id).unwrap().duration_ms, 18_000);
+        e.discard(&storage, 19_000 * MS).unwrap();
     }
 
     #[test]
