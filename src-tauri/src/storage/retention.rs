@@ -2,7 +2,7 @@
 //!
 //! Rules: pinned meetings are never touched. Meetings that still need their audio (recording, needing
 //! recovery, transcribing, summarizing) are never touched. "Don't keep" also spares failed meetings so
-//! they can be retried.
+//! they can be retried. A meeting's age is from the later of when it was recorded and when it was imported.
 
 use super::io::write_json_atomic;
 use super::model::MeetingStatus;
@@ -81,7 +81,9 @@ impl Storage {
                 continue;
             }
             let Ok(started) = DateTime::parse_from_rfc3339(&file.started_at) else { continue };
-            let age_ends = |days: u32| started.with_timezone(&Utc) + Duration::days(days as i64) <= now;
+            // An import is as old as the day it came in, not the day the audio was recorded.
+            let came_in = file.imported_at.as_deref().and_then(|t| DateTime::parse_from_rfc3339(t).ok()).map_or(started, |i| started.max(i));
+            let age_ends = |days: u32| came_in.with_timezone(&Utc) + Duration::days(days as i64) <= now;
 
             if let TranscriptPolicy::Days(d) = self.policy.transcripts {
                 if age_ends(d) {
@@ -276,5 +278,47 @@ mod pass_tests {
         fs::write(bad.join("meeting.json"), "garbage").unwrap();
         assert_eq!(s.apply_retention(now()).unwrap(), RetentionReport::default());
         assert!(bad.exists());
+    }
+
+    /// An imported memo: it started long ago, but it came into Talaan `imported_days_ago` days before `now()`.
+    fn imported(s: &Storage, started_days_old: i64, imported_days_ago: i64) -> (String, PathBuf) {
+        let (id, dir) = meeting(s, started_days_old);
+        let at = (now() - Duration::days(imported_days_ago)).fixed_offset().to_rfc3339();
+        s.update_meeting_file(&id, |m| m.imported_at = Some(at)).unwrap();
+        s.save_transcript(&id, &[]).unwrap();
+        (id, dir)
+    }
+
+    #[test]
+    fn a_recent_import_of_an_old_recording_survives_both_policies() {
+        let (_d, mut s) = storage();
+        s.set_policy(policy("7d", "90d"));
+        let (id, dir) = imported(&s, 180, 0);
+        assert_eq!(s.apply_retention(now()).unwrap(), RetentionReport::default());
+        assert!(dir.join(ME_WAV).exists() && dir.join("transcript.json").exists());
+        assert!(s.get_meeting(&id).is_ok());
+    }
+
+    #[test]
+    fn an_import_is_cleaned_up_once_its_import_date_is_old_enough() {
+        let (_d, mut s) = storage();
+        s.set_policy(policy("7d", "90d"));
+        let (_id, dir) = imported(&s, 400, 8);
+        let r = s.apply_retention(now()).unwrap();
+        assert_eq!(r.audio_deleted.len(), 1);
+        assert!(!dir.join(ME_WAV).exists() && dir.exists());
+        let (old, old_dir) = imported(&s, 400, 100);
+        assert_eq!(s.apply_retention(now()).unwrap().meetings_deleted, vec![old]);
+        assert!(!old_dir.exists());
+    }
+
+    #[test]
+    fn a_normal_old_meeting_is_still_cleaned_up() {
+        let (_d, mut s) = storage();
+        s.set_policy(policy("7d", "90d"));
+        let (old, dir) = meeting(&s, 120);
+        let r = s.apply_retention(now()).unwrap();
+        assert_eq!(r.meetings_deleted, vec![old]);
+        assert!(!dir.exists());
     }
 }
