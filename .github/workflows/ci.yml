@@ -15,7 +15,7 @@ jobs:
         with:
           node-version: 22
           cache: npm
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@1.99.1 # pinned: Rust 1.100 breaks ort-sys's DLL copy on Windows (see Talaan Lessons and Gotchas)
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: src-tauri
@@ -35,7 +35,7 @@ jobs:
         with:
           node-version: 22
           cache: npm
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@1.99.1 # pinned: Rust 1.100 breaks ort-sys's DLL copy on Windows (see Talaan Lessons and Gotchas)
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: src-tauri
