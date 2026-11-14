@@ -1,5 +1,23 @@
 # Changelog
 
+## 1.2.2 (2026-11-13)
+
+**Your recordings are safer**
+- **Warning before the disk fills up:** while recording, Talaan checks the free space and tells you when only about 30 minutes of recording are left. If saving fails anyway, you're told at once, what was saved is kept and transcribed, and the meeting says where the audio stopped.
+- **Imported recordings are kept:** cleanup now counts from the day you import a file, not the day it was recorded, so an old voice note isn't deleted right after you bring it in.
+- **Failed meetings keep their audio:** a meeting that couldn't be transcribed yet keeps its audio past the cleanup date, so it can still be transcribed later.
+- **A confirmation before cleanup deletes anything:** choosing a shorter time in Settings › Privacy now says how many meetings or recordings would be deleted, and asks first.
+- **Talaan always opens:** one damaged meeting folder can no longer stop Talaan from starting.
+- **Stop always stops:** if the recording can't be saved when you press Stop, Talaan still ends it in every window and keeps the meeting ready to recover. A meeting can't be deleted while it's being recorded.
+
+**Clearer**
+- **A failed automatic start says so:** if a call app set to Always can't be recorded, Talaan tells you once instead of retrying quietly.
+- **Ask suggests questions that fit your meetings,** and questions about one meeting when you're asking about one meeting.
+- **Plainer wording:** "audio file" instead of an Apple app name, the Privacy list no longer contradicts itself about transcripts, Delete everything says shared models other apps use are kept, and browser call detection says what it changes.
+
+**Windows**
+- **The window shows after an update** when Talaan was started at login.
+
 ## 1.2.1 (2026-11-10)
 
 **Fixes**
