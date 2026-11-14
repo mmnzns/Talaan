@@ -1,6 +1,6 @@
 [package]
 name = "talaan-stt"
-version = "1.2.1"
+version = "1.2.2"
 description = "Talaan's speech helper (Whisper on Windows): the engine's helper with Talaan's prefix; talaan-stt-vulkan is its Vulkan build"
 edition = "2024"
 license = "MIT"
@@ -11,8 +11,8 @@ name = "talaan-stt"
 path = "src/main.rs"
 
 [dependencies]
-voice-engine-stt = { git = "https://github.com/mmnzns/voice-engine", tag = "v0.3.3" }
-voice-engine-protocol = { git = "https://github.com/mmnzns/voice-engine", tag = "v0.3.3" }
+voice-engine-stt = { git = "https://github.com/mmnzns/voice-engine", tag = "v0.3.4" }
+voice-engine-protocol = { git = "https://github.com/mmnzns/voice-engine", tag = "v0.3.4" }
 
 [features]
 # Windows GPU build (talaan-stt-vulkan.exe), never linked into talaan.exe: needs the Vulkan SDK (VULKAN_SDK) to
