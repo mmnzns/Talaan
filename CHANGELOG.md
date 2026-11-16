@@ -1,9 +1,9 @@
 # Changelog
 
-## Unreleased
+## 1.3.1 (2026-11-16)
 
 **Fixes**
-- **Local AI summaries now fit the computer's memory.** Talaan used to give every local summary model the same working space, which was too much for some models on an 8 GB computer (Gemma 4 E4B, Qwen3.5 9B), so a summary could fail or run out of memory. It now picks the space from the model and how much memory the computer has. Gemma 4 E4B works on 8 GB computers, and long calls are split into smaller parts there. Computers with 16 GB or more behave as before.
+- **Local AI summaries now fit the computer's memory.** Talaan used to give every local summary model the same working space, which was too much for some models on an 8 GB computer (Gemma 4 E4B, Qwen3.5 9B), so a summary could fail or run out of memory. It now picks the space from the model and how much memory the computer has. Gemma 4 E4B works on 8 GB computers, and long calls are split into smaller parts there. Computers with 12 GB or more behave as before.
 
 ## 1.3.0 (2026-11-16)
 
