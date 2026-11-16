@@ -23,13 +23,16 @@ $expected = @{}
 foreach ($l in $cargoConfig) { if ($l -match '^(GGML_[A-Z0-9_]+)\s*=\s*\{\s*value\s*=\s*"(ON|OFF)"') { $expected[$Matches[1]] = $Matches[2] } }
 if (-not $expected.ContainsKey('GGML_NATIVE') -or -not $expected.ContainsKey('GGML_AVX2')) { throw ".cargo/config.toml has no GGML_NATIVE / GGML_AVX2 settings" }
 
-# The CMake caches of whisper.cpp and llama.cpp under a target folder (release profile).
+# The CMake caches of whisper.cpp and llama.cpp under a target folder (release profile). Cargo before Rust 1.100 names a
+# crate's build-script folder `build\<crate>-<hash>`; Rust 1.100 uses `build\<crate>\<hash>`. Look in both.
 function Get-GgmlCaches([string]$target) {
   $build = Join-Path $target 'release\build'
   if (-not (Test-Path $build)) { return @() }
-  Get-ChildItem $build -Directory |
-    Where-Object { $_.Name -match '^(whisper-rs-sys|llama-cpp-sys-2)-' } |
-    ForEach-Object { Join-Path $_.FullName 'out\build\CMakeCache.txt' } | Where-Object { Test-Path $_ }
+  $dirs = @(Get-ChildItem $build -Directory | Where-Object { $_.Name -match '^(whisper-rs-sys|llama-cpp-sys-2)-' })
+  foreach ($crate in 'whisper-rs-sys', 'llama-cpp-sys-2') {
+    $dirs += @(Get-ChildItem (Join-Path $build $crate) -Directory -ErrorAction SilentlyContinue)
+  }
+  $dirs | ForEach-Object { Join-Path $_.FullName 'out\build\CMakeCache.txt' } | Where-Object { Test-Path $_ }
 }
 # Problems with a cache: a GGML_* option that differs from .cargo/config.toml, AVX-512 on, or no AVX2 entry at all.
 function Test-GgmlBaseline([string]$cache) {

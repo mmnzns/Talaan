@@ -53,8 +53,12 @@ $env:CMAKE_GENERATOR = 'Ninja'
 $gpuBuild = Join-Path $gpuTarget 'release\build'
 $otherGenerator = @()
 if (Test-Path $gpuBuild) {
-  $otherGenerator = @(Get-ChildItem $gpuBuild -Directory |
-    Where-Object { $_.Name -match '^(whisper-rs-sys|llama-cpp-sys-2)-' } |
+  # Build-script folders are `<crate>-<hash>` before Rust 1.100 and `<crate>\<hash>` from 1.100 on.
+  $crateDirs = @(Get-ChildItem $gpuBuild -Directory | Where-Object { $_.Name -match '^(whisper-rs-sys|llama-cpp-sys-2)-' })
+  foreach ($crate in 'whisper-rs-sys', 'llama-cpp-sys-2') {
+    $crateDirs += @(Get-ChildItem (Join-Path $gpuBuild $crate) -Directory -ErrorAction SilentlyContinue)
+  }
+  $otherGenerator = @($crateDirs |
     ForEach-Object { Join-Path $_.FullName 'out\build\CMakeCache.txt' } |
     Where-Object { (Test-Path $_) -and -not (Select-String -Path $_ -Pattern '^CMAKE_GENERATOR:[A-Z]+=Ninja$' -Quiet) })
 }
