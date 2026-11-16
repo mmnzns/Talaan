@@ -28,10 +28,42 @@ pub fn speech_error_text(e: &SpeechError, name: &str) -> String {
     }
 }
 
+/// The 14 languages Cohere Transcribe writes (ISO 639-1), from the engine's release notes. It cannot detect the
+/// language, so the meeting's language has to be one of these (Auto means English). Also in `src/data/settings.ts`.
+pub const COHERE_LANGUAGES: [&str; 14] = ["ar", "de", "el", "en", "es", "fr", "it", "ja", "ko", "nl", "pl", "pt", "vi", "zh"];
+
+/// What a model can and can't do that the pipeline has to work around (read from the catalog, never from an id).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Traits {
+    /// The model tells the language by itself. Cohere Transcribe doesn't: it must be given one.
+    pub detects_language: bool,
+    /// The languages it can write, when that is a short list (only for a model that can't detect).
+    pub languages: Option<&'static [&'static str]>,
+    /// Gives words with times. Without them a chunk comes back as one block of text.
+    pub word_times: bool,
+}
+
+pub fn traits(model: &ModelInfo) -> Traits {
+    match model.kind {
+        Kind::Cohere => Traits { detects_language: false, languages: Some(&COHERE_LANGUAGES), word_times: model.word_times },
+        _ => Traits { detects_language: true, languages: None, word_times: model.word_times },
+    }
+}
+
+/// Chunk shape for a model: its own limits (Whisper's 30 s window, Cohere's 35 s), Parakeet's otherwise.
+pub fn shape_for(kind: Kind) -> Shape {
+    match kind {
+        Kind::Whisper => Shape::whisper(),
+        Kind::Cohere => Shape::cohere(),
+        _ => Shape::parakeet(),
+    }
+}
+
 pub struct EngineSpeech {
     inner: Box<dyn Transcriber>,
     label: String,
     kind: Kind,
+    traits: Traits,
     _model: ModelHandle, // keeps the files from being erased while loaded
 }
 
@@ -40,7 +72,7 @@ impl EngineSpeech {
     /// models that have a card path on this platform, so a `fallback` that says the card failed is a real failure).
     pub fn load(model: &'static ModelInfo, handle: ModelHandle, use_gpu: bool) -> Result<Self, String> {
         let inner = voice_engine_stt::load(model, handle.dir(), LoadOptions { gpu: use_gpu, threads: None }).map_err(|e| speech_error_text(&e, model.name))?;
-        Ok(EngineSpeech { inner, label: model.name.to_string(), kind: model.kind, _model: handle })
+        Ok(EngineSpeech { inner, label: model.name.to_string(), kind: model.kind, traits: traits(model), _model: handle })
     }
 }
 
@@ -51,27 +83,75 @@ impl Engine for EngineSpeech {
         if transcript.stopped_early_at_ms.is_some() {
             log::info!("the speech model stopped early on a chunk (the engine decoded the rest again)");
         }
-        Ok(to_chunk(transcript))
+        Ok(to_chunk(transcript, !self.traits.word_times))
     }
     fn label(&self) -> &str {
         &self.label
     }
     fn chunking(&self) -> Shape {
-        if self.kind == Kind::Whisper { Shape::whisper() } else { Shape::parakeet() }
+        shape_for(self.kind)
+    }
+    fn detects_language(&self) -> bool {
+        self.traits.detects_language
+    }
+    fn languages(&self) -> Option<&'static [&'static str]> {
+        self.traits.languages
     }
     fn backend(&self) -> Option<SpeechBackend> {
         Some(self.inner.backend())
     }
 }
 
-pub fn to_chunk(t: Transcript) -> ChunkResult {
+/// `text_only`: the model gives no word times (`ModelInfo::word_times` is false), so a chunk is one block of text.
+pub fn to_chunk(t: Transcript, text_only: bool) -> ChunkResult {
     let pieces = t
         .segments
         .into_iter()
         .map(|s| Piece { start_ms: s.start_ms, end_ms: s.end_ms, text: s.text.trim().to_string() })
         .filter(|p| !p.text.is_empty() && !voice_engine_stt::is_noise(&p.text))
+        .flat_map(|p| if text_only { split_sentences(p) } else { vec![p] })
         .collect();
     ChunkResult { pieces, language: t.language }
+}
+
+/// A text-only model returns a whole chunk (up to 35 s, maybe several speakers) as one piece. Talaan's speaker
+/// naming and echo removal work per sentence, so the block is cut at sentence ends and the chunk's time is shared
+/// out by length (a sentence twice as long gets twice the time). The times are an estimate inside the chunk: good
+/// enough to put a sentence with the right speaker and the right minute, not to the second.
+pub fn split_sentences(p: Piece) -> Vec<Piece> {
+    let mut parts: Vec<String> = vec![];
+    let mut cur = String::new();
+    let mut chars = p.text.chars().peekable();
+    while let Some(c) = chars.next() {
+        cur.push(c);
+        let cjk_end = matches!(c, '。' | '！' | '？');
+        let end = matches!(c, '.' | '!' | '?' | '…' | '؟') && chars.peek().is_none_or(|n| n.is_whitespace());
+        if cjk_end || end {
+            // A run of closers ("?!", "...") stays with its sentence.
+            while chars.peek().is_some_and(|n| matches!(n, '.' | '!' | '?' | '…' | '。' | '！' | '？' | '"' | '”' | '’' | ')')) {
+                cur.push(chars.next().unwrap());
+            }
+            parts.push(std::mem::take(&mut cur));
+        }
+    }
+    parts.push(cur);
+    let parts: Vec<String> = parts.into_iter().map(|s| s.trim().to_string()).filter(|s| !s.is_empty()).collect();
+    if parts.len() <= 1 {
+        return vec![p];
+    }
+    let total: usize = parts.iter().map(|s| s.chars().count()).sum::<usize>().max(1);
+    let span = p.end_ms.saturating_sub(p.start_ms);
+    let (mut done, last) = (0usize, parts.len() - 1);
+    parts
+        .into_iter()
+        .enumerate()
+        .map(|(i, text)| {
+            let start_ms = p.start_ms + span * done as u64 / total as u64;
+            done += text.chars().count();
+            let end_ms = if i == last { p.end_ms } else { p.start_ms + span * done as u64 / total as u64 };
+            Piece { start_ms, end_ms, text }
+        })
+        .collect()
 }
 
 /// The names of the two helper models in the messages ("... was damaged"), as the catalog calls them.
@@ -147,7 +227,7 @@ mod tests {
             language: Some("en".into()),
             stopped_early_at_ms: None,
         };
-        let r = to_chunk(t);
+        let r = to_chunk(t, false);
         assert_eq!(r.pieces, vec![Piece { start_ms: 0, end_ms: 900, text: "Hello there.".into() }]);
         assert_eq!(r.language.as_deref(), Some("en"));
     }
@@ -183,5 +263,56 @@ mod tests {
     #[test]
     fn parakeet_chunks_fit_the_models_40_second_limit() {
         assert!(Shape::parakeet().max_len <= 40 * RATE);
+    }
+
+    #[test]
+    fn every_model_gets_a_chunk_shape_that_fits_its_limit() {
+        for m in voice_engine_models::catalog::speech() {
+            let shape = shape_for(m.kind);
+            if let Some(secs) = m.chunk_secs {
+                assert!(shape.max_len <= secs as usize * RATE, "{}: {} s chunks", m.id, shape.max_len / RATE);
+            }
+        }
+        assert_eq!(shape_for(Kind::Cohere).max_len, 35 * RATE);
+        assert_eq!(shape_for(Kind::Whisper).max_len, Shape::whisper().max_len);
+    }
+
+    /// Word times gate: Talaan reads what a model can and can't do from `ModelInfo::word_times` and its kind.
+    #[test]
+    fn a_model_without_word_times_is_text_only_and_the_others_are_not() {
+        let cohere = traits(voice_engine_models::catalog::find("cohere-transcribe").unwrap());
+        assert!(!cohere.word_times && !cohere.detects_language);
+        assert_eq!(cohere.languages.map(|l| l.len()), Some(14));
+        for m in voice_engine_models::catalog::speech().filter(|m| m.word_times) {
+            let t = traits(m);
+            assert!(t.word_times && t.detects_language && t.languages.is_none(), "{}", m.id);
+        }
+        // The same rule decides whether a chunk's block of text is cut into sentences.
+        let block = || Transcript {
+            segments: vec![Segment { start_ms: 0, end_ms: 10_000, text: "First one. Second one is longer. Third?".into(), words: vec![], starts_word: true }],
+            language: None,
+            stopped_early_at_ms: None,
+        };
+        assert_eq!(to_chunk(block(), false).pieces.len(), 1);
+        assert_eq!(to_chunk(block(), !cohere.word_times).pieces.len(), 3);
+    }
+
+    #[test]
+    fn a_block_of_text_is_cut_at_sentence_ends_and_the_time_shared_by_length() {
+        let p = Piece { start_ms: 1_000, end_ms: 11_000, text: "Aaaa. Bbbbbbbbb! Cc?".into() };
+        let out = split_sentences(p);
+        assert_eq!(out.iter().map(|p| p.text.as_str()).collect::<Vec<_>>(), ["Aaaa.", "Bbbbbbbbb!", "Cc?"]);
+        assert_eq!(out[0].start_ms, 1_000);
+        assert_eq!(out[2].end_ms, 11_000);
+        assert!(out.windows(2).all(|w| w[0].end_ms == w[1].start_ms));
+        assert!(out[1].end_ms - out[1].start_ms > out[0].end_ms - out[0].start_ms);
+    }
+
+    #[test]
+    fn splitting_leaves_decimals_and_single_sentences_alone() {
+        let one = Piece { start_ms: 0, end_ms: 5_000, text: "It costs 3.5 million dollars".into() };
+        assert_eq!(split_sentences(one.clone()), vec![one]);
+        let cjk = split_sentences(Piece { start_ms: 0, end_ms: 4_000, text: "你好。再见！".into() });
+        assert_eq!(cjk.iter().map(|p| p.text.as_str()).collect::<Vec<_>>(), ["你好。", "再见！"]);
     }
 }

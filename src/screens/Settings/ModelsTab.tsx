@@ -4,7 +4,9 @@ import { useSettingsStore } from "../../data/StoreProvider";
 import type { SpeechModel } from "../../data/settings";
 import { useLang, useT } from "../../lib/i18n/I18nProvider";
 import type { MessageKey } from "../../lib/i18n";
+import { languagesFor } from "../../lib/meetingLanguage";
 import { modelNote, splitByTier, tierOf } from "../../lib/modelTiers";
+import { languageLabel } from "../../lib/summaryLanguages";
 import { Button, Chip, Radio, Select, Switch, cn, useToast } from "../../ui";
 import { DeleteModelLink } from "./DeleteModelLink";
 import { Dots, Group, Row, SectionIntro } from "./parts";
@@ -62,8 +64,34 @@ export function ModelsTab({ settings: s, update }: TabProps) {
       </Group>
 
       <Group>
-        <Row title={t("settings.meeting_language_title")} desc={t("settings.meeting_language_desc")}>
-          <Select label={t("settings.meeting_language_title")} wrapperClassName="w-40" value={s.meetingLanguage} onChange={(e) => update({ meetingLanguage: e.target.value })}>
+        <MeetingLanguage settings={s} update={update} />
+      </Group>
+    </div>
+  );
+}
+
+/** The meeting language. A model that can't detect the language (Cohere Transcribe) gets only its own languages, with
+ *  Auto shown as English, and a line that says so; the stored value stays "auto" so another model detects again. */
+function MeetingLanguage({ settings: s, update }: TabProps) {
+  const t = useT();
+  const lang = useLang();
+  const active = s.speechModels.find((m) => m.id === s.activeSpeechModel);
+  const only = languagesFor(active, s.meetingLanguage);
+  const desc = only ? t("settings.meeting_language_no_detect", { name: active?.name ?? "" }) : t("settings.meeting_language_desc");
+  return (
+    <Row title={t("settings.meeting_language_title")} desc={desc}>
+      <Select label={t("settings.meeting_language_title")} wrapperClassName="w-40" value={s.meetingLanguage} onChange={(e) => update({ meetingLanguage: e.target.value })}>
+        {only ? (
+          <>
+            <option value="auto">{t("settings.lang_auto_english")}</option>
+            {only.map((code) => (
+              <option key={code} value={code}>
+                {languageLabel(code, lang)}
+              </option>
+            ))}
+          </>
+        ) : (
+          <>
             <option value="auto">{t("settings.lang_auto")}</option>
             <option value="en">{t("settings.lang_en")}</option>
             <option value="tl">{t("settings.lang_tl")}</option>
@@ -71,10 +99,10 @@ export function ModelsTab({ settings: s, update }: TabProps) {
             <option value="fr">{t("settings.lang_fr")}</option>
             <option value="de">{t("settings.lang_de")}</option>
             <option value="pt">{t("settings.lang_pt")}</option>
-          </Select>
-        </Row>
-      </Group>
-    </div>
+          </>
+        )}
+      </Select>
+    </Row>
   );
 }
 

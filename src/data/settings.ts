@@ -65,12 +65,15 @@ export interface IgnoredApp {
   why: string;
 }
 
+/** The languages Cohere Transcribe writes; the same list as src-tauri/src/transcriber/speech.rs. */
+export const COHERE_LANGUAGES = ["ar", "de", "el", "en", "es", "fr", "it", "ja", "ko", "nl", "pl", "pt", "vi", "zh"] as const;
+
 export interface SpeechModel {
   id: string;
   name: string;
   maker: string;
   note: string;
-  engine: "whisper" | "parakeet" | "diarization" | "search";
+  engine: "whisper" | "parakeet" | "cohere" | "diarization" | "search";
   sizeMb: number;
   speed: 1 | 2 | 3;
   accuracy: 1 | 2 | 3;
@@ -79,6 +82,11 @@ export interface SpeechModel {
   licence: string;
   /** Listens in English only: other languages come out wrong. */
   englishOnly: boolean;
+  /** The model tells the language by itself. Absent means it does. When false (Cohere Transcribe) the meeting
+   *  language has to be picked (Auto means English) and can only be one of `languageCodes`. */
+  detectsLanguage?: boolean;
+  /** The only languages (ISO 639-1) the model writes. Absent or empty means any. */
+  languageCodes?: readonly string[];
   state: "not_downloaded" | "downloading" | "downloaded";
   progress?: number; // 0..1 while downloading
   /** What an interrupted download left on disk (0..1), while not downloading; Download resumes from it. */

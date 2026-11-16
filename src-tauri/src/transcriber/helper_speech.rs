@@ -131,7 +131,7 @@ mod windows_impl {
             let opts = ChunkOptions { language: language.map(str::to_string), timing: Timing::Segments, ..Default::default() };
             let out = self.client.transcribe(samples, &opts).map_err(|e| helper_error_text(&e, &self.label))?;
             self.last = Some(placed(&out.backend, keep_card_failure(self.last.as_ref().and_then(|b| b.fallback), out.fallback)));
-            Ok(to_chunk(out.value))
+            Ok(to_chunk(out.value, false)) // the speech helper serves Whisper only: it has word times
         }
         fn label(&self) -> &str {
             &self.label

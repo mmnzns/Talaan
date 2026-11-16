@@ -2,7 +2,8 @@
 //! merge into lines and settle the language. No Tauri or storage types beyond the transcript line.
 
 use super::echo::remove_echo;
-use super::engine::Engine;
+use super::engine::{effective_language, knows_language, Engine};
+use crate::i18n::tr_with;
 use super::diarize::{assign_speakers, SpeakerSplitter};
 use super::merge::{merge, Timed, Track};
 use super::vad::{read_track, shape, Span};
@@ -49,6 +50,16 @@ pub fn run(
     cancel: &AtomicBool,
     progress: &mut dyn FnMut(f32),
 ) -> Result<Output, PipelineError> {
+    // A model that can't detect the language (Cohere Transcribe) is always told one: Auto means English, and a
+    // language it doesn't write stops here with a message, not as a vague engine error after the work is done.
+    let language = effective_language(language, engine.detects_language());
+    if let Some(l) = &language {
+        if !knows_language(engine.languages(), l) {
+            return Err(PipelineError::Failed(tr_with("transcribe.language_unsupported", &[("name", engine.label())])));
+        }
+    }
+    let language = language.as_deref();
+    // Voice detection runs on every track before any engine hears it, for every model (Cohere writes text for silence).
     // Tracks that are missing (an imported file has only one) are skipped.
     let mut tracks = vec![];
     for (track, name) in [(Track::Me, "me.wav"), (Track::Them, "them.wav")] {
@@ -295,6 +306,77 @@ mod tests {
         assert_eq!(out.language.as_deref(), Some("es"));
         // First call detects (None), the other two use the result; the detecting chunk isn't transcribed twice.
         assert_eq!(engine.calls, vec![None, Some("es".into()), Some("es".into())]);
+    }
+
+    /// Cannot detect the language and writes only some, like Cohere Transcribe.
+    struct NoDetect(FakeEngine);
+    impl Engine for NoDetect {
+        fn transcribe(&mut self, samples: &[f32], language: Option<&str>) -> Result<ChunkResult, String> {
+            self.0.transcribe(samples, language)
+        }
+        fn label(&self) -> &str {
+            "Cohere Transcribe"
+        }
+        fn chunking(&self) -> Shape {
+            self.0.chunking()
+        }
+        fn detects_language(&self) -> bool {
+            false
+        }
+        fn languages(&self) -> Option<&'static [&'static str]> {
+            Some(&["en", "fr"])
+        }
+    }
+
+    #[test]
+    fn auto_is_english_for_a_model_that_cannot_detect_the_language() {
+        let dir = meeting();
+        let mut engine = NoDetect(FakeEngine { calls: vec![], detected: None });
+        let out = run(dir.path(), &mut engine, &mut EnergyDetector, None, None, &AtomicBool::new(false), &mut |_| {}).unwrap();
+        // No detecting call first, and every chunk was given English.
+        assert_eq!(engine.0.calls, vec![Some("en".to_string()); 3]);
+        assert_eq!(out.language.as_deref(), Some("en"));
+        // A picked language goes through as picked.
+        let mut engine = NoDetect(FakeEngine { calls: vec![], detected: None });
+        run(dir.path(), &mut engine, &mut EnergyDetector, Some("fr"), None, &AtomicBool::new(false), &mut |_| {}).unwrap();
+        assert!(engine.0.calls.iter().all(|c| c.as_deref() == Some("fr")));
+    }
+
+    #[test]
+    fn a_language_the_model_cannot_write_stops_before_any_work() {
+        let dir = meeting();
+        let mut engine = NoDetect(FakeEngine { calls: vec![], detected: None });
+        let r = run(dir.path(), &mut engine, &mut EnergyDetector, Some("tl"), None, &AtomicBool::new(false), &mut |_| {});
+        assert!(matches!(r, Err(PipelineError::Failed(m)) if m.contains("Cohere Transcribe")));
+        assert!(engine.0.calls.is_empty());
+    }
+
+    /// Voice detection runs on every track before a text-only model hears anything: silence never reaches it.
+    #[test]
+    fn a_model_that_writes_text_for_silence_only_hears_detected_speech() {
+        struct Chatty(usize);
+        impl Engine for Chatty {
+            fn transcribe(&mut self, samples: &[f32], _: Option<&str>) -> Result<ChunkResult, String> {
+                assert!(samples.iter().any(|x| *x != 0.0), "a silent chunk reached the engine");
+                self.0 += 1;
+                Ok(ChunkResult { pieces: vec![Piece { start_ms: 0, end_ms: 1000, text: "Hello.".into() }], language: None })
+            }
+            fn label(&self) -> &str {
+                "Chatty"
+            }
+            fn chunking(&self) -> Shape {
+                Shape::cohere()
+            }
+            fn detects_language(&self) -> bool {
+                false
+            }
+        }
+        let dir = tempfile::tempdir().unwrap();
+        wav(&dir.path().join("me.wav"), &[], 30.0); // 30 s of silence
+        let mut engine = Chatty(0);
+        let out = run(dir.path(), &mut engine, &mut EnergyDetector, None, None, &AtomicBool::new(false), &mut |_| {}).unwrap();
+        assert_eq!(engine.0, 0);
+        assert!(out.lines.is_empty());
     }
 
     #[test]

@@ -48,6 +48,12 @@ impl Models {
         Ok(Models { store, legacy })
     }
 
+    /// The real shared folder, for the ignored real-model checks: it never reads or moves Talaan's old folders.
+    #[cfg(test)]
+    pub fn open_shared_without_legacy() -> std::io::Result<Models> {
+        Ok(Models { store: SharedStore::open(App::Talaan)?, legacy: Vec::new() })
+    }
+
     /// Tests: the same models with these as Talaan's old folders.
     #[cfg(test)]
     pub fn with_legacy(mut self, dirs: Vec<PathBuf>) -> Models {

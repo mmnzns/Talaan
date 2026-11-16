@@ -62,6 +62,8 @@ pub fn stt_profile(model: &ModelInfo, on_gpu: bool) -> Profile {
         _ => match model.kind {
             Kind::Whisper => 0.3,
             Kind::Nemotron => 0.08,
+            // Cohere Transcribe: 2.3x real time on a processor in the engine's own measurements.
+            Kind::Cohere => 0.45,
             _ if model.id == "parakeet-ultra" => 0.09,
             _ => 0.045,
         },

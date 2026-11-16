@@ -46,7 +46,7 @@ impl Config {
     pub fn from_settings(v: Option<&Value>) -> Config {
         let v = v.cloned().unwrap_or(Value::Null);
         // Same reading as `models::used_ids`: an unknown or non-speech id ("diarization") is the default.
-        let model = v["activeSpeechModel"].as_str().and_then(catalog::find).filter(|m| m.is_speech()).unwrap_or_else(|| catalog::find(DEFAULT_SPEECH).unwrap());
+        let model = v["activeSpeechModel"].as_str().and_then(catalog::find).filter(|m| m.is_speech() && super::models::offered(m)).unwrap_or_else(|| catalog::find(DEFAULT_SPEECH).unwrap());
         let language = v["meetingLanguage"].as_str().filter(|l| !l.is_empty() && *l != "auto").map(str::to_string);
         Config {
             model,

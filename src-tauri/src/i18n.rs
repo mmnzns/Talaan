@@ -312,6 +312,12 @@ const TABLE: &[(&str, &str, &str, &str)] = &[
         "La transcripción se detuvo de forma inesperada. Vuelve a intentarlo.",
     ),
     (
+        "transcribe.language_unsupported",
+        "{name} can't write the language set for meetings. In Settings, pick one of its languages or another speech model.",
+        "{name} ne peut pas écrire la langue choisie pour les réunions. Dans les réglages, choisissez l’une de ses langues ou un autre modèle de voix.",
+        "{name} no puede escribir el idioma elegido para las reuniones. En los ajustes, elige uno de sus idiomas u otro modelo de voz.",
+    ),
+    (
         "transcribe.out_of_memory",
         "There wasn't enough memory to transcribe this call. Try a smaller speech model, or close other apps.",
         "Il n’y avait pas assez de mémoire pour transcrire cet appel. Essayez un modèle de voix plus petit ou fermez d’autres applications.",
