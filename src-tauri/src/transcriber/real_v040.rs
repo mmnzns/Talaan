@@ -167,20 +167,22 @@ fn real_v040_cohere_pipeline() {
     assert!(out.lines.is_empty());
     assert_eq!(spy.chunk_secs.len(), calls_before);
 
-    // 3. Over a minute of near-continuous speech: split into chunks of at most 35 s.
+    // 3. Over a minute of continuous, varied speech (204 spoken words): split into chunks of at most 35 s, and
+    // (nearly) every word is there.
     let long = tempfile::tempdir().unwrap();
-    let mut them = vec![];
-    for _ in 0..5 {
-        them.extend(&speech);
-        them.extend(quiet(0.4, 7));
-    }
+    let them = read(Path::new(&std::env::var("TALAAN_REAL_SPEECH_LONG").expect("TALAAN_REAL_SPEECH_LONG: a long 16 kHz mono wav")));
     write(&long.path().join("them.wav"), &them);
     spy.chunk_secs.clear();
     let t = Instant::now();
     let out = run(long.path(), &mut spy, &mut vad, Some("en"), None, &cancel, &mut |_| {}).unwrap();
     eprintln!("== long: {:.1}s for {:.0}s of audio, {} lines, chunks {:?}", t.elapsed().as_secs_f32(), them.len() as f32 / 16000.0, out.lines.len(), spy.chunk_secs);
+    for l in &out.lines {
+        eprintln!("   [{}] {} ms: {}", l.speaker, l.at, l.text);
+    }
+    let words: usize = out.lines.iter().map(|l| l.text.split_whitespace().count()).sum();
+    eprintln!("== long: {words} words of 204");
     assert!(spy.chunk_secs.len() >= 2 && spy.chunk_secs.iter().all(|s| *s <= 35.0), "{:?}", spy.chunk_secs);
-    assert!(out.lines.len() >= 5);
+    assert!(words >= 180, "{words} words");
 }
 
 /// A summary with Gemma 4 E4B through Talaan's own summarizer: `make_engine` from settings (the local AI helper, built
