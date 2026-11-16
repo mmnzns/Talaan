@@ -3,6 +3,7 @@
 //! dates. Works with every summary engine.
 
 use super::parse::{extract_json, strip_reasoning};
+use super::chunk::estimate_tokens;
 use super::prompt::{language_name, speaker_name, Prompt};
 use super::summarize::{EngineError, SummaryEngine};
 use crate::eta::Profile;
@@ -107,9 +108,23 @@ fn parse(reply: &str) -> Option<FollowUp> {
     (!body.is_empty()).then(|| FollowUp { subject: f.subject.split_whitespace().collect::<Vec<_>>().join(" "), body })
 }
 
+/// Keeps the summary part of the prompt inside the engine's context (a small local context is 4096 tokens): when
+/// instructions, summary and reply room don't fit, whole lines are dropped from the end of the summary, the
+/// decisions and action items (which come first) last.
+fn fit(mut p: Prompt, context: usize) -> Prompt {
+    let room = (context * 9 / 10).saturating_sub(estimate_tokens(&p.system) + MAX_OUTPUT_TOKENS as usize + 80).max(300);
+    while estimate_tokens(&p.user) > room {
+        match p.user.trim_end().rfind('\n') {
+            Some(cut) => p.user.truncate(cut),
+            None => break,
+        }
+    }
+    p
+}
+
 /// One request, one retry when the reply can't be used.
 pub fn draft(meeting: &Meeting, summary: &Summary, engine: &mut dyn SummaryEngine, language: &str, cancel: &AtomicBool) -> Result<FollowUp, FollowUpError> {
-    let p = prompt(meeting, summary, language);
+    let p = fit(prompt(meeting, summary, language), engine.context_tokens());
     let first = engine.complete(&p, SCHEMA, MAX_OUTPUT_TOKENS, cancel).map_err(FollowUpError::Engine)?;
     if let Some(f) = parse(&first) {
         return Ok(f);
@@ -207,6 +222,21 @@ mod tests {
         assert!(!p.user.contains("| owner"));
         assert!(!p.user.contains("SECRET"));
         assert!(p.system.contains("\"Decisions:\"") && p.system.contains("Never invent"));
+    }
+
+    #[test]
+    fn a_big_summary_is_trimmed_to_fit_a_small_context() {
+        let m = meeting(vec![]);
+        let mut s = summary();
+        s.recap = "We went through the whole roadmap. ".repeat(20);
+        s.action_items = (0..1500).map(|_| s.action_items[0].clone()).collect();
+        let whole = prompt(&m, &s, "en");
+        assert!(estimate_tokens(&whole.user) > 4_096);
+        let p = fit(whole.clone(), 4_096);
+        assert!(estimate_tokens(&p.system) + estimate_tokens(&p.user) + MAX_OUTPUT_TOKENS as usize <= 4_096 * 9 / 10);
+        // The start of the summary stays; a prompt that already fits is left alone.
+        assert!(p.user.contains("Recap: We went through"));
+        assert_eq!(fit(prompt(&m, &summary(), "en"), 4_096), prompt(&m, &summary(), "en"));
     }
 
     #[test]
