@@ -5,6 +5,11 @@
 **Improvements**
 - **The meeting list shows the month next to each day.** Each meeting now shows its month (for example "oct") above the day number, in your language, so you can tell when it happened without opening it.
 
+**New models (Your own key)**
+- **Gemini 4 Hydrogen, Argon and Carbon:** Google's newest models for cloud summaries. Hydrogen is now the recommended Gemini model (it is generally available, has a free tier and a 1M-token context); Argon and Carbon are stronger and cost more.
+- **GPT-6.1 Sol and GPT-6.1 Terra:** OpenAI's newer models, with GPT-6.1 Sol now the recommended OpenAI model. **Claude Fable 5.2** replaces Fable 5.1 in the list.
+- **Shorter lists:** removed models that Google or OpenAI have replaced or are retiring (Gemini 3.1 Pro preview, 3.6 Flash and 3.1 Flash-Lite; GPT-5.5, 5.4, 5.4 mini, GPT-5.6 Luna and Terra; Claude Fable 5.1). A model you already picked keeps working until its provider turns it off.
+
 ## 1.3.1 (2026-11-16)
 
 **Fixes**
