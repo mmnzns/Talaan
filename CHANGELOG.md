@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.3.0 (2026-11-16)
 
 **New models**
 - **Cohere Transcribe (speech):** a very accurate speech model for 14 languages (Arabic, Chinese, Dutch, English, French, German, Greek, Italian, Japanese, Korean, Polish, Portuguese, Spanish, Vietnamese). It can't detect the language, so Settings › Speech models shows only its 14 languages and Auto means English. It's a larger download (3.1 GB) and slower than Whisper, and it gives the text only, so the time stamps inside a long stretch of speech are estimates.
