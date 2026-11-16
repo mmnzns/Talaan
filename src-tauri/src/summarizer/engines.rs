@@ -42,9 +42,9 @@ pub enum Provider {
 /// what "Recommended" uses when the key can reach it. Names for the menu live in src/data/byokModels.ts.
 pub fn catalog(provider: Provider) -> &'static [&'static str] {
     match provider {
-        Provider::Claude => &["claude-sonnet-5-5", "claude-opus-5-5", "claude-haiku-5-5", "claude-fable-5-1"],
-        Provider::OpenAi => &["gpt-6-sol", "gpt-6.1-sol", "gpt-6-luna", "gpt-6-astra", "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna", "gpt-5.5", "gpt-5.4", "gpt-5.4-mini"],
-        Provider::Gemini => &["gemini-3.8-flash", "gemini-3.1-pro-preview", "gemini-3.6-flash", "gemini-3.5-flash-lite", "gemini-3.1-flash-lite"],
+        Provider::Claude => &["claude-sonnet-5-5", "claude-opus-5-5", "claude-fable-5-2", "claude-haiku-5-5"],
+        Provider::OpenAi => &["gpt-6.1-sol", "gpt-6.1-terra", "gpt-6-astra", "gpt-6-luna", "gpt-6-sol", "gpt-5.6-sol"],
+        Provider::Gemini => &["gemini-4-hydrogen", "gemini-4-argon", "gemini-4-carbon", "gemini-3.8-flash", "gemini-3.5-flash-lite"],
         Provider::Groq => &["openai/gpt-oss-120b", "openai/gpt-oss-20b", "qwen/qwen3.8-27b"],
         Provider::Cerebras => &["gpt-oss-120b", "qwen-3.8-27b"],
         Provider::Mistral => &["mistral-medium-latest", "mistral-large-latest", "mistral-small-latest", "ministral-14b-latest", "ministral-8b-latest"],
@@ -52,11 +52,11 @@ pub fn catalog(provider: Provider) -> &'static [&'static str] {
             "anthropic/claude-sonnet-5.5",
             "anthropic/claude-opus-5.5",
             "anthropic/claude-haiku-5.5",
-            "openai/gpt-6-sol",
+            "openai/gpt-6.1-sol",
             "openai/gpt-6-luna",
             "openai/gpt-oss-120b",
+            "google/gemini-4-hydrogen",
             "google/gemini-3.8-flash",
-            "google/gemini-3.1-pro-preview",
             "deepseek/deepseek-v4.1-flash",
             "qwen/qwen3.8-flash",
             "mistralai/mistral-medium-3-5",
@@ -259,9 +259,13 @@ fn without(v: &Value, keys: &[&str]) -> Value {
     }
 }
 
-/// Gemini 3 thinking level, as Parlato sets it: a little for 3.8 Flash and the Pro models, minimal for the rest.
+/// Gemini 3 and 4 thinking level: a little for the Gemini 4 models (they refuse `minimal`), 3.8 Flash and the
+/// Pro models, minimal for the rest of Gemini 3.
 fn gemini_thinking(model: &str) -> Option<&'static str> {
     let m = model.to_lowercase();
+    if m.starts_with("gemini-4") {
+        return Some("low");
+    }
     if !m.starts_with("gemini-3") {
         return None;
     }
@@ -338,6 +342,10 @@ impl HttpEngine {
             },
             Provider::Gemini => {
                 let mut config = json!({ "temperature": 0.2, "maxOutputTokens": max_tokens, "responseMimeType": "application/json", "responseSchema": without(&schema, &["additionalProperties"]) });
+                // Gemini 4 fixes the temperature at 1.0 and ignores any other, so don't send one.
+                if self.model.to_lowercase().starts_with("gemini-4") {
+                    config.as_object_mut().map(|c| c.remove("temperature"));
+                }
                 if let Some(level) = gemini_thinking(&self.model) {
                     config["thinkingConfig"] = json!({ "thinkingLevel": level });
                 }
@@ -471,8 +479,8 @@ pub fn recommended_model(provider: Provider, ids: &[String]) -> Option<String> {
         let id = id.to_lowercase();
         match provider {
             Provider::Claude => id.starts_with("claude-sonnet"),
-            Provider::OpenAi => id.starts_with("gpt-") && id.ends_with("-mini") && !id.contains("audio") && !id.contains("realtime") && !id.contains("search"),
-            Provider::Gemini => id.starts_with("gemini-") && id.contains("flash") && !id.contains("lite") && !id.contains("image") && !id.contains("tts") && !id.contains("live") && !id.contains("exp") && !id.contains("preview"),
+            Provider::OpenAi => id.starts_with("gpt-") && (id.ends_with("-mini") || id.ends_with("-sol") || id.ends_with("-terra")) && !id.contains("audio") && !id.contains("realtime") && !id.contains("search"),
+            Provider::Gemini => id.starts_with("gemini-") && (id.contains("flash") || id.contains("hydrogen")) && !id.contains("lite") && !id.contains("image") && !id.contains("tts") && !id.contains("live") && !id.contains("exp") && !id.contains("preview"),
             Provider::Groq | Provider::Cerebras | Provider::OpenRouter => id.contains("gpt-oss-120b"),
             Provider::Mistral => id.starts_with("mistral-medium"),
             Provider::Compatible => !id.contains("embed"),
@@ -630,6 +638,9 @@ mod tests {
         assert_eq!(b["reasoning_effort"], "none");
         assert_eq!(chat(Provider::OpenAi, "gpt-6-astra")["reasoning_effort"], "low");
         assert_eq!(chat(Provider::OpenAi, "gpt-6.1-sol")["reasoning_effort"], "low");
+        // 6.1 Terra takes `none`, like Luna.
+        assert_eq!(chat(Provider::OpenAi, "gpt-6.1-terra")["reasoning_effort"], "none");
+        assert!(chat(Provider::OpenAi, "gpt-6.1-terra").get("temperature").is_none());
         assert_eq!(chat(Provider::OpenAi, "gpt-5.4-mini")["reasoning_effort"], "none");
         assert!(chat(Provider::OpenAi, "gpt-4o").get("reasoning_effort").is_none());
         // Groq and Cerebras keep GPT-OSS reasoning short and out of the reply; Qwen doesn't reason.
@@ -653,6 +664,12 @@ mod tests {
         assert_eq!(engine(Provider::Groq).reply_text(&json!({ "choices": [{ "message": { "content": "{}" } }] })).unwrap(), "{}");
         // Gemini 3: a little thinking for 3.8 Flash and Pro, minimal for the rest, none for older models.
         let level = |m: &str| chat(Provider::Gemini, m)["generationConfig"]["thinkingConfig"]["thinkingLevel"].as_str().map(str::to_string);
+        // Gemini 4 refuses `minimal` (400): low, and no temperature (fixed at 1.0).
+        for m in ["gemini-4-hydrogen", "gemini-4-argon", "gemini-4-carbon"] {
+            assert_eq!(level(m).as_deref(), Some("low"), "{m}");
+            assert!(chat(Provider::Gemini, m)["generationConfig"].get("temperature").is_none(), "{m}");
+        }
+        assert!(chat(Provider::Gemini, "gemini-3.8-flash")["generationConfig"].get("temperature").is_some());
         assert_eq!(level("gemini-3.8-flash").as_deref(), Some("low"));
         assert_eq!(level("gemini-3.1-pro-preview").as_deref(), Some("low"));
         assert_eq!(level("gemini-3.5-flash-lite").as_deref(), Some("minimal"));
@@ -662,7 +679,9 @@ mod tests {
     #[test]
     fn recommended_prefers_the_listed_default_the_key_can_use() {
         let ids = |v: &[&str]| v.iter().map(|s| s.to_string()).collect::<Vec<_>>();
-        assert_eq!(recommended_model(Provider::OpenAi, &ids(&["gpt-5.4-mini", "gpt-6-sol", "gpt-6-luna"])).as_deref(), Some("gpt-6-sol"));
+        assert_eq!(recommended_model(Provider::OpenAi, &ids(&["gpt-5.4-mini", "gpt-6-sol", "gpt-6-luna"])).as_deref(), Some("gpt-6-luna"));
+        assert_eq!(recommended_model(Provider::OpenAi, &ids(&["gpt-5.4-mini", "gpt-6-sol", "gpt-6.1-sol"])).as_deref(), Some("gpt-6.1-sol"));
+        assert_eq!(recommended_model(Provider::Gemini, &ids(&["gemini-3.8-flash", "gemini-4-hydrogen"])).as_deref(), Some("gemini-4-hydrogen"));
         assert_eq!(recommended_model(Provider::Groq, &ids(&["llama-3.3-70b", "openai/gpt-oss-20b"])).as_deref(), Some("openai/gpt-oss-20b"));
         assert_eq!(recommended_model(Provider::Mistral, &ids(&["mistral-small-latest", "mistral-medium-latest"])).as_deref(), Some("mistral-medium-latest"));
         assert_eq!(recommended_model(Provider::OpenRouter, &ids(&["x-ai/grok-4.7", "anthropic/claude-sonnet-5.5"])).as_deref(), Some("anthropic/claude-sonnet-5.5"));
@@ -680,6 +699,8 @@ mod tests {
     fn the_newest_fast_model_is_recommended_from_what_the_key_offers() {
         let ids = |v: &[&str]| v.iter().map(|s| s.to_string()).collect::<Vec<_>>();
         assert_eq!(recommended_model(Provider::OpenAi, &ids(&["gpt-4o", "gpt-4.1-mini", "gpt-5-mini", "gpt-5-mini-audio", "text-embedding-3"])).as_deref(), Some("gpt-5-mini"));
+        // Newer names have no "-mini": the newest Sol or Terra is picked, never a Pro or audio variant.
+        assert_eq!(recommended_model(Provider::OpenAi, &ids(&["gpt-7-sol", "gpt-7-sol-pro", "gpt-4o", "gpt-6.9-terra-audio"])).as_deref(), Some("gpt-7-sol"));
         assert_eq!(recommended_model(Provider::Claude, &ids(&["claude-haiku-5-5", "claude-sonnet-4-6", "claude-sonnet-5-5", "claude-opus-5-5"])).as_deref(), Some("claude-sonnet-5-5"));
         assert_eq!(recommended_model(Provider::Gemini, &ids(&["gemini-2.5-flash", "gemini-3-flash", "gemini-3-flash-lite", "gemini-3-pro"])).as_deref(), Some("gemini-3-flash"));
         assert_eq!(recommended_model(Provider::OpenAi, &ids(&["whisper-1"])), None);
