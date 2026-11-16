@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+**New models**
+- **Cohere Transcribe (speech):** a very accurate speech model for 14 languages (Arabic, Chinese, Dutch, English, French, German, Greek, Italian, Japanese, Korean, Polish, Portuguese, Spanish, Vietnamese). It can't detect the language, so Settings › Speech models shows only its 14 languages and Auto means English. It's a larger download (3.1 GB) and slower than Whisper, and it gives the text only, so the time stamps inside a long stretch of speech are estimates.
+- **Parakeet Unified (25 languages):** a fast speech model for 25 European languages, with punctuation. It uses the language you pick, or detects it.
+- **Gemma 4 E4B (summaries):** Google's small Gemma 4 as another local AI for summaries, useful for languages Qwen handles less well (5.2 GB; best with 16 GB of memory). Qwen3.5 4B stays the recommended one.
+
 ## 1.2.2 (2026-11-13)
 
 **Your recordings are safer**

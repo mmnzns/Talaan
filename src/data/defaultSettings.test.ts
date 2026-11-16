@@ -19,7 +19,7 @@ describe("Mac-only apps", () => {
 
 describe("the model lists", () => {
   it("list every speech model of the engine catalog, with licence and English-only", () => {
-    expect(defaultSettings.speechModels).toHaveLength(22);
+    expect(defaultSettings.speechModels).toHaveLength(24);
     expect(defaultSettings.speechModels.slice(0, 3).map((m) => m.id)).toEqual(["whisper-turbo", "parakeet-v3", "whisper-small"]);
     for (const m of defaultSettings.speechModels) expect(m.licence, m.id).toBeTruthy();
     const english = defaultSettings.speechModels.filter((m) => m.englishOnly).map((m) => m.id);
@@ -28,8 +28,16 @@ describe("the model lists", () => {
     expect(english).not.toContain("whisper-turbo");
   });
 
-  it("offer three local AI models, Qwen3.5 4B recommended and in use", () => {
-    expect(defaultSettings.localModels.map((m) => m.id)).toEqual(["qwen3.5-4b", "qwen3.5-9b", "granite-4.2-3b"]);
+  it("list Cohere Transcribe as a model that can't detect the language, with its 14 languages", () => {
+    const cohere = defaultSettings.speechModels.find((m) => m.id === "cohere-transcribe");
+    expect(cohere?.detectsLanguage).toBe(false);
+    expect(cohere?.languageCodes).toHaveLength(14);
+    expect(defaultSettings.speechModels.filter((m) => m.detectsLanguage === false).map((m) => m.id)).toEqual(["cohere-transcribe"]);
+    expect(defaultSettings.speechModels.some((m) => m.id === "multitalker-tdt")).toBe(false);
+  });
+
+  it("offer four local AI models, Qwen3.5 4B recommended and in use", () => {
+    expect(defaultSettings.localModels.map((m) => m.id)).toEqual(["qwen3.5-4b", "qwen3.5-9b", "granite-4.2-3b", "gemma-4-e4b"]);
     expect(defaultSettings.localModels.filter((m) => m.recommended).map((m) => m.id)).toEqual(["qwen3.5-4b"]);
     expect(defaultSettings.localModel).toBe("qwen3.5-4b");
     expect("reuseModels" in defaultSettings).toBe(false);

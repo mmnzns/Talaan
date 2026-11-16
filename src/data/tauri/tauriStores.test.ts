@@ -238,6 +238,16 @@ describe("TauriSettingsStore", () => {
     expect(invoke.mock.calls.filter((c) => c[0] === "models_list")).toHaveLength(2);
   });
 
+  it("keeps every speech engine in the speech list and picks up the speaker and search models", async () => {
+    const row = (id: string, engine: string) => ({ ...MODELS[0], id, engine });
+    const rows = [row("w", "whisper"), row("p", "parakeet"), row("c", "cohere"), row("o", "other"), row("diarization", "diarization"), row("search", "search")];
+    invoke.mockImplementation((cmd: string) => Promise.resolve(cmd === "settings_get" ? {} : cmd === "models_list" ? structuredClone(rows) : cmd === "llm_models_list" ? structuredClone(LLMS) : undefined));
+    const got = await new TauriSettingsStore().get();
+    expect(got.speechModels.map((m) => m.id)).toEqual(["w", "p", "c", "o"]);
+    expect(got.speakerModel.id).toBe("diarization");
+    expect(got.searchModel.id).toBe("search");
+  });
+
   it("connects a calendar address through Rust (secure key storage), never storing it in settings", async () => {
     backend({});
     const store = new TauriSettingsStore();

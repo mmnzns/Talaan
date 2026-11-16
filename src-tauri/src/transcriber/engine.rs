@@ -28,6 +28,54 @@ pub trait Engine: Send {
     fn backend(&self) -> Option<SpeechBackend> {
         None
     }
+    /// Whether the model can tell the language by itself. One that can't (Cohere Transcribe) is always told one.
+    fn detects_language(&self) -> bool {
+        true
+    }
+    /// The only languages (ISO 639-1) the model can write, or None when it takes any. Only a model that can't
+    /// detect the language needs this.
+    fn languages(&self) -> Option<&'static [&'static str]> {
+        None
+    }
+}
+
+/// The language to give a model for the whole meeting. Auto (None) stays None for a model that detects the language;
+/// for one that can't, Auto means English. A picked language always stays as picked.
+pub fn effective_language(picked: Option<&str>, detects: bool) -> Option<String> {
+    match picked {
+        Some(l) => Some(l.to_string()),
+        None if detects => None,
+        None => Some("en".to_string()),
+    }
+}
+
+/// Whether the model can write `language` (ISO 639-1; a region such as "fr-CA" counts as "fr").
+pub fn knows_language(allowed: Option<&[&str]>, language: &str) -> bool {
+    let base = language.split(['-', '_']).next().unwrap_or(language).to_ascii_lowercase();
+    allowed.is_none_or(|a| a.contains(&base.as_str()))
+}
+
+#[cfg(test)]
+mod language_tests {
+    use super::*;
+
+    #[test]
+    fn auto_means_english_for_a_model_that_cannot_detect() {
+        assert_eq!(effective_language(None, false).as_deref(), Some("en"));
+        assert_eq!(effective_language(None, true), None);
+        // A picked language is never replaced.
+        assert_eq!(effective_language(Some("fr"), false).as_deref(), Some("fr"));
+        assert_eq!(effective_language(Some("fr"), true).as_deref(), Some("fr"));
+    }
+
+    #[test]
+    fn a_language_the_model_lacks_is_not_known() {
+        let cohere = Some(&["en", "fr", "zh"][..]);
+        assert!(knows_language(cohere, "fr"));
+        assert!(knows_language(cohere, "fr-CA"));
+        assert!(!knows_language(cohere, "tl"));
+        assert!(knows_language(None, "tl"));
+    }
 }
 
 #[cfg(test)]

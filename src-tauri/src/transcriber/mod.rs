@@ -10,3 +10,6 @@ pub mod pipeline;
 pub mod speech;
 pub mod vad;
 pub mod worker;
+
+#[cfg(test)]
+mod real_v040;

@@ -46,6 +46,12 @@ impl Shape {
     pub fn parakeet() -> Self {
         Shape { pad: RATE * 3 / 10, join_gap: RATE * 3 / 2, max_len: 40 * RATE, min_len: RATE / 4, pack_gap: 0 }
     }
+    /// Cohere Transcribe: up to 35 s a chunk (longer is an error in the engine). It writes one block of text per chunk
+    /// with no word times, so chunks follow the pauses (a shorter join gap) to keep each one to a speaker or two, and
+    /// clicks and coughs under half a second are dropped (it writes words for noise).
+    pub fn cohere() -> Self {
+        Shape { pad: RATE * 3 / 10, join_gap: RATE, max_len: 35 * RATE, min_len: RATE / 2, pack_gap: 0 }
+    }
     /// Whisper: chunks packed up to its 30 s window.
     pub fn whisper() -> Self {
         Shape { pad: RATE * 3 / 10, join_gap: RATE, max_len: 28 * RATE, min_len: RATE / 4, pack_gap: 5 * RATE }
@@ -138,6 +144,23 @@ mod tests {
 
     fn sp(a: f32, b: f32) -> Span {
         Span { start: (a * RATE as f32) as usize, end: (b * RATE as f32) as usize }
+    }
+
+    #[test]
+    fn cohere_chunks_are_never_longer_than_35_seconds() {
+        assert_eq!(Shape::cohere().max_len, 35 * RATE);
+        // A 3-minute unbroken monologue, and speech with a pause that is just too long to join.
+        let samples = vec![0.1; 180 * RATE];
+        let out = shape(&[sp(0.0, 180.0)], &samples, Shape::cohere());
+        assert!(out.len() >= 5, "{} chunks", out.len());
+        assert!(out.iter().all(|c| c.len() <= 35 * RATE), "{out:?}");
+        // Nothing is lost: the chunks cover the whole span, end to end.
+        assert_eq!(out.first().unwrap().start, 0);
+        assert_eq!(out.last().unwrap().end, 180 * RATE);
+        assert!(out.windows(2).all(|w| w[0].end == w[1].start));
+        // Chunks still follow the pauses: two sentences 2 s apart are two chunks.
+        let silent = vec![0.0; 20 * RATE];
+        assert_eq!(shape(&[sp(1.0, 4.0), sp(6.0, 9.0)], &silent, Shape::cohere()).len(), 2);
     }
 
     #[test]

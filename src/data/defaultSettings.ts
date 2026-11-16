@@ -1,5 +1,5 @@
 import { onWindows } from "../lib/platform";
-import type { CallAppRule, IgnoredApp, Settings } from "./settings";
+import { COHERE_LANGUAGES, type CallAppRule, type IgnoredApp, type Settings } from "./settings";
 
 /** Windows only: the extra ignored apps the user sees and edits (the "why" shows through settings.why_*).
  *  The Rust side already ignores these ids on Windows (calls/apps.rs). */
@@ -55,7 +55,7 @@ export const defaultSettings: Settings = {
     ...windowsIgnoredApps,
   ],
   speechModels: [
-    // Mirrors the engine catalog (voice-engine v0.3.5, crates/models/src/catalog.rs), in the order of src-tauri/src/transcriber/models.rs.
+    // Mirrors the engine catalog (voice-engine v0.4.0, crates/models/src/catalog.rs), in the order of src-tauri/src/transcriber/models.rs.
     // In the app the list and states come from Rust.
     { id: "whisper-turbo", name: "Whisper Large Turbo (compressed)", maker: "OpenAI", note: "Most accurate. 99 languages, including Filipino.", engine: "whisper", sizeMb: 575, speed: 2, accuracy: 3, languages: "99 languages", licence: "MIT", englishOnly: false, state: "downloaded" },
     { id: "parakeet-v3", name: "Parakeet", maker: "NVIDIA", note: "Good for quick notes in 25 European languages.", engine: "parakeet", sizeMb: 671, speed: 3, accuracy: 1, languages: "25 European languages", licence: "CC-BY-4.0", englishOnly: false, state: "downloaded" },
@@ -79,6 +79,8 @@ export const defaultSettings: Settings = {
     { id: "parakeet-unified-en", name: "Parakeet Unified", maker: "NVIDIA", note: "NVIDIA’s newer English model, with punctuation.", engine: "parakeet", sizeMb: 664, speed: 3, accuracy: 2, languages: "English", licence: "CC-BY-4.0", englishOnly: true, state: "not_downloaded" },
     { id: "parakeet-unified-en-full", name: "Parakeet Unified (full size)", maker: "NVIDIA", note: "The full-size version: the same words, nearly four times the download, no faster.", engine: "parakeet", sizeMb: 2516, speed: 3, accuracy: 2, languages: "English", licence: "CC-BY-4.0", englishOnly: true, state: "not_downloaded" },
     { id: "nemotron-3.5", name: "Nemotron 3.5", maker: "NVIDIA", note: "NVIDIA’s newest, 35 languages. A larger download.", engine: "parakeet", sizeMb: 2595, speed: 2, accuracy: 2, languages: "35 languages", licence: "OpenMDW-1.1", englishOnly: false, state: "not_downloaded" },
+    { id: "parakeet-unified-25", name: "Parakeet Unified (25 languages)", maker: "NVIDIA", note: "25 European languages, with punctuation. Takes the language, or detects it.", engine: "parakeet", sizeMb: 2552, speed: 3, accuracy: 2, languages: "25 European languages", licence: "OpenMDW-1.1", englishOnly: false, detectsLanguage: true, state: "not_downloaded" },
+    { id: "cohere-transcribe", name: "Cohere Transcribe", maker: "Cohere", note: "Very accurate in 14 languages. Needs the language picked, no automatic detection. A larger download.", engine: "cohere", sizeMb: 3070, speed: 1, accuracy: 3, languages: "14 languages", licence: "Apache-2.0", englishOnly: false, detectsLanguage: false, languageCodes: COHERE_LANGUAGES, state: "not_downloaded" },
   ],
   activeSpeechModel: "whisper-turbo",
   speakerModel: { id: "diarization", name: "Speaker separation", maker: "NVIDIA", note: "Tells the other people on a call apart: Speaker 1, 2, 3. Up to 8 people.", engine: "diarization", sizeMb: 401, speed: 3, accuracy: 2, languages: "Any language", licence: "OpenMDW-1.1", englishOnly: false, state: "not_downloaded" },
@@ -98,6 +100,7 @@ export const defaultSettings: Settings = {
     { id: "qwen3.5-4b", name: "Qwen3.5 4B", note: "Recommended. Accurate decisions and action items, about 30 s for a short call.", sizeMb: 2741, recommended: true, licence: "Apache-2.0", memoryGb: 3.3, state: "downloaded" },
     { id: "qwen3.5-9b", name: "Qwen3.5 9B", note: "Larger. The most complete action items; needs 16 GB of memory and takes longer.", sizeMb: 5681, recommended: false, licence: "Apache-2.0", memoryGb: 6.8, state: "not_downloaded" },
     { id: "granite-4.2-3b", name: "Granite 4.2 3B", note: "A smaller model from IBM: a smaller download and less memory, for computers that struggle with the others.", sizeMb: 2245, recommended: false, licence: "Apache-2.0", memoryGb: 2.7, state: "not_downloaded" },
+    { id: "gemma-4-e4b", name: "Gemma 4 E4B", note: "Google’s small Gemma 4 model, for languages Qwen handles less well. Needs 16 GB of memory for long calls.", sizeMb: 5155, recommended: false, licence: "Apache-2.0", memoryGb: 6.2, state: "not_downloaded" },
   ],
   ollamaAddress: "http://localhost:11434",
   byokProvider: "claude",

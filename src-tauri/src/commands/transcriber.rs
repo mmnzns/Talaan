@@ -70,8 +70,8 @@ impl TranscriberState {
 
 /// A downloadable model: speech, speaker separation, search or local AI. Not the voice detection file, which
 /// comes with every speech model.
-fn find_any(id: &str) -> Option<&'static ModelInfo> {
-    catalog::find(id).filter(|m| m.kind != Kind::Vad)
+pub(crate) fn find_any(id: &str) -> Option<&'static ModelInfo> {
+    catalog::find(id).filter(|m| m.kind != Kind::Vad && crate::transcriber::models::offered(m))
 }
 
 fn err(message: String) -> StorageError {
@@ -230,7 +230,7 @@ pub struct ModelRow {
     name: &'static str,
     maker: &'static str,
     note: &'static str,
-    /// whisper | parakeet | diarization | search
+    /// whisper | parakeet | cohere | diarization | search
     engine: &'static str,
     size_mb: u64,
     speed: u8,
@@ -239,6 +239,11 @@ pub struct ModelRow {
     /// SPDX id ("MIT", "CC-BY-4.0").
     licence: &'static str,
     english_only: bool,
+    /// The model tells the language by itself. When false (Cohere Transcribe) the meeting language must be picked
+    /// (Auto means English) and can only be one of `language_codes`.
+    detects_language: bool,
+    /// The only languages (ISO 639-1) the model writes; empty = any.
+    language_codes: &'static [&'static str],
     /// not_downloaded | downloading | downloaded. A model another app downloaded shows as downloaded.
     state: &'static str,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -284,6 +289,9 @@ pub fn model_rows(models: &Models, failed: &HashMap<String, String>) -> Vec<Mode
                     Kind::Embedding => "search",
                     Kind::Vad => "vad",
                     Kind::Llm => "llm",
+                    Kind::Cohere => "cohere",
+                    // Kinds the engine adds later (Kind is non_exhaustive), and Multitalker, which Talaan doesn't offer.
+                    _ => "other",
                 },
                 size_mb: m.size().div_ceil(1_000_000),
                 speed: m.speed,
@@ -291,6 +299,8 @@ pub fn model_rows(models: &Models, failed: &HashMap<String, String>) -> Vec<Mode
                 languages: m.languages,
                 licence: m.licence.spdx,
                 english_only: m.english_only,
+                detects_language: crate::transcriber::speech::traits(m).detects_language,
+                language_codes: crate::transcriber::speech::traits(m).languages.unwrap_or(&[]),
                 state,
                 progress,
                 partial,
