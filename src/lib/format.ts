@@ -34,10 +34,18 @@ export function dayGroup(iso: string, now: Date = new Date()): DayGroup {
   return { key: label, label };
 }
 
-/** The big day number and short weekday shown beside a day's meetings: { day: "14", weekday: "tue" }. */
-export function dayMark(iso: string): { day: string; weekday: string } {
+/** The big day number with its short month and weekday, shown beside each meeting:
+ *  { day: "14", month: "oct", weekday: "tue", full: "Tuesday, October 14, 2026" }. */
+export function dayMark(iso: string): { day: string; month: string; weekday: string; full: string } {
   const d = new Date(iso);
-  return { day: String(d.getDate()), weekday: d.toLocaleDateString(currentLocale(), { weekday: "short" }).toLowerCase() };
+  const loc = currentLocale();
+  const small = (o: Intl.DateTimeFormatOptions) => d.toLocaleDateString(loc, o).replace(/\./g, "").toLowerCase();
+  return {
+    day: String(d.getDate()),
+    month: small({ month: "short" }).slice(0, 4), // fr-CA "juill." -> "juil"
+    weekday: small({ weekday: "short" }),
+    full: d.toLocaleDateString(loc, { weekday: "long", year: "numeric", month: "long", day: "numeric" }),
+  };
 }
 
 export function formatClock(iso: string): string {

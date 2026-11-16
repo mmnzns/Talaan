@@ -1,5 +1,6 @@
-import { describe, expect, it } from "vitest";
-import { dayGroup, formatBytes, formatDuration, formatTime, tildePath } from "./format";
+import { afterEach, describe, expect, it } from "vitest";
+import { setLang } from "./i18n";
+import { dayGroup, dayMark, formatBytes, formatDuration, formatTime, tildePath } from "./format";
 
 describe("formatTime", () => {
   it("formats minutes and seconds", () => {
@@ -47,5 +48,32 @@ describe("tildePath", () => {
   it("shortens the home folder", () => {
     expect(tildePath("/Users/miguel.monzones/Library/Application Support/Talaan")).toBe("~/Library/Application Support/Talaan");
     expect(tildePath("/opt/data")).toBe("/opt/data");
+  });
+});
+
+describe("dayMark", () => {
+  afterEach(() => setLang("en"));
+  it("gives the short month, weekday and full date in each language", () => {
+    const iso = "2026-10-28T10:00:00";
+    expect(dayMark(iso)).toEqual({ day: "28", month: "oct", weekday: "wed", full: "Wednesday, October 28, 2026" });
+    setLang("fr");
+    expect(dayMark(iso).month).toBe("oct");
+    expect(dayMark(iso).full).toContain("octobre");
+    expect(dayMark("2026-12-02T10:00:00").month).toBe("déc");
+    expect(dayMark("2026-11-02T10:00:00").month).toBe("nov");
+    setLang("es");
+    expect(dayMark(iso).month).toBe("oct");
+    expect(dayMark("2026-12-02T10:00:00").month).toBe("dic");
+    expect(dayMark("2026-11-02T10:00:00").month).toBe("nov");
+  });
+  it("never keeps a trailing period", () => {
+    for (const lang of ["en", "fr", "es"] as const) {
+      setLang(lang);
+      for (let m = 0; m < 12; m++) {
+        const { month, weekday } = dayMark(new Date(2026, m, 5).toISOString());
+        expect(month).toMatch(/^[^.]{3,4}$/);
+        expect(weekday).not.toContain(".");
+      }
+    }
   });
 });

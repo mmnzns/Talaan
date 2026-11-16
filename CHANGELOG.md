@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+**Improvements**
+- **The meeting list shows the month next to each day.** Each meeting now shows its month (for example "oct") above the day number, in your language, so you can tell when it happened without opening it.
+
 ## 1.3.1 (2026-11-16)
 
 **Fixes**

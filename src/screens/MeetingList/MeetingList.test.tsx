@@ -23,4 +23,20 @@ describe("meeting list days", () => {
     const html = renderToStaticMarkup(<MeetingDays days={[{ key: "oct 15", label: "oct 15", items: [a, b] }]} />);
     expect(html.match(/font-display[^>]*>15</g)).toHaveLength(2);
   });
+
+  it("shows each meeting's own month", () => {
+    const a = item("a", "2026-11-02T10:00:00");
+    const b = item("b", "2026-10-28T10:00:00");
+    const html = renderToStaticMarkup(
+      <MeetingDays
+        days={[
+          { key: "nov 2", label: "nov 2", items: [a] },
+          { key: "oct 28", label: "oct 28", items: [b] },
+        ]}
+      />,
+    );
+    expect(html).toContain(">nov<");
+    expect(html).toContain(">oct<");
+    expect(html).toContain("Wednesday, October 28, 2026");
+  });
 });
