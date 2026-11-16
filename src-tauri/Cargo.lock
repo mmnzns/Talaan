@@ -5354,7 +5354,7 @@ dependencies = [
 
 [[package]]
 name = "talaan"
-version = "1.3.1"
+version = "1.3.2"
 dependencies = [
  "block2",
  "chrono",
@@ -5410,7 +5410,7 @@ dependencies = [
 
 [[package]]
 name = "talaan-llm"
-version = "1.3.1"
+version = "1.3.2"
 dependencies = [
  "voice-engine-llm",
  "voice-engine-protocol",
@@ -5418,7 +5418,7 @@ dependencies = [
 
 [[package]]
 name = "talaan-stt"
-version = "1.3.1"
+version = "1.3.2"
 dependencies = [
  "voice-engine-protocol",
  "voice-engine-stt",

@@ -82,9 +82,17 @@ export function MeetingDays({ days, selectedId }: { days: DayBucket[]; selectedI
             const mark = m.startedAt ? dayMark(m.startedAt) : undefined;
             return (
               <div key={m.id} className="grid grid-cols-[40px_minmax(0,1fr)] items-start gap-2.5">
-                <div className="flex flex-col items-center gap-0.5 pt-0.5" aria-hidden="true">
-                  <span className="font-display text-xl leading-[22px] font-bold tracking-[-0.02em]">{mark?.day}</span>
-                  <Label className="text-[10px]">{mark?.weekday}</Label>
+                <div className="flex flex-col items-center gap-px pt-0.5" title={mark?.full}>
+                  {mark && <span className="sr-only">{mark.full}</span>}
+                  <Label className="text-[10px]" aria-hidden="true">
+                    {mark?.month}
+                  </Label>
+                  <span aria-hidden="true" className="font-display text-xl leading-[22px] font-bold tracking-[-0.02em]">
+                    {mark?.day}
+                  </span>
+                  <Label className="text-[10px]" aria-hidden="true">
+                    {mark?.weekday}
+                  </Label>
                 </div>
                 <div className="min-w-0">
                   <MeetingItem meeting={m} selected={m.id === selectedId} />
