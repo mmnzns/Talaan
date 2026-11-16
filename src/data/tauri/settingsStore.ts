@@ -50,7 +50,7 @@ export class TauriSettingsStore implements SettingsStore {
     if (!this.models) {
       // One list from Rust: the speech models plus the speaker separation and search models.
       const all = await call<SpeechModel[]>("models_list");
-      this.models = all.filter((m) => m.engine === "whisper" || m.engine === "parakeet");
+      this.models = all.filter((m) => m.engine !== "diarization" && m.engine !== "search");
       this.speaker = all.find((m) => m.engine === "diarization");
       this.search = all.find((m) => m.engine === "search");
     }

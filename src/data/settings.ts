@@ -73,7 +73,7 @@ export interface SpeechModel {
   name: string;
   maker: string;
   note: string;
-  engine: "whisper" | "parakeet" | "cohere" | "diarization" | "search";
+  engine: "whisper" | "parakeet" | "cohere" | "diarization" | "search" | "other";
   sizeMb: number;
   speed: 1 | 2 | 3;
   accuracy: 1 | 2 | 3;

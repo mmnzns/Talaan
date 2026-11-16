@@ -118,6 +118,13 @@ pub fn to_chunk(t: Transcript, text_only: bool) -> ChunkResult {
 /// naming and echo removal work per sentence, so the block is cut at sentence ends and the chunk's time is shared
 /// out by length (a sentence twice as long gets twice the time). The times are an estimate inside the chunk: good
 /// enough to put a sentence with the right speaker and the right minute, not to the second.
+/// True when the "." that ends `cur` closes an abbreviation ("Dr.", "e.g.", "p.m.", "J.") rather than a sentence.
+fn after_abbreviation(cur: &str) -> bool {
+    let word = cur.trim_end_matches('.').rsplit(char::is_whitespace).next().unwrap_or("");
+    const KNOWN: [&str; 15] = ["dr", "mr", "mrs", "ms", "mx", "prof", "st", "jr", "sr", "vs", "etc", "no", "approx", "inc", "ltd"];
+    word.chars().count() == 1 || word.contains('.') || word.eq_ignore_ascii_case("co") || KNOWN.iter().any(|k| word.eq_ignore_ascii_case(k))
+}
+
 pub fn split_sentences(p: Piece) -> Vec<Piece> {
     let mut parts: Vec<String> = vec![];
     let mut cur = String::new();
@@ -125,7 +132,7 @@ pub fn split_sentences(p: Piece) -> Vec<Piece> {
     while let Some(c) = chars.next() {
         cur.push(c);
         let cjk_end = matches!(c, '。' | '！' | '？');
-        let end = matches!(c, '.' | '!' | '?' | '…' | '؟') && chars.peek().is_none_or(|n| n.is_whitespace());
+        let end = matches!(c, '.' | '!' | '?' | '…' | '؟') && chars.peek().is_none_or(|n| n.is_whitespace()) && !(c == '.' && after_abbreviation(&cur));
         if cjk_end || end {
             // A run of closers ("?!", "...") stays with its sentence.
             while chars.peek().is_some_and(|n| matches!(n, '.' | '!' | '?' | '…' | '。' | '！' | '？' | '"' | '”' | '’' | ')')) {
@@ -148,7 +155,7 @@ pub fn split_sentences(p: Piece) -> Vec<Piece> {
         .map(|(i, text)| {
             let start_ms = p.start_ms + span * done as u64 / total as u64;
             done += text.chars().count();
-            let end_ms = if i == last { p.end_ms } else { p.start_ms + span * done as u64 / total as u64 };
+            let end_ms = if i == last { p.end_ms.max(start_ms) } else { p.start_ms + span * done as u64 / total as u64 };
             Piece { start_ms, end_ms, text }
         })
         .collect()
@@ -314,5 +321,22 @@ mod tests {
         assert_eq!(split_sentences(one.clone()), vec![one]);
         let cjk = split_sentences(Piece { start_ms: 0, end_ms: 4_000, text: "你好。再见！".into() });
         assert_eq!(cjk.iter().map(|p| p.text.as_str()).collect::<Vec<_>>(), ["你好。", "再见！"]);
+    }
+
+    fn texts(t: &str) -> Vec<String> {
+        split_sentences(Piece { start_ms: 0, end_ms: 10_000, text: t.into() }).into_iter().map(|p| p.text).collect()
+    }
+
+    #[test]
+    fn splitting_skips_abbreviations() {
+        assert_eq!(texts("Dr. Smith will call at 3 p.m. tomorrow. Then we ship."), ["Dr. Smith will call at 3 p.m. tomorrow.", "Then we ship."]);
+        assert_eq!(texts("e.g. this one. And that."), ["e.g. this one.", "And that."]);
+        assert_eq!(texts("Version 3.5 is out. Great."), ["Version 3.5 is out.", "Great."]);
+    }
+
+    #[test]
+    fn the_last_piece_never_ends_before_it_starts() {
+        let out = split_sentences(Piece { start_ms: 5_000, end_ms: 1_000, text: "One. Two.".into() });
+        assert!(out.iter().all(|p| p.end_ms >= p.start_ms));
     }
 }
