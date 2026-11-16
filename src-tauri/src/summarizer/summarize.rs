@@ -85,7 +85,10 @@ pub fn summarize(meeting: &Meeting, engine: &mut dyn SummaryEngine, language: &s
     };
     let sections = !opts.template().is_general();
     let marked = moments(meeting).len();
-    let out = Reply { schema: schema(sections, marked), tokens: output_tokens(sections, marked), plain: AtomicBool::new(false) };
+    // The reply never takes more than 40% of the context, so a small context (4096 on an 8 GB computer) still leaves
+    // room for the instructions and some transcript; a reply that gets cut off is retried as a plain summary.
+    let cap = (engine.context_tokens() * 4 / 10).min(u32::MAX as usize) as u32;
+    let out = Reply { schema: schema(sections, marked), tokens: output_tokens(sections, marked).min(cap), plain_tokens: MAX_OUTPUT_TOKENS.min(cap), plain: AtomicBool::new(false) };
     let budget = (engine.context_tokens() * 9 / 10).saturating_sub(overhead + out.tokens as usize).max(500);
     let parts = split(lines, budget);
     let n = parts.len();
@@ -107,9 +110,46 @@ pub fn summarize(meeting: &Meeting, engine: &mut dyn SummaryEngine, language: &s
         progress((i + 1) as f32 / (n + 1) as f32);
     }
     let parts_json: Vec<String> = drafts.iter().map(|d| serde_json::to_string(d).expect("drafts serialize")).collect();
-    let merged = ask(engine, &merge_prompt(meeting, &parts_json, language, opts), schema, cancel)?;
+    let merged = merge(meeting, parts_json, engine, language, opts, &out, cancel)?;
     progress(1.0);
     Ok(finish(&merged, meeting, engine, n, opts, language, &out))
+}
+
+/// Merges the part summaries into one. When they all fit one request that is one call; when they don't (a long
+/// call on a small context), they are merged in groups that do fit, and the group summaries merged again, until
+/// one is left.
+fn merge(meeting: &Meeting, mut level: Vec<String>, engine: &mut dyn SummaryEngine, language: &str, opts: &Options, reply: &Reply, cancel: &AtomicBool) -> Result<Draft, SummarizeError> {
+    let empty = merge_prompt(meeting, &[], language, opts);
+    let overhead = estimate_tokens(&empty.system) + estimate_tokens(&empty.user) + 64;
+    let room = (engine.context_tokens() * 9 / 10).saturating_sub(overhead + reply.tokens as usize).max(500);
+    let cost = |json: &String| estimate_tokens(json) + 12;
+    loop {
+        if level.iter().map(cost).sum::<usize>() <= room || level.len() <= 2 {
+            return ask(engine, &merge_prompt(meeting, &level, language, opts), reply, cancel);
+        }
+        // Consecutive groups of at least two summaries (a lone one waits for the next round) that fit one request.
+        let mut next = vec![];
+        let mut i = 0;
+        while i < level.len() {
+            let mut end = i + 1;
+            let mut used = cost(&level[i]);
+            while end < level.len() && (end < i + 2 || used + cost(&level[end]) <= room) {
+                used += cost(&level[end]);
+                end += 1;
+            }
+            if end - i < 2 {
+                next.push(level[i].clone());
+            } else {
+                if cancel.load(Ordering::Relaxed) {
+                    return Err(SummarizeError::Engine(EngineError::Cancelled));
+                }
+                let d = ask(engine, &merge_prompt(meeting, &level[i..end], language, opts), reply, cancel)?;
+                next.push(serde_json::to_string(&d).expect("drafts serialize"));
+            }
+            i = end;
+        }
+        level = next;
+    }
 }
 
 /// Too little to summarize: under 1 s of speech in all, or at most two lines with fewer than 12 words between
@@ -136,6 +176,8 @@ fn finish(draft: &Draft, meeting: &Meeting, engine: &dyn SummaryEngine, parts: u
 struct Reply {
     schema: String,
     tokens: u32,
+    /// Room for the reply of the plain retry (`MAX_OUTPUT_TOKENS`, held to what the context allows).
+    plain_tokens: u32,
     /// Set when a retry had to drop sections and highlights.
     plain: AtomicBool,
 }
@@ -155,7 +197,7 @@ fn ask(engine: &mut dyn SummaryEngine, prompt: &Prompt, reply: &Reply, cancel: &
     let extended = reply.schema != SCHEMA;
     let (schema, ask_less) = if extended { (SCHEMA, " Leave out sections and highlights this time.") } else { (SCHEMA, "") };
     let retry = Prompt { system: prompt.system.clone(), user: format!("{}\n\nYour previous reply couldn't be used: {problem}. Reply with only the JSON object.{ask_less}", prompt.user) };
-    let second = engine.complete(&retry, schema, MAX_OUTPUT_TOKENS, cancel).map_err(SummarizeError::Engine)?;
+    let second = engine.complete(&retry, schema, reply.plain_tokens, cancel).map_err(SummarizeError::Engine)?;
     parse_draft(&second).map_err(SummarizeError::BadOutput)
 }
 
@@ -332,6 +374,69 @@ pub(crate) mod tests {
         assert_eq!(*seen.last().unwrap(), 1.0);
     }
 
+
+    /// Refuses any request that would not fit its context (prompt + room for the reply), like the real model does.
+    struct Strict {
+        context: usize,
+        requests: Vec<(usize, u32)>,
+        recap: String,
+    }
+
+    impl SummaryEngine for Strict {
+        fn complete(&mut self, p: &Prompt, _s: &str, max_tokens: u32, _c: &AtomicBool) -> Result<String, EngineError> {
+            let prompt = estimate_tokens(&p.system) + estimate_tokens(&p.user);
+            self.requests.push((prompt, max_tokens));
+            if prompt + max_tokens as usize > self.context {
+                return Err(EngineError::Failed(format!("{prompt} + {max_tokens} does not fit {}", self.context)));
+            }
+            Ok(reply("Roadmap", &self.recap))
+        }
+        fn context_tokens(&self) -> usize {
+            self.context
+        }
+        fn label(&self) -> String {
+            "Strict".into()
+        }
+    }
+
+    fn long_call(lines: u64) -> Meeting {
+        let lines: Vec<_> = (0..lines).map(|i| line(&format!("l{i}"), i * 15_000, if i % 2 == 0 { "me" } else { "them:0" }, &"We talked about the roadmap and what ships first. ".repeat(4))).collect();
+        meeting(lines)
+    }
+
+    #[test]
+    fn a_long_call_on_a_4096_context_is_split_into_requests_that_each_fit() {
+        let m = long_call(200);
+        let mut e = Strict { context: 4_096, requests: vec![], recap: "Planned.".into() };
+        let out = summarize(&m, &mut e, "en", &Options::default(), &AtomicBool::new(false), &mut |_| {}).unwrap();
+        assert!(out.parts >= 5, "{} parts", out.parts);
+        assert_eq!(e.requests.len(), out.parts + 1);
+        // The part budget is the context minus the instructions and the reply room, so no part runs over.
+        assert!(e.requests.iter().all(|(p, max)| p + *max as usize <= 4_096), "{:?}", e.requests);
+    }
+
+    #[test]
+    fn meeting_types_and_many_marked_moments_still_fit_a_4096_context() {
+        let mut m = long_call(120);
+        m.marks = (0..40).map(|i| crate::summarizer::prompt::tests::mark(&format!("k{i}"), 61_000 + i * 20_000, None)).collect();
+        let mut e = Strict { context: 4_096, requests: vec![], recap: "Planned.".into() };
+        let opts = Options { template: "standup".into(), instructions: String::new() };
+        summarize(&m, &mut e, "en", &opts, &AtomicBool::new(false), &mut |_| {}).unwrap();
+        // The reply room is held to 40% of the context (the sections schema would ask for 4000).
+        assert!(e.requests.iter().all(|(p, max)| p + *max as usize <= 4_096 && *max <= 1_638), "{:?}", e.requests);
+    }
+
+    #[test]
+    fn the_part_summaries_of_a_very_long_call_are_merged_in_rounds_when_they_do_not_fit_one_request() {
+        let m = long_call(600);
+        // Each part summary is about 300 tokens, so dozens of them can't go into one 4096 request.
+        let mut e = Strict { context: 4_096, requests: vec![], recap: "We planned the roadmap and what ships first. ".repeat(25) };
+        let out = summarize(&m, &mut e, "en", &Options::default(), &AtomicBool::new(false), &mut |_| {}).unwrap();
+        assert!(out.parts > 10, "{} parts", out.parts);
+        assert!(e.requests.len() > out.parts + 1, "{} requests for {} parts", e.requests.len(), out.parts);
+        assert!(e.requests.iter().all(|(p, max)| p + *max as usize <= 4_096), "{:?}", e.requests);
+        assert_eq!(out.summary.recap, e.recap.trim());
+    }
     #[test]
     fn a_recording_too_short_to_summarize_is_not_sent() {
         let mut e = Scripted { replies: vec![], prompts: vec![], context: 16_384 };
@@ -393,7 +498,7 @@ mod long_smoke {
         let model_path = std::path::PathBuf::from(std::env::var("TALAAN_LLM_MODEL").unwrap());
         let tmp = tempfile::tempdir().unwrap();
         let client = std::sync::Arc::new(crate::summarizer::local::client(tmp.path(), "test", "summary"));
-        let mut engine = LocalEngine::new(client, model_path, "test".into(), true);
+        let mut engine = LocalEngine::new(client, model_path, "test".into(), true, 16_384);
         let t = std::time::Instant::now();
         let out = summarize(&m, &mut engine, "en", &Options::default(), &AtomicBool::new(false), &mut |p| eprintln!("progress {:.0}% at {:.0}s", p * 100.0, t.elapsed().as_secs_f32())).unwrap();
         eprintln!("== {} min call, {} parts, {:.0}s", m.item.duration_ms / 60_000, out.parts, t.elapsed().as_secs_f32());

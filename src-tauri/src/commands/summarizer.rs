@@ -88,7 +88,7 @@ pub fn make_engine(cfg: &Config, data_dir: &Path, models: &Models) -> Result<Box
                 let size = crate::i18n::decimal(model.size() as f64 / 1e9);
                 return Err(EngineError::Unavailable(tr_with("ai.download_local", &[("name", model.name), ("size", &size)])));
             };
-            Ok(Box::new(LocalEngine::new(crate::summarizer::local::summary_client(data_dir), dir.join(model.files[0].name), model.name.into(), s["useGpu"].as_bool().unwrap_or(true))))
+            Ok(Box::new(LocalEngine::new(crate::summarizer::local::summary_client(data_dir), dir.join(model.files[0].name), model.name.into(), s["useGpu"].as_bool().unwrap_or(true), crate::summarizer::engines::local_context(model))))
         }
     }
 }

@@ -12,9 +12,15 @@ use std::time::Duration;
 use std::sync::Arc;
 use voice_engine_client::{EngineError as ClientError, LlmClient};
 use voice_engine_protocol::Completion;
+use voice_engine_models::{LlmInfo, ModelInfo};
 
-/// Context used with local models and local servers: room for ~45 minutes of talk per part on a laptop.
+/// Most context asked of a local model, and what local servers get: room for ~45 minutes of talk per part on a laptop.
 pub const LOCAL_CONTEXT: usize = 16_384;
+/// Under this much memory a computer counts as an "8 GB" one for the catalog's context sizes (a 16 GB computer
+/// reports about 15 GiB, a 12 GB one under 12).
+const SMALL_MEMORY: u64 = 12 << 30;
+/// What an unknown amount of memory is treated as.
+const ASSUMED_MEMORY: u64 = 8 << 30;
 /// Cloud models take far more; this keeps a single request (and its cost) reasonable.
 pub const CLOUD_CONTEXT: usize = 100_000;
 
@@ -106,6 +112,26 @@ impl Provider {
     }
 }
 
+/// The context for a local model on a computer with `total_memory` bytes: the catalog's size for that much memory
+/// (`context_8gb` under about 12 GB, else `context_16gb`), at most `LOCAL_CONTEXT` and the model's own maximum. A
+/// model the catalog has no numbers for keeps `LOCAL_CONTEXT`.
+pub fn local_context_for(info: Option<&LlmInfo>, total_memory: u64) -> usize {
+    let Some(info) = info else { return LOCAL_CONTEXT };
+    let fits = if total_memory < SMALL_MEMORY { info.context_8gb } else { info.context_16gb };
+    (fits.min(info.context_max) as usize).min(LOCAL_CONTEXT)
+}
+
+/// This computer's memory in bytes, read once; 8 GB when the system won't say (the safe guess).
+pub fn total_memory_bytes() -> u64 {
+    static MEMORY: std::sync::OnceLock<u64> = std::sync::OnceLock::new();
+    *MEMORY.get_or_init(|| crate::platform::total_memory().unwrap_or(ASSUMED_MEMORY))
+}
+
+/// The context to give this catalog model on this computer.
+pub fn local_context(model: &ModelInfo) -> usize {
+    local_context_for(model.llm.as_ref(), total_memory_bytes())
+}
+
 // ---------- local model through the helper ----------
 
 pub struct LocalEngine {
@@ -115,13 +141,15 @@ pub struct LocalEngine {
     pub model_name: String,
     /// From settings, per call: the engine decides GPU or processor, not the client.
     pub use_gpu: bool,
+    /// Tokens of context (prompt + reply) this model gets, from `local_context`.
+    pub context: usize,
     /// The last error, `{:?}`, for `failure_detail`.
     detail: Option<String>,
 }
 
 impl LocalEngine {
-    pub fn new(ai: Arc<LlmClient>, model_path: PathBuf, model_name: String, use_gpu: bool) -> Self {
-        LocalEngine { ai, model_path, model_name, use_gpu, detail: None }
+    pub fn new(ai: Arc<LlmClient>, model_path: PathBuf, model_name: String, use_gpu: bool, context: usize) -> Self {
+        LocalEngine { ai, model_path, model_name, use_gpu, context, detail: None }
     }
 }
 
@@ -165,7 +193,7 @@ impl SummaryEngine for LocalEngine {
         }
         let c = Completion {
             model_path: self.model_path.to_string_lossy().into(),
-            n_ctx: LOCAL_CONTEXT as u32,
+            n_ctx: self.context as u32,
             system: p.system.clone(),
             user: p.user.clone(),
             json_schema: Some(schema.into()),
@@ -192,7 +220,7 @@ impl SummaryEngine for LocalEngine {
         }
     }
     fn context_tokens(&self) -> usize {
-        LOCAL_CONTEXT
+        self.context
     }
     fn label(&self) -> String {
         format!("Local AI · {}", self.model_name)
@@ -701,5 +729,42 @@ mod tests {
         assert!(seen[0].2.contains("Dana Reyes: Pricing moves to Q1."));
         // Only text goes out: no audio, no file paths.
         assert!(!seen[0].2.contains(".wav"));
+    }
+
+    fn info(max: u32, g8: u32, g16: u32) -> LlmInfo {
+        LlmInfo { context_max: max, context_8gb: g8, context_16gb: g16, thinks: false }
+    }
+    const GIB: u64 = 1 << 30;
+
+    #[test]
+    fn local_context_follows_the_computers_memory() {
+        let gemma = info(131_072, 4_096, 65_536);
+        // 8 GB computers (Windows reports about 7.7 GiB) get the 8 GB size.
+        assert_eq!(local_context_for(Some(&gemma), 8 * GIB), 4_096);
+        assert_eq!(local_context_for(Some(&gemma), 7 * GIB), 4_096);
+        // 16 GB and up get the 16 GB size, held at today's 16384.
+        assert_eq!(local_context_for(Some(&gemma), 16 * GIB), 16_384);
+        assert_eq!(local_context_for(Some(&gemma), 32 * GIB), 16_384);
+        // A model with a roomy 8 GB size is held at 16384 too.
+        assert_eq!(local_context_for(Some(&info(262_144, 65_536, 131_072)), 8 * GIB), 16_384);
+        // A model with no numbers keeps 16384; one whose own maximum is lower is held to it.
+        assert_eq!(local_context_for(None, 8 * GIB), 16_384);
+        assert_eq!(local_context_for(Some(&info(8_192, 4_096, 65_536)), 32 * GIB), 8_192);
+    }
+
+    #[test]
+    fn every_catalog_model_gets_a_context_that_fits_its_numbers() {
+        for m in voice_engine_models::catalog::local_ai() {
+            let l = m.llm.as_ref().expect("local AI models have LlmInfo");
+            assert!(local_context_for(Some(l), 8 * GIB) <= l.context_8gb as usize, "{}", m.id);
+            assert!(local_context_for(Some(l), 32 * GIB) <= LOCAL_CONTEXT, "{}", m.id);
+            assert!(local_context_for(Some(l), 8 * GIB) >= 4_096, "{}", m.id);
+        }
+    }
+
+    #[test]
+    fn the_memory_is_read_once_and_is_never_zero() {
+        assert!(total_memory_bytes() >= 1 << 30);
+        assert_eq!(total_memory_bytes(), total_memory_bytes());
     }
 }
