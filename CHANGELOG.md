@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+**Much more detailed summaries**
+- **A fuller summary for every new meeting.** The default (General) summary now starts with the **purpose** of the call in one sentence, then **key takeaways** (a bold label and one sentence each), then **topics**: one entry per main subject, with the numbers, dates, systems and reasons that were mentioned, and sub-points where they help. After that come **decisions** with their time in the call, **next steps** and **open questions**. A short call still gets a short summary. Meeting types such as Stand-up keep their own sections.
+- **Next steps are grouped by person.** Each person's tasks sit together under their name in the order they first come up, with the due date and the time in the call. Tasks nobody owns come last.
+- **Real names instead of "Me" and "Speaker 1".** The summary works out who is who from the conversation itself (people addressing each other, introductions) and from the calendar's guest list, and writes "Dana will send the plan". You appear under the name in Settings › General › Your name; if that is empty, the summary speaks to you ("You will send the plan"). When a person's name never comes up, it uses their role ("the recruiter") or keeps "Speaker 1". Names you set in the transcript always win.
+- **Everything uses the new layout:** the meeting view (editing and Revert keep the new parts), Copy as text, Export (Markdown, plain text, PDF), the Markdown file saved with each meeting, Save to a folder, the email you send from a meeting, and the Notion export.
+- **Small computers get a more compact version.** With 8 GB of memory the local AI writes fewer topics and shorter lists so the summary is never cut off..
+- Meetings you already have look exactly as before.
+
 ## 1.3.2 (2026-11-16)
 
 **Improvements**

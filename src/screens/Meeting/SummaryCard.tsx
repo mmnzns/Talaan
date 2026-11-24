@@ -1,10 +1,11 @@
 import { Mail, Sparkles } from "lucide-react";
 import { useCallback, useState } from "react";
 import { useStore } from "../../data/StoreProvider";
-import type { Meeting, MeetingSummaryItem, Ms, Summary } from "../../data/types";
+import type { ActionItem, Meeting, MeetingSummaryItem, Ms, Summary } from "../../data/types";
 import { describeError, summaryErrorText } from "../../data/errors";
 import { openSettings } from "../../lib/windows";
 import { ownerName } from "../../lib/transcript";
+import { isDetailed, nextStepsByOwner, recapFrom } from "../../lib/summaryLayout";
 import { meetingNotes } from "../../lib/share";
 import { templateName } from "../../lib/templates";
 import { useLang, useT } from "../../lib/i18n/I18nProvider";
@@ -46,6 +47,12 @@ export function SummaryCard({ meeting, activeAt, editing, onJump }: Props) {
 
   const save = (next: Summary) => store.updateSummary(meeting.id, { ...next, edited: true });
   const set = <K extends keyof Summary>(key: K, value: Summary[K]) => save({ ...summary!, [key]: value });
+  /** Edits to the detailed layout also rewrite the recap (the plain sentences notifications, Ask and previews read). */
+  const setDetail = (patch: Partial<Summary>) => {
+    const next = { ...summary!, ...patch };
+    save({ ...next, recap: recapFrom(next.purpose, next.takeaways) || next.recap });
+  };
+  const detailed = !!summary && isDetailed(summary);
   const rewrite = useConfirmRewrite(summary);
   const summarizeAgain = () =>
     rewrite.ask(() => {
@@ -76,6 +83,32 @@ export function SummaryCard({ meeting, activeAt, editing, onJump }: Props) {
     </div>
   );
 
+  /** One action item: a checkbox, the task, its owner chip (not in the grouped list: the group names the person), due date and time. */
+  const actionRow = (a: ActionItem, showOwner: boolean) => (
+    <div key={a.id} className={cn(row, a.at !== undefined && a.at === activeAt && hit)}>
+      <Checkbox
+        aria-label={t("meeting.doneAria", { text: a.text })}
+        checked={a.done}
+        onChange={(done) =>
+          store.updateSummary(meeting.id, {
+            ...summary!,
+            actionItems: summary!.actionItems.map((x) => (x.id === a.id ? { ...x, done } : x)),
+          })
+        }
+      />
+      <span className={cn("min-w-0 flex-1", a.done && "text-subtle line-through")}>
+        <Editable
+          text={a.text}
+          editing={editing}
+          onCommit={(v) => set("actionItems", summary!.actionItems.map((x) => (x.id === a.id ? { ...x, text: v } : x)))}
+        />{" "}
+        {showOwner && a.owner && <span className="rounded-full bg-sp1 px-[7px] py-0.5 text-[11px] font-semibold text-sp1-fg">{ownerName(meeting, a.owner)}</span>}{" "}
+        {a.due && <Chip>{a.due}</Chip>}
+      </span>
+      {a.at !== undefined && <Timestamp at={a.at} onJump={onJump} active={a.at === activeAt} />}
+    </div>
+  );
+
   return (
     <section aria-label={t("meeting.summary")} className="flex min-h-0 flex-col overflow-hidden rounded-card border border-line bg-surface shadow-card">
       <div className="flex items-center justify-between gap-3 border-b border-line px-6 py-[18px]">
@@ -103,39 +136,94 @@ export function SummaryCard({ meeting, activeAt, editing, onJump }: Props) {
         {summary ? (
           // inert: no clicks, no keyboard and no edits while it is written again.
           <div className={cn("flex flex-col gap-7", busy && "opacity-50")} aria-busy={busy || undefined} inert={busy || undefined}>
-            <p className="m-0 text-[15px] leading-[23px] [text-wrap:pretty]">
-              <Editable text={summary.recap} editing={editing} onCommit={(v) => set("recap", v)} />
-            </p>
+            {detailed ? (
+              <>
+                {summary.purpose?.trim() && (
+                  <Group title={t("meeting.purposeLabel")} empty="" show>
+                    <p className="m-0 text-[15px] leading-[23px] [text-wrap:pretty]">
+                      <Editable text={summary.purpose} editing={editing} onCommit={(v) => setDetail({ purpose: v })} />
+                    </p>
+                  </Group>
+                )}
+
+                {(summary.takeaways?.length ?? 0) > 0 && (
+                  <Group title={t("meeting.takeawaysLabel")} empty="" show>
+                    <ul className="m-0 flex list-none flex-col gap-2 p-0 text-[15px] leading-[23px]">
+                      {summary.takeaways!.map((k, i) => (
+                        <li key={i} className="[text-wrap:pretty]">
+                          {k.label.trim() && (
+                            <b>
+                              <Editable text={k.label} editing={editing} onCommit={(v) => setDetail({ takeaways: summary.takeaways!.map((x, j) => (j === i ? { ...x, label: v } : x)) })} />
+                              {": "}
+                            </b>
+                          )}
+                          <Editable text={k.text} editing={editing} onCommit={(v) => setDetail({ takeaways: summary.takeaways!.map((x, j) => (j === i ? { ...x, text: v } : x)) })} />
+                        </li>
+                      ))}
+                    </ul>
+                  </Group>
+                )}
+
+                {(summary.topics?.length ?? 0) > 0 && (
+                  <Group title={t("meeting.topicsLabel")} empty="" show>
+                    <div className="flex flex-col gap-5">
+                      {summary.topics!.map((topic) => {
+                        const edit = (bullets: typeof topic.bullets) => setDetail({ topics: summary.topics!.map((x) => (x.id === topic.id ? { ...x, bullets } : x)) });
+                        return (
+                          <div key={topic.id} className="flex flex-col gap-1.5">
+                            <h3 className="m-0 font-display text-[15px] font-bold tracking-[-0.01em]">
+                              <Editable text={topic.title} editing={editing} onCommit={(v) => setDetail({ topics: summary.topics!.map((x) => (x.id === topic.id ? { ...x, title: v } : x)) })} />
+                            </h3>
+                            <ul className="m-0 flex list-disc flex-col gap-1.5 pl-5 text-[14px] leading-[21px] marker:text-gold">
+                              {topic.bullets.map((b, bi) => (
+                                <li key={bi} className="[text-wrap:pretty]">
+                                  <Editable text={b.text} editing={editing} onCommit={(v) => edit(topic.bullets.map((x, j) => (j === bi ? { ...x, text: v } : x)))} />
+                                  {(b.subBullets?.length ?? 0) > 0 && (
+                                    <ul className="m-0 mt-1 flex list-[circle] flex-col gap-1 pl-5 text-[13px] leading-[19px] text-subtle marker:text-faint">
+                                      {b.subBullets!.map((sub, si) => (
+                                        <li key={si}>
+                                          <Editable
+                                            text={sub}
+                                            editing={editing}
+                                            onCommit={(v) => edit(topic.bullets.map((x, j) => (j === bi ? { ...x, subBullets: x.subBullets!.map((y, k) => (k === si ? v : y)) } : x)))}
+                                          />
+                                        </li>
+                                      ))}
+                                    </ul>
+                                  )}
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </Group>
+                )}
+              </>
+            ) : (
+              <p className="m-0 text-[15px] leading-[23px] [text-wrap:pretty]">
+                <Editable text={summary.recap} editing={editing} onCommit={(v) => set("recap", v)} />
+              </p>
+            )}
 
             <Group title={t("meeting.decisionsLabel")} empty={t("meeting.noDecisions")} show={summary.decisions.length > 0}>
               {summary.decisions.map((d) => timed(d, (v) => set("decisions", summary.decisions.map((x) => (x.id === d.id ? { ...x, text: v } : x)))))}
             </Group>
 
-            <Group title={t("meeting.actionItemsLabel")} empty={t("meeting.noActionItems")} show={summary.actionItems.length > 0}>
-              {summary.actionItems.map((a) => (
-                <div key={a.id} className={cn(row, a.at !== undefined && a.at === activeAt && hit)}>
-                  <Checkbox
-                    aria-label={t("meeting.doneAria", { text: a.text })}
-                    checked={a.done}
-                    onChange={(done) =>
-                      store.updateSummary(meeting.id, {
-                        ...summary,
-                        actionItems: summary.actionItems.map((x) => (x.id === a.id ? { ...x, done } : x)),
-                      })
-                    }
-                  />
-                  <span className={cn("min-w-0 flex-1", a.done && "text-subtle line-through")}>
-                    <Editable
-                      text={a.text}
-                      editing={editing}
-                      onCommit={(v) => set("actionItems", summary.actionItems.map((x) => (x.id === a.id ? { ...x, text: v } : x)))}
-                    />{" "}
-                    {a.owner && <span className="rounded-full bg-sp1 px-[7px] py-0.5 text-[11px] font-semibold text-sp1-fg">{ownerName(meeting, a.owner)}</span>}{" "}
-                    {a.due && <Chip>{a.due}</Chip>}
-                  </span>
-                  {a.at !== undefined && <Timestamp at={a.at} onJump={onJump} active={a.at === activeAt} />}
+            <Group title={detailed ? t("meeting.nextStepsLabel") : t("meeting.actionItemsLabel")} empty={detailed ? t("meeting.noNextSteps") : t("meeting.noActionItems")} show={summary.actionItems.length > 0}>
+              {detailed ? (
+                <div className="flex flex-col gap-3.5">
+                  {nextStepsByOwner(meeting, summary.actionItems).map((g) => (
+                    <div key={g.owner ?? ""} className="flex flex-col gap-1">
+                      <span className="self-start rounded-full bg-sp1 px-[7px] py-0.5 text-[11px] font-semibold text-sp1-fg">{g.owner ?? t("meeting.unassignedLabel")}</span>
+                      {g.items.map((a) => actionRow(a, false))}
+                    </div>
+                  ))}
                 </div>
-              ))}
+              ) : (
+                summary.actionItems.map((a) => actionRow(a, true))
+              )}
             </Group>
 
             <Group title={t("meeting.openQuestionsLabel")} empty={t("meeting.noOpenQuestions")} show={summary.openQuestions.length > 0}>

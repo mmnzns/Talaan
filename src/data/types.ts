@@ -39,8 +39,32 @@ export interface SummarySection {
   items: MeetingSummaryItem[];
 }
 
+/** A key point of the detailed summary: a short bold label and one sentence. */
+export interface SummaryTakeaway {
+  label: string;
+  text: string;
+}
+
+/** A topic's bullet; sub-bullets go one level down. */
+export interface SummaryBullet {
+  text: string;
+  subBullets?: string[];
+}
+
+/** One main topic of the detailed summary. */
+export interface SummaryTopic {
+  id: string;
+  title: string;
+  bullets: SummaryBullet[];
+}
+
 export interface Summary {
+  /** Plain sentences (the purpose and the takeaways in the detailed layout): what notifications, Ask and previews read. */
   recap: string;
+  /** The detailed layout: why the meeting happened, the points to remember, one entry per topic. Absent on older summaries and the other meeting types. */
+  purpose?: string;
+  takeaways?: SummaryTakeaway[];
+  topics?: SummaryTopic[];
   decisions: MeetingSummaryItem[];
   actionItems: ActionItem[];
   openQuestions: MeetingSummaryItem[];
