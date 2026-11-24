@@ -259,6 +259,36 @@ fn without(v: &Value, keys: &[&str]) -> Value {
     }
 }
 
+/// The schema as hosted engines get it: no size limits (`maxItems`, `minItems`), no descriptions or enums, no
+/// `additionalProperties`. Gemini turns every limit into decoder states and refuses a deep schema with limits
+/// ("too many states for serving"), so the limits live in the prompt only.
+fn light(v: &Value) -> Value {
+    without(v, &["maxItems", "minItems", "description", "enum"])
+}
+
+/// The Gemini form of the light schema: its dialect also has no `additionalProperties`.
+fn gemini_schema(v: &Value) -> Value {
+    without(&light(v), &["additionalProperties"])
+}
+
+fn system_with_schema(system: &str, schema: &Value) -> String {
+    format!("{system}
+
+The JSON schema:
+{}", light(schema))
+}
+
+/// True when a provider's 400 says the response schema itself was too complex (Gemini: "too many states for
+/// serving"; others word it as a schema that is too large, deep or complex).
+pub fn is_schema_complexity_error(status: u16, body: &Value) -> bool {
+    if status != 400 {
+        return false;
+    }
+    let msg = body["error"]["message"].as_str().or_else(|| body["error"].as_str()).or_else(|| body["message"].as_str()).unwrap_or("").to_lowercase();
+    msg.contains("too many states")
+        || (msg.contains("schema") && ["too complex", "too large", "too deep", "too many", "complexity", "nesting"].iter().any(|w| msg.contains(w)))
+}
+
 /// Gemini 3 and 4 thinking level: a little for the Gemini 4 models (they refuse `minimal`), 3.8 Flash and the
 /// Pro models, minimal for the rest of Gemini 3.
 fn gemini_thinking(model: &str) -> Option<&'static str> {
@@ -275,7 +305,7 @@ fn gemini_thinking(model: &str) -> Option<&'static str> {
 /// The request body for a chat-completions provider, tuned per model the way Parlato does it: the token
 /// limit field each host accepts, reasoning kept short (and out of the reply), and no temperature for the
 /// models that refuse one.
-fn chat_body(provider: Provider, model: &str, p: &Prompt, schema: &Value, max_tokens: u32) -> Value {
+fn chat_body(provider: Provider, model: &str, p: &Prompt, schema: &Value, max_tokens: u32, with_schema: bool) -> Value {
     let m = model.to_lowercase();
     let oss = m.contains("gpt-oss");
     let qwen = m.contains("qwen");
@@ -314,11 +344,19 @@ fn chat_body(provider: Provider, model: &str, p: &Prompt, schema: &Value, max_to
             body["temperature"] = json!(0.2);
         }
     }
-    let (schema, strict) = match provider {
-        Provider::OpenAi | Provider::Compatible => (schema.clone(), true),
+    if !with_schema {
+        // The safety net: JSON mode only, with the schema described in the prompt.
+        body["messages"][0]["content"] = json!(system_with_schema(&p.system, schema));
+        body["response_format"] = json!({ "type": "json_object" });
+        return body;
+    }
+    // Only a user's own local server keeps the size limits; the hosted engines get the light schema (the prompt
+    // still asks for short lists).
+    let schema = if provider == Provider::Compatible { schema.clone() } else { light(schema) };
+    let strict = match provider {
         // Groq holds to a schema strictly only on its GPT-OSS models; elsewhere it's best effort.
-        Provider::Groq => (without(schema, &["maxItems"]), oss),
-        _ => (without(schema, &["maxItems"]), true),
+        Provider::Groq => oss,
+        _ => true,
     };
     body["response_format"] = json!({ "type": "json_schema", "json_schema": { "name": "meeting_summary", "strict": strict, "schema": schema } });
     body
@@ -326,6 +364,12 @@ fn chat_body(provider: Provider, model: &str, p: &Prompt, schema: &Value, max_to
 
 impl HttpEngine {
     pub fn request(&self, p: &Prompt, schema: &str, max_tokens: u32) -> HttpRequest {
+        self.request_mode(p, schema, max_tokens, true)
+    }
+
+    /// `with_schema` false is the safety net for a schema the provider found too complex: JSON mode without the
+    /// schema, which is described in the system prompt instead.
+    pub fn request_mode(&self, p: &Prompt, schema: &str, max_tokens: u32, with_schema: bool) -> HttpRequest {
         let schema: Value = serde_json::from_str(schema).expect("schema is valid JSON");
         let key = self.key.clone().unwrap_or_default();
         match self.provider {
@@ -341,7 +385,13 @@ impl HttpEngine {
                 }),
             },
             Provider::Gemini => {
-                let mut config = json!({ "temperature": 0.2, "maxOutputTokens": max_tokens, "responseMimeType": "application/json", "responseSchema": without(&schema, &["additionalProperties"]) });
+                let mut config = json!({ "temperature": 0.2, "maxOutputTokens": max_tokens, "responseMimeType": "application/json" });
+                let system = if with_schema {
+                    config["responseSchema"] = gemini_schema(&schema);
+                    p.system.clone()
+                } else {
+                    system_with_schema(&p.system, &schema)
+                };
                 // Gemini 4 fixes the temperature at 1.0 and ignores any other, so don't send one.
                 if self.model.to_lowercase().starts_with("gemini-4") {
                     config.as_object_mut().map(|c| c.remove("temperature"));
@@ -353,7 +403,7 @@ impl HttpEngine {
                     url: format!("{}/models/{}:generateContent", self.base, self.model),
                     headers: vec![("x-goog-api-key".into(), key)],
                     body: json!({
-                        "systemInstruction": { "parts": [{ "text": p.system }] },
+                        "systemInstruction": { "parts": [{ "text": system }] },
                         "contents": [{ "role": "user", "parts": [{ "text": p.user }] }],
                         "generationConfig": config,
                     }),
@@ -362,7 +412,7 @@ impl HttpEngine {
             _ => HttpRequest {
                 url: format!("{}/chat/completions", self.base),
                 headers: auth_headers(self.provider, &key),
-                body: chat_body(self.provider, &self.model, p, &schema, max_tokens),
+                body: chat_body(self.provider, &self.model, p, &schema, max_tokens, with_schema),
             },
         }
     }
@@ -399,6 +449,15 @@ fn client(timeout: Duration) -> reqwest::blocking::Client {
 }
 
 fn send(provider: Provider, method: reqwest::Method, url: &str, headers: &[(String, String)], body: Option<&Value>, timeout: Duration) -> Result<Value, EngineError> {
+    let (status, body) = send_status(provider, method, url, headers, body, timeout)?;
+    if !(200..300).contains(&status) {
+        return Err(http_error(provider, status, &body));
+    }
+    Ok(body)
+}
+
+/// The call itself: the status and body of whatever answered (only a failure to reach it is an error).
+fn send_status(provider: Provider, method: reqwest::Method, url: &str, headers: &[(String, String)], body: Option<&Value>, timeout: Duration) -> Result<(u16, Value), EngineError> {
     let mut req = client(timeout).request(method, url);
     for (k, v) in headers {
         req = req.header(k, v);
@@ -417,17 +476,26 @@ fn send(provider: Provider, method: reqwest::Method, url: &str, headers: &[(Stri
     })?;
     let status = resp.status().as_u16();
     let body: Value = resp.json().unwrap_or(Value::Null);
-    if !(200..300).contains(&status) {
-        return Err(http_error(provider, status, &body));
-    }
-    Ok(body)
+    Ok((status, body))
 }
 
 impl SummaryEngine for HttpEngine {
     fn complete(&mut self, p: &Prompt, schema: &str, max_tokens: u32, _cancel: &AtomicBool) -> Result<String, EngineError> {
         let r = self.request(p, schema, max_tokens);
-        let body = send(self.provider, reqwest::Method::POST, &r.url, &r.headers, Some(&r.body), Duration::from_secs(600))?;
-        self.reply_text(&body)
+        let timeout = Duration::from_secs(600);
+        let (status, body) = send_status(self.provider, reqwest::Method::POST, &r.url, &r.headers, Some(&r.body), timeout)?;
+        if (200..300).contains(&status) {
+            return self.reply_text(&body);
+        }
+        // The provider found the schema too complex: once, ask again in JSON mode with the schema in the prompt.
+        // Claude never gets a response schema, so it has nothing to drop.
+        if self.provider != Provider::Claude && is_schema_complexity_error(status, &body) {
+            log::warn!("cloud AI refused the response schema as too complex; retrying once in plain JSON mode");
+            let r = self.request_mode(p, schema, max_tokens, false);
+            let body = send(self.provider, reqwest::Method::POST, &r.url, &r.headers, Some(&r.body), timeout)?;
+            return self.reply_text(&body);
+        }
+        Err(http_error(self.provider, status, &body))
     }
     fn context_tokens(&self) -> usize {
         self.context
@@ -674,6 +742,138 @@ mod tests {
         assert_eq!(level("gemini-3.1-pro-preview").as_deref(), Some("low"));
         assert_eq!(level("gemini-3.5-flash-lite").as_deref(), Some("minimal"));
         assert_eq!(level("gemini-2.5-flash"), None);
+    }
+
+    fn depth(v: &Value) -> usize {
+        match v {
+            Value::Object(m) => 1 + m.values().map(depth).max().unwrap_or(0),
+            Value::Array(a) => 1 + a.iter().map(depth).max().unwrap_or(0),
+            _ => 0,
+        }
+    }
+
+    fn gemini_schema_sent(detailed: bool, compact: bool, sections: bool, highlights: usize) -> Value {
+        let schema = crate::summarizer::prompt::schema(detailed, compact, sections, highlights);
+        engine(Provider::Gemini).request(&prompt(), &schema, 1500).body["generationConfig"]["responseSchema"].clone()
+    }
+
+    #[test]
+    fn the_gemini_schema_is_light() {
+        for (d, c, s, h) in [(false, false, false, 0), (true, false, false, 0), (true, true, false, 0), (true, false, true, 3), (false, false, true, 2)] {
+            let sent = gemini_schema_sent(d, c, s, h);
+            let text = sent.to_string();
+            for banned in ["maxItems", "minItems", "additionalProperties", "description", "enum"] {
+                assert!(!text.contains(banned), "{banned} in schema({d},{c},{s},{h})");
+            }
+            // object > properties > topics > items > properties > bullets > items > properties > sub_bullets > items.
+            assert!(depth(&sent) <= DEPTH_BUDGET, "schema({d},{c},{s},{h}) nests {} deep", depth(&sent));
+        }
+    }
+
+    const DEPTH_BUDGET: usize = 14;
+
+    #[test]
+    fn the_gemini_detailed_schema_stays_under_a_size_budget() {
+        let all = gemini_schema_sent(true, false, true, 5).to_string().len();
+        let detailed = gemini_schema_sent(true, false, false, 0).to_string().len();
+        let before = without(&serde_json::from_str::<Value>(&crate::summarizer::prompt::schema(true, false, true, 5)).unwrap(), &["additionalProperties"]).to_string().len();
+        println!("before {before}; gemini schema bytes: detailed {detailed}, with sections and highlights {all}");
+        assert!(all < SIZE_BUDGET_ALL, "the Gemini schema grew to {all} bytes; Gemini refuses schemas with too many states");
+        assert!(detailed < SIZE_BUDGET_DETAILED, "the detailed General schema grew to {detailed} bytes");
+    }
+
+    const SIZE_BUDGET_ALL: usize = 1_700;
+    const SIZE_BUDGET_DETAILED: usize = 1_200;
+
+    #[test]
+    fn hosted_chat_providers_share_the_light_schema_and_a_local_server_keeps_its_limits() {
+        let schema = crate::summarizer::prompt::schema(true, false, false, 0);
+        for p in [Provider::OpenAi, Provider::Groq, Provider::Cerebras, Provider::OpenRouter, Provider::Mistral] {
+            let b = engine(p).request(&prompt(), &schema, 1500).body;
+            let sent = b["response_format"]["json_schema"]["schema"].to_string();
+            assert!(!sent.contains("maxItems"), "{p:?}");
+            if p == Provider::OpenAi {
+                assert!(sent.contains("additionalProperties"), "strict mode needs it");
+            }
+        }
+        let local = engine(Provider::Compatible).request(&prompt(), &schema, 1500).body;
+        assert!(local["response_format"]["json_schema"]["schema"].to_string().contains("maxItems"));
+    }
+
+    #[test]
+    fn the_plain_json_request_drops_the_schema_but_describes_it() {
+        let schema = crate::summarizer::prompt::schema(true, false, false, 0);
+        let g = engine(Provider::Gemini).request_mode(&prompt(), &schema, 1500, false).body;
+        assert!(g["generationConfig"].get("responseSchema").is_none());
+        assert_eq!(g["generationConfig"]["responseMimeType"], "application/json");
+        assert!(g["systemInstruction"]["parts"][0]["text"].as_str().unwrap().contains("\"takeaways\""));
+        let o = engine(Provider::OpenAi).request_mode(&prompt(), &schema, 1500, false).body;
+        assert_eq!(o["response_format"], json!({ "type": "json_object" }));
+        assert!(o["messages"][0]["content"].as_str().unwrap().contains("\"takeaways\""));
+    }
+
+    #[test]
+    fn only_schema_complexity_400s_count() {
+        let too_many = json!({ "error": { "message": "The specified schema produces a constraint that has too many states for serving." } });
+        assert!(is_schema_complexity_error(400, &too_many));
+        assert!(is_schema_complexity_error(400, &json!({ "error": { "message": "Schema is too complex" } })));
+        assert!(!is_schema_complexity_error(500, &too_many));
+        assert!(!is_schema_complexity_error(400, &json!({ "error": { "message": "API key not valid." } })));
+        assert!(!is_schema_complexity_error(400, &json!({ "error": { "message": "Invalid value for thinkingLevel" } })));
+    }
+
+    /// A fake Gemini that answers each request with the next canned (status, body); returns the base URL and the bodies it saw.
+    fn fake_gemini(replies: Vec<(u16, String)>) -> (String, std::sync::Arc<std::sync::Mutex<Vec<String>>>) {
+        let server = tiny_http::Server::http("127.0.0.1:0").unwrap();
+        let base = format!("http://{}/v1beta", server.server_addr().to_ip().unwrap());
+        let seen = std::sync::Arc::new(std::sync::Mutex::new(vec![]));
+        let seen2 = seen.clone();
+        std::thread::spawn(move || {
+            let mut replies = replies.into_iter();
+            for mut req in server.incoming_requests() {
+                let mut body = String::new();
+                req.as_reader().read_to_string(&mut body).unwrap();
+                seen2.lock().unwrap().push(body);
+                let (status, text) = replies.next().unwrap_or((500, "{}".into()));
+                let _ = req.respond(tiny_http::Response::from_string(text).with_status_code(status).with_header("Content-Type: application/json".parse::<tiny_http::Header>().unwrap()));
+            }
+        });
+        (base, seen)
+    }
+
+    const TOO_MANY_STATES: &str = r#"{"error":{"code":400,"message":"The specified schema produces a constraint that has too many states for serving.","status":"INVALID_ARGUMENT"}}"#;
+    const GEMINI_OK: &str = r#"{"candidates":[{"content":{"parts":[{"text":"{\"title\":\"Plan\",\"recap\":\"We chose onboarding.\",\"decisions\":[],\"action_items\":[],\"open_questions\":[]}"}]}}]}"#;
+
+    #[test]
+    fn a_too_many_states_400_is_retried_once_without_the_schema_and_parses() {
+        use crate::summarizer::prompt::tests::{line, meeting};
+        use crate::summarizer::summarize::summarize;
+        let (base, seen) = fake_gemini(vec![(400, TOO_MANY_STATES.into()), (200, GEMINI_OK.into())]);
+        let mut e = HttpEngine { base, ..engine(Provider::Gemini) };
+        let m = meeting(vec![line("l0", 55_000, "me", "Where did we land on pricing?"), line("l1", 60_000, "them:1", "Pricing moves to Q1."), line("l2", 66_000, "me", "Good, onboarding ships first then.")]);
+        let out = summarize(&m, &mut e, "en", &Default::default(), &AtomicBool::new(false), &mut |_| {}).unwrap();
+        assert_eq!(out.summary.recap, "We chose onboarding.");
+        let seen = seen.lock().unwrap();
+        assert_eq!(seen.len(), 2, "exactly one retry");
+        let first: Value = serde_json::from_str(&seen[0]).unwrap();
+        let second: Value = serde_json::from_str(&seen[1]).unwrap();
+        assert!(first["generationConfig"].get("responseSchema").is_some());
+        assert!(second["generationConfig"].get("responseSchema").is_none());
+        assert_eq!(second["generationConfig"]["responseMimeType"], "application/json");
+    }
+
+    #[test]
+    fn the_schema_retry_never_loops_and_other_400s_are_not_retried() {
+        let schema = crate::summarizer::prompt::schema(true, false, false, 0);
+        let never = AtomicBool::new(false);
+        let (base, seen) = fake_gemini(vec![(400, TOO_MANY_STATES.into()), (400, TOO_MANY_STATES.into()), (200, GEMINI_OK.into())]);
+        let mut e = HttpEngine { base, ..engine(Provider::Gemini) };
+        assert!(e.complete(&prompt(), &schema, 1500, &never).is_err());
+        assert_eq!(seen.lock().unwrap().len(), 2, "one retry, then the error");
+        let (base, seen) = fake_gemini(vec![(400, r#"{"error":{"message":"API key not valid."}}"#.into()), (200, GEMINI_OK.into())]);
+        let mut e = HttpEngine { base, ..engine(Provider::Gemini) };
+        assert!(e.complete(&prompt(), &schema, 1500, &never).is_err());
+        assert_eq!(seen.lock().unwrap().len(), 1, "no retry for another 400");
     }
 
     #[test]
