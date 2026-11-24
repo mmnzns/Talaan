@@ -51,7 +51,7 @@ describe("ImportQueue", () => {
     const summary = await finished;
     expect(order).toEqual(["/a/1.mp3", "/a/2.mp3", "/a/3.mp3"]);
     expect(maxInFlight).toBe(1);
-    expect(summary).toEqual({ total: 3, imported: ["id-1", "id-2", "id-3"], failures: [] });
+    expect(summary).toEqual({ total: 3, imported: ["id-1", "id-2", "id-3"], failures: [], cutOff: [], cancelled: false });
   });
 
   it("keeps going after a failure and says which file failed and why", async () => {
@@ -152,5 +152,49 @@ describe("ImportQueue", () => {
     queue.add(["/a/2.mp3"]);
     expect(queue.snapshot.total).toBe(1);
     expect(queue.snapshot.failures).toHaveLength(0);
+  });
+  it("cancel stops the file being read and drops the queued files", async () => {
+    let release!: (o: ImportOutcome) => void;
+    const started: string[] = [];
+    const cancelCurrent = vi.fn(() => release({ cancelled: true }));
+    const snapshots: QueueSnapshot[] = [];
+    let done!: (s: BatchSummary) => void;
+    const finished = new Promise<BatchSummary>((r) => (done = r));
+    const queue = new ImportQueue({
+      importOne: (path) => {
+        started.push(path);
+        return new Promise<ImportOutcome>((r) => (release = r));
+      },
+      cancelCurrent,
+      onChange: (s) => snapshots.push(s),
+      onFinish: done,
+    });
+    queue.add(["/a/1.mp3", "/a/2.mp3", "/a/3.mp3"]);
+    await Promise.resolve();
+    queue.cancel();
+    const summary = await finished;
+    expect(cancelCurrent).toHaveBeenCalledOnce();
+    expect(started).toEqual(["/a/1.mp3"]);
+    expect(summary.cancelled).toBe(true);
+    expect(summary.imported).toEqual([]);
+    expect(summary.failures).toEqual([]);
+    // The same file can be added again afterwards.
+    queue.add(["/a/2.mp3"]);
+    expect(started).toEqual(["/a/1.mp3", "/a/2.mp3"]);
+  });
+
+  it("cancel with nothing running does nothing", () => {
+    const cancelCurrent = vi.fn();
+    const queue = new ImportQueue({ importOne: async () => ({ ok: true, id: "x" }), cancelCurrent, onChange: () => {}, onFinish: () => {} });
+    queue.cancel();
+    expect(cancelCurrent).not.toHaveBeenCalled();
+  });
+
+  it("collects the files that looked cut off, still imported", async () => {
+    const { queue, finished } = setup(async (path) => ({ ok: true, id: path, cutOff: path.includes("cut") ? { readMs: 61_000, expectedMs: 120_000 } : null }));
+    queue.add(["/a/cut.mp3", "/a/fine.mp3"]);
+    const summary = await finished;
+    expect(summary.imported).toEqual(["/a/cut.mp3", "/a/fine.mp3"]);
+    expect(summary.cutOff).toEqual([{ name: "cut.mp3", readMs: 61_000, expectedMs: 120_000 }]);
   });
 });

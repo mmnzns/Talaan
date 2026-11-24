@@ -2,7 +2,8 @@ import { FileAudio } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { describeError } from "../../data/errors";
 import { call, onEvent } from "../../data/tauri/invoke";
-import { ImportQueue, partitionImports, type BatchSummary, type ImportOutcome, type QueueSnapshot } from "../../lib/importQueue";
+import { formatTime } from "../../lib/format";
+import { ImportQueue, partitionImports, type BatchSummary, type CutOff, type ImportOutcome, type QueueSnapshot } from "../../lib/importQueue";
 import { navigate, routes } from "../../lib/router";
 import { inTauri } from "../../lib/windows";
 import { useT } from "../../lib/i18n/I18nProvider";
@@ -17,7 +18,11 @@ interface Props {
   onShow: () => void;
 }
 
-type ImportEvent = { state: "progress"; progress: number } | { state: "done"; id: string } | { state: "failed"; message: string };
+type ImportEvent =
+  | { state: "progress"; progress: number }
+  | { state: "done"; id: string; cutOff?: CutOff | null }
+  | { state: "failed"; message: string }
+  | { state: "cancelled" };
 
 export function ImportSheet({ open, dropped, onClose, onShow }: Props) {
   const t = useT();
@@ -41,6 +46,7 @@ export function ImportSheet({ open, dropped, onClose, onShow }: Props) {
           waiter.current = resolve;
           call("meetings_import", { path }).catch((e) => resolve({ ok: false, message: describeError(e) }));
         }),
+      cancelCurrent: () => void call("meetings_import_cancel").catch(() => {}),
       onChange: setSnap,
       onFinish: (summary) => finish(summary, latest.current),
     });
@@ -50,7 +56,8 @@ export function ImportSheet({ open, dropped, onClose, onShow }: Props) {
     if (!inTauri()) return;
     return onEvent<ImportEvent>("import-audio", (e) => {
       if (e.state === "progress") setFileProgress(e.progress);
-      if (e.state === "done") waiter.current?.({ ok: true, id: e.id });
+      if (e.state === "done") waiter.current?.({ ok: true, id: e.id, cutOff: e.cutOff });
+      if (e.state === "cancelled") waiter.current?.({ cancelled: true });
       if (e.state === "failed") waiter.current?.({ ok: false, message: e.message });
     });
   }, []);
@@ -131,7 +138,12 @@ export function ImportSheet({ open, dropped, onClose, onShow }: Props) {
           )}
         </div>
         <p className="m-0 text-xs text-subtle">{t("shell.importNote")}</p>
-        <div className="flex justify-end">
+        <div className="flex justify-end gap-2">
+          {working && (
+            <Button disabled={snap?.cancelled} onClick={() => queue.current?.cancel()}>
+              {snap?.cancelled ? t("shell.importCancelling") : t("shell.importCancel")}
+            </Button>
+          )}
           <Button onClick={close}>{working ? t("shell.hide") : t("common.cancel")}</Button>
         </div>
       </div>
@@ -142,13 +154,27 @@ export function ImportSheet({ open, dropped, onClose, onShow }: Props) {
 type Latest = { t: ReturnType<typeof useT>; toast: (m: string) => void; onClose: () => void; onShow: () => void };
 
 /** What happens when the queue runs dry: one meeting opens it; several say how many; failures stay on screen. */
-function finish({ total, imported, failures }: BatchSummary, { t, toast, onClose, onShow }: Latest) {
+function finish({ total, imported, failures, cutOff, cancelled }: BatchSummary, { t, toast, onClose, onShow }: Latest) {
+  const cutOffNotice = () => {
+    for (const c of cutOff) {
+      const read = formatTime(c.readMs);
+      toast(c.expectedMs ? t("shell.importCutOff", { name: c.name, read, expected: formatTime(c.expectedMs) }) : t("shell.importCutOffUnknown", { name: c.name, read }));
+    }
+  };
+  if (cancelled && failures.length === 0) {
+    onClose();
+    toast(t("shell.importCancelled"));
+    cutOffNotice();
+    return;
+  }
   if (failures.length > 0) {
     if (total > 1) toast(imported.length > 0 ? t("shell.importPartial", { ok: imported.length, total }) : t("shell.importNone", { total }));
     onShow();
+    cutOffNotice();
     return;
   }
   onClose();
   if (imported.length === 1) navigate(routes.meeting(imported[0]));
   else toast(t("shell.importedMany", { count: imported.length }));
+  cutOffNotice();
 }
