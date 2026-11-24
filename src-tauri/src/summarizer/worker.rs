@@ -60,7 +60,7 @@ impl Config {
     /// custom instructions.
     pub fn options_for(&self, meeting_template: Option<&str>) -> Options {
         let template = meeting_template.filter(|t| templates::exists(t)).unwrap_or(&self.template).to_string();
-        Options { template, instructions: self.instructions.clone() }
+        Options { template, instructions: self.instructions.clone(), ..Default::default() }
     }
 }
 
@@ -726,11 +726,11 @@ mod tests {
     #[test]
     fn the_meetings_own_type_wins_over_the_default() {
         let c = Config::from_settings(Some(&json!({ "summaryTemplate": "standup", "summaryInstructions": "Mention budgets." })));
-        assert_eq!(c.options_for(None), Options { template: "standup".into(), instructions: "Mention budgets.".into() });
+        assert_eq!(c.options_for(None), Options { template: "standup".into(), instructions: "Mention budgets.".into(), ..Default::default() });
         assert_eq!(c.options_for(Some("interview")).template, "interview");
         assert_eq!(c.options_for(Some("from_the_future")).template, "standup");
         let d = Config::from_settings(Some(&json!({ "summaryTemplate": "nope" })));
-        assert_eq!(d.options_for(None), Options { template: "general".into(), instructions: String::new() });
+        assert_eq!(d.options_for(None), Options { template: "general".into(), ..Default::default() });
     }
 
     #[test]

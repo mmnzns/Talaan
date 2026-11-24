@@ -3,7 +3,7 @@
 
 use super::prompt::{around, moments, speaker_name};
 use super::templates::Template;
-use crate::storage::model::{ActionItem, Meeting, Summary, SummaryItem, SummarySection, TranscriptLine};
+use crate::storage::model::{ActionItem, Meeting, Summary, SummaryBullet, SummaryItem, SummarySection, SummaryTopic, Takeaway, TranscriptLine};
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Deserializer, Serialize};
 
@@ -12,8 +12,16 @@ use serde::{Deserialize, Deserializer, Serialize};
 pub struct Draft {
     #[serde(default)]
     pub title: String,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "String::is_empty")]
     pub recap: String,
+    /// The detailed layout (General meetings): why the call happened, the points to remember and one entry per topic.
+    /// Read leniently like `sections`, and absent from a reply in the older shape.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub purpose: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty", deserialize_with = "lenient")]
+    pub takeaways: Vec<DraftTakeaway>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty", deserialize_with = "lenient")]
+    pub topics: Vec<DraftTopic>,
     #[serde(default)]
     pub decisions: Vec<Timed>,
     #[serde(default)]
@@ -27,6 +35,50 @@ pub struct Draft {
     /// One per marked moment (only asked for when there are some). Lenient like `sections`.
     #[serde(default, skip_serializing_if = "Vec::is_empty", deserialize_with = "lenient")]
     pub highlights: Vec<Timed>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+pub struct DraftTakeaway {
+    #[serde(default)]
+    pub label: String,
+    #[serde(default)]
+    pub text: String,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+pub struct DraftTopic {
+    #[serde(default)]
+    pub title: String,
+    #[serde(default, deserialize_with = "lenient_bullets")]
+    pub bullets: Vec<DraftBullet>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, PartialEq)]
+pub struct DraftBullet {
+    pub text: String,
+    pub sub_bullets: Vec<String>,
+}
+
+/// Bullets as the schema asks (`{text, sub_bullets}`), or as a small model sometimes writes them (a plain string, or
+/// an object with `sub_bullets` missing or not a list). Entries that are neither are skipped.
+fn lenient_bullets<'de, D: Deserializer<'de>>(d: D) -> Result<Vec<DraftBullet>, D::Error> {
+    let v = serde_json::Value::deserialize(d)?;
+    let serde_json::Value::Array(items) = v else { return Ok(vec![]) };
+    Ok(items
+        .into_iter()
+        .filter_map(|x| match x {
+            serde_json::Value::String(text) => Some(DraftBullet { text, sub_bullets: vec![] }),
+            serde_json::Value::Object(o) => {
+                let text = o.get("text").and_then(|t| t.as_str())?.to_string();
+                let sub_bullets = match o.get("sub_bullets").or_else(|| o.get("subBullets")) {
+                    Some(serde_json::Value::Array(a)) => a.iter().filter_map(|s| s.as_str().map(str::to_string)).collect(),
+                    _ => vec![],
+                };
+                Some(DraftBullet { text, sub_bullets })
+            }
+            _ => None,
+        })
+        .collect())
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
@@ -97,7 +149,7 @@ pub fn parse_draft(text: &str) -> Result<Draft, String> {
     let text = strip_reasoning(text);
     let json = extract_json(&text).ok_or("the reply had no JSON object")?;
     let draft: Draft = serde_json::from_str(json).map_err(|e| format!("the reply wasn't valid JSON ({e})"))?;
-    if draft.recap.trim().is_empty() {
+    if draft.recap.trim().is_empty() && draft.purpose.trim().is_empty() {
         return Err("the reply had no recap".into());
     }
     Ok(draft)
@@ -164,7 +216,75 @@ pub fn to_summary(draft: &Draft, lines: &[TranscriptLine], engine: &str) -> Summ
         .enumerate()
         .map(|(i, (text, t))| SummaryItem { id: format!("q{i}"), text, at: time(t) })
         .collect();
-    Summary { recap: clean(&draft.recap), decisions, action_items, open_questions, sections: vec![], highlights: vec![], template: None, language: None, sections_missing: false, engine: engine.into(), edited: false }
+    let purpose = Some(clean(&draft.purpose)).filter(|p| !p.is_empty());
+    let takeaways = to_takeaways(draft);
+    let topics = to_topics(draft);
+    // The recap (what notifications, Ask, the follow-up email and list previews read) is the model's own when it wrote
+    // one, else the purpose and the takeaways as plain sentences.
+    let recap = if clean(&draft.recap).is_empty() { recap_from(purpose.as_deref(), &takeaways) } else { clean(&draft.recap) };
+    Summary { recap, purpose, takeaways, topics, decisions, action_items, open_questions, sections: vec![], highlights: vec![], template: None, language: None, sections_missing: false, engine: engine.into(), edited: false }
+}
+
+/// The purpose, then each takeaway as "Label: text", as plain sentences.
+pub fn recap_from(purpose: Option<&str>, takeaways: &[Takeaway]) -> String {
+    let mut parts: Vec<String> = purpose.into_iter().map(|p| p.to_string()).collect();
+    for t in takeaways {
+        let label = t.label.trim().trim_end_matches(':');
+        parts.push(if label.is_empty() { t.text.clone() } else { format!("{label}: {}", t.text) });
+    }
+    parts.iter().map(|p| if p.ends_with(['.', '!', '?', '。']) { p.clone() } else { format!("{p}.") }).collect::<Vec<_>>().join(" ")
+}
+
+/// Takeaways with a text, labels cleaned, repeats dropped.
+fn to_takeaways(draft: &Draft) -> Vec<Takeaway> {
+    let mut out: Vec<Takeaway> = vec![];
+    for t in &draft.takeaways {
+        let (label, text) = (clean(&t.label).trim_end_matches(':').trim().to_string(), clean(&t.text));
+        if !text.is_empty() && !out.iter().any(|o| o.text.eq_ignore_ascii_case(&text)) {
+            out.push(Takeaway { label, text });
+        }
+    }
+    out
+}
+
+/// Topics with a title and at least one bullet; empty and repeated bullets dropped; a topic named twice (a merge that
+/// didn't merge) is one topic.
+fn to_topics(draft: &Draft) -> Vec<SummaryTopic> {
+    let mut out: Vec<SummaryTopic> = vec![];
+    for t in &draft.topics {
+        let title = clean(&t.title);
+        let mut bullets: Vec<SummaryBullet> = vec![];
+        for b in &t.bullets {
+            let text = clean(&b.text);
+            if text.is_empty() || bullets.iter().any(|x| x.text.eq_ignore_ascii_case(&text)) {
+                continue;
+            }
+            let mut subs: Vec<String> = vec![];
+            for sub in b.sub_bullets.iter().map(|x| clean(x)).filter(|x| !x.is_empty()) {
+                if !subs.iter().any(|x| x.eq_ignore_ascii_case(&sub)) {
+                    subs.push(sub);
+                }
+            }
+            bullets.push(SummaryBullet { text, sub_bullets: subs });
+        }
+        if title.is_empty() || bullets.is_empty() {
+            continue;
+        }
+        match out.iter_mut().find(|o| o.title.to_lowercase() == title.to_lowercase()) {
+            Some(o) => {
+                for b in bullets {
+                    if !o.bullets.iter().any(|x| x.text.eq_ignore_ascii_case(&b.text)) {
+                        o.bullets.push(b);
+                    }
+                }
+            }
+            None => out.push(SummaryTopic { id: String::new(), title, bullets }),
+        }
+    }
+    for (i, t) in out.iter_mut().enumerate() {
+        t.id = format!("t{i}");
+    }
+    out
 }
 
 /// The meeting type's sections: titles in the type's own words, items with snapped times, empty ones dropped.
@@ -379,5 +499,58 @@ mod tests {
         assert_eq!(usable_title(" \"Q4 roadmap sync.\" ").as_deref(), Some("Q4 roadmap sync"));
         assert_eq!(usable_title("Meeting"), None);
         assert_eq!(usable_title("This was a long call where we talked about many different things today"), None);
+    }
+
+    #[test]
+    fn the_detailed_fields_are_read_and_cleaned() {
+        let reply = r#"{"title":"Pilot","purpose":" To plan  the pilot. ","takeaways":[{"label":"Scope:","text":"Two teams."},{"label":"Scope","text":"two teams."},{"label":"","text":"No label here."},{"label":"Empty","text":" "}],
+            "topics":[{"title":"Plan","bullets":[{"text":"Two teams.","sub_bullets":["A","a"," ","B"]},{"text":"two teams.","sub_bullets":[]},{"text":"","sub_bullets":[]}]},
+                      {"title":"plan","bullets":[{"text":"Review in six weeks.","sub_bullets":[]}]},{"title":"Empty topic","bullets":[]},{"title":"","bullets":[{"text":"x","sub_bullets":[]}]}],
+            "decisions":[],"action_items":[],"open_questions":[]}"#;
+        let d = parse_draft(reply).unwrap();
+        let s = to_summary(&d, &lines(), "Test");
+        assert_eq!(s.purpose.as_deref(), Some("To plan the pilot."));
+        assert_eq!(s.takeaways.iter().map(|t| (t.label.as_str(), t.text.as_str())).collect::<Vec<_>>(), vec![("Scope", "Two teams."), ("", "No label here.")]);
+        // The same topic named twice is one topic; empty and repeated bullets and sub-bullets are dropped.
+        assert_eq!(s.topics.len(), 1);
+        assert_eq!((s.topics[0].id.as_str(), s.topics[0].title.as_str()), ("t0", "Plan"));
+        assert_eq!(s.topics[0].bullets.iter().map(|b| b.text.as_str()).collect::<Vec<_>>(), vec!["Two teams.", "Review in six weeks."]);
+        assert_eq!(s.topics[0].bullets[0].sub_bullets, vec!["A", "B"]);
+        assert_eq!(s.recap, "To plan the pilot. Scope: Two teams. No label here.");
+    }
+
+    #[test]
+    fn a_purpose_alone_is_enough_and_a_reply_with_neither_is_not() {
+        assert!(parse_draft(r#"{"title":"T","purpose":"To meet.","decisions":[],"action_items":[],"open_questions":[]}"#).is_ok());
+        assert_eq!(parse_draft(r#"{"title":"T","recap":"","purpose":" ","topics":[]}"#), Err("the reply had no recap".into()));
+    }
+
+    #[test]
+    fn small_models_bullets_written_as_strings_or_with_odd_sub_bullets_are_still_read() {
+        let reply = r#"{"title":"T","purpose":"P.","topics":[{"title":"Plan","bullets":["Plain bullet.",{"text":"Object bullet.","sub_bullets":"not a list"},{"text":"With subs.","subBullets":["One"]},7]}],"takeaways":"oops"}"#;
+        let d = parse_draft(reply).unwrap();
+        let s = to_summary(&d, &lines(), "Test");
+        assert_eq!(s.topics[0].bullets.len(), 3);
+        assert_eq!(s.topics[0].bullets[2].sub_bullets, vec!["One"]);
+        assert!(s.takeaways.is_empty());
+    }
+
+    #[test]
+    fn an_older_reply_keeps_its_recap_and_has_no_detailed_fields() {
+        let d = parse_draft(r#"{"title":"T","recap":"We met.","decisions":[],"action_items":[],"open_questions":[]}"#).unwrap();
+        let s = to_summary(&d, &lines(), "Test");
+        assert_eq!(s.recap, "We met.");
+        assert!(s.purpose.is_none() && s.takeaways.is_empty() && s.topics.is_empty() && !s.is_detailed());
+        // A draft that goes into a merge doesn't carry empty detail fields.
+        let json = serde_json::to_string(&d).unwrap();
+        assert!(!json.contains("purpose") && !json.contains("topics") && !json.contains("takeaways"));
+    }
+
+    #[test]
+    fn the_recap_is_the_purpose_then_the_takeaways_as_sentences() {
+        let k = |l: &str, t: &str| Takeaway { label: l.into(), text: t.into() };
+        assert_eq!(recap_from(Some("To plan."), &[k("Scope", "Two teams."), k("Budget:", "It fits!")]), "To plan. Scope: Two teams. Budget: It fits!");
+        assert_eq!(recap_from(None, &[k("", "Only this")]), "Only this.");
+        assert_eq!(recap_from(None, &[]), "");
     }
 }

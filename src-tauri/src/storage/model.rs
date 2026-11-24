@@ -81,6 +81,15 @@ pub struct ActionItem {
 #[serde(rename_all = "camelCase")]
 pub struct Summary {
     pub recap: String,
+    /// One sentence on why the meeting happened (the detailed layout); none for older summaries.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub purpose: Option<String>,
+    /// 3 to 6 short bold-labeled points (the detailed layout).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub takeaways: Vec<Takeaway>,
+    /// One entry per main topic, each with bullets (the detailed layout); empty for older summaries and meeting types.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub topics: Vec<SummaryTopic>,
     pub decisions: Vec<SummaryItem>,
     pub action_items: Vec<ActionItem>,
     pub open_questions: Vec<SummaryItem>,
@@ -105,6 +114,53 @@ pub struct Summary {
     /// Computed on read (true when `summary.edited.json` exists). Never trust it from disk.
     #[serde(default)]
     pub edited: bool,
+}
+
+impl Summary {
+    /// Whether this is the detailed layout (purpose, takeaways, topics); older summaries and the other meeting types are not.
+    pub fn is_detailed(&self) -> bool {
+        self.purpose.as_deref().is_some_and(|p| !p.trim().is_empty()) || !self.takeaways.is_empty() || !self.topics.is_empty()
+    }
+
+    /// The action items grouped by owner: owners in the order they first appear (the same person written in another
+    /// case counts once), items without an owner last under `None`. Items keep their order within a group.
+    pub fn next_steps_by_owner(&self) -> Vec<(Option<String>, Vec<&ActionItem>)> {
+        let mut groups: Vec<(Option<String>, Vec<&ActionItem>)> = vec![];
+        for a in &self.action_items {
+            let owner = a.owner.as_deref().map(str::trim).filter(|o| !o.is_empty());
+            match groups.iter_mut().find(|(g, _)| g.as_deref().map(str::to_lowercase) == owner.map(str::to_lowercase)) {
+                Some((_, items)) => items.push(a),
+                None => groups.push((owner.map(str::to_string), vec![a])),
+            }
+        }
+        // Unassigned last (stable: the owners keep the order they came in).
+        groups.sort_by_key(|(o, _)| o.is_none());
+        groups
+    }
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct Takeaway {
+    pub label: String,
+    pub text: String,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct SummaryTopic {
+    pub id: String,
+    pub title: String,
+    pub bullets: Vec<SummaryBullet>,
+}
+
+/// A topic's bullet, with sub-bullets one level down.
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct SummaryBullet {
+    pub text: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub sub_bullets: Vec<String>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
@@ -386,5 +442,47 @@ mod tests {
     #[test]
     fn status_uses_snake_case_names() {
         assert_eq!(serde_json::to_string(&MeetingStatus::NeedsRecovery).unwrap(), "\"needs_recovery\"");
+    }
+
+    #[test]
+    fn the_detailed_fields_are_optional_and_round_trip_in_camel_case() {
+        let new = Summary {
+            recap: "R.".into(),
+            purpose: Some("P.".into()),
+            takeaways: vec![Takeaway { label: "L".into(), text: "T.".into() }],
+            topics: vec![SummaryTopic { id: "t0".into(), title: "Topic".into(), bullets: vec![SummaryBullet { text: "B.".into(), sub_bullets: vec!["S".into()] }, SummaryBullet { text: "C.".into(), sub_bullets: vec![] }] }],
+            decisions: vec![],
+            action_items: vec![],
+            open_questions: vec![],
+            sections: vec![],
+            highlights: vec![],
+            template: None,
+            language: None,
+            sections_missing: false,
+            engine: "x".into(),
+            edited: false,
+        };
+        let json = serde_json::to_string(&new).unwrap();
+        assert!(json.contains("\"subBullets\":[\"S\"]") && json.contains("\"purpose\":\"P.\""));
+        // A bullet without sub-bullets writes none.
+        assert!(json.contains("{\"text\":\"C.\"}"));
+        assert_eq!(serde_json::from_str::<Summary>(&json).unwrap(), new);
+        // A summary from before the detailed layout has none of them.
+        let old: Summary = serde_json::from_str(r#"{"recap":"R.","decisions":[],"actionItems":[],"openQuestions":[],"engine":"x"}"#).unwrap();
+        assert!(old.purpose.is_none() && old.takeaways.is_empty() && old.topics.is_empty() && !old.is_detailed());
+        assert!(!serde_json::to_string(&old).unwrap().contains("topics"));
+        assert!(new.is_detailed());
+    }
+
+    #[test]
+    fn next_steps_group_by_owner_in_order_of_first_appearance_with_nobody_last() {
+        let item = |id: &str, owner: Option<&str>| ActionItem { id: id.into(), text: id.into(), at: None, owner: owner.map(String::from), due: None, done: false };
+        let mut s: Summary = serde_json::from_str(r#"{"recap":"R.","decisions":[],"actionItems":[],"openQuestions":[],"engine":"x"}"#).unwrap();
+        s.action_items = vec![item("a", None), item("b", Some("Dana")), item("c", Some("Me")), item("d", Some(" dana ")), item("e", Some("")), item("f", Some("Me"))];
+        let groups = s.next_steps_by_owner();
+        let shape: Vec<(Option<&str>, Vec<&str>)> = groups.iter().map(|(o, items)| (o.as_deref(), items.iter().map(|a| a.id.as_str()).collect())).collect();
+        assert_eq!(shape, vec![(Some("Dana"), vec!["b", "d"]), (Some("Me"), vec!["c", "f"]), (None, vec!["a", "e"])]);
+        s.action_items.clear();
+        assert!(s.next_steps_by_owner().is_empty());
     }
 }

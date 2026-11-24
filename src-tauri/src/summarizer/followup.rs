@@ -48,7 +48,8 @@ fn render_summary(s: &Summary) -> String {
         out.push_str("Action items:\n");
         for a in &s.action_items {
             // Written the way the email should read: small models copy "| owner: X" labels into the email.
-            let owner = a.owner.as_deref().map(|o| o.trim()).filter(|o| !o.is_empty()).map(|o| format!("{o}: ")).unwrap_or_default();
+            // "You" is the user when Your name was empty: in an email from them that is "I".
+            let owner = a.owner.as_deref().map(|o| o.trim()).filter(|o| !o.is_empty()).map(|o| if o.eq_ignore_ascii_case("you") { "I".to_string() } else { o.to_string() }).map(|o| format!("{o}: ")).unwrap_or_default();
             let due = a.due.as_deref().map(|d| d.trim()).filter(|d| !d.is_empty()).map(|d| format!(" (by {d})")).unwrap_or_default();
             out.push_str(&format!("- {owner}{}{due}\n", a.text.trim()));
         }
