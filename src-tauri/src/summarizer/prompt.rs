@@ -124,7 +124,7 @@ const DETAILED_RULES: &str = "You write detailed meeting summaries. You get the 
 - open_questions: questions raised and not answered, or topics left unresolved.
 - Times are the [mm:ss] or [h:mm:ss] stamps of transcript lines. Copy them exactly; empty if unsure.
 - Use only what is in the transcript. Never invent names, dates, numbers or facts. Empty lists are fine.
-- The length follows the call: a short call has one topic and one or two takeaways. Never pad, and never say the same thing in two places.
+{list_size}- The length follows the call: a short call has one topic and one or two takeaways. Never pad, and never say the same thing in two places.
 - Never call the user \"the user\" (nor its translation, such as \"el usuario\" or \"l'utilisateur\"): address them directly, in the summary's language (tú in Spanish, vous in French).
 - Moments the user marked during the call matter most: make sure they are covered.";
 
@@ -203,12 +203,13 @@ fn system(meeting: &Meeting, language: &str, opts: &Options) -> String {
     let detailed = is_detailed(opts);
     let mut s = if detailed { DETAILED_RULES } else { RULES }.replace("{me}", &me).replace("{owner_me}", name.as_deref().unwrap_or("Me"));
     if detailed {
-        let (takeaways, size) = if opts.compact {
-            ("at most 3", "Keep it compact: at most 3 topics with at most 3 short bullets each, and at most 2 sub_bullets for a bullet.")
+        let (takeaways, size, list_size) = if opts.compact {
+            ("at most 3", "Keep it compact: at most 3 topics with at most 3 short bullets each, and at most 2 sub_bullets for a bullet.", "")
         } else {
-            ("3 to 6", "A short bullet is better than none, but a topic with one thin bullet should be folded into another topic.")
+            ("3 to 6", "A short bullet is better than none, but a topic with one thin bullet should be folded into another topic.", "- Keep the lists to what matters: at most 10 decisions, 15 action_items and 8 open_questions.
+")
         };
-        s = s.replace("{takeaways}", takeaways).replace("{topic_size}", size);
+        s = s.replace("{takeaways}", takeaways).replace("{topic_size}", size).replace("{list_size}", list_size);
     }
     let me_rule = match &name {
         Some(n) => ME_NAMED.replace("{me}", n),
