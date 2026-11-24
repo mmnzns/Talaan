@@ -60,7 +60,8 @@ impl Config {
     /// custom instructions.
     pub fn options_for(&self, meeting_template: Option<&str>) -> Options {
         let template = meeting_template.filter(|t| templates::exists(t)).unwrap_or(&self.template).to_string();
-        Options { template, instructions: self.instructions.clone(), ..Default::default() }
+        let firm_language = self.engine == "local" && crate::models::local_model_id(self.settings["localModel"].as_str()) == crate::models::GRANITE;
+        Options { template, instructions: self.instructions.clone(), firm_language, ..Default::default() }
     }
 }
 
@@ -435,6 +436,15 @@ mod tests {
             assert!(t.elapsed() < Duration::from_secs(10));
             std::thread::sleep(Duration::from_millis(10));
         }
+    }
+
+    #[test]
+    fn only_the_local_granite_model_asks_for_the_firm_language_prompt() {
+        let firm = |settings: serde_json::Value| Config::from_settings(Some(&settings)).options_for(None).firm_language;
+        assert!(firm(json!({ "summaryEngine": "local", "localModel": "granite-4.2-3b" })));
+        assert!(!firm(json!({ "summaryEngine": "local", "localModel": "qwen3.5-4b" })));
+        assert!(!firm(json!({ "summaryEngine": "local" })));
+        assert!(!firm(json!({ "summaryEngine": "byok", "localModel": "granite-4.2-3b" })));
     }
 
     #[test]

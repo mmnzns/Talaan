@@ -636,6 +636,33 @@ mod long_smoke {
         for a in &out.summary.action_items { eprintln!("A {:?} {} | {:?} | {:?}", a.at.map(|a| a / 1000), a.text, a.owner, a.due); }
         for q in &out.summary.open_questions { eprintln!("Q {:?} {}", q.at.map(|a| a / 1000), q.text); }
     }
+    /// A short invented Spanish call summarized in Spanish by a real local model, to see whether it writes Spanish (Granite
+    /// 4.2 3B used to write English). `TALAAN_SMOKE_FIRM=1` turns the firm-language prompt on. Build the helper first, then
+    /// `TALAAN_LLM_MODEL=<gguf> [TALAAN_SMOKE_FIRM=1] cargo test --release spanish_summary_smoke -- --ignored --nocapture`
+    #[test]
+    #[ignore]
+    fn spanish_summary_smoke() {
+        let say = |id: &str, at: u64, who: &str, text: &str| TranscriptLine { id: id.into(), at, end: at + 6_000, speaker: who.into(), text: text.into(), edited: false };
+        let lines = vec![
+            say("l0", 0, "me", "Buenos días, Carla. Quería repasar el calendario del lanzamiento de la aplicación."),
+            say("l1", 7_000, "them:0", "Claro. El equipo de diseño termina las pantallas el jueves, y las pruebas empiezan el lunes."),
+            say("l2", 16_000, "me", "Perfecto. Entonces decidimos lanzar el 12 de diciembre, siempre que las pruebas salgan bien."),
+            say("l3", 26_000, "them:0", "De acuerdo. Yo enviaré la lista de errores pendientes el viernes."),
+            say("l4", 34_000, "me", "Yo hablaré con soporte para preparar las respuestas a los clientes. Todavía no sabemos quién pagará la licencia del servidor."),
+        ];
+        let mut m = meeting(lines);
+        m.marks.clear();
+        m.speakers.clear();
+        m.item.duration_ms = 45_000;
+        let model_path = std::path::PathBuf::from(std::env::var("TALAAN_LLM_MODEL").unwrap());
+        let tmp = tempfile::tempdir().unwrap();
+        let client = std::sync::Arc::new(crate::summarizer::local::client(tmp.path(), "test", "summary"));
+        let mut engine = LocalEngine::new(client, model_path, "test".into(), true, 16_384);
+        let opts = Options { firm_language: std::env::var("TALAAN_SMOKE_FIRM").is_ok_and(|v| v == "1"), ..Default::default() };
+        let out = summarize(&m, &mut engine, "es", &opts, &AtomicBool::new(false), &mut |_| {}).unwrap();
+        eprintln!("{}", crate::storage::markdown::summary_md(&out.title.clone().unwrap_or_default(), &out.summary, &[], None));
+    }
+
 
     /// One real detailed summary of the invented 9-minute planning call, to read what the model writes. The names of the
     /// two other speakers are removed (they come up in the conversation), and Your name is empty unless

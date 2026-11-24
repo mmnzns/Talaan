@@ -11,6 +11,8 @@ use voice_engine_models::{catalog, App, LegacySource, ModelHandle, ModelInfo, Sh
 pub const DEFAULT_SPEECH: &str = "whisper-turbo";
 /// Talaan's recommended local AI model (long meetings); `qwen3.5-9b` is the optional larger one.
 pub const DEFAULT_LOCAL_AI: &str = "qwen3.5-4b";
+/// The local model that writes English for most other languages unless told firmly (`summarizer::prompt::Options::firm_language`).
+pub const GRANITE: &str = "granite-4.2-3b";
 pub const VAD: &str = "vad";
 pub const DIARIZATION: &str = "diarization";
 pub const SEARCH: &str = "search";

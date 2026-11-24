@@ -12,6 +12,7 @@
 
 **Safer processing**
 - **Transcribe again keeps a backup.** The previous transcript, your edits to it and the summary are only replaced once the new transcript (and its summary) are ready. If the new run fails, they come back exactly as they were and the meeting tells you why.
+- **Granite 4.2 3B writes summaries in your language.** It tended to answer in English for most other languages. When it is the local model, the summary instructions now say the language firmly, in English and in the language itself, and repeat it at the end. Other models are unchanged.
 - **No more stuck "Transcribing" or "Summarizing".** A problem on one call no longer holds up the calls after it. If Talaan closes unexpectedly twice while working on a call, that call shows Try again (or Generate summary) instead of being retried at every launch.
 
 ## 1.3.2 (2026-11-16)

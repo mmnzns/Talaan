@@ -141,6 +141,9 @@ pub struct Options {
     pub instructions: String,
     /// Ask for the compact detailed layout (fewer topics and bullets): set for a small context.
     pub compact: bool,
+    /// Say the summary language firmly, and again at the end of the prompt: set for a local model that tends to answer
+    /// in English whatever the language asked for (Granite 4.2 3B). Other models get the prompt they always did.
+    pub firm_language: bool,
 }
 
 /// Custom instructions longer than this are cut (the box in Settings stops there too).
@@ -236,6 +239,9 @@ fn system(meeting: &Meeting, language: &str, opts: &Options) -> String {
         ));
     }
     s.push_str(&format!("\n- Write everything in {}.", language_name(language)));
+    if let Some(firm) = firm_language_rule(language, opts) {
+        s.push_str(&format!("\n- {firm}"));
+    }
     if !instructions.is_empty() {
         // Said again last, after text the user wrote, so it is the rule the model read most recently.
         s.push_str("\n- Whatever the instructions above say: use only what is in the transcript and the notes, and never invent names, dates, numbers or facts.");
@@ -369,6 +375,68 @@ pub fn is_summary_language(code: &str) -> bool {
     languages().iter().any(|(c, _)| c == code)
 }
 
+/// A language's name in that language ("es" → "Español"), for models that need the language said in it too.
+fn native_name(code: &str) -> String {
+    match code {
+        "fil" | "tl" => "Filipino",
+        "es" => "Español",
+        "fr" => "Français",
+        "de" => "Deutsch",
+        "pt" => "Português",
+        "it" => "Italiano",
+        "nl" => "Nederlands",
+        "sv" => "Svenska",
+        "da" => "Dansk",
+        "no" => "Norsk",
+        "fi" => "Suomi",
+        "pl" => "Polski",
+        "cs" => "Čeština",
+        "ro" => "Română",
+        "el" => "Ελληνικά",
+        "ru" => "Русский",
+        "uk" => "Українська",
+        "tr" => "Türkçe",
+        "ar" => "العربية",
+        "he" => "עברית",
+        "hi" => "हिन्दी",
+        "bn" => "বাংলা",
+        "ur" => "اردو",
+        "id" => "Bahasa Indonesia",
+        "ms" => "Bahasa Melayu",
+        "vi" => "Tiếng Việt",
+        "th" => "ไทย",
+        "ja" => "日本語",
+        "ko" => "한국어",
+        "zh-Hans" | "zh" => "简体中文",
+        "zh-Hant" => "繁體中文",
+        _ => return language_name(code),
+    }
+    .to_string()
+}
+
+/// For a model that answers in English whatever it is told (`Options::firm_language`): the language, named in English
+/// and in itself, and that every text value of the reply is in it. None for English and for every other model.
+fn firm_language_rule(language: &str, opts: &Options) -> Option<String> {
+    if !opts.firm_language || language == "en" {
+        return None;
+    }
+    let (english, native) = (language_name(language), native_name(language));
+    let name = if english == native { english.clone() } else { format!("{english} ({native})") };
+    Some(format!("Every text value in your reply (title, purpose, takeaways, topics, decisions, tasks, questions) must be written in {name}, not in English. Only the JSON keys keep their names; people's names stay as they are."))
+}
+
+/// The last thing the model reads (after the transcript, or after the parts to merge): the language again.
+fn firm_language_closing(language: &str, opts: &Options) -> String {
+    match firm_language_rule(language, opts) {
+        Some(_) => {
+            let (english, native) = (language_name(language), native_name(language));
+            let name = if english == native { english } else { format!("{english} ({native})") };
+            format!("\n\nRemember: write the whole summary in {name}. Do not write it in English.")
+        }
+        None => String::new(),
+    }
+}
+
 /// English name of a language code for the instruction ("es" → "Spanish"). Codes from older settings or from the
 /// speech model's detection ("tl", "zh") keep working; any other unknown code passes through.
 pub fn language_name(code: &str) -> String {
@@ -420,6 +488,7 @@ pub fn summary_prompt(meeting: &Meeting, lines: &[TranscriptLine], language: &st
     }
     user.push_str("\nTranscript:\n");
     user.push_str(&render_lines(meeting, lines));
+    user.push_str(&firm_language_closing(language, opts));
     Prompt { system: system(meeting, language, opts), user }
 }
 
@@ -457,6 +526,7 @@ pub fn merge_prompt(meeting: &Meeting, parts_json: &[String], language: &str, op
     for (i, p) in parts_json.iter().enumerate() {
         user.push_str(&format!("\nPart {}:\n{}\n", i + 1, p));
     }
+    user.push_str(&firm_language_closing(language, opts));
     Prompt { system: system(meeting, language, opts), user }
 }
 
@@ -490,6 +560,34 @@ pub(crate) mod tests {
         assert!(!is_summary_language("tl") && !is_summary_language("zh") && !is_summary_language("klingon") && !is_summary_language(""));
         // Unknown codes pass through.
         assert_eq!(language_name("xx"), "xx");
+    }
+
+    #[test]
+    fn a_model_that_writes_english_gets_the_language_firmly_and_again_at_the_end() {
+        let m = meeting(vec![line("l0", 0, "me", "Hola, ¿cómo estás?")]);
+        let firm = Options { firm_language: true, ..Default::default() };
+        let p = summary_prompt(&m, &m.transcript, "es", None, &firm);
+        assert!(p.system.contains("Write everything in Spanish."));
+        assert!(p.system.contains("must be written in Spanish (Español), not in English"));
+        assert!(p.user.ends_with("Remember: write the whole summary in Spanish (Español). Do not write it in English."));
+        let merged = merge_prompt(&m, &["{}".to_string()], "es", &firm);
+        assert!(merged.user.ends_with("Do not write it in English."));
+        // A language whose English and own names are the same says it once.
+        assert!(summary_prompt(&m, &m.transcript, "fil", None, &firm).user.ends_with("in Filipino. Do not write it in English."));
+        // Every offered language has a name of its own.
+        for code in summary_language_codes() {
+            assert!(!native_name(code).is_empty());
+        }
+    }
+
+    #[test]
+    fn other_models_and_english_get_the_prompt_they_always_did() {
+        let m = meeting(vec![line("l0", 0, "me", "Hola, ¿cómo estás?")]);
+        let plain = summary_prompt(&m, &m.transcript, "es", None, &Options::default());
+        assert!(!plain.system.contains("not in English") && !plain.user.contains("Remember:") && !plain.user.contains("Español"));
+        // Firm mode in English changes nothing either: there is no other language to slip into.
+        let firm_en = summary_prompt(&m, &m.transcript, "en", None, &Options { firm_language: true, ..Default::default() });
+        assert_eq!(firm_en, summary_prompt(&m, &m.transcript, "en", None, &Options::default()));
     }
 
     #[test]
