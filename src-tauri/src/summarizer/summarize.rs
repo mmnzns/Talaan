@@ -662,7 +662,7 @@ mod long_smoke {
         let out = summarize(&m, &mut engine, "en", &Options::default(), &AtomicBool::new(false), &mut |_| {}).unwrap();
         eprintln!("== {} parts, {:.0}s, context {context}", out.parts, t.elapsed().as_secs_f32());
         let title = out.title.clone().unwrap_or_default();
-        let md = crate::storage::markdown::summary_md(&title, &out.summary, &[]);
+        let md = crate::storage::markdown::summary_md(&title, &out.summary, &[], None);
         eprintln!("{md}");
         if let Ok(path) = std::env::var("TALAAN_SMOKE_OUT") {
             std::fs::write(path, md).unwrap();

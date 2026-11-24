@@ -171,6 +171,7 @@ const TABLE: &[(&str, &str, &str, &str)] = &[
     ("notion.topics", "Topics", "Sujets", "Temas"),
     ("notion.next_steps", "Next steps", "Prochaines étapes", "Próximos pasos"),
     ("notion.unassigned", "No owner", "Sans responsable", "Sin responsable"),
+    ("notion.you", "You", "Vous", "Tú"),
     ("notion.decisions", "Decisions", "Décisions", "Decisiones"),
     ("notion.action_items", "Action items", "Tâches", "Tareas pendientes"),
     ("notion.open_questions", "Open questions", "Questions en suspens", "Preguntas abiertas"),

@@ -2,7 +2,7 @@ import type { ActionItem, Meeting, Ms, Summary } from "../data/types";
 import { t } from "./i18n";
 import { formatDate, formatDuration, formatTime } from "./format";
 import { MAILTO_MAX, mailtoHead, mailtoPart } from "./mailto";
-import { isDetailed, nextStepsByOwner } from "./summaryLayout";
+import { isDetailed, nextStepsByOwner, taskText } from "./summaryLayout";
 import { ownerName, speakerName } from "./transcript";
 
 const nameOf = (m: Meeting, speaker: string) => speakerName(m, speaker);
@@ -77,10 +77,10 @@ export function toShareText(m: Meeting): string {
   }
   if (s.decisions.length) out.push("", t("meeting.shDecisions"), ...s.decisions.map((d) => `• ${d.text}${when(d.at)}`));
   if (s.actionItems.length && detailed) {
-    const line = (a: ActionItem) => `• ${a.done ? "✅" : "☐"} ${a.text}${due(a.due)}${when(a.at)}`;
+    const line = (a: ActionItem) => `• ${a.done ? "✅" : "☐"} ${taskText(a)}${due(a.due)}${when(a.at)}`;
     out.push("", t("meeting.shNextSteps"), ...nextStepLines(m, s.actionItems, line, (o) => [o], t("meeting.shUnassigned")));
   } else if (s.actionItems.length)
-    out.push("", t("meeting.shActionItems"), ...s.actionItems.map((a) => `• ${a.done ? "✅" : "☐"} ${a.text}${owner(a.owner && ownerName(m, a.owner))}${due(a.due)}`));
+    out.push("", t("meeting.shActionItems"), ...s.actionItems.map((a) => `• ${a.done ? "✅" : "☐"} ${taskText(a)}${owner(a.owner && ownerName(m, a.owner))}${due(a.due)}`));
   if (s.openQuestions.length) out.push("", t("meeting.shOpenQuestions"), ...s.openQuestions.map((q) => `• ${q.text}`));
   for (const sec of s.sections ?? []) out.push("", sec.title, ...sec.items.map((i) => `• ${i.text}${when(i.at)}`));
   if (s.highlights?.length) out.push("", t("meeting.shHighlights"), ...s.highlights.map((h) => `• ${h.text}${when(h.at)}`));
@@ -105,8 +105,8 @@ function emailSummary(m: Meeting, s: Summary, withQuestions: boolean): string[] 
     if (s.takeaways?.length) out.push("", t("meeting.shKeyTakeaways"), ...takeawayLines(s, DASH));
   } else out.push(s.recap);
   if (s.decisions.length) out.push("", t("meeting.shDecisions"), ...s.decisions.map((d) => `- ${d.text}`));
-  if (s.actionItems.length && detailed) out.push("", t("meeting.shNextSteps"), ...nextStepLines(m, s.actionItems, (a) => `- ${a.text}${due(a.due)}`, (o) => [o], t("meeting.shUnassigned")));
-  else if (s.actionItems.length) out.push("", t("meeting.shActionItems"), ...s.actionItems.map((a) => `- ${a.text}${owner(a.owner && ownerName(m, a.owner))}${due(a.due)}`));
+  if (s.actionItems.length && detailed) out.push("", t("meeting.shNextSteps"), ...nextStepLines(m, s.actionItems, (a) => `- ${taskText(a)}${due(a.due)}`, (o) => [o], t("meeting.shUnassigned")));
+  else if (s.actionItems.length) out.push("", t("meeting.shActionItems"), ...s.actionItems.map((a) => `- ${taskText(a)}${owner(a.owner && ownerName(m, a.owner))}${due(a.due)}`));
   if (withQuestions && s.openQuestions.length) out.push("", t("meeting.shOpenQuestions"), ...s.openQuestions.map((q) => `- ${q.text}`));
   return out;
 }
@@ -176,10 +176,10 @@ export function toMarkdown(m: Meeting, scope: ExportScope): string {
       if (detailed && s.topics?.length) out.push("", `### ${t("meeting.shTopics")}`, "", ...topicLines(s, MD, (x) => [`#### ${x}`, ""]));
       if (s.decisions.length) out.push("", `### ${t("meeting.shDecisions")}`, "", ...s.decisions.map((d) => `- ${d.text}${when(d.at)}`));
       if (s.actionItems.length && detailed) {
-        const line = (a: ActionItem) => `- [${a.done ? "x" : " "}] ${a.text}${due(a.due)}${when(a.at)}`;
+        const line = (a: ActionItem) => `- [${a.done ? "x" : " "}] ${taskText(a)}${due(a.due)}${when(a.at)}`;
         out.push("", `### ${t("meeting.shNextSteps")}`, "", ...nextStepLines(m, s.actionItems, line, (o) => [`#### ${o}`, ""], t("meeting.shUnassigned")));
       } else if (s.actionItems.length)
-        out.push("", `### ${t("meeting.shActionItems")}`, "", ...s.actionItems.map((a) => `- [${a.done ? "x" : " "}] ${a.text}${owner(a.owner && ownerName(m, a.owner))}${due(a.due)}${when(a.at)}`));
+        out.push("", `### ${t("meeting.shActionItems")}`, "", ...s.actionItems.map((a) => `- [${a.done ? "x" : " "}] ${taskText(a)}${owner(a.owner && ownerName(m, a.owner))}${due(a.due)}${when(a.at)}`));
       if (s.openQuestions.length) out.push("", `### ${t("meeting.shOpenQuestions")}`, "", ...s.openQuestions.map((q) => `- ${q.text}`));
       for (const sec of s.sections ?? []) out.push("", `### ${sec.title}`, "", ...sec.items.map((i) => `- ${i.text}${when(i.at)}`));
       if (s.highlights?.length) out.push("", `### ${t("meeting.shHighlights")}`, "", ...s.highlights.map((h) => `- ${h.text}${when(h.at)}`));

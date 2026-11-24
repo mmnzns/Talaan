@@ -120,10 +120,10 @@ pub fn blocks(m: &Meeting, scope: Scope) -> Vec<Value> {
                     who.push(tr_with("notion.due", &[("due", d.trim())]));
                 }
                 let who = if who.is_empty() { String::new() } else { format!(" — {}", who.join(", ")) };
-                json!({ "object": "block", "type": "to_do", "to_do": { "rich_text": rich(&format!("{}{}{}", a.text.trim(), who, when(a.at))), "checked": a.done } })
+                json!({ "object": "block", "type": "to_do", "to_do": { "rich_text": rich(&format!("{}{}{}", a.text_before_suffix().trim(), who, when(a.at))), "checked": a.done } })
             };
             if detailed {
-                let groups = s.next_steps_by_owner();
+                let groups = s.next_steps_by_owner(m.speakers.get("me").map(String::as_str), &tr("notion.you"));
                 let named = groups.iter().any(|(o, _)| o.is_some());
                 for (owner, items) in &groups {
                     match owner {
@@ -309,6 +309,26 @@ mod tests {
         assert_eq!(b[at("Next steps") + 1]["type"], "heading_3");
         assert_eq!(texts[at("Next steps") + 1], "Priya");
         assert_eq!(texts[at("Next steps") + 2], "Send wireframes");
+    }
+
+    #[test]
+    fn notion_next_steps_start_with_the_user_and_drop_the_period_before_the_due_date() {
+        use crate::storage::model::{ActionItem, Takeaway};
+        let item = |id: &str, text: &str, owner: Option<&str>, due: Option<&str>| ActionItem { id: id.into(), text: text.into(), at: None, owner: owner.map(String::from), due: due.map(String::from), done: false };
+        let mut m = sample();
+        let s = m.summary.as_mut().unwrap();
+        s.takeaways = vec![Takeaway { label: "A".into(), text: "B.".into() }];
+        s.action_items = vec![item("a", "Confirm the estimate with engineering.", Some("Priya"), Some("Thursday")), item("b", "Send the plan.", Some("Me"), None)];
+        let texts = |m: &Meeting| -> Vec<String> {
+            blocks(m, Scope::Summary).iter().map(|b| b[b["type"].as_str().unwrap()]["rich_text"][0]["text"]["content"].as_str().unwrap_or("").to_string()).collect()
+        };
+        let t = texts(&m);
+        let at = t.iter().position(|x| x == "Next steps").unwrap();
+        assert_eq!(t[at + 1..at + 5], ["You", "Send the plan.", "Priya", "Confirm the estimate with engineering — due Thursday"]);
+        // With Your name set, it names the group.
+        m.speakers.insert("me".into(), "Miguel".into());
+        let t = texts(&m);
+        assert_eq!(t[at + 1], "Miguel");
     }
 
     #[test]

@@ -71,7 +71,8 @@ fn detail_md(s: &Summary) -> String {
 }
 
 /// `marks`: the meeting's marks; the ones with text are the user's notes, listed under "Your notes".
-pub fn summary_md(title: &str, s: &Summary, marks: &[Mark]) -> String {
+/// `you`: Your name (the meeting's "me" speaker), which names the user's group under Next steps.
+pub fn summary_md(title: &str, s: &Summary, marks: &[Mark], you: Option<&str>) -> String {
     let at = |t: Option<u64>| t.map(|t| format!(" ({})", format_time(t))).unwrap_or_default();
     let detailed = s.is_detailed();
     let mut out = if detailed {
@@ -96,11 +97,11 @@ pub fn summary_md(title: &str, s: &Summary, marks: &[Mark]) -> String {
     let step = |a: &ActionItem, with_owner: bool| {
         let owner = a.owner.as_ref().filter(|_| with_owner).map(|o| format!(" — {o}")).unwrap_or_default();
         let due = a.due.as_ref().map(|d| format!(", due {d}")).unwrap_or_default();
-        format!("- [{}] {}{owner}{due}{}\n", if a.done { "x" } else { " " }, a.text, at(a.at))
+        format!("- [{}] {}{owner}{due}{}\n", if a.done { "x" } else { " " }, a.text_before_suffix(), at(a.at))
     };
     if !s.action_items.is_empty() && detailed {
         out.push_str("\n## Next steps\n");
-        let groups = s.next_steps_by_owner();
+        let groups = s.next_steps_by_owner(you, "You");
         let named = groups.iter().any(|(o, _)| o.is_some());
         for (owner, items) in &groups {
             match owner {
@@ -182,7 +183,7 @@ mod tests {
             engine: "Local AI".into(),
             edited: false,
         };
-        let md = summary_md("Sync", &s, &[]);
+        let md = summary_md("Sync", &s, &[], None);
         assert!(md.contains("Recap text."));
         assert!(!md.contains("Your notes") && !md.contains("Highlights"));
         assert!(md.contains("- Ship it (00:21)"));
@@ -214,7 +215,7 @@ mod tests {
             Mark { id: "k1".into(), at: 61_000, note: Some("ask about legal".into()), later: false },
             Mark { id: "n0".into(), at: 0, note: Some("send the deck".into()), later: true },
         ];
-        let md = summary_md("Stand-up", &s, &marks);
+        let md = summary_md("Stand-up", &s, &marks, None);
         assert!(md.contains("## Your notes\n\n- ask about legal (01:01)\n- send the deck\n"));
         assert!(md.contains("## Blockers\n\n- Dana: waiting on legal (01:05)"));
         assert!(md.contains("## Highlights\n\n- Budget set at 50k. (02:00)"));
@@ -243,14 +244,16 @@ mod tests {
             engine: "Local AI".into(),
             edited: false,
         };
-        let md = summary_md("Pilot", &s, &[]);
-        let expected = "# Pilot\n\n## Purpose\n\nTo plan the pilot.\n\n## Key takeaways\n\n- **Scope:** Two teams.\n\n## Topics\n\n### Plan\n\n- Two teams.\n  - Support\n\n## Decisions\n\n- Start in March. (00:21)\n\n## Next steps\n\n### Dana\n\n- [ ] Task a., due Fri (00:05)\n- [ ] Task d. (00:05)\n\n### Me\n\n- [x] Task c. (00:05)\n\n### Unassigned\n\n- [ ] Task b. (00:05)\n\n## Open questions\n\n- Who trains sales?\n";
+        let md = summary_md("Pilot", &s, &[], None);
+        let expected = "# Pilot\n\n## Purpose\n\nTo plan the pilot.\n\n## Key takeaways\n\n- **Scope:** Two teams.\n\n## Topics\n\n### Plan\n\n- Two teams.\n  - Support\n\n## Decisions\n\n- Start in March. (00:21)\n\n## Next steps\n\n### You\n\n- [x] Task c (00:05)\n\n### Dana\n\n- [ ] Task a, due Fri (00:05)\n- [ ] Task d (00:05)\n\n### Unassigned\n\n- [ ] Task b (00:05)\n\n## Open questions\n\n- Who trains sales?\n";
         assert_eq!(md, expected);
         // The plain recap stays out of the file: the purpose and takeaways say it.
         assert!(!md.contains("Plain recap."));
-        // An older summary is written exactly as before.
+        // Your name heads the user's group (Me and the name are one person).
+        let named = summary_md("Pilot", &s, &[], Some("Miguel"));
+        assert!(named.contains("## Next steps\n\n### Miguel\n\n- [x] Task c (00:05)\n\n### Dana") && !named.contains("### You"));
         let old = Summary { purpose: None, takeaways: vec![], topics: vec![], ..s };
-        let md = summary_md("Pilot", &old, &[]);
-        assert!(md.starts_with("# Pilot\n\nPlain recap.\n") && md.contains("## Action items") && !md.contains("Next steps") && md.contains("- [ ] Task a. — Dana, due Fri (00:05)"));
+        let md = summary_md("Pilot", &old, &[], None);
+        assert!(md.starts_with("# Pilot\n\nPlain recap.\n") && md.contains("## Action items") && !md.contains("Next steps") && md.contains("- [ ] Task a — Dana, due Fri (00:05)"));
     }
 }

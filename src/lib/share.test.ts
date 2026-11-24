@@ -161,9 +161,9 @@ describe("the detailed summary", () => {
     expect([...order].sort((a, b) => a - b)).toEqual(order);
     expect(md).toContain("- **Pilot scope:** Two teams start in March.");
     expect(md).toContain("#### Pilot plan\n\n- Two teams, about 25 people in total.\n  - Support team first\n  - Sales team in week 3\n- Review after six weeks.");
-    expect(md).toContain("#### Alex\n\n- [ ] Send the rollout plan., due Friday (00:40)\n- [x] Share the training slides. (01:00)");
-    expect(md).toContain("#### Rosa Lim\n\n- [ ] Confirm the licence quote. (00:50)");
-    expect(md).toContain("#### No owner\n\n- [ ] Book the kickoff room. (00:55)");
+    expect(md).toContain("#### Alex\n\n- [ ] Send the rollout plan, due Friday (00:40)\n- [x] Share the training slides (01:00)");
+    expect(md).toContain("#### Rosa Lim\n\n- [ ] Confirm the licence quote (00:50)");
+    expect(md).toContain("#### No owner\n\n- [ ] Book the kickoff room (00:55)");
     // The tasks sit under their person, so the line itself has no owner.
     expect(md).not.toContain("— Alex");
   });
@@ -173,22 +173,22 @@ describe("the detailed summary", () => {
     expect(text).not.toMatch(/\*\*|#### /);
     expect(text).toContain("Pilot scope: Two teams start in March.");
     expect(text).toContain("Pilot plan\n\n- Two teams, about 25 people in total.\n  - Support team first");
-    expect(text).toContain("Next steps\n\nAlex\n\n- Send the rollout plan., due Friday");
+    expect(text).toContain("Next steps\n\nAlex\n\n- Send the rollout plan, due Friday");
   });
 
   it("copies the bulleted text with the same sections", () => {
     const text = toShareText(m);
     expect(text).toContain("\nKey takeaways\n• Pilot scope: Two teams start in March.");
     expect(text).toContain("\nTopics\nPilot plan\n• Two teams, about 25 people in total.\n   – Support team first");
-    expect(text).toContain("\nNext steps\nAlex\n• ☐ Send the rollout plan., due Friday (00:40)");
-    expect(text).toContain("\nNo owner\n• ☐ Book the kickoff room. (00:55)");
+    expect(text).toContain("\nNext steps\nAlex\n• ☐ Send the rollout plan, due Friday (00:40)");
+    expect(text).toContain("\nNo owner\n• ☐ Book the kickoff room (00:55)");
   });
 
   it("emails the purpose, takeaways, decisions and next steps by person", () => {
     const body = toEmailBody(m);
     expect(body).toContain("To plan the pilot of the new scheduling tool.");
     expect(body).toContain("Key takeaways\n- Pilot scope: Two teams start in March.");
-    expect(body).toContain("Next steps\nAlex\n- Send the rollout plan., due Friday");
+    expect(body).toContain("Next steps\nAlex\n- Send the rollout plan, due Friday");
     expect(toEmail(m)).toContain("Open questions");
   });
 
@@ -198,5 +198,16 @@ describe("the detailed summary", () => {
     expect(old).toContain("### Action items");
     expect(old).not.toContain("### Next steps");
     expect(old).not.toContain("Key takeaways");
+  });
+});
+
+describe("a task with a due date", () => {
+  it("never reads 'text., due …' in any export", () => {
+    const m = detailedMeeting();
+    m.summary!.actionItems = [{ id: "z", text: "Confirm the estimate with engineering. ", owner: "Alex", due: "Thursday", done: false }];
+    for (const out of [toMarkdown(m, "summary"), toPlainText(m, "summary"), toShareText(m), toEmail(m)]) {
+      expect(out).toContain("Confirm the estimate with engineering, due Thursday");
+      expect(out).not.toContain("., due");
+    }
   });
 });

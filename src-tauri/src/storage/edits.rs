@@ -106,7 +106,7 @@ impl Storage {
             write_text_atomic(&dir.join(TRANSCRIPT_MD), &transcript_md(&m.item.title, &m.transcript, &m.speakers))?;
         }
         match &m.summary {
-            Some(s) => write_text_atomic(&dir.join(SUMMARY_MD), &summary_md(&m.item.title, s, &m.marks))?,
+            Some(s) => write_text_atomic(&dir.join(SUMMARY_MD), &summary_md(&m.item.title, s, &m.marks, m.speakers.get("me").map(String::as_str)))?,
             None => match notes_md(&m.item.title, &m.marks) {
                 Some(md) => write_text_atomic(&dir.join(SUMMARY_MD), &md)?,
                 None => remove_if_exists(&dir.join(SUMMARY_MD))?,

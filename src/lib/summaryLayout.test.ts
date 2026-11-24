@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { detailedMeeting } from "./detailedSummary.fixture";
-import { isDetailed, nextStepsByOwner, recapFrom } from "./summaryLayout";
+import { isDetailed, nextStepsByOwner, recapFrom, taskText } from "./summaryLayout";
 import { seedMeetings } from "../data/mock/seed";
 
 describe("the detailed layout", () => {
@@ -30,6 +30,27 @@ describe("the detailed layout", () => {
     ];
     const groups = nextStepsByOwner(m, items);
     expect(groups.map((g) => [g.owner, g.items.length])).toEqual([["Alex", 2], ["Dana", 1]]);
+  });
+
+  it("puts the user's group first, then the others in order, nobody last", () => {
+    const m = { ...detailedMeeting(), speakers: { me: "Alex" } as never };
+    const item = (id: string, owner?: string) => ({ id, text: id, owner, done: false });
+    const items = [item("1", "Rosa"), item("2"), item("3", "Dana"), item("4", "me"), item("5", "Alex")];
+    expect(nextStepsByOwner(m, items).map((g) => [g.owner, g.items.map((a) => a.id)])).toEqual([["Alex", ["4", "5"]], ["Rosa", ["1"]], ["Dana", ["3"]], [undefined, ["2"]]]);
+  });
+
+  it("calls the user's group You while Your name is empty", () => {
+    const m = { ...detailedMeeting(), speakers: {} as never };
+    const item = (id: string, owner?: string) => ({ id, text: id, owner, done: false });
+    const groups = nextStepsByOwner(m, [item("1", "Rosa"), item("2", "Me")]);
+    expect(groups.map((g) => g.owner)).toEqual(["You", "Rosa"]);
+  });
+
+  it("trims a trailing period before a due date or time goes after the task", () => {
+    expect(taskText({ text: "Confirm the estimate with engineering. ", due: "Thursday" })).toBe("Confirm the estimate with engineering");
+    expect(taskText({ text: "Send it.", at: 5000 })).toBe("Send it");
+    expect(taskText({ text: "Send it." })).toBe("Send it.");
+    expect(taskText({ text: "...", due: "Fri" })).toBe("...");
   });
 
   it("writes the recap as plain sentences from the purpose and the takeaways", () => {

@@ -122,20 +122,44 @@ impl Summary {
         self.purpose.as_deref().is_some_and(|p| !p.trim().is_empty()) || !self.takeaways.is_empty() || !self.topics.is_empty()
     }
 
-    /// The action items grouped by owner: owners in the order they first appear (the same person written in another
-    /// case counts once), items without an owner last under `None`. Items keep their order within a group.
-    pub fn next_steps_by_owner(&self) -> Vec<(Option<String>, Vec<&ActionItem>)> {
+    /// The action items grouped by owner: the user's group first (`you`, their name as Your name, or `you_label` when
+    /// it is empty; "Me" and the name are the same person), then the other owners in the order they first appear (the
+    /// same person written in another case counts once), items without an owner last under `None`. Items keep their
+    /// order within a group.
+    pub fn next_steps_by_owner(&self, you: Option<&str>, you_label: &str) -> Vec<(Option<String>, Vec<&ActionItem>)> {
+        let you = you.map(str::trim).filter(|n| !n.is_empty() && *n != "Me");
+        let you_label = you.unwrap_or(you_label);
         let mut groups: Vec<(Option<String>, Vec<&ActionItem>)> = vec![];
         for a in &self.action_items {
             let owner = a.owner.as_deref().map(str::trim).filter(|o| !o.is_empty());
+            let owner = owner.map(|o| if o.eq_ignore_ascii_case("me") || you.is_some_and(|y| y.to_lowercase() == o.to_lowercase()) { you_label } else { o });
             match groups.iter_mut().find(|(g, _)| g.as_deref().map(str::to_lowercase) == owner.map(str::to_lowercase)) {
                 Some((_, items)) => items.push(a),
                 None => groups.push((owner.map(str::to_string), vec![a])),
             }
         }
-        // Unassigned last (stable: the owners keep the order they came in).
-        groups.sort_by_key(|(o, _)| o.is_none());
+        // The user first, nobody last (stable: the other owners keep the order they came in).
+        groups.sort_by_key(|(o, _)| match o {
+            None => 2,
+            Some(o) if o == you_label => 0,
+            Some(_) => 1,
+        });
         groups
+    }
+}
+
+impl ActionItem {
+    /// The task for putting a due date or a time after it: without the trailing period or space the summary AI often
+    /// ends it with ("Confirm the estimate." would read "estimate., due Thursday"). Untouched when nothing follows.
+    pub fn text_before_suffix(&self) -> &str {
+        let text = self.text.trim_end();
+        if self.due.as_deref().is_some_and(|d| !d.trim().is_empty()) || self.at.is_some() {
+            let cut = text.trim_end_matches(|c: char| c == '.' || c.is_whitespace());
+            if !cut.is_empty() {
+                return cut;
+            }
+        }
+        text
     }
 }
 
@@ -474,15 +498,40 @@ mod tests {
         assert!(new.is_detailed());
     }
 
-    #[test]
-    fn next_steps_group_by_owner_in_order_of_first_appearance_with_nobody_last() {
-        let item = |id: &str, owner: Option<&str>| ActionItem { id: id.into(), text: id.into(), at: None, owner: owner.map(String::from), due: None, done: false };
+    fn shape<'a>(groups: &'a [(Option<String>, Vec<&ActionItem>)]) -> Vec<(Option<&'a str>, Vec<&'a str>)> {
+        groups.iter().map(|(o, items)| (o.as_deref(), items.iter().map(|a| a.id.as_str()).collect())).collect()
+    }
+
+    fn summary_with(owners: &[(&str, Option<&str>)]) -> Summary {
         let mut s: Summary = serde_json::from_str(r#"{"recap":"R.","decisions":[],"actionItems":[],"openQuestions":[],"engine":"x"}"#).unwrap();
-        s.action_items = vec![item("a", None), item("b", Some("Dana")), item("c", Some("Me")), item("d", Some(" dana ")), item("e", Some("")), item("f", Some("Me"))];
-        let groups = s.next_steps_by_owner();
-        let shape: Vec<(Option<&str>, Vec<&str>)> = groups.iter().map(|(o, items)| (o.as_deref(), items.iter().map(|a| a.id.as_str()).collect())).collect();
-        assert_eq!(shape, vec![(Some("Dana"), vec!["b", "d"]), (Some("Me"), vec!["c", "f"]), (None, vec!["a", "e"])]);
+        s.action_items = owners.iter().map(|(id, owner)| ActionItem { id: (*id).into(), text: (*id).into(), at: None, owner: owner.map(String::from), due: None, done: false }).collect();
+        s
+    }
+
+    #[test]
+    fn next_steps_put_the_user_first_then_owners_in_order_of_first_appearance_with_nobody_last() {
+        let mut s = summary_with(&[("a", None), ("b", Some("Dana")), ("c", Some("Me")), ("d", Some(" dana ")), ("e", Some("")), ("f", Some("Me"))]);
+        // Your name empty: the group is "You".
+        assert_eq!(shape(&s.next_steps_by_owner(None, "You")), vec![(Some("You"), vec!["c", "f"]), (Some("Dana"), vec!["b", "d"]), (None, vec!["a", "e"])]);
         s.action_items.clear();
-        assert!(s.next_steps_by_owner().is_empty());
+        assert!(s.next_steps_by_owner(None, "You").is_empty());
+    }
+
+    #[test]
+    fn next_steps_name_the_users_group_after_your_name_whether_the_summary_wrote_me_or_the_name() {
+        let s = summary_with(&[("a", Some("Rosa")), ("b", Some("miguel")), ("c", None), ("d", Some("Me")), ("e", Some("Dana"))]);
+        assert_eq!(shape(&s.next_steps_by_owner(Some(" Miguel "), "You")), vec![(Some("Miguel"), vec!["b", "d"]), (Some("Rosa"), vec!["a"]), (Some("Dana"), vec!["e"]), (None, vec!["c"])]);
+        // The stored default "Me" is not a name.
+        assert_eq!(shape(&s.next_steps_by_owner(Some("Me"), "You"))[0].0, Some("You"));
+    }
+
+    #[test]
+    fn a_task_loses_its_trailing_period_only_when_something_goes_after_it() {
+        let item = |text: &str, due: Option<&str>, at: Option<u64>| ActionItem { id: "a".into(), text: text.into(), at, owner: None, due: due.map(String::from), done: false };
+        assert_eq!(item("Confirm the estimate. ", Some("Thursday"), None).text_before_suffix(), "Confirm the estimate");
+        assert_eq!(item("Send it.", None, Some(5)).text_before_suffix(), "Send it");
+        assert_eq!(item("Send it.", None, None).text_before_suffix(), "Send it.");
+        assert_eq!(item("Send it.", Some("  "), None).text_before_suffix(), "Send it.");
+        assert_eq!(item("...", Some("Fri"), None).text_before_suffix(), "...");
     }
 }
