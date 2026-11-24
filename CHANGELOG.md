@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.4.1 (2026-11-24)
 
 - **Summaries with your own Gemini key work again.** 1.4.0 asked Gemini for a summary shape it couldn't handle and every summary failed with a "too many states" error. Gemini now gets a lighter request, and if any provider refuses the summary format as too complex, Talaan asks once more in plain JSON mode.
 
