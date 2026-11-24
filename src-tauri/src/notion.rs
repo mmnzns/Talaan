@@ -57,8 +57,15 @@ pub fn blocks(m: &Meeting, scope: Scope) -> Vec<Value> {
     let meta = format!("{} · {} · {} · {}", m.item.app_label, m.item.started_at.get(..10).unwrap_or(""), stamp(m.item.duration_ms), tr("notion.recorded_with"));
     out.push(json!({ "object": "block", "type": "paragraph", "paragraph": { "rich_text": [{ "type": "text", "text": { "content": meta }, "annotations": { "italic": true, "color": "gray" } }] } }));
     if let Some(s) = m.summary.as_ref().filter(|_| summary) {
-        out.push(block("heading_2", &tr("notion.recap")));
-        out.push(block("paragraph", s.recap.trim()));
+        if s.is_detailed() {
+            if let Some(p) = s.purpose.as_deref().map(str::trim).filter(|p| !p.is_empty()) {
+                out.push(block("heading_2", &tr("notion.purpose")));
+                out.push(block("paragraph", p));
+            }
+        } else {
+            out.push(block("heading_2", &tr("notion.recap")));
+            out.push(block("paragraph", s.recap.trim()));
+        }
     }
     let notes: Vec<_> = m.marks.iter().filter_map(|k| k.note_text().map(|n| (k, n))).collect();
     if summary && !notes.is_empty() {
@@ -69,22 +76,65 @@ pub fn blocks(m: &Meeting, scope: Scope) -> Vec<Value> {
         }
     }
     if let Some(s) = m.summary.as_ref().filter(|_| summary) {
+        if !s.takeaways.is_empty() {
+            out.push(block("heading_2", &tr("notion.key_takeaways")));
+            for k in &s.takeaways {
+                let label = k.label.trim().trim_end_matches(':');
+                let rich_text = if label.is_empty() {
+                    rich(k.text.trim())
+                } else {
+                    json!([
+                        { "type": "text", "text": { "content": format!("{label}: ") }, "annotations": { "bold": true } },
+                        { "type": "text", "text": { "content": k.text.trim() } }
+                    ])
+                };
+                out.push(json!({ "object": "block", "type": "bulleted_list_item", "bulleted_list_item": { "rich_text": rich_text } }));
+            }
+        }
+        if !s.topics.is_empty() {
+            out.push(block("heading_2", &tr("notion.topics")));
+            for t in &s.topics {
+                out.push(block("heading_3", t.title.trim()));
+                for b in &t.bullets {
+                    let mut item = block("bulleted_list_item", b.text.trim());
+                    if !b.sub_bullets.is_empty() {
+                        item["bulleted_list_item"]["children"] = Value::Array(b.sub_bullets.iter().map(|x| block("bulleted_list_item", x.trim())).collect());
+                    }
+                    out.push(item);
+                }
+            }
+        }
         if !s.decisions.is_empty() {
             out.push(block("heading_2", &tr("notion.decisions")));
             out.extend(s.decisions.iter().map(|d| block("bulleted_list_item", &format!("{}{}", d.text.trim(), when(d.at)))));
         }
         if !s.action_items.is_empty() {
-            out.push(block("heading_2", &tr("notion.action_items")));
-            for a in &s.action_items {
+            let detailed = s.is_detailed();
+            out.push(block("heading_2", &tr(if detailed { "notion.next_steps" } else { "notion.action_items" })));
+            let todo = |a: &crate::storage::model::ActionItem, with_owner: bool| {
                 let mut who = vec![];
-                if let Some(o) = a.owner.as_deref().filter(|o| !o.trim().is_empty()) {
+                if let Some(o) = a.owner.as_deref().filter(|o| with_owner && !o.trim().is_empty()) {
                     who.push(o.trim().to_string());
                 }
                 if let Some(d) = a.due.as_deref().filter(|d| !d.trim().is_empty()) {
                     who.push(tr_with("notion.due", &[("due", d.trim())]));
                 }
                 let who = if who.is_empty() { String::new() } else { format!(" — {}", who.join(", ")) };
-                out.push(json!({ "object": "block", "type": "to_do", "to_do": { "rich_text": rich(&format!("{}{}{}", a.text.trim(), who, when(a.at))), "checked": a.done } }));
+                json!({ "object": "block", "type": "to_do", "to_do": { "rich_text": rich(&format!("{}{}{}", a.text.trim(), who, when(a.at))), "checked": a.done } })
+            };
+            if detailed {
+                let groups = s.next_steps_by_owner();
+                let named = groups.iter().any(|(o, _)| o.is_some());
+                for (owner, items) in &groups {
+                    match owner {
+                        Some(o) => out.push(block("heading_3", o)),
+                        None if named => out.push(block("heading_3", &tr("notion.unassigned"))),
+                        None => {}
+                    }
+                    out.extend(items.iter().map(|a| todo(a, false)));
+                }
+            } else {
+                out.extend(s.action_items.iter().map(|a| todo(a, true)));
             }
         }
         if !s.open_questions.is_empty() {
@@ -227,6 +277,38 @@ mod tests {
         assert_eq!(texts[at("Your notes") + 2], "send the deck (after the call)");
         assert_eq!(texts[at("Blockers") + 1], "Dana: legal");
         assert_eq!(texts[at("Highlights") + 1], "Budget agreed. (00:05)");
+    }
+
+    #[test]
+    fn a_detailed_summary_goes_to_notion_as_purpose_takeaways_topics_and_next_steps_by_person() {
+        use crate::storage::model::{SummaryBullet, SummaryTopic, Takeaway};
+        let mut m = sample();
+        let s = m.summary.as_mut().unwrap();
+        s.purpose = Some("To plan Q1.".into());
+        s.takeaways = vec![Takeaway { label: "Pricing".into(), text: "Moves to Q1.".into() }];
+        s.topics = vec![SummaryTopic { id: "t0".into(), title: "Pricing".into(), bullets: vec![SummaryBullet { text: "Two tiers.".into(), sub_bullets: vec!["Free".into(), "Paid".into()] }] }];
+        s.action_items[0].owner = Some("Priya".into());
+        let b = blocks(&m, Scope::Summary);
+        let text = |b: &Value| {
+            let kind = b["type"].as_str().unwrap();
+            b[kind]["rich_text"].as_array().map(|r| r.iter().map(|t| t["text"]["content"].as_str().unwrap_or("")).collect::<String>()).unwrap_or_default()
+        };
+        let texts: Vec<String> = b.iter().map(text).collect();
+        let at = |t: &str| texts.iter().position(|x| x == t).unwrap_or_else(|| panic!("{t} in {texts:?}"));
+        assert!(at("Purpose") < at("Key takeaways") && at("Key takeaways") < at("Topics") && at("Topics") < at("Decisions") && at("Decisions") < at("Next steps"));
+        assert!(!texts.contains(&"Recap".to_string()));
+        assert_eq!(texts[at("Purpose") + 1], "To plan Q1.");
+        assert_eq!(texts[at("Key takeaways") + 1], "Pricing: Moves to Q1.");
+        assert_eq!(b[at("Key takeaways") + 1]["bulleted_list_item"]["rich_text"][0]["annotations"]["bold"], true);
+        // A topic is a heading with its bullets; sub-bullets are children of their bullet.
+        assert_eq!(b[at("Topics") + 1]["type"], "heading_3");
+        let bullet = &b[at("Topics") + 2];
+        assert_eq!(text(bullet), "Two tiers.");
+        assert_eq!(bullet["bulleted_list_item"]["children"].as_array().unwrap().len(), 2);
+        // Next steps: the person is the heading, so the task has no owner after it.
+        assert_eq!(b[at("Next steps") + 1]["type"], "heading_3");
+        assert_eq!(texts[at("Next steps") + 1], "Priya");
+        assert_eq!(texts[at("Next steps") + 2], "Send wireframes");
     }
 
     #[test]
