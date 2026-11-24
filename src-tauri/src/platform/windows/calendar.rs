@@ -26,6 +26,9 @@ struct Source {
 }
 
 static SOURCE: Mutex<Source> = Mutex::new(Source { url: None, me: Vec::new(), calendar: None, fetched_ms: None, failed_ms: None });
+/// Set when a download succeeds after a failure (or the first one): meetings recorded without the calendar can be
+/// linked now. `take_recovered` reads and clears it.
+static RECOVERED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 /// Held during a download so two callers don't download the same calendar at once.
 static DOWNLOADING: Mutex<()> = Mutex::new(());
 
@@ -81,6 +84,9 @@ fn refresh_if_due() {
     }
     match result {
         Ok(calendar) => {
+            if s.calendar.is_none() || s.failed_ms.is_some() {
+                RECOVERED.store(true, std::sync::atomic::Ordering::SeqCst);
+            }
             s.calendar = Some(Arc::new(calendar));
             s.fetched_ms = Some(now_ms());
             s.failed_ms = None;
@@ -90,6 +96,11 @@ fn refresh_if_due() {
             s.failed_ms = Some(now_ms());
         }
     }
+}
+
+/// True once after a download succeeded following a failure (or the first download).
+pub fn take_recovered() -> bool {
+    RECOVERED.swap(false, std::sync::atomic::Ordering::SeqCst)
 }
 
 /// Whether the last download attempt failed (the old copy, if any, is still in use).
