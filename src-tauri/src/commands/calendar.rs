@@ -105,9 +105,11 @@ pub struct NextMeeting {
 #[tauri::command]
 pub async fn calendar_next(app: AppHandle) -> Option<NextMeeting> {
     if !enabled(&app) {
+        unreadable();
         return None;
     }
     tauri::async_runtime::spawn_blocking(move || {
+        relink_if_recovered(&app);
         let now = chrono::Utc::now().timestamp_millis();
         // Recordings already linked to an event (the last day is plenty), so their event isn't offered again.
         let recorded: Vec<(i64, String)> = {
@@ -160,8 +162,11 @@ pub fn link_now(app: &AppHandle, meeting_id: &str, event: CalendarEvent) {
 /// the download fails), this thread does the after-stop tries itself (`Linking`).
 pub fn link_soon(app: &AppHandle, meeting_id: &str) {
     if !enabled(app) {
+        unreadable(); // linked later, when the calendar can be read again
         return;
     }
+    let sweeper = app.clone();
+    std::thread::spawn(move || relink_if_recovered(&sweeper));
     let (app, id) = (app.clone(), meeting_id.to_string());
     linking().start(&id, Instant::now());
     std::thread::spawn(move || {
@@ -180,6 +185,7 @@ pub fn link_soon(app: &AppHandle, meeting_id: &str) {
 /// after the stop, while the meeting has no event and still has its placeholder title (a summary title ends it).
 pub fn link_after_stop(app: &AppHandle, meeting_id: &str) {
     if !enabled(app) {
+        unreadable();
         return;
     }
     let (app, id) = (app.clone(), meeting_id.to_string());
@@ -286,9 +292,70 @@ fn linking() -> std::sync::MutexGuard<'static, Linking> {
     STATE.lock().unwrap_or_else(|e| e.into_inner())
 }
 
-/// A meeting still worth linking: no event yet, and the title is still the placeholder.
+/// A meeting still worth linking: no event yet, the title is still the placeholder (the user hasn't renamed it and
+/// no summary title replaced it) and the user has named no speaker.
 pub fn wants_link(f: &crate::storage::model::MeetingFile) -> bool {
-    f.calendar_event.is_none() && f.title_is_placeholder
+    f.calendar_event.is_none() && f.title_is_placeholder && f.speakers.is_empty()
+}
+
+/// How far back a meeting is still re-linked when the calendar becomes readable again.
+const RELINK_WINDOW_MS: i64 = 24 * 3600 * 1000;
+
+/// Whether a meeting is worth a late re-link at `now_ms`: it wants a link and started within the last day.
+pub fn relink_due(f: &crate::storage::model::MeetingFile, now_ms: i64) -> bool {
+    let started = chrono::DateTime::parse_from_rfc3339(&f.started_at).map(|t| t.timestamp_millis()).ok();
+    wants_link(f) && started.is_some_and(|t| t <= now_ms && now_ms - t < RELINK_WINDOW_MS)
+}
+
+/// Gives a meeting its calendar event: title and attendees. Does nothing (false) when the user has edited the
+/// meeting since (`wants_link`), so a rename or speaker names are never overwritten.
+pub fn apply_event(f: &mut crate::storage::model::MeetingFile, e: &crate::calendar::Event) -> bool {
+    if !wants_link(f) {
+        return false;
+    }
+    let title = e.title.trim().to_string();
+    f.calendar_event = Some(CalendarEvent { title: title.clone(), attendees: e.attendees.clone(), emails: e.emails.clone() });
+    f.title = title;
+    f.title_is_placeholder = false;
+    true
+}
+
+/// Whether the calendar was readable the last time we looked (Mac: access allowed; Windows: address saved).
+static WAS_READABLE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+fn unreadable() {
+    WAS_READABLE.store(false, std::sync::atomic::Ordering::SeqCst);
+}
+
+/// True when the calendar has just become readable: access came back, or (Windows) a download succeeded after a
+/// failure or for the first time.
+fn became_readable(app: &AppHandle) -> bool {
+    let now = enabled(app);
+    let was = WAS_READABLE.swap(now, std::sync::atomic::Ordering::SeqCst);
+    let recovered = system::take_recovered();
+    now && (!was || recovered)
+}
+
+/// The calendar is readable again: links the meetings of the last day that started while it wasn't (blocking; call
+/// off the main thread).
+fn sweep(app: &AppHandle) {
+    let now = chrono::Utc::now().timestamp_millis();
+    let ids: Vec<String> = {
+        let state = app.state::<AppState>();
+        let storage = state.lock();
+        let all = storage.list_meetings(&Default::default()).unwrap_or_default();
+        all.into_iter().filter(|m| storage.read_meeting_file(&m.id).is_ok_and(|f| relink_due(&f, now))).map(|m| m.id).collect()
+    };
+    for id in ids {
+        link(app, &id);
+    }
+}
+
+/// When the calendar has become readable again, links the meetings that missed their event. Cheap when it hasn't.
+fn relink_if_recovered(app: &AppHandle) {
+    if became_readable(app) {
+        sweep(app);
+    }
 }
 
 #[derive(Debug, PartialEq)]
@@ -305,7 +372,7 @@ enum Outcome {
 fn link(app: &AppHandle, id: &str) -> Outcome {
     let storage = app.state::<AppState>();
     let Ok(file) = storage.lock().read_meeting_file(id) else { return Outcome::Skipped };
-    if file.calendar_event.is_some() {
+    if !wants_link(&file) {
         return Outcome::Skipped;
     }
     let Ok(start) = chrono::DateTime::parse_from_rfc3339(&file.started_at) else { return Outcome::Skipped };
@@ -328,15 +395,9 @@ fn link(app: &AppHandle, id: &str) -> Outcome {
         log::info!("calendar: no matching event for meeting {id} (offline: {offline})");
         return Outcome::NotFound { offline };
     };
-    let (title, attendees, emails) = (e.title.trim().to_string(), e.attendees.clone(), e.emails.clone());
-    let saved = storage.lock().update_meeting_file(id, |f| {
-        f.calendar_event = Some(CalendarEvent { title: title.clone(), attendees: attendees.clone(), emails: emails.clone() });
-        if f.title_is_placeholder {
-            f.title = title.clone();
-            f.title_is_placeholder = false;
-        }
-    });
-    if saved.is_ok() {
+    let linked = std::cell::Cell::new(false);
+    let saved = storage.lock().update_meeting_file(id, |f| linked.set(apply_event(f, e)));
+    if saved.is_ok() && linked.get() {
         log::info!("calendar: meeting {id} linked to its event");
         notify(app, MEETINGS_CHANGED);
         Outcome::Linked
@@ -389,6 +450,64 @@ mod tests {
         let mut at = std::time::Duration::ZERO;
         let times: Vec<u64> = RELINK_WAITS.iter().map(|w| { at += *w; at.as_secs() / 60 }).collect();
         assert_eq!(times, vec![5, 30]);
+    }
+
+    fn file(title_is_placeholder: bool) -> crate::storage::model::MeetingFile {
+        let json = r#"{"schemaVersion":1,"id":"x","title":"Call, Zoom, Oct 14, 2:30 PM","app":"zoom","appLabel":"Zoom",
+            "startedAt":"2026-10-14T14:30:00+00:00","language":"en","status":"ready"}"#;
+        let mut f: crate::storage::model::MeetingFile = serde_json::from_str(json).unwrap();
+        f.title_is_placeholder = title_is_placeholder;
+        f
+    }
+
+    fn event() -> crate::calendar::Event {
+        crate::calendar::Event {
+            title: " Roadmap sync ".into(),
+            start_ms: 0,
+            end_ms: 1,
+            all_day: false,
+            attendees: vec!["Ana Reyes".into()],
+            emails: vec!["ana@example.com".into()],
+            join_url: None,
+            cancelled: false,
+            declined: false,
+        }
+    }
+
+    #[test]
+    fn a_late_link_fills_title_and_attendees() {
+        let mut f = file(true);
+        assert!(apply_event(&mut f, &event()));
+        assert_eq!((f.title.as_str(), f.title_is_placeholder), ("Roadmap sync", false));
+        let e = f.calendar_event.unwrap();
+        assert_eq!((e.attendees, e.emails), (vec!["Ana Reyes".to_string()], vec!["ana@example.com".to_string()]));
+    }
+
+    #[test]
+    fn a_renamed_meeting_is_never_overwritten() {
+        let mut f = file(false); // the user (or the summary) already set the title
+        f.title = "My own name".into();
+        assert!(!apply_event(&mut f, &event()));
+        assert_eq!(f.title, "My own name");
+        assert!(f.calendar_event.is_none());
+    }
+
+    #[test]
+    fn named_speakers_stop_a_late_link() {
+        let mut f = file(true);
+        f.speakers.insert("them:0".into(), "Dana".into());
+        assert!(!apply_event(&mut f, &event()));
+        assert!(f.calendar_event.is_none() && f.title_is_placeholder);
+    }
+
+    #[test]
+    fn only_the_last_day_is_relinked() {
+        let f = file(true);
+        let start = chrono::DateTime::parse_from_rfc3339(&f.started_at).unwrap().timestamp_millis();
+        assert!(relink_due(&f, start + 3600_000));
+        assert!(!relink_due(&f, start + RELINK_WINDOW_MS + 1));
+        assert!(!relink_due(&f, start - 1), "not before it started");
+        assert!(!relink_due(&file(false), start + 3600_000));
     }
 
     #[test]

@@ -23,6 +23,11 @@ pub fn access() -> Access {
     }
 }
 
+/// EventKit reads locally, so there is no download to recover from (the caller watches `access`).
+pub fn take_recovered() -> bool {
+    false
+}
+
 /// Shows the system's calendar prompt the first time (later calls answer from the saved choice).
 /// Blocks until answered, up to two minutes.
 pub fn request() -> Access {
