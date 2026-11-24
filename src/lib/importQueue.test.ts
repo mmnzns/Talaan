@@ -183,6 +183,21 @@ describe("ImportQueue", () => {
     expect(started).toEqual(["/a/1.mp3", "/a/2.mp3"]);
   });
 
+  it("files added after a cancel start fresh, with Cancel working again", async () => {
+    let release!: (o: ImportOutcome) => void;
+    const queue = new ImportQueue({
+      importOne: () => new Promise<ImportOutcome>((r) => (release = r)),
+      cancelCurrent: () => release({ cancelled: true }),
+      onChange: () => {},
+      onFinish: () => {},
+    });
+    queue.add(["/a/1.mp3"]);
+    await Promise.resolve();
+    queue.cancel();
+    expect(queue.snapshot.cancelled).toBe(true);
+    queue.add(["/a/2.mp3"]);
+    expect(queue.snapshot.cancelled).toBe(false);
+  });
   it("cancel with nothing running does nothing", () => {
     const cancelCurrent = vi.fn();
     const queue = new ImportQueue({ importOne: async () => ({ ok: true, id: "x" }), cancelCurrent, onChange: () => {}, onFinish: () => {} });

@@ -5,9 +5,9 @@ use super::{notify, AppState, CmdResult, MEETINGS_CHANGED};
 use crate::importer::{guard_panic, import_to_wav, temp_name, CutOff, TempFile};
 use crate::storage::model::MeetingStatus;
 use crate::storage::paths::THEM_WAV;
-use crate::storage::StorageError;
+use crate::storage::{Storage, StorageError};
 use serde::Serialize;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -108,30 +108,124 @@ fn run(app: &AppHandle, src: &std::path::Path, cancel: &AtomicBool, seq: u64, se
     let ended = std::fs::metadata(src).and_then(|m| m.modified()).map(chrono::DateTime::<chrono::Local>::from).unwrap_or_else(|_| chrono::Local::now());
     let started = (ended - chrono::Duration::milliseconds(duration as i64)).fixed_offset();
     let state = app.state::<AppState>();
-    let storage = state.lock();
-    let made = storage.create_meeting("import", "Imported", started).and_then(|f| {
-        let dir = storage.dir(&f.id)?;
-        std::fs::rename(&tmp, dir.join(THEM_WAV))?;
-        tmp_guard.keep();
-        storage.update_meeting_file(&f.id, |m| {
-            m.title = format!("Imported: {name}");
-            // Retention counts from now, whatever the file's date says.
-            m.imported_at = Some(chrono::Local::now().to_rfc3339());
-            m.duration_ms = duration;
-            m.status = MeetingStatus::Transcribing;
-            m.progress = Some(0.0);
-        })?;
-        Ok(f.id)
-    });
-    drop(storage);
-    let id = made.map_err(|e| crate::i18n::tr_err("import.save_failed", e))?;
+    let id = {
+        let storage = state.lock();
+        make_meeting(&storage, &tmp, &mut tmp_guard, started, &name, duration, cancel)?
+    };
     app.state::<super::transcriber::TranscriberState>().enqueue(&id);
     notify(app, MEETINGS_CHANGED);
     Ok(ImportEvent::Done { id, cut_off: imported.cut_off })
+}
+
+/// Creates the meeting around the finished temp file. Any failure or panic after the meeting exists removes it again
+/// (the way Talaan deletes a half-made meeting elsewhere), and a cancel that arrives this late is honoured the same way.
+fn make_meeting(
+    storage: &Storage,
+    tmp: &Path,
+    tmp_guard: &mut TempFile,
+    started: chrono::DateTime<chrono::FixedOffset>,
+    name: &str,
+    duration: u64,
+    cancel: &AtomicBool,
+) -> Result<String, String> {
+    let file = storage.create_meeting("import", "Imported", started).map_err(|e| crate::i18n::tr_err("import.save_failed", e))?;
+    let id = file.id;
+    removing_on_failure(storage, &id, || {
+        let save = |e: StorageError| crate::i18n::tr_err("import.save_failed", e);
+        let dir = storage.dir(&id).map_err(save)?;
+        std::fs::rename(tmp, dir.join(THEM_WAV)).map_err(|e| save(e.into()))?;
+        tmp_guard.keep();
+        storage
+            .update_meeting_file(&id, |m| {
+                m.title = format!("Imported: {name}");
+                // Retention counts from now, whatever the file's date says.
+                m.imported_at = Some(chrono::Local::now().to_rfc3339());
+                m.duration_ms = duration;
+                m.status = MeetingStatus::Transcribing;
+                m.progress = Some(0.0);
+            })
+            .map_err(save)?;
+        if cancel.load(Ordering::Relaxed) {
+            return Err("cancelled".into());
+        }
+        Ok(())
+    })
+    .map(|()| id)
+}
+
+/// Runs `build` (a panic becomes an error); if it fails, the meeting `id` is deleted.
+fn removing_on_failure(storage: &Storage, id: &str, build: impl FnOnce() -> Result<(), String>) -> Result<(), String> {
+    let built = guard_panic(build);
+    if built.is_err() {
+        if let Err(e) = storage.delete_meeting(id) {
+            log::warn!("couldn't remove the half-made imported meeting {id}: {}", crate::logging::text(&e.to_string()));
+        }
+    }
+    built
 }
 
 /// Extensions for the file picker.
 #[tauri::command]
 pub fn import_extensions() -> Vec<&'static str> {
     crate::importer::EXTENSIONS.to_vec()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::storage::paths::MEETINGS_DIR;
+
+    fn at() -> chrono::DateTime<chrono::FixedOffset> {
+        chrono::DateTime::parse_from_rfc3339("2026-10-14T14:30:00-07:00").unwrap()
+    }
+
+    fn meeting_dirs(root: &Path) -> usize {
+        std::fs::read_dir(root.join(MEETINGS_DIR)).map(|d| d.count()).unwrap_or(0)
+    }
+
+    fn setup() -> (tempfile::TempDir, Storage, PathBuf) {
+        let d = tempfile::tempdir().unwrap();
+        let s = Storage::new(d.path().to_path_buf()).unwrap();
+        let tmp = d.path().join("import-1-0.wav");
+        std::fs::write(&tmp, b"audio").unwrap();
+        (d, s, tmp)
+    }
+
+    #[test]
+    fn a_good_import_makes_the_meeting() {
+        let (d, s, tmp) = setup();
+        let mut g = TempFile::new(&tmp);
+        let id = make_meeting(&s, &tmp, &mut g, at(), "a.wav", 5, &AtomicBool::new(false)).unwrap();
+        assert_eq!(meeting_dirs(d.path()), 1);
+        assert!(s.dir(&id).unwrap().join(THEM_WAV).exists());
+    }
+
+    #[test]
+    fn a_failed_rename_removes_the_half_made_meeting_and_the_temp_file() {
+        let (d, s, tmp) = setup();
+        let missing = d.path().join("gone.wav");
+        let mut g = TempFile::new(&missing);
+        assert!(make_meeting(&s, &missing, &mut g, at(), "a.wav", 5, &AtomicBool::new(false)).is_err());
+        assert_eq!(meeting_dirs(d.path()), 0);
+        assert!(tmp.exists());
+    }
+
+    #[test]
+    fn a_late_cancel_removes_the_meeting() {
+        let (d, s, tmp) = setup();
+        let mut g = TempFile::new(&tmp);
+        let e = make_meeting(&s, &tmp, &mut g, at(), "a.wav", 5, &AtomicBool::new(true)).unwrap_err();
+        assert_eq!(e, "cancelled");
+        assert_eq!(meeting_dirs(d.path()), 0);
+    }
+
+    #[test]
+    fn a_panic_after_the_meeting_exists_removes_it() {
+        let (d, s, _tmp) = setup();
+        let file = s.create_meeting("import", "Imported", at()).unwrap();
+        assert_eq!(meeting_dirs(d.path()), 1);
+        let r = removing_on_failure(&s, &file.id, || panic!("bug after keep"));
+        assert_eq!(r.unwrap_err(), crate::i18n::tr("import.crashed"));
+        assert_eq!(meeting_dirs(d.path()), 0);
+    }
 }

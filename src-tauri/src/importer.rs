@@ -62,14 +62,22 @@ pub fn temp_name(root: &Path, seq: u64) -> PathBuf {
     root.join(format!("{TEMP_PREFIX}{}-{seq}.wav", std::process::id()))
 }
 
+/// Exactly the names `temp_name` makes (`import-<pid>-<seq>.wav`) and its in-progress copy (`….wav.tmp`).
+fn is_temp_name(name: &str) -> bool {
+    let Some(rest) = name.strip_prefix(TEMP_PREFIX) else { return false };
+    let Some(stem) = rest.strip_suffix(".wav.tmp").or_else(|| rest.strip_suffix(".wav")) else { return false };
+    let mut parts = stem.split('-');
+    let digits = |p: Option<&str>| p.is_some_and(|d| !d.is_empty() && d.bytes().all(|b| b.is_ascii_digit()));
+    digits(parts.next()) && digits(parts.next()) && parts.next().is_none()
+}
+
 /// Removes import temp files left by a crash or a force quit. Run at launch, when no import can be running.
 pub fn clean_stale(root: &Path) -> usize {
     let Ok(entries) = std::fs::read_dir(root) else { return 0 };
     let mut removed = 0;
     for e in entries.flatten() {
         let name = e.file_name().to_string_lossy().into_owned();
-        let ours = name.starts_with(TEMP_PREFIX) && (name.ends_with(".wav") || name.ends_with(".wav.tmp"));
-        if ours && e.path().is_file() && std::fs::remove_file(e.path()).is_ok() {
+        if is_temp_name(&name) && e.path().is_file() && std::fs::remove_file(e.path()).is_ok() {
             removed += 1;
         }
     }
@@ -88,6 +96,20 @@ pub fn guard_panic<T>(f: impl FnOnce() -> Result<T, String>) -> Result<T, String
     }
 }
 
+/// The file held fewer frames than its header promised: by more than 2% and by more than half a second, so codec
+/// priming and padding never flag a normal short file. A streamed WAV (data size 0xFFFFFFFF) has no real length.
+fn is_short(expected: u64, got: u64, rate: u64) -> bool {
+    let shortfall = expected.saturating_sub(got);
+    shortfall * 100 > expected * 2 && shortfall * 1000 > rate * 500
+}
+
+/// A WAV written as a stream carries 0xFFFFFFFF for its data size, which reads as a length of about 4 GB. When the
+/// file is far smaller than that, the header gave no real length, so there is nothing to compare against.
+fn is_streamed_length(frames: u64, bytes_per_frame: u64, file_len: u64) -> bool {
+    let claimed = frames.saturating_mul(bytes_per_frame);
+    claimed >= 0xFFFF_0000 && file_len < claimed / 2
+}
+
 /// Decodes `src` into a 16 kHz mono 16-bit WAV at `out`. If the file ends early or goes bad partway, what was
 /// decoded is kept and `cut_off` says so. Cancelling returns `Err("cancelled")` and leaves no file.
 pub fn import_to_wav(src: &Path, out: &Path, cancel: &AtomicBool, progress: &mut dyn FnMut(f32)) -> Result<Imported, String> {
@@ -102,7 +124,10 @@ pub fn import_to_wav(src: &Path, out: &Path, cancel: &AtomicBool, progress: &mut
     let mut format = probed.format;
     let track = format.tracks().iter().find(|t| t.codec_params.codec != CODEC_TYPE_NULL).ok_or_else(|| tr("import.no_audio"))?;
     let track_id = track.id;
-    let total_frames = track.codec_params.n_frames.filter(|t| *t > 0);
+    let params = &track.codec_params;
+    let file_len = std::fs::metadata(src).map(|m| m.len()).unwrap_or(u64::MAX);
+    let bytes_per_frame = params.channels.map_or(1, |c| c.count().max(1) as u64) * u64::from(params.bits_per_sample.unwrap_or(16) / 8).max(1);
+    let total_frames = params.n_frames.filter(|t| *t > 0 && !is_streamed_length(*t, bytes_per_frame, file_len));
     let source_rate = track.codec_params.sample_rate;
     let mut decoder = symphonia::default::get_codecs().make(&track.codec_params, &DecoderOptions::default()).map_err(|e| unreadable(&e))?;
 
@@ -114,6 +139,7 @@ pub fn import_to_wav(src: &Path, out: &Path, cancel: &AtomicBool, progress: &mut
     let mut buf: Option<SampleBuffer<f32>> = None;
     let (mut frames_in, mut written) = (0u64, 0u64);
     let mut broke = false;
+    let mut decoded_rate = 0u32;
     let mut write = |samples: Vec<f32>, w: &mut hound::WavWriter<_>| -> Result<(), String> {
         written += samples.len() as u64;
         for s in to_i16(&samples) {
@@ -151,6 +177,7 @@ pub fn import_to_wav(src: &Path, out: &Path, cancel: &AtomicBool, progress: &mut
             Err(e) => return Err(unreadable(&e)),
         };
         let s = *decoded.spec();
+        decoded_rate = s.rate;
         let channels = s.channels.count().max(1);
         let sb = buf.get_or_insert_with(|| SampleBuffer::new(decoded.capacity() as u64, s));
         if sb.capacity() < decoded.capacity() * channels {
@@ -172,7 +199,8 @@ pub fn import_to_wav(src: &Path, out: &Path, cancel: &AtomicBool, progress: &mut
     if written == 0 {
         return Err(tr("import.no_audio"));
     }
-    let short = total_frames.is_some_and(|t| frames_in * 100 < t * 98);
+    let rate = source_rate.filter(|r| *r > 0).unwrap_or(decoded_rate).max(1) as u64;
+    let short = total_frames.is_some_and(|t| is_short(t, frames_in, rate));
     std::fs::rename(&tmp, out).map_err(|e| tr_err("import.write_failed", e))?;
     tmp_guard.keep();
     progress(1.0);
@@ -268,6 +296,55 @@ mod tests {
         assert_eq!(r.cut_off, None);
     }
 
+    /// A 16 kHz mono WAV whose header says `claimed_data` bytes of data, with `secs` of tone actually there.
+    fn wav_with_claimed_len(path: &Path, secs: f32, claimed_data: u32) {
+        tone_wav(path, 16_000, 1, secs);
+        let mut b = std::fs::read(path).unwrap();
+        b[40..44].copy_from_slice(&claimed_data.to_le_bytes());
+        b[4..8].copy_from_slice(&claimed_data.saturating_add(36).to_le_bytes());
+        std::fs::write(path, b).unwrap();
+    }
+
+    #[test]
+    fn a_file_short_by_50_ms_is_not_flagged() {
+        let d = tempfile::tempdir().unwrap();
+        let src = d.path().join("s.wav");
+        wav_with_claimed_len(&src, 0.95, 16_000 * 2); // promises 1 s, 0.95 s there
+        let r = import_to_wav(&src, &d.path().join("them.wav"), &AtomicBool::new(false), &mut |_| {}).unwrap();
+        assert_eq!(r.cut_off, None);
+        assert!(!is_short(48_000, 47_000, 48_000), "21 ms short of 1 s");
+        assert!(!is_short(10 * 16_000, 10 * 16_000 - 4_000, 16_000), "2.5% but only 250 ms");
+    }
+
+    #[test]
+    fn a_file_short_by_several_seconds_is_flagged() {
+        let d = tempfile::tempdir().unwrap();
+        let src = d.path().join("s.wav");
+        wav_with_claimed_len(&src, 2.0, 10 * 16_000 * 2); // promises 10 s, 2 s there
+        let r = import_to_wav(&src, &d.path().join("them.wav"), &AtomicBool::new(false), &mut |_| {}).unwrap();
+        assert!(r.cut_off.is_some());
+        assert!(is_short(100 * 48_000, 90 * 48_000, 48_000));
+    }
+
+    #[test]
+    fn a_streamed_wav_with_no_real_length_is_not_flagged() {
+        let d = tempfile::tempdir().unwrap();
+        let src = d.path().join("s.wav");
+        wav_with_claimed_len(&src, 2.0, u32::MAX);
+        let r = import_to_wav(&src, &d.path().join("them.wav"), &AtomicBool::new(false), &mut |_| {}).unwrap();
+        assert_eq!(r.cut_off, None, "{r:?}");
+    }
+
+    #[test]
+    fn only_talaans_own_temp_names_match() {
+        for ok in ["import-1-0.wav", "import-123-45.wav.tmp"] {
+            assert!(is_temp_name(ok), "{ok}");
+        }
+        for no in ["import-.wav", "import-1.wav", "import-1-2-3.wav", "import-a-1.wav", "import-1-2.wav.bak", "import-1-2.mp3", "my-import-1-2.wav", "import-1-2.wav.tmp.old"] {
+            assert!(!is_temp_name(no), "{no}");
+        }
+    }
+
     #[test]
     fn cancelling_leaves_no_files_behind() {
         let d = tempfile::tempdir().unwrap();
@@ -325,11 +402,12 @@ mod tests {
     #[test]
     fn stale_temp_files_are_cleaned_at_launch_and_nothing_else() {
         let d = tempfile::tempdir().unwrap();
-        for n in ["import-9-0.wav", "import-9-1.wav.tmp", "settings.json", "library.json"] {
+        for n in ["import-9-0.wav", "import-9-1.wav.tmp", "import-notes.wav", "settings.json", "library.json"] {
             std::fs::write(d.path().join(n), b"x").unwrap();
         }
         std::fs::create_dir(d.path().join("meetings")).unwrap();
         assert_eq!(clean_stale(d.path()), 2);
+        assert!(d.path().join("import-notes.wav").exists());
         assert!(d.path().join("settings.json").exists() && d.path().join("library.json").exists() && d.path().join("meetings").exists());
         assert!(!d.path().join("import-9-0.wav").exists());
     }

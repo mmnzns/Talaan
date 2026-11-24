@@ -102,6 +102,8 @@ export class ImportQueue {
     this.pending.push(...paths);
     this.state = {
       ...this.state,
+      // New files after a Cancel start fresh: Cancel works again for them.
+      cancelled: false,
       total: this.state.total + paths.length + unsupported.length,
       finished: this.state.finished + unsupported.length,
       failures: [...this.state.failures, ...unsupported.map((p) => ({ name: baseName(p), message: "", unsupported: true }))],
