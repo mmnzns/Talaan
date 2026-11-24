@@ -1,6 +1,8 @@
 import { Search } from "lucide-react";
 import { useState } from "react";
+import { describeError } from "../../data/errors";
 import { useFolders, useMeetings, useTags } from "../../data/hooks";
+import { useSettingsStore } from "../../data/StoreProvider";
 import type { MeetingListItem } from "../../data/types";
 import { dayGroup, dayMark } from "../../lib/format";
 import { useT } from "../../lib/i18n/I18nProvider";
@@ -16,7 +18,7 @@ export function MeetingList({ selectedId }: { selectedId?: string }) {
   const [tag, setTag] = useState<string | undefined>();
   const [query, setQuery] = useState("");
 
-  const { meetings, loading } = useMeetings({ folderId, tag, query });
+  const { meetings, loading, error, retry } = useMeetings({ folderId, tag, query });
   const all = useMeetings();
   const folders = useFolders();
   const tags = useTags();
@@ -60,7 +62,9 @@ export function MeetingList({ selectedId }: { selectedId?: string }) {
         onTag={setTag}
       />
       <div className="flex min-h-0 flex-1 flex-col gap-2.5 overflow-auto px-3 pb-5 pt-3.5">
-        {!loading && meetings.length === 0 ? (
+        {error ? (
+          <ListFailed cause={error.cause} onRetry={retry} />
+        ) : !loading && meetings.length === 0 ? (
           <EmptyState firstRun={all.meetings.length === 0 && !all.loading} filtering={filtering} onClear={clear} />
         ) : (
           <MeetingDays days={days} selectedId={selectedId} />
@@ -103,6 +107,24 @@ export function MeetingDays({ days, selectedId }: { days: DayBucket[]; selectedI
         </section>
       ))}
     </>
+  );
+}
+
+/** The list couldn't be read: not an empty list, which would read as "no meetings". */
+export function ListFailed({ cause, onRetry }: { cause: unknown; onRetry: () => void }) {
+  const t = useT();
+  const settings = useSettingsStore();
+  return (
+    <div role="alert" className="flex flex-col items-start gap-2 px-2 py-6">
+      <span className="font-display text-base font-bold">{t("shell.listFailedTitle")}</span>
+      <p className="m-0 text-[13px] text-subtle">{t("shell.listFailedBody", { detail: describeError(cause) })}</p>
+      <div className="flex gap-2">
+        <Button variant="primary" onClick={onRetry}>
+          {t("shell.tryAgain")}
+        </Button>
+        <Button onClick={() => void settings.revealData().catch(() => {})}>{t("shell.openDataFolder")}</Button>
+      </div>
+    </div>
   );
 }
 

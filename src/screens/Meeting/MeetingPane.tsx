@@ -18,10 +18,28 @@ import { useT } from "../../lib/i18n/I18nProvider";
 import { TestMeetingBanner, TestRecordingCard, useTestRecordingActive } from "../Onboarding/TestRecording";
 
 export function MeetingPane({ id, jumpTo, openExport }: { id?: string; jumpTo?: Ms; openExport?: boolean }) {
-  const { meeting, loading } = useMeeting(id);
+  const { meeting, loading, error, retry } = useMeeting(id);
   const t = useT();
+  const store = useStore();
 
   if (!id) return <EmptyPane />;
+  if (error) {
+    // The meeting exists but couldn't be read: say so, and offer a way out (never a blank pane).
+    return (
+      <div role="alert" className="grid flex-1 place-items-center p-8 text-center">
+        <div className="flex max-w-sm flex-col items-center gap-2">
+          <span className="font-display text-lg font-bold">{t("meeting.openFailedTitle")}</span>
+          <p className="m-0 text-[13px] text-subtle">{t("meeting.openFailedBody", { detail: describeError(error.cause) })}</p>
+          <div className="mt-2 flex gap-2">
+            <Button variant="primary" onClick={retry}>
+              {t("meeting.tryAgain")}
+            </Button>
+            <Button onClick={() => void store.revealMeeting(id).catch(() => {})}>{t("meeting.openFolder")}</Button>
+          </div>
+        </div>
+      </div>
+    );
+  }
   if (loading) return null;
   if (!meeting) {
     return (

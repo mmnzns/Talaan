@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { startLive } from "./live";
 import { useSettingsStore, useStore } from "./StoreProvider";
 import type { MeetingFilter } from "./store";
@@ -12,44 +12,55 @@ import type { Folder, Meeting, MeetingListItem } from "./types";
  */
 function useLive<T>(source: { subscribe(l: () => void): () => void }, load: () => Promise<T>, deps: unknown[]) {
   const run = useCallback(load, deps);
-  const [state, setState] = useState<{ value?: T; for?: unknown }>({});
+  const [state, setState] = useState<{ value?: T; for?: unknown; ok?: boolean; error?: unknown }>({});
+  const live = useRef<{ refresh(): void } | undefined>(undefined);
 
   useEffect(() => {
-    const live = startLive(run, (l) => source.subscribe(l), (value) => setState({ value, for: run }));
-    const onFocus = () => live.refresh();
+    const l = startLive(
+      run,
+      (cb) => source.subscribe(cb),
+      (value) => setState({ value, for: run, ok: true }),
+      // A failure only matters while there is no answer yet for these inputs; after one, the last good value stays.
+      (error) => setState((prev) => (prev.for === run && prev.ok ? prev : { for: run, ok: false, error })),
+    );
+    live.current = l;
+    const onFocus = () => l.refresh();
     const onVisible = () => {
-      if (document.visibilityState === "visible") live.refresh();
+      if (document.visibilityState === "visible") l.refresh();
     };
     window.addEventListener("focus", onFocus);
     document.addEventListener("visibilitychange", onVisible);
     return () => {
-      live.stop();
+      l.stop();
       window.removeEventListener("focus", onFocus);
       document.removeEventListener("visibilitychange", onVisible);
     };
   }, [run, source]);
 
-  return { value: state.value, loading: state.for !== run };
+  const failed = state.for === run && state.ok === false;
+  const retry = useCallback(() => live.current?.refresh(), []);
+  // `loading` ends on a failure too, so a screen can show the error instead of waiting forever.
+  return { value: state.value, loading: state.for !== run, error: failed ? { cause: state.error } : undefined, retry };
 }
 
 export function useMeetings(filter: MeetingFilter = {}) {
   const store = useStore();
-  const { value, loading } = useLive<MeetingListItem[]>(
+  const { value, loading, error, retry } = useLive<MeetingListItem[]>(
     store,
     () => store.listMeetings(filter),
     [store, filter.folderId, filter.tag, filter.query],
   );
-  return { meetings: value ?? [], loading };
+  return { meetings: value ?? [], loading, error, retry };
 }
 
 export function useMeeting(id: string | undefined) {
   const store = useStore();
-  const { value, loading } = useLive<Meeting | undefined>(
+  const { value, loading, error, retry } = useLive<Meeting | undefined>(
     store,
     () => (id ? store.getMeeting(id) : Promise.resolve(undefined)),
     [store, id],
   );
-  return { meeting: value, loading };
+  return { meeting: value, loading, error, retry };
 }
 
 export function useFolders() {
@@ -64,11 +75,41 @@ export function useTags() {
   return value ?? [];
 }
 
+/**
+ * `update` saves a change. When the write fails the change stays on screen (`settings` still shows it) and `saveError`
+ * holds what to say; `retrySave` writes it again, `dismissSaveError` gives it up (the screen goes back to what is saved).
+ */
 export function useSettings() {
   const store = useSettingsStore();
   const { value } = useLive<Settings>(store, () => store.get(), [store]);
-  const update = useCallback((patch: Partial<Settings>) => store.update(patch), [store]);
-  return { settings: value, update };
+  const [unsaved, setUnsaved] = useState<{ patch: Partial<Settings>; error: unknown } | null>(null);
+  const settings = useMemo(() => (value && unsaved ? { ...value, ...unsaved.patch } : value), [value, unsaved]);
+  const shown = useRef(settings);
+  shown.current = settings;
+
+  const update = useCallback(
+    async (patch: Partial<Settings>): Promise<Settings> => {
+      try {
+        const saved = await store.update(patch);
+        setUnsaved((u) => {
+          if (!u) return u;
+          const rest = { ...u.patch };
+          for (const k of Object.keys(patch)) delete rest[k as keyof Settings];
+          return Object.keys(rest).length ? { ...u, patch: rest } : null;
+        });
+        return saved;
+      } catch (error) {
+        setUnsaved((u) => ({ patch: { ...u?.patch, ...patch }, error }));
+        return { ...shown.current!, ...patch };
+      }
+    },
+    [store],
+  );
+  const retrySave = useCallback(() => {
+    if (unsaved) void update(unsaved.patch);
+  }, [unsaved, update]);
+  const dismissSaveError = useCallback(() => setUnsaved(null), []);
+  return { settings, update, saveError: unsaved ? { cause: unsaved.error } : undefined, retrySave, dismissSaveError };
 }
 
 /**

@@ -66,4 +66,72 @@ describe("startLive", () => {
     expect(unsubscribed).toBe(true);
     expect(seen).toEqual([]);
   });
+
+  it("tells startLive's caller when the newest request failed", async () => {
+    const errors: unknown[] = [];
+    const live = startLive(() => Promise.reject(new Error("unreadable")), () => () => {}, () => {}, (e) => errors.push(e));
+    await flush();
+    expect((errors[0] as Error).message).toBe("unreadable");
+    live.stop();
+  });
+
+  it("does not report an older failure once a newer request is under way", async () => {
+    const calls: ReturnType<typeof deferred<string>>[] = [];
+    const errors: unknown[] = [];
+    let changed = () => {};
+    startLive(
+      () => {
+        const d = deferred<string>();
+        calls.push(d);
+        return d.promise;
+      },
+      (l) => {
+        changed = l;
+        return () => {};
+      },
+      () => {},
+      (e) => errors.push(e),
+    );
+    changed();
+    calls[0].reject(new Error("old"));
+    await flush();
+    expect(errors).toEqual([]);
+    calls[1].reject(new Error("new"));
+    await flush();
+    expect(errors).toHaveLength(1);
+  });
+
+  it("tells the caller when the newest request failed", async () => {
+    const errors: unknown[] = [];
+    const live = startLive(() => Promise.reject(new Error("unreadable")), () => () => {}, () => {}, (e) => errors.push(e));
+    await flush();
+    expect((errors[0] as Error).message).toBe("unreadable");
+    live.stop();
+  });
+
+  it("does not report an older failure once a newer request is under way", async () => {
+    const calls: ReturnType<typeof deferred<string>>[] = [];
+    const errors: unknown[] = [];
+    let changed = () => {};
+    startLive(
+      () => {
+        const d = deferred<string>();
+        calls.push(d);
+        return d.promise;
+      },
+      (l) => {
+        changed = l;
+        return () => {};
+      },
+      () => {},
+      (e) => errors.push(e),
+    );
+    changed();
+    calls[0].reject(new Error("old"));
+    await flush();
+    expect(errors).toEqual([]);
+    calls[1].reject(new Error("new"));
+    await flush();
+    expect(errors).toHaveLength(1);
+  });
 });
