@@ -1,6 +1,16 @@
 /** Importing several audio files: one after another, each its own meeting, a failure never stops the rest. */
 
-export type ImportOutcome = { ok: true; id: string } | { ok: false; message: string };
+/** How much of a cut-off file was read (and how long the file said it was, when it says). */
+export interface CutOff {
+  readMs: number;
+  expectedMs?: number | null;
+}
+
+export type ImportOutcome = { ok: true; id: string; cutOff?: CutOff | null } | { ok: false; message: string } | { cancelled: true };
+
+export interface CutOffFile extends CutOff {
+  name: string;
+}
 
 export interface ImportFailure {
   name: string;
@@ -20,12 +30,18 @@ export interface QueueSnapshot {
   failures: ImportFailure[];
   /** Meeting ids made so far, in order. */
   imported: string[];
+  /** Imported files that looked cut off (the part that could be read was kept). */
+  cutOff: CutOffFile[];
+  /** Cancel was pressed: the rest of the queue was dropped. */
+  cancelled: boolean;
 }
 
 export interface BatchSummary {
   total: number;
   imported: string[];
   failures: ImportFailure[];
+  cutOff: CutOffFile[];
+  cancelled: boolean;
 }
 
 /** The file name from a Windows or Mac path. */
@@ -56,11 +72,13 @@ interface Options {
   /** Imports one file and says how it went. Must not throw (a throw counts as a failure anyway). */
   importOne: (path: string, name: string) => Promise<ImportOutcome>;
   onChange: (snapshot: QueueSnapshot) => void;
+  /** Tells the backend to stop the file being read now. */
+  cancelCurrent?: () => void;
   /** Called once when the queue runs dry. */
   onFinish: (summary: BatchSummary) => void;
 }
 
-const empty = (): QueueSnapshot => ({ running: false, total: 0, finished: 0, failures: [], imported: [] });
+const empty = (): QueueSnapshot => ({ running: false, total: 0, finished: 0, failures: [], imported: [], cutOff: [], cancelled: false });
 
 export class ImportQueue {
   private pending: string[] = [];
@@ -84,6 +102,8 @@ export class ImportQueue {
     this.pending.push(...paths);
     this.state = {
       ...this.state,
+      // New files after a Cancel start fresh: Cancel works again for them.
+      cancelled: false,
       total: this.state.total + paths.length + unsupported.length,
       finished: this.state.finished + unsupported.length,
       failures: [...this.state.failures, ...unsupported.map((p) => ({ name: baseName(p), message: "", unsupported: true }))],
@@ -91,6 +111,16 @@ export class ImportQueue {
     if (this.active) return this.emit();
     this.active = true;
     void this.run();
+  }
+
+  /** Stops the file being read and drops the files still waiting. Nothing is imported from either. */
+  cancel() {
+    if (!this.active || this.state.cancelled) return;
+    this.pending.forEach((p) => this.queued.delete(p));
+    this.state = { ...this.state, cancelled: true, total: this.state.total - this.pending.length };
+    this.pending = [];
+    this.emit();
+    this.opts.cancelCurrent?.();
   }
 
   private emit() {
@@ -111,18 +141,21 @@ export class ImportQueue {
         outcome = { ok: false, message: e instanceof Error ? e.message : String(e) };
       }
       this.queued.delete(path);
+      const ok = "ok" in outcome && outcome.ok ? outcome : undefined;
+      const failed = "ok" in outcome && !outcome.ok ? outcome : undefined;
       this.state = {
         ...this.state,
         finished: this.state.finished + 1,
-        imported: outcome.ok ? [...this.state.imported, outcome.id] : this.state.imported,
-        failures: outcome.ok ? this.state.failures : [...this.state.failures, { name, message: outcome.message }],
+        imported: ok ? [...this.state.imported, ok.id] : this.state.imported,
+        cutOff: ok?.cutOff ? [...this.state.cutOff, { name, ...ok.cutOff }] : this.state.cutOff,
+        failures: failed ? [...this.state.failures, { name, message: failed.message }] : this.state.failures,
       };
       this.emit();
     }
-    const { total, imported, failures } = this.state;
+    const { total, imported, failures, cutOff, cancelled } = this.state;
     this.state = { ...this.state, running: false, current: undefined };
     this.active = false;
     this.emit();
-    this.opts.onFinish({ total, imported, failures });
+    this.opts.onFinish({ total, imported, failures, cutOff, cancelled });
   }
 }

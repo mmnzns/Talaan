@@ -404,6 +404,7 @@ const TABLE: &[(&str, &str, &str, &str)] = &[
     ("import.open_failed", "Couldn't open the file: {error}", "Impossible d’ouvrir le fichier : {error}", "No se pudo abrir el archivo: {error}"),
     ("import.no_audio", "The file has no audio in it.", "Ce fichier ne contient pas d’audio.", "El archivo no tiene audio."),
     ("import.write_failed", "Couldn't write the audio: {error}", "Impossible d’écrire l’audio : {error}", "No se pudo escribir el audio: {error}"),
+    ("import.crashed", "Something went wrong while reading this file. Nothing was imported.", "Une erreur est survenue pendant la lecture de ce fichier. Rien n’a été importé.", "Algo salió mal al leer este archivo. No se importó nada."),
     // Secure key storage (Keychain on the Mac, Credential Manager on Windows)
     ("keys.open_failed", "Couldn't open secure key storage: {error}", "Impossible d’ouvrir le stockage sécurisé des clés : {error}", "No se pudo abrir el almacén seguro de claves: {error}"),
     (
