@@ -15,6 +15,7 @@ import { modelNote, splitByTier, tierOf } from "../../lib/modelTiers";
 import { LeavesTable } from "../Settings/LeavesTable";
 import { setupItems } from "../../lib/setupDownload";
 import { DownloadAnnouncer, SetupProgress, gb, useSetupDownload } from "./SetupDownload";
+import { SaveFailedNotice } from "../Settings/SaveFailedNotice";
 
 /** The steps, in order. "audio" is left out on Windows when the microphone is already allowed (nothing to do);
  *  "speech" and "summary" only show after "Choose individually". */
@@ -41,7 +42,7 @@ const micState = (p: string): Perm => (p === "granted" ? "allowed" : p === "deni
 
 export function OnboardingScreen() {
   const t = useT();
-  const { settings, update } = useSettings();
+  const { settings, update, saveError, retrySave, dismissSaveError } = useSettings();
   const [at, setAt] = useState<StepId>("welcome");
   const [systemAudio, setSystemAudio] = useState<Perm>(systemAudioNeedsPermission ? "idle" : "not_needed");
   const [mic, setMic] = useState<Perm>("idle");
@@ -152,6 +153,11 @@ export function OnboardingScreen() {
             {at === "apps" && <AppsStep settings={settings} update={update} />}
             {at === "extras" && <ExtrasStep settings={settings} update={update} connectionsAfter={connectionsAfter} setConnectionsAfter={setConnectionsAfter} />}
             {at === "done" && <Done systemAudio={systemAudio} settings={settings} name={name} setName={setName} />}
+            {saveError && (
+              <div className="relative px-7 pb-3">
+                <SaveFailedNotice cause={saveError.cause} onRetry={retrySave} onUndo={dismissSaveError} />
+              </div>
+            )}
             <div className="relative flex items-center gap-2 border-t border-line px-7 py-[16px] [@media(max-height:680px)]:py-3">
               <Label className="normal-case">{t("onboarding.stepOf", { n: index, total: steps.length - 1, name: t(`onboarding.${STEP_NAME[at]}`) })}</Label>
               <span className="flex-1" />

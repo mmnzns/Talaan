@@ -23,6 +23,10 @@ export function MeetingList({ selectedId }: { selectedId?: string }) {
   const folders = useFolders();
   const tags = useTags();
 
+  // The unfiltered count decides first-run copy, so when only that read fails say so instead of guessing.
+  const listError = error ?? (meetings.length === 0 ? all.error : undefined);
+  const retryList = error ? retry : all.retry;
+
   const filtering = Boolean(folderId || tag || query.trim());
   const clear = () => {
     setFolderId(undefined);
@@ -62,10 +66,10 @@ export function MeetingList({ selectedId }: { selectedId?: string }) {
         onTag={setTag}
       />
       <div className="flex min-h-0 flex-1 flex-col gap-2.5 overflow-auto px-3 pb-5 pt-3.5">
-        {error ? (
-          <ListFailed cause={error.cause} onRetry={retry} />
+        {listError ? (
+          <ListFailed cause={listError.cause} onRetry={retryList} />
         ) : !loading && meetings.length === 0 ? (
-          <EmptyState firstRun={all.meetings.length === 0 && !all.loading} filtering={filtering} onClear={clear} />
+          <EmptyState firstRun={all.meetings.length === 0 && !all.loading && !all.error} filtering={filtering} onClear={clear} />
         ) : (
           <MeetingDays days={days} selectedId={selectedId} />
         )}

@@ -414,6 +414,8 @@ pub fn calls_accept(app: AppHandle, state: State<CallsState>, app_id: String) ->
         Err(e) => {
             // Say so in the prompt itself instead of leaving the nudge as it was (or gone) with nothing happening.
             log::warn!("couldn't start recording {app_id} after Record: {}", e.for_log());
+            // `accepted` marked this call as recorded: undo that, or a "Call ended" prompt follows for nothing.
+            state.detector.lock().unwrap_or_else(|e| e.into_inner()).start_failed(&app_id);
             show_prompt(&app, failed_prompt(crate::i18n::current(), app_id, label, &e));
             Err(e)
         }

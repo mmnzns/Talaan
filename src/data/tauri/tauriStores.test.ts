@@ -136,6 +136,29 @@ describe("TauriSettingsStore", () => {
     expect(saved.value.retention).not.toBe("30d");
   });
 
+  it("with two overlapping saves that both fail, nothing unsaved is written by a later save", async () => {
+    backend(null);
+    const store = new TauriSettingsStore();
+    await store.get();
+    const answer = invoke.getMockImplementation()!;
+    invoke.mockImplementation((cmd: string, ...rest: unknown[]) => (cmd === "settings_set" ? Promise.reject({ code: "io", message: "disk full" }) : answer(cmd, ...rest)));
+    const a = store.update({ retention: "30d" });
+    const b = store.update({ theme: "dark" });
+    // Both changes show while they wait.
+    expect(await store.get()).toMatchObject({ retention: "30d", theme: "dark" });
+    await expect(a).rejects.toMatchObject({ message: "disk full" });
+    await expect(b).rejects.toMatchObject({ message: "disk full" });
+    const after = await store.get();
+    expect(after.retention).not.toBe("30d");
+    expect(after.theme).not.toBe("dark");
+    invoke.mockImplementation(answer);
+    await store.update({ yourName: "Ana" });
+    const saved = invoke.mock.calls.filter((c) => c[0] === "settings_set").pop()![1] as { value: { retention: string; theme: string; yourName: string } };
+    expect(saved.value.yourName).toBe("Ana");
+    expect(saved.value.retention).not.toBe("30d");
+    expect(saved.value.theme).not.toBe("dark");
+  });
+
   it("saves the whole object on update and tells subscribers", async () => {
     backend(null);
     const store = new TauriSettingsStore();

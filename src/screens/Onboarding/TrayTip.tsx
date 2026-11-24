@@ -3,6 +3,7 @@ import { useSettings } from "../../data/hooks";
 import { useT } from "../../lib/i18n/I18nProvider";
 import { onWindows } from "../../lib/platform";
 import { Button } from "../../ui";
+import { SaveFailedNotice } from "../Settings/SaveFailedNotice";
 
 /**
  * Windows, once, after onboarding: where Talaan's icon lives. Windows hides new tray icons under the ^ arrow, so
@@ -11,7 +12,7 @@ import { Button } from "../../ui";
  */
 export function TrayTip() {
   const t = useT();
-  const { settings, update } = useSettings();
+  const { settings, update, saveError, retrySave, dismissSaveError } = useSettings();
   if (!onWindows || !settings?.showTrayTip) return null;
   const dismiss = () => void update({ showTrayTip: false });
   return (
@@ -26,6 +27,7 @@ export function TrayTip() {
       <Button variant="primary" onClick={dismiss}>
         {t("onboarding.trayTipOk")}
       </Button>
+      {saveError && <SaveFailedNotice cause={saveError.cause} onRetry={retrySave} onUndo={dismissSaveError} className="w-full" />}
     </aside>
   );
 }

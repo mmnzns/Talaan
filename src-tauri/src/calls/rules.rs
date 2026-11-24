@@ -315,6 +315,19 @@ mod tests {
     }
 
     #[test]
+    fn a_failed_start_after_accepting_a_nudge_is_not_treated_as_a_recording() {
+        let mut s = Sim::new();
+        assert_eq!(s.run(3, &["slack"]), vec![nudge("slack")]);
+        s.d.accepted("slack");
+        // The start failed: Talaan isn't recording.
+        s.recording = false;
+        s.d.start_failed("slack");
+        // No "Call ended / Keep recording" when Slack lets go of the mic.
+        assert!(s.run(30, &["slack"]).is_empty());
+        assert!(s.run(30, &[]).is_empty());
+    }
+
+    #[test]
     fn browsers_on_always_are_asked_until_tab_detection() {
         let mut s = Sim::new();
         assert_eq!(s.run(3, &["browser"]), vec![nudge("browser")]);

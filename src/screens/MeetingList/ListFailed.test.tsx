@@ -35,4 +35,23 @@ describe("MeetingList when the list can't be read", () => {
     await user.click(screen.getByRole("button", { name: "Try again" }));
     expect(listMeetings.mock.calls.length).toBeGreaterThan(calls);
   });
+
+  it("doesn't show first-run copy when only the unfiltered read fails", async () => {
+    // The filtered call (a search is typed) works and finds nothing; the unfiltered one fails.
+    const listMeetings = vi.fn().mockImplementation(async (f?: { query?: string }) => {
+      if (f?.query) return [];
+      throw new Error("ipc");
+    });
+    const meetings = { listMeetings, listFolders: async () => [], listTags: async () => [], subscribe: () => () => {} } as unknown as MeetingStore;
+    const settings = { revealData: vi.fn(), subscribe: () => () => {} } as unknown as SettingsStore;
+    const user = userEvent.setup();
+    render(
+      <StoreProvider meetings={meetings} settings={settings}>
+        <MeetingList />
+      </StoreProvider>,
+    );
+    await user.type(screen.getByRole("searchbox"), "x");
+    expect((await screen.findByRole("alert")).textContent).toContain("Couldn’t load your meetings");
+    expect(screen.queryByText("No meetings yet")).toBeNull();
+  });
 });

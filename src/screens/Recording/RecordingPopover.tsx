@@ -11,6 +11,7 @@ import { inTauri } from "../../lib/windows";
 import { SunCorner } from "../../brand/SunCorner";
 import { usePlatform } from "../../lib/platform";
 import { useT } from "../../lib/i18n/I18nProvider";
+import { SaveFailedNotice } from "../Settings/SaveFailedNotice";
 
 interface Props {
   state: RecorderState;
@@ -120,7 +121,7 @@ export function RecordingPopover({ state, levels, notice, app, maxHeight, onPaus
   const t = useT();
   const platform = usePlatform();
   const appName = app ?? t("recording.appDefault");
-  const { settings, update } = useSettings();
+  const { settings, update, saveError, retrySave, dismissSaveError } = useSettings();
   const [copied, setCopied] = useState(false);
   const [showNotice, setShowNotice] = useState(true);
   const [more, setMore] = useState(false);
@@ -246,6 +247,8 @@ export function RecordingPopover({ state, levels, notice, app, maxHeight, onPaus
             </span>
           </div>
         )}
+
+        {saveError && <SaveFailedNotice cause={saveError.cause} onRetry={retrySave} onUndo={dismissSaveError} className="p-3" />}
 
         {notice && (
           <div
