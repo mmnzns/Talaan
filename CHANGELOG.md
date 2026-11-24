@@ -1,14 +1,28 @@
 # Changelog
 
-## Unreleased
+## 1.4.0 (2026-11-23)
 
 **Much more detailed summaries**
 - **A fuller summary for every new meeting.** The default (General) summary now starts with the **purpose** of the call in one sentence, then **key takeaways** (a bold label and one sentence each), then **topics**: one entry per main subject, with the numbers, dates, systems and reasons that were mentioned, and sub-points where they help. After that come **decisions** with their time in the call, **next steps** and **open questions**. A short call still gets a short summary. Meeting types such as Stand-up keep their own sections.
 - **Next steps are grouped by person, you first.** Your own tasks come first (under Your name, or "You" when it is empty), then the others in the order they first come up, with the due date and the time in the call. Tasks nobody owns come last. A task no longer reads "…engineering., due Thursday": the full stop before a due date or time is dropped.
 - **Real names instead of "Me" and "Speaker 1".** The summary works out who is who from the conversation itself (people addressing each other, introductions) and from the calendar's guest list, and writes "Dana will send the plan". You appear under the name in Settings › General › Your name; if that is empty, the summary speaks to you ("You will send the plan"). When a person's name never comes up, it uses their role ("the recruiter") or keeps "Speaker 1". Names you set in the transcript always win.
 - **Everything uses the new layout:** the meeting view (editing and Revert keep the new parts), Copy as text, Export (Markdown, plain text, PDF), the Markdown file saved with each meeting, Save to a folder, the email you send from a meeting, and the Notion export.
-- **Small computers get a more compact version.** With 8 GB of memory the local AI writes fewer topics and shorter lists so the summary is never cut off..
+- **Small computers get a more compact version.** With 8 GB of memory the local AI writes fewer topics and shorter lists so the summary is never cut off.
 - Meetings you already have look exactly as before.
+
+**No more silent failures**
+- **Settings tell you when a change couldn't be saved,** keep your change on screen and offer Try again or Undo, instead of saying "saved". The call prompt, the tray tip, onboarding and the recording popover say so too.
+- **"Record this call?" tells you when recording couldn't start,** with the reason, instead of doing nothing.
+- **A meeting or the meeting list that can't be read** shows what happened with Try again and Open folder, instead of a blank pane or an empty list.
+
+**Importing audio**
+- **Cancel an import** while a file is being read; it leaves no meeting behind. Queued files are cancelled too.
+- **A file that makes the reader crash** no longer leaves Talaan stuck on "Reading…": it says the file couldn't be read and moves on to the next one.
+- **Temporary files are cleaned up** after every import, and leftovers at the next launch.
+- **A file whose end can't be read** is still imported, and Talaan tells you how much was read.
+
+**Calendar**
+- **A call that started while the calendar couldn't be read** (offline, or access not granted yet) gets its event's title and guests once the calendar can be read again. A title you changed is never replaced.
 
 **Safer processing**
 - **Transcribe again keeps a backup.** The previous transcript, your edits to it and the summary are only replaced once the new transcript (and its summary) are ready. If the new run fails, they come back exactly as they were and the meeting tells you why.
