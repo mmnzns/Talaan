@@ -6,6 +6,7 @@ import { useT } from "../../lib/i18n/I18nProvider";
 import { navigate, routes } from "../../lib/router";
 import { inTauri, SETTINGS_TAB_EVENT } from "../../lib/windows";
 import { Label, cn } from "../../ui";
+import { SaveFailedNotice } from "./SaveFailedNotice";
 import { Logo } from "../../brand/Logo";
 import { SunCorner } from "../../brand/SunCorner";
 import { CallAppsTab } from "./CallAppsTab";
@@ -28,7 +29,7 @@ export const SETTINGS_TABS = [
 ] as const satisfies readonly { id: string; label: MessageKey }[];
 
 export function SettingsWindow({ tab }: { tab: string }) {
-  const { settings, update } = useSettings();
+  const { settings, update, saveError, retrySave, dismissSaveError } = useSettings();
   const t = useT();
   const current = SETTINGS_TABS.find((x) => x.id === tab) ?? SETTINGS_TABS[0];
   // Another window asks for a tab while this one is already open (openSettings in lib/windows).
@@ -84,6 +85,7 @@ export function SettingsWindow({ tab }: { tab: string }) {
       <div id="settings-panel" role="tabpanel" aria-labelledby={`tab-${current.id}`} className="relative min-h-0 min-w-0 flex-1 overflow-auto">
         <SunCorner size={200} className="absolute right-0 top-0" />
         <div className="relative mx-auto max-w-[720px] px-11 pb-11 pt-10">
+          {saveError && <SaveFailedNotice cause={saveError.cause} onRetry={retrySave} onUndo={dismissSaveError} className="mb-5" />}
           {current.id === "status" && <StatusTab {...props} />}
           {current.id === "general" && <GeneralTab {...props} />}
           {current.id === "apps" && <CallAppsTab {...props} />}

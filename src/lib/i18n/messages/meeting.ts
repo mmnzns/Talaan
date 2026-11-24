@@ -6,6 +6,8 @@ export const meeting = area({
     // pane
     notFound: "Meeting not found",
     notFoundBody: "It may have been deleted. Pick another one from the list.",
+    openFailedTitle: "Can’t open this meeting",
+    openFailedBody: "Talaan couldn’t read it. Its files are still on this computer. {detail}",
     emptyFirstTitle: "Your meetings will show up here",
     emptyTitle: "Select a meeting",
     emptyFirstBody: "Start a call and Talaan asks before it records. Or press Record, or import an audio file. Each one gets a transcript, a summary and action items.",
@@ -249,6 +251,8 @@ export const meeting = area({
   fr: {
     notFound: "Réunion introuvable",
     notFoundBody: "Elle a peut-être été supprimée. Choisissez-en une autre dans la liste.",
+    openFailedTitle: "Impossible d’ouvrir cette réunion",
+    openFailedBody: "Talaan n’a pas pu la lire. Ses fichiers sont toujours sur cet ordinateur. {detail}",
     emptyFirstTitle: "Vos réunions apparaîtront ici",
     emptyTitle: "Sélectionnez une réunion",
     emptyFirstBody: "Démarrez un appel : Talaan vous demande avant d’enregistrer. Vous pouvez aussi cliquer sur Enregistrer ou importer un fichier audio. Chaque réunion obtient une transcription, un résumé et des tâches.",
@@ -483,6 +487,8 @@ export const meeting = area({
   es: {
     notFound: "Reunión no encontrada",
     notFoundBody: "Puede que se haya eliminado. Elige otra de la lista.",
+    openFailedTitle: "No se puede abrir esta reunión",
+    openFailedBody: "Talaan no pudo leerla. Sus archivos siguen en esta computadora. {detail}",
     emptyFirstTitle: "Tus reuniones aparecerán aquí",
     emptyTitle: "Selecciona una reunión",
     emptyFirstBody: "Empieza una llamada y Talaan te preguntará antes de grabar. También puedes presionar Grabar o importar un archivo de audio. De cada una obtendrás una transcripción, un resumen y tareas pendientes.",

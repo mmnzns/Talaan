@@ -19,6 +19,9 @@ function migrated(stored: Partial<Settings>): Partial<Settings> {
  */
 export class TauriSettingsStore implements SettingsStore {
   private state?: Settings;
+  /** Changes asked for but not yet written, and the chain that writes them one after another. */
+  private pending: Partial<Settings>[] = [];
+  private queue: Promise<void> = Promise.resolve();
   private models?: SpeechModel[];
   private speaker?: SpeechModel;
   private search?: SpeechModel;
@@ -71,6 +74,13 @@ export class TauriSettingsStore implements SettingsStore {
   }
 
   private async load(): Promise<Settings> {
+    const saved = await this.loadSaved();
+    // What is on disk, plus the changes still waiting to be written (so a read right after a change shows it).
+    return Object.assign({}, saved, ...this.pending);
+  }
+
+  /** Exactly what was last written (or read from disk): never includes a change that failed to save. */
+  private async loadSaved(): Promise<Settings> {
     if (!this.state) {
       const stored = await call<Partial<Settings> | null>("settings_get");
       // No settings file yet means this is the first launch: show onboarding.
@@ -88,10 +98,23 @@ export class TauriSettingsStore implements SettingsStore {
   }
 
   async update(patch: Partial<Settings>): Promise<Settings> {
-    const next = { ...(await this.load()), ...patch };
-    this.state = next;
-    const { speechModels: _speech, speakerModel: _speaker, searchModel: _search, localModels: _local, ...stored } = next;
-    await call<void>("settings_set", { value: stored });
+    // Saves run one at a time, each written as "what is on disk + this change". A change that fails is dropped
+    // right there, so no later save can write it silently, and it never overwrites what an earlier save wrote.
+    this.pending.push(patch);
+    const run = async (): Promise<Settings> => {
+      try {
+        const next = { ...(await this.loadSaved()), ...patch };
+        const { speechModels: _speech, speakerModel: _speaker, searchModel: _search, localModels: _local, ...stored } = next;
+        await call<void>("settings_set", { value: stored });
+        this.state = next;
+        return next;
+      } finally {
+        this.pending.splice(this.pending.indexOf(patch), 1);
+      }
+    };
+    const result = this.queue.then(run, run);
+    this.queue = result.then(() => undefined, () => undefined);
+    const next = await result;
     this.emit();
     const speechModels = await this.loadModels();
     return structuredClone({ ...next, speechModels, ...this.extraModels(), localModels: await this.loadLocalModels() });

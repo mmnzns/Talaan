@@ -7,6 +7,7 @@ import { useFitWindow, useTransparentPage } from "../../lib/floatingWindow";
 import { openSettings } from "../../lib/windows";
 import { AlwaysBanner, CallEndedPrompt, Nudge, StartFailedPrompt } from "../Recording/CallPrompts";
 import { useSettings } from "../../data/hooks";
+import { SaveFailedNotice } from "../Settings/SaveFailedNotice";
 
 interface Prompt {
   kind: "nudge" | "banner" | "ended" | "failed";
@@ -22,9 +23,9 @@ export function PromptWindow() {
   useTransparentPage();
   const ref = useRef<HTMLDivElement>(null);
   const [prompt, setPrompt] = useState<Prompt | null>(null);
-  useFitWindow(ref, prompt && `${prompt.kind}:${prompt.app}`);
   const rec = useRecorder(recorderClient);
-  const { settings, update } = useSettings();
+  const { settings, update, saveError, retrySave, dismissSaveError } = useSettings();
+  useFitWindow(ref, prompt && `${prompt.kind}:${prompt.app}:${saveError ? "save-failed" : ""}`);
 
   const record = (appId: string) => invoke("calls_accept", { appId });
 
@@ -70,6 +71,7 @@ export function PromptWindow() {
           }}
         />
       )}
+      {saveError && <SaveFailedNotice cause={saveError.cause} onRetry={retrySave} onUndo={dismissSaveError} className="mb-2 w-[420px] max-w-full bg-surface" />}
       {prompt.kind === "failed" && <StartFailedPrompt app={prompt.label} message={prompt.message ?? ""} onDismiss={() => void invoke("calls_hide")} />}
       {prompt.kind === "ended" && (
         <CallEndedPrompt
