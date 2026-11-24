@@ -129,6 +129,10 @@ export class MockMeetingStore implements MeetingStore {
     this.mutate(id, (m) => (m.summary = clone(summary)));
   }
 
+  async dismissRetranscribeError(id: MeetingId) {
+    this.mutate(id, (m) => (m.retranscribeError = undefined));
+  }
+
   async revertEdits(id: MeetingId) {
     const orig = this.originals.get(id);
     this.mutate(id, (m) => {

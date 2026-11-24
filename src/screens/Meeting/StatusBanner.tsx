@@ -62,6 +62,15 @@ export function StatusBanner({ meeting }: { meeting: Meeting }) {
       </Banner>
     );
   }
+  if (meeting.retranscribeError) {
+    // "Transcribe again" failed: nothing was lost, the previous transcript, edits and summary are back. Says why.
+    const message = meeting.retranscribeError.message.trim();
+    return (
+      <Banner title={t("meeting.retranscribeFailedTitle")} text={message ? t("meeting.retranscribeFailedText", { message }) : t("meeting.retranscribeFailedNoReason")}>
+        <Button onClick={() => run(store.dismissRetranscribeError(meeting.id))}>{t("meeting.dismiss")}</Button>
+      </Banner>
+    );
+  }
   if (meeting.recordingIssue) {
     // The saved part is transcribed as usual; this says why it ends early.
     return <Banner title={t("meeting.recordingIssueTitle")} text={t("meeting.recordingIssueText", { time: formatTime(meeting.recordingIssue.atMs) })}>{null}</Banner>;

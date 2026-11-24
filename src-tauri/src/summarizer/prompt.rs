@@ -537,6 +537,7 @@ pub(crate) mod tests {
             pauses: vec![],
             error: None,
             summary_error: None,
+            retranscribe_error: None,
             transcription: None,
             recording_issue: None,
             transcript_only: false,

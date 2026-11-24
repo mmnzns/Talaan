@@ -300,6 +300,14 @@ pub struct MeetingFile {
     /// "Transcribe again" with this speech model; cleared once the new transcript is saved.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub retranscribe_model: Option<String>,
+    /// Why the last "Transcribe again" didn't work; the previous transcript and summary were put back. Shown until
+    /// dismissed or the next run starts.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub retranscribe_error: Option<ProcessingError>,
+    /// How many times a worker started on this meeting without ending the attempt cleanly (a crash or a kill leaves it
+    /// above 0). A meeting that keeps crashing is stopped at launch instead of being retried for ever.
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub attempts: u32,
     /// The copy written by "Also save each meeting to a folder" (`autosave.rs`): the only file Talaan ever replaces in
     /// that folder, and only while it still matches this.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -310,6 +318,10 @@ pub struct MeetingFile {
     pub autosave_pending: Option<PendingCopy>,
     #[serde(flatten)]
     pub extra: Map<String, Value>,
+}
+
+fn is_zero(n: &u32) -> bool {
+    *n == 0
 }
 
 fn is_false(b: &bool) -> bool {
@@ -413,6 +425,9 @@ pub struct Meeting {
     /// Why there is no summary yet.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub summary_error: Option<ProcessingError>,
+    /// Why the last "Transcribe again" didn't work (the previous transcript and summary are back).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub retranscribe_error: Option<ProcessingError>,
     /// How the transcript was made (the speech model), once there is one.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub transcription: Option<TranscriptionInfo>,

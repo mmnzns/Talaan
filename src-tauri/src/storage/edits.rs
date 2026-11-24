@@ -70,10 +70,10 @@ impl Storage {
         self.regenerate_markdown(id)
     }
 
-    /// "Transcribe again" with `model`: back into the transcriber's queue. Transcript edits are dropped (the new
+    /// "Transcribe again" with `model`: back into the transcriber's queue. Transcript edits are put aside (the new
     /// lines have new ids) and so is the summary with its edits and ticks, because it is written again from the
-    /// new transcript. Speaker names, title, tags, folder and marks stay. The old transcript stays until the new
-    /// one replaces it, so a failed run loses nothing but the summary.
+    /// new transcript. Speaker names, title, tags, folder and marks stay. Everything put aside is kept until the new
+    /// transcript and its summary have succeeded; a failed run puts it back exactly.
     pub fn start_retranscribe(&self, id: &str, model: &str) -> Result<()> {
         let dir = self.dir(id)?;
         let file = self.read_meeting_file(id)?;
@@ -83,15 +83,15 @@ impl Storage {
         if !self.has_audio(&dir, &file) {
             return Err(StorageError::Refused(crate::i18n::tr("error.audio_gone")));
         }
-        for name in [TRANSCRIPT_EDITS, SUMMARY, SUMMARY_EDITED, SUMMARY_DONE] {
-            remove_if_exists(&dir.join(name))?;
-        }
+        // Put aside, not deleted: they come back exactly if the new run fails (`retranscribe.rs`).
+        self.backup_for_retranscribe(id)?;
         self.update_meeting_file(id, |f| {
             f.status = MeetingStatus::Transcribing;
             f.progress = Some(0.0);
             f.error = None;
             f.summary_error = None;
             f.retranscribe_model = Some(model.to_string());
+            f.retranscribe_error = None;
         })?;
         self.regenerate_markdown(id)
     }

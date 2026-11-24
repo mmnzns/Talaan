@@ -10,6 +10,10 @@
 - **Small computers get a more compact version.** With 8 GB of memory the local AI writes fewer topics and shorter lists so the summary is never cut off..
 - Meetings you already have look exactly as before.
 
+**Safer processing**
+- **Transcribe again keeps a backup.** The previous transcript, your edits to it and the summary are only replaced once the new transcript (and its summary) are ready. If the new run fails, they come back exactly as they were and the meeting tells you why.
+- **No more stuck "Transcribing" or "Summarizing".** A problem on one call no longer holds up the calls after it. If Talaan closes unexpectedly twice while working on a call, that call shows Try again (or Generate summary) instead of being retried at every launch.
+
 ## 1.3.2 (2026-11-16)
 
 **Improvements**

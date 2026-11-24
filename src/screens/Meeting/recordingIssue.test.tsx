@@ -57,3 +57,12 @@ describe("a recording that stopped saving", () => {
     expect(screen.queryByText("Part of the recording wasn’t saved")).toBeNull();
   });
 });
+
+describe("a Transcribe again that didn't work", () => {
+  it("says why and that the previous transcript and summary are back, with a way to dismiss it", () => {
+    show({ ...q4, status: "ready", retranscribeError: { code: "failed", message: "The speech model stopped." } });
+    expect(screen.getByText("Transcribing again didn’t work")).toBeTruthy();
+    expect(screen.getByText("The speech model stopped. Your previous transcript, edits and summary are back as they were.")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Dismiss" })).toBeTruthy();
+  });
+});

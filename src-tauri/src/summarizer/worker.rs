@@ -243,6 +243,8 @@ fn worker_loop(deps: Deps, queue: Arc<(Mutex<Queue>, Condvar)>, cancel: Arc<Atom
         if std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| process(&deps, &id, auto, &cancel))).is_err() {
             without_summary(&deps, &id, auto, FAILED, crate::i18n::tr("error.summary_internal"));
         }
+        // However it ended, the attempt is over: only a crash or a kill leaves the mark for the next launch to see.
+        deps.storage.lock().unwrap_or_else(|e| e.into_inner()).end_attempt(&id);
         (deps.changed)();
     }
 }
@@ -268,13 +270,20 @@ fn without_summary_detail(deps: &Deps, id: &str, auto: bool, code: &str, message
         None => log::warn!("no summary for meeting {id} ({code}): {}", crate::logging::text(&message)),
     }
     let mut title = String::new();
-    let saved = lock(&deps.storage).update_meeting_file(id, |f| {
+    let s = lock(&deps.storage);
+    // A "Transcribe again" whose summary didn't come: the previous transcript, edits and summary are put back and the
+    // meeting says why. No "Transcript ready" notification: nothing new is there.
+    if s.restore_retranscribe(id, ProcessingError { code: code.into(), message: message.clone(), detail: detail.clone() }).unwrap_or(false) {
+        return;
+    }
+    let saved = s.update_meeting_file(id, |f| {
         f.status = MeetingStatus::Ready;
         f.progress = None;
         f.eta = None;
         f.summary_error = Some(ProcessingError { code: code.into(), message, detail });
         title = f.title.clone();
     });
+    drop(s);
     if saved.is_ok() && auto {
         (deps.unsummarized)(id, &title);
     }
@@ -288,6 +297,7 @@ fn process(deps: &Deps, id: &str, auto: bool, cancel: &AtomicBool) {
             return;
         }
         let Ok(meeting) = s.get_meeting(id) else { return };
+        s.begin_attempt(id);
         // The summary's work grows with what was said; a meeting from before speech was measured uses its length.
         let speech = file.transcription.as_ref().map(|t| t.speech_ms).filter(|ms| *ms > 0).unwrap_or(file.duration_ms) as f64 / 1000.0;
         (meeting, Config::from_settings(s.settings_get().ok().flatten().as_ref()), speech)
@@ -366,6 +376,8 @@ fn process(deps: &Deps, id: &str, auto: bool, cancel: &AtomicBool) {
             });
             // The .md files carry the title, which may have just changed.
             let _ = s.regenerate_markdown(id);
+            // A "Transcribe again" is complete: the backup of the previous transcript and summary goes.
+            s.finish_retranscribe(id);
             drop(s);
             (deps.summarized)(id, &title);
         }
@@ -669,6 +681,50 @@ mod tests {
         let (tx, rx) = std::sync::mpsc::channel();
         w.run_between("b", Box::new(move || tx.send(()).unwrap()));
         rx.recv_timeout(Duration::from_secs(5)).unwrap();
+    }
+
+    /// The meeting was ready with an old transcript and summary; "Transcribe again" put them aside, and the new transcript
+    /// (the one `setup` saved) now waits for its summary.
+    fn after_transcribe_again(storage: &Arc<Mutex<Storage>>, id: &str) {
+        let s = storage.lock().unwrap();
+        let new = s.get_meeting(id).unwrap().transcript;
+        let old = TranscriptLine { id: "old".into(), at: 0, end: 900, speaker: "me".into(), text: "Old transcript.".into(), edited: false };
+        s.save_transcript(id, &[old]).unwrap();
+        let summary: crate::storage::model::Summary = serde_json::from_str(r#"{"recap":"Old recap.","decisions":[],"actionItems":[],"openQuestions":[],"engine":"x"}"#).unwrap();
+        s.save_summary(id, &summary).unwrap();
+        s.update_meeting_file(id, |f| f.status = MeetingStatus::Ready).unwrap();
+        std::fs::write(s.dir(id).unwrap().join("me.wav"), b"x").unwrap();
+        s.start_retranscribe(id, "whisper-small").unwrap();
+        s.save_transcript(id, &new).unwrap();
+        s.update_meeting_file(id, |f| f.status = MeetingStatus::Summarizing).unwrap();
+    }
+
+    #[test]
+    fn a_transcribe_again_whose_summary_fails_gets_the_previous_transcript_and_summary_back() {
+        let (_d, storage, id, w, done) = setup(Box::new(|_| Err(EngineError::Failed("the model stopped".into()))));
+        after_transcribe_again(&storage, &id);
+        w.enqueue(&id);
+        wait(&w);
+        let s = storage.lock().unwrap();
+        let m = s.get_meeting(&id).unwrap();
+        assert_eq!(m.item.status, MeetingStatus::Ready);
+        assert_eq!((m.transcript[0].text.as_str(), m.summary.unwrap().recap.as_str()), ("Old transcript.", "Old recap."));
+        assert_eq!(m.retranscribe_error.unwrap().message, "the model stopped");
+        assert!(m.summary_error.is_none() && !s.has_retranscribe_backup(&id));
+        assert!(done.lock().unwrap().is_empty(), "nothing new to announce");
+    }
+
+    #[test]
+    fn a_transcribe_again_whose_summary_works_drops_the_backup() {
+        let (_d, storage, id, w, _) = setup(Box::new(|_| Ok(Box::new(Scripted { replies: vec![Ok(reply("Plan", "New recap."))], prompts: vec![], context: 16_384 }))));
+        after_transcribe_again(&storage, &id);
+        assert!(storage.lock().unwrap().has_retranscribe_backup(&id));
+        w.enqueue(&id);
+        wait(&w);
+        let s = storage.lock().unwrap();
+        let m = s.get_meeting(&id).unwrap();
+        assert_eq!(m.summary.unwrap().recap, "New recap.");
+        assert!(m.retranscribe_error.is_none() && !s.has_retranscribe_backup(&id));
     }
 
     #[test]
