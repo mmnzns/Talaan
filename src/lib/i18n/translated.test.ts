@@ -21,6 +21,14 @@ const mustDiffer = [
   "meeting.searchLanguages",
   "meeting.noLanguageFound",
   "meeting.cloudBetter",
+  "settings.save_failed_title",
+  "settings.save_failed_body",
+  "settings.save_undo",
+  "meeting.openFailedTitle",
+  "meeting.openFailedBody",
+  "shell.listFailedTitle",
+  "shell.listFailedBody",
+  "shell.openDataFolder",
 ];
 
 describe("translated strings", () => {

@@ -118,6 +118,24 @@ describe("TauriSettingsStore", () => {
     expect((await new TauriSettingsStore().get()).onboardingDone).toBe(false);
   });
 
+  it("rejects when the write fails and does not remember the change as saved", async () => {
+    backend(null);
+    const store = new TauriSettingsStore();
+    const fn = vi.fn();
+    store.subscribe(fn);
+    expect((await store.get()).retention).not.toBe("30d");
+    const answer = invoke.getMockImplementation()!;
+    invoke.mockImplementation((cmd: string, ...rest: unknown[]) => (cmd === "settings_set" ? Promise.reject({ code: "io", message: "disk full" }) : answer(cmd, ...rest)));
+    await expect(store.update({ retention: "30d" })).rejects.toMatchObject({ message: "disk full" });
+    expect(fn).not.toHaveBeenCalled();
+    expect((await store.get()).retention).not.toBe("30d");
+    // The next save doesn't carry the failed change along.
+    invoke.mockImplementation(answer);
+    await store.update({ theme: "dark" });
+    const saved = invoke.mock.calls.filter((c) => c[0] === "settings_set").pop()![1] as { value: { retention: string } };
+    expect(saved.value.retention).not.toBe("30d");
+  });
+
   it("saves the whole object on update and tells subscribers", async () => {
     backend(null);
     const store = new TauriSettingsStore();

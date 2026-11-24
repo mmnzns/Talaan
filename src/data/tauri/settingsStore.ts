@@ -88,10 +88,17 @@ export class TauriSettingsStore implements SettingsStore {
   }
 
   async update(patch: Partial<Settings>): Promise<Settings> {
-    const next = { ...(await this.load()), ...patch };
+    const before = await this.load();
+    const next = { ...before, ...patch };
     this.state = next;
     const { speechModels: _speech, speakerModel: _speaker, searchModel: _search, localModels: _local, ...stored } = next;
-    await call<void>("settings_set", { value: stored });
+    try {
+      await call<void>("settings_set", { value: stored });
+    } catch (e) {
+      // Nothing was written: don't remember the change as if it had been, or the next save would carry it silently.
+      if (this.state === next) this.state = before;
+      throw e;
+    }
     this.emit();
     const speechModels = await this.loadModels();
     return structuredClone({ ...next, speechModels, ...this.extraModels(), localModels: await this.loadLocalModels() });
