@@ -154,6 +154,12 @@ fn start_failed_message(lang: crate::i18n::Lang, app: &str, e: &crate::storage::
     tr_in(lang, "calls.start_failed", &[("app", app), ("reason", &reason)])
 }
 
+/// The "Couldn't start recording" prompt for a start that failed (automatic, or by pressing Record on the nudge).
+fn failed_prompt(lang: crate::i18n::Lang, id: String, label: String, e: &crate::storage::StorageError) -> Prompt {
+    let message = Some(start_failed_message(lang, &label, e));
+    Prompt { kind: "failed", app: id, label, deadline: None, message }
+}
+
 fn show_prompt(app: &AppHandle, prompt: Prompt) {
     let (w, h) = size_of(prompt.kind);
     *app.state::<CallsState>().prompt.lock().unwrap_or_else(|e| e.into_inner()) = Some(prompt.clone());
@@ -243,8 +249,7 @@ fn run(app: &AppHandle, action: Action) {
                     log::warn!("couldn't start recording {id} automatically: {}", e.for_log());
                     // Not tried again until the app lets go of the mic, and the person is told (Record starts it by hand).
                     app.state::<CallsState>().detector.lock().unwrap_or_else(|e| e.into_inner()).start_failed(&id);
-                    let message = Some(start_failed_message(crate::i18n::current(), &label, &e));
-                    show_prompt(app, Prompt { kind: "failed", app: id, label, deadline: None, message });
+                    show_prompt(app, failed_prompt(crate::i18n::current(), id, label, &e));
                 }
             }
         }
@@ -401,9 +406,18 @@ pub fn calls_accept(app: AppHandle, state: State<CallsState>, app_id: String) ->
     state.detector.lock().unwrap_or_else(|e| e.into_inner()).accepted(&app_id);
     log::info!("call detection: the user chose Record for {app_id}");
     let label = label_of(&app_id);
-    start_recording(&app, &app_id, &label)?;
-    show_prompt(&app, Prompt { kind: "banner", app: app_id, label, deadline: None, message: None });
-    Ok(())
+    match start_recording(&app, &app_id, &label) {
+        Ok(_) => {
+            show_prompt(&app, Prompt { kind: "banner", app: app_id, label, deadline: None, message: None });
+            Ok(())
+        }
+        Err(e) => {
+            // Say so in the prompt itself instead of leaving the nudge as it was (or gone) with nothing happening.
+            log::warn!("couldn't start recording {app_id} after Record: {}", e.for_log());
+            show_prompt(&app, failed_prompt(crate::i18n::current(), app_id, label, &e));
+            Err(e)
+        }
+    }
 }
 
 /// Nudge → Not now.
@@ -453,6 +467,15 @@ mod tests {
         let en = start_failed_message(Lang::En, "Zoom", &other);
         assert!(en.starts_with("Talaan couldn't start recording Zoom: ") && !en.contains("invalid id"), "{en}");
         assert!(!start_failed_message(Lang::Es, "Zoom", &other).contains("couldn't"));
+    }
+
+    #[test]
+    fn a_failed_start_from_the_nudge_becomes_a_failed_prompt() {
+        use crate::i18n::Lang;
+        let e = crate::storage::StorageError::Refused("No microphone found.".into());
+        let p = failed_prompt(Lang::Es, "zoom".into(), "Zoom".into(), &e);
+        assert_eq!((p.kind, p.app.as_str(), p.label.as_str()), ("failed", "zoom", "Zoom"));
+        assert!(p.message.unwrap().contains("No microphone found."));
     }
 
     #[test]
