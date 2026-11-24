@@ -39,12 +39,17 @@ pub struct Recorded<'a> {
     pub event_title: &'a str,
 }
 
+/// Whether a recording already covers this event: same title, started within its window.
+pub fn already_recorded(e: &Event, recorded: &[Recorded]) -> bool {
+    recorded.iter().any(|r| r.event_title.trim() == e.title.trim() && r.started_ms >= e.start_ms - EARLY_MS && r.started_ms < e.end_ms)
+}
+
 /// The meeting the menu bar offers to record: in progress or starting within the hour, not cancelled, not declined,
 /// and not already recorded. A real meeting (other people or a call link, and not hours long) wins over a block of
 /// time even when the block is already under way; among those alike, the one in progress (the shortest) or the
 /// soonest.
 pub fn upcoming<'e>(events: &'e [Event], now_ms: i64, recorded: &[Recorded]) -> Option<&'e Event> {
-    let already = |e: &Event| recorded.iter().any(|r| r.event_title.trim() == e.title.trim() && r.started_ms >= e.start_ms - EARLY_MS && r.started_ms < e.end_ms);
+    let already = |e: &Event| already_recorded(e, recorded);
     let is_block = |e: &Event| (e.attendees.is_empty() && e.join_url.is_none()) || e.end_ms - e.start_ms > BLOCK_MS;
     events
         .iter()

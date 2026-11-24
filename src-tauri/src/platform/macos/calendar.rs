@@ -5,6 +5,7 @@ use block2::RcBlock;
 use objc2::runtime::Bool;
 use objc2_event_kit::{EKAuthorizationStatus, EKEntityType, EKEventStatus, EKEventStore, EKParticipantStatus, EKParticipantType};
 use objc2_foundation::{NSDate, NSError};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc;
 use std::time::Duration;
 
@@ -15,7 +16,22 @@ pub enum Access {
     Denied,
 }
 
+/// Whether the last look found access allowed, and whether it came back since `take_recovered` last answered.
+/// Every call to `access` (from Settings, the menu bar or a link try) is a look, so access revoked and granted
+/// again is noticed even when the link code's own checks never saw it off.
+static LAST_ALLOWED: AtomicBool = AtomicBool::new(false);
+static REGAINED: AtomicBool = AtomicBool::new(false);
+
 pub fn access() -> Access {
+    let now = status();
+    let allowed = now == Access::Allowed;
+    if LAST_ALLOWED.swap(allowed, Ordering::SeqCst) != allowed && allowed {
+        REGAINED.store(true, Ordering::SeqCst);
+    }
+    now
+}
+
+fn status() -> Access {
     match unsafe { EKEventStore::authorizationStatusForEntityType(EKEntityType::Event) } {
         EKAuthorizationStatus::FullAccess => Access::Allowed,
         EKAuthorizationStatus::NotDetermined => Access::NotAsked,
@@ -23,9 +39,10 @@ pub fn access() -> Access {
     }
 }
 
-/// EventKit reads locally, so there is no download to recover from (the caller watches `access`).
+/// True once after access went from off to on (or the first time it is seen on). EventKit reads locally, so
+/// there is no download to recover from.
 pub fn take_recovered() -> bool {
-    false
+    REGAINED.swap(false, Ordering::SeqCst)
 }
 
 /// Shows the system's calendar prompt the first time (later calls answer from the saved choice).
