@@ -104,6 +104,9 @@ pub fn run() {
                 }
             }
             app.manage(AppState::new(store));
+            app.manage(commands::import::ImportState::default());
+            // Temp files of an import cut short by a crash or a force quit.
+            importer::clean_stale(&root);
             // The shared models folder, opened and filled before any worker or helper can open a model:
             // `move_in` moves Talaan's old models in and must run first. A TALAAN_DATA_DIR run keeps its models
             // inside that folder, so a test never touches the real shared one.
@@ -212,6 +215,7 @@ pub fn run() {
             commands::autosave::autosave_reveal,
             commands::calendar::calendar_next,
             commands::import::meetings_import,
+            commands::import::meetings_import_cancel,
             commands::import::import_extensions,
             rec_cmd::meetings_recover,
             commands::calls::calls_prompt,
