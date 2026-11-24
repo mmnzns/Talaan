@@ -84,13 +84,13 @@ export function PrintView({ id, scope }: { id: string; scope: ExportScope }) {
               <Section
                 key={g.owner ?? ""}
                 title={`${t("meeting.shNextSteps")} · ${g.owner ?? t("meeting.shUnassigned")}`}
-                items={g.items.map((a) => [a.id, <>{time(a.at)}{a.done ? "☑ " : "☐ "}{taskText({ text: a.text, due: a.due })}{a.due ? `, ${t("meeting.shDue", { date: a.due })}` : ""}</>])}
+                items={g.items.map((a) => [a.id, <>{time(a.at)}{a.done ? "☑ " : "☐ "}{taskText({ text: a.text, due: a.due }, true)}{a.due ? `, ${t("meeting.shDue", { date: a.due })}` : ""}</>])}
               />
             ))
           ) : (
             <Section
               title={t("meeting.shActionItems")}
-              items={s.actionItems.map((a) => [a.id, <>{time(a.at)}{a.done ? "☑ " : "☐ "}{taskText({ text: a.text, due: a.due })}{a.owner ? ` — ${a.owner}` : ""}{a.due ? `, ${t("meeting.shDue", { date: a.due })}` : ""}</>])}
+              items={s.actionItems.map((a) => [a.id, <>{time(a.at)}{a.done ? "☑ " : "☐ "}{a.text}{a.owner ? ` — ${a.owner}` : ""}{a.due ? `, ${t("meeting.shDue", { date: a.due })}` : ""}</>])}
             />
           )}
           <Section title={t("meeting.shOpenQuestions")} items={s.openQuestions.map((q) => [q.id, <>{time(q.at)}{q.text}</>])} />

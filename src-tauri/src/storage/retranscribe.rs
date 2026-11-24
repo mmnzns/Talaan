@@ -44,14 +44,15 @@ impl Storage {
         self.dir(id).is_ok_and(|d| d.join(BACKUP_DIR).join(FIELDS).exists())
     }
 
-    /// Puts the previous transcript, edits and summary aside (kept if an earlier run was interrupted: that backup is
-    /// the real previous state, so it is never overwritten). The visible meeting then shows no summary and no edits
-    /// while the new run works.
+    /// Puts the previous transcript, edits and summary aside. A new run only starts on a Ready or Failed meeting, and
+    /// an interrupted run resumes without coming here, so a backup found now is a stale leftover (after a run that
+    /// worked there is none): it is replaced by what the meeting is now. The visible meeting then shows no summary
+    /// and no edits while the new run works.
     pub(crate) fn backup_for_retranscribe(&self, id: &str) -> Result<()> {
         let dir = self.dir(id)?;
         let bak = dir.join(BACKUP_DIR);
-        if bak.join(FIELDS).exists() {
-            return Ok(());
+        if bak.exists() {
+            fs::remove_dir_all(&bak)?;
         }
         fs::create_dir_all(&bak)?;
         let file = self.read_meeting_file(id)?;
@@ -205,15 +206,18 @@ mod tests {
     }
 
     #[test]
-    fn a_backup_that_is_waiting_is_never_overwritten() {
+    fn a_stale_backup_is_replaced_by_the_current_state_when_a_new_run_starts() {
         let (d, s, id) = setup();
-        let before = snapshot(&d, &id);
         s.start_retranscribe(&id, "whisper-small").unwrap();
-        s.save_transcript(&id, &[line("n0", 0, "Half way.")]).unwrap();
-        // A second backup (a retry after an interruption) must keep the real previous state.
-        s.backup_for_retranscribe(&id).unwrap();
-        s.restore_retranscribe(&id, why()).unwrap();
-        assert_eq!(snapshot(&d, &id), before);
+        // The run ended without clearing its backup (the new transcript is what the meeting has now).
+        s.save_transcript(&id, &[line("n0", 0, "The transcript that is good.")]).unwrap();
+        s.update_meeting_file(&id, |f| f.status = MeetingStatus::Ready).unwrap();
+        fs::write(d.path().join("meetings").join(&id).join(ME_WAV), b"x").unwrap();
+        s.start_retranscribe(&id, "whisper-small").unwrap();
+        // A failure of this run restores the good transcript, not the one from before the stale backup.
+        assert!(s.restore_retranscribe(&id, why()).unwrap());
+        assert_eq!(s.get_meeting(&id).unwrap().transcript[0].text, "The transcript that is good.");
+        assert!(!s.has_retranscribe_backup(&id));
     }
 
     #[test]

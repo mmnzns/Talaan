@@ -120,7 +120,7 @@ pub fn blocks(m: &Meeting, scope: Scope) -> Vec<Value> {
                     who.push(tr_with("notion.due", &[("due", d.trim())]));
                 }
                 let who = if who.is_empty() { String::new() } else { format!(" — {}", who.join(", ")) };
-                json!({ "object": "block", "type": "to_do", "to_do": { "rich_text": rich(&format!("{}{}{}", a.text_before_suffix().trim(), who, when(a.at))), "checked": a.done } })
+                json!({ "object": "block", "type": "to_do", "to_do": { "rich_text": rich(&format!("{}{}{}", a.text_before_suffix(detailed).trim(), who, when(a.at))), "checked": a.done } })
             };
             if detailed {
                 let groups = s.next_steps_by_owner(m.speakers.get("me").map(String::as_str), &tr("notion.you"));
@@ -329,6 +329,24 @@ mod tests {
         m.speakers.insert("me".into(), "Miguel".into());
         let t = texts(&m);
         assert_eq!(t[at + 1], "Miguel");
+    }
+
+    #[test]
+    fn notion_keeps_the_period_for_a_summary_that_is_not_detailed_and_reads_an_older_you_as_the_user() {
+        use crate::storage::model::ActionItem;
+        let item = |id: &str, text: &str, owner: Option<&str>, due: Option<&str>| ActionItem { id: id.into(), text: text.into(), at: None, owner: owner.map(String::from), due: due.map(String::from), done: false };
+        let mut m = sample();
+        m.summary.as_mut().unwrap().action_items = vec![item("a", "Send it.", Some("Priya"), Some("Thursday"))];
+        let content = |m: &Meeting| -> Vec<String> { blocks(m, Scope::Summary).iter().filter(|b| b["type"] == "to_do").map(|b| b["to_do"]["rich_text"][0]["text"]["content"].as_str().unwrap().to_string()).collect() };
+        assert_eq!(content(&m), ["Send it. — Priya, due Thursday"]);
+        // Detailed: an owner "You" from an earlier build joins the user's group (Your name).
+        let s = m.summary.as_mut().unwrap();
+        s.purpose = Some("P.".into());
+        s.action_items = vec![item("a", "Send it.", Some("You"), None), item("b", "Call.", Some("Me"), None)];
+        m.speakers.insert("me".into(), "Miguel".into());
+        let t: Vec<String> = blocks(&m, Scope::Summary).iter().map(|b| b[b["type"].as_str().unwrap()]["rich_text"][0]["text"]["content"].as_str().unwrap_or("").to_string()).collect();
+        let at = t.iter().position(|x| x == "Miguel").unwrap();
+        assert_eq!(t[at + 1..at + 3], ["Send it.", "Call."]);
     }
 
     #[test]

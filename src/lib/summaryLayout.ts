@@ -21,9 +21,10 @@ function yourName(meeting: Pick<Meeting, "speakers">): string | undefined {
 /**
  * A task's text for putting a due date or a time after it: without the trailing period or space the summary AI often
  * ends it with ("Confirm the estimate with engineering." would read "engineering., due Thursday"). Untouched when
- * nothing follows it.
+ * nothing follows it. Only for the detailed layout: other summaries keep the text as written.
  */
-export function taskText(a: Pick<ActionItem, "text" | "due" | "at">): string {
+export function taskText(a: Pick<ActionItem, "text" | "due" | "at">, detailed: boolean): string {
+  if (!detailed) return a.text;
   const text = a.text.trimEnd();
   return a.due?.trim() || a.at !== undefined ? text.replace(/[.\s]+$/, "") || text : text;
 }
@@ -41,7 +42,8 @@ export function nextStepsByOwner(meeting: Pick<Meeting, "speakers">, items: Acti
   for (const a of items) {
     const raw = a.owner?.trim();
     const lower = raw?.toLowerCase();
-    const owner = !raw ? undefined : lower === "me" || lower === you?.toLowerCase() ? youLabel : raw;
+    // "Me" is what the summary AI writes for the user; "You" is what this branch's earlier builds wrote.
+    const owner = !raw ? undefined : lower === "me" || lower === "you" || lower === you?.toLowerCase() ? youLabel : raw;
     const group = groups.find((g) => g.owner?.toLowerCase() === owner?.toLowerCase());
     if (group) group.items.push(a);
     else groups.push({ owner, items: [a] });

@@ -10,23 +10,23 @@ use serde::{Deserialize, Deserializer, Serialize};
 /// The reply as the schema describes it.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 pub struct Draft {
-    #[serde(default)]
+    #[serde(default, deserialize_with = "null_string")]
     pub title: String,
-    #[serde(default, skip_serializing_if = "String::is_empty")]
+    #[serde(default, skip_serializing_if = "String::is_empty", deserialize_with = "null_string")]
     pub recap: String,
     /// The detailed layout (General meetings): why the call happened, the points to remember and one entry per topic.
     /// Read leniently like `sections`, and absent from a reply in the older shape.
-    #[serde(default, skip_serializing_if = "String::is_empty")]
+    #[serde(default, skip_serializing_if = "String::is_empty", deserialize_with = "null_string")]
     pub purpose: String,
     #[serde(default, skip_serializing_if = "Vec::is_empty", deserialize_with = "lenient")]
     pub takeaways: Vec<DraftTakeaway>,
     #[serde(default, skip_serializing_if = "Vec::is_empty", deserialize_with = "lenient")]
     pub topics: Vec<DraftTopic>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "null_vec")]
     pub decisions: Vec<Timed>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "null_vec")]
     pub action_items: Vec<Action>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "null_vec")]
     pub open_questions: Vec<Timed>,
     /// The meeting type's own parts (only asked for when it has some). Read leniently: a malformed entry is dropped
     /// rather than costing the whole summary.
@@ -39,15 +39,15 @@ pub struct Draft {
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 pub struct DraftTakeaway {
-    #[serde(default)]
+    #[serde(default, deserialize_with = "null_string")]
     pub label: String,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "null_string")]
     pub text: String,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 pub struct DraftTopic {
-    #[serde(default)]
+    #[serde(default, deserialize_with = "null_string")]
     pub title: String,
     #[serde(default, deserialize_with = "lenient_bullets")]
     pub bullets: Vec<DraftBullet>,
@@ -83,30 +83,40 @@ fn lenient_bullets<'de, D: Deserializer<'de>>(d: D) -> Result<Vec<DraftBullet>, 
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 pub struct DraftSection {
-    #[serde(default)]
+    #[serde(default, deserialize_with = "null_string")]
     pub title: String,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "null_vec")]
     pub items: Vec<Timed>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 pub struct Timed {
-    #[serde(default)]
+    #[serde(default, deserialize_with = "null_string")]
     pub text: String,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "null_string")]
     pub time: String,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 pub struct Action {
-    #[serde(default)]
+    #[serde(default, deserialize_with = "null_string")]
     pub text: String,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "null_string")]
     pub owner: String,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "null_string")]
     pub due: String,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "null_string")]
     pub time: String,
+}
+
+/// A text field a model wrote as `null` reads as missing (an empty string), like a field it left out.
+fn null_string<'de, D: Deserializer<'de>>(d: D) -> Result<String, D::Error> {
+    Ok(Option::<String>::deserialize(d)?.unwrap_or_default())
+}
+
+/// A list a model wrote as `null` reads as missing (empty).
+fn null_vec<'de, D: Deserializer<'de>, T: DeserializeOwned>(d: D) -> Result<Vec<T>, D::Error> {
+    Ok(Option::<Vec<T>>::deserialize(d)?.unwrap_or_default())
 }
 
 /// A list where each entry that doesn't fit is skipped, and anything that isn't a list reads as empty.
@@ -403,6 +413,17 @@ mod tests {
         assert_eq!(d.highlights, vec![Timed { text: "Kept.".into(), time: "01:00".into() }]);
         let d = parse_draft(r#"{"recap":"R.","sections":[{"title":"Today","items":"x"},{"title":"Blockers","items":[]}]}"#).unwrap();
         assert_eq!(d.sections.len(), 1, "the entry whose items aren't a list is dropped");
+    }
+
+    #[test]
+    fn null_reads_like_missing_for_the_text_and_list_fields() {
+        let d = parse_draft(r#"{"title":null,"recap":null,"purpose":"Plan the pilot.","takeaways":[{"label":null,"text":"Two teams."}],"topics":[{"title":null,"bullets":null}],"decisions":null,"action_items":[{"text":"Send it.","owner":null,"due":null,"time":null}],"open_questions":null,"sections":null,"highlights":null}"#).unwrap();
+        assert_eq!((d.title.as_str(), d.recap.as_str(), d.purpose.as_str()), ("", "", "Plan the pilot."));
+        assert_eq!(d.takeaways, vec![DraftTakeaway { label: "".into(), text: "Two teams.".into() }]);
+        assert!(d.decisions.is_empty() && d.open_questions.is_empty() && d.sections.is_empty() && d.highlights.is_empty());
+        assert_eq!(d.action_items, vec![Action { text: "Send it.".into(), ..Default::default() }]);
+        // A null recap with nothing else is still no summary.
+        assert!(parse_draft(r#"{"recap":null}"#).is_err());
     }
 
     #[test]

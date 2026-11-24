@@ -73,6 +73,11 @@ fn detail_md(s: &Summary) -> String {
 /// `marks`: the meeting's marks; the ones with text are the user's notes, listed under "Your notes".
 /// `you`: Your name (the meeting's "me" speaker), which names the user's group under Next steps.
 pub fn summary_md(title: &str, s: &Summary, marks: &[Mark], you: Option<&str>) -> String {
+    summary_md_labeled(title, s, marks, you, &crate::i18n::tr("notion.you"))
+}
+
+/// `summary_md` with the user's group named `you_label` (the app language's "You") while Your name is empty.
+fn summary_md_labeled(title: &str, s: &Summary, marks: &[Mark], you: Option<&str>, you_label: &str) -> String {
     let at = |t: Option<u64>| t.map(|t| format!(" ({})", format_time(t))).unwrap_or_default();
     let detailed = s.is_detailed();
     let mut out = if detailed {
@@ -97,11 +102,11 @@ pub fn summary_md(title: &str, s: &Summary, marks: &[Mark], you: Option<&str>) -
     let step = |a: &ActionItem, with_owner: bool| {
         let owner = a.owner.as_ref().filter(|_| with_owner).map(|o| format!(" — {o}")).unwrap_or_default();
         let due = a.due.as_ref().map(|d| format!(", due {d}")).unwrap_or_default();
-        format!("- [{}] {}{owner}{due}{}\n", if a.done { "x" } else { " " }, a.text_before_suffix(), at(a.at))
+        format!("- [{}] {}{owner}{due}{}\n", if a.done { "x" } else { " " }, a.text_before_suffix(detailed), at(a.at))
     };
     if !s.action_items.is_empty() && detailed {
         out.push_str("\n## Next steps\n");
-        let groups = s.next_steps_by_owner(you, "You");
+        let groups = s.next_steps_by_owner(you, you_label);
         let named = groups.iter().any(|(o, _)| o.is_some());
         for (owner, items) in &groups {
             match owner {
@@ -252,8 +257,24 @@ mod tests {
         // Your name heads the user's group (Me and the name are one person).
         let named = summary_md("Pilot", &s, &[], Some("Miguel"));
         assert!(named.contains("## Next steps\n\n### Miguel\n\n- [x] Task c (00:05)\n\n### Dana") && !named.contains("### You"));
+        // The label is the app language's "You": the model writes the token Me (or an older build wrote You), the file says Vous.
+        let fr = summary_md_labeled("Pilot", &s, &[], None, "Vous");
+        assert!(fr.contains("## Next steps
+
+### Vous
+
+- [x] Task c (00:05)") && !fr.contains("### You") && !fr.contains("### Me"));
+        let mut older = s.clone();
+        older.action_items[2].owner = Some("You".into());
+        assert!(summary_md_labeled("Pilot", &older, &[], None, "Vous").contains("### Vous
+
+- [x] Task c"));
+        // A summary that is not detailed keeps the task text as written, period and all.
+        let mut plain = Summary { purpose: None, takeaways: vec![], topics: vec![], ..s.clone() };
+        plain.action_items[0].text = "Send it.".into();
+        assert!(summary_md("Pilot", &plain, &[], None).contains("- [ ] Send it. — Dana, due Fri (00:05)"));
         let old = Summary { purpose: None, takeaways: vec![], topics: vec![], ..s };
         let md = summary_md("Pilot", &old, &[], None);
-        assert!(md.starts_with("# Pilot\n\nPlain recap.\n") && md.contains("## Action items") && !md.contains("Next steps") && md.contains("- [ ] Task a — Dana, due Fri (00:05)"));
+        assert!(md.starts_with("# Pilot\n\nPlain recap.\n") && md.contains("## Action items") && !md.contains("Next steps") && md.contains("- [ ] Task a. — Dana, due Fri (00:05)"));
     }
 }

@@ -51,7 +51,14 @@ export function withYourName(meeting: Meeting, yourName: string | undefined): Me
 
 /** An action item's owner as shown: the summary AI writes "Me" for the user, which reads as Me in the UI language (or Your name). */
 export function ownerName(meeting: Pick<Meeting, "speakers">, owner: string): string {
-  return owner.trim() === "Me" ? speakerName(meeting, "me") : owner;
+  const o = owner.trim();
+  if (o === "Me") return speakerName(meeting, "me");
+  // A "You" written by an earlier build is the user too: Your name, or the UI language's "You".
+  if (o.toLowerCase() === "you") {
+    const named = meeting.speakers.me?.trim();
+    return named && named !== "Me" ? named : t("meeting.youGroup");
+  }
+  return owner;
 }
 
 /** What meetings store for unnamed speakers (in English, whatever the UI language): defaults, not names. */

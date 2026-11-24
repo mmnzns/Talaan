@@ -19,6 +19,9 @@ pub const COMPACT_OUTPUT_TOKENS: u32 = 1_600;
 /// Contexts under this (the 4096 of an 8 GB computer) get the compact layout, so the reply is never cut off.
 pub const COMPACT_BELOW_CONTEXT: usize = 12_288;
 
+/// Reply room one highlight takes.
+const HIGHLIGHT_TOKENS: u32 = 60;
+
 /// Room for the reply: the detailed layout (or the plain base), a meeting type's sections (up to 3 × 12 short items)
 /// and one highlight per marked moment, so a long call isn't cut off mid-JSON.
 pub fn output_tokens(detailed: bool, compact: bool, sections: bool, highlights: usize) -> u32 {
@@ -27,7 +30,7 @@ pub fn output_tokens(detailed: bool, compact: bool, sections: bool, highlights: 
         (true, false) => DETAILED_OUTPUT_TOKENS,
         _ => MAX_OUTPUT_TOKENS,
     };
-    let extra = if sections { 900 } else { 0 } + 60 * highlights.min(30) as u32;
+    let extra = if sections { 900 } else { 0 } + HIGHLIGHT_TOKENS * highlights.min(30) as u32;
     (base + extra).min(if detailed { 6_000 } else { 4_000 })
 }
 
@@ -106,6 +109,9 @@ pub fn summarize(meeting: &Meeting, engine: &mut dyn SummaryEngine, language: &s
     // The reply never takes more than 40% of the context, so a small context (4096 on an 8 GB computer) still leaves
     // room for the instructions and some transcript; a reply that gets cut off is retried as a plain summary.
     let cap = (engine.context_tokens() * 4 / 10).min(u32::MAX as usize) as u32;
+    // Highlights get only the room left under that cap (60 tokens each): a small context with many marked moments asks
+    // for fewer highlights, and the rest are filled in from the transcript, rather than the reply being cut off.
+    let marked = marked.min((cap.saturating_sub(output_tokens(detailed, compact, sections, 0)) / HIGHLIGHT_TOKENS) as usize);
     let out = Reply { schema: schema(detailed, compact, sections, marked), tokens: output_tokens(detailed, compact, sections, marked).min(cap), plain_tokens: MAX_OUTPUT_TOKENS.min(cap), plain: AtomicBool::new(false) };
     let budget = (engine.context_tokens() * 9 / 10).saturating_sub(overhead + out.tokens as usize).max(500);
     let parts = split(lines, budget);
@@ -395,7 +401,8 @@ pub(crate) mod tests {
         let mut seen = vec![];
         let out = summarize(&m, &mut e, "en", &Options::default(), &AtomicBool::new(false), &mut |p| seen.push(p)).unwrap();
         assert!(out.parts >= 3, "{} parts", out.parts);
-        assert_eq!(e.prompts.len(), out.parts + 1);
+        // One request per part and the merge; a long call whose part summaries do not fit one request needs a round more.
+        assert!(e.prompts.len() > out.parts, "{} requests for {} parts", e.prompts.len(), out.parts);
         assert!(e.prompts[0].user.contains(&format!("This is part 1 of {}", out.parts)));
         assert!(e.prompts.last().unwrap().user.contains("Combine them into one summary"));
         assert!(seen.windows(2).all(|w| w[0] <= w[1]));
@@ -553,6 +560,39 @@ pub(crate) mod tests {
         summarize(&m, &mut e, "en", &opts, &AtomicBool::new(false), &mut |_| {}).unwrap();
         // The reply room is held to 40% of the context (the sections schema would ask for 4000).
         assert!(e.requests.iter().all(|(p, max)| p + *max as usize <= 4_096 && *max <= 1_638), "{:?}", e.requests);
+    }
+
+    #[test]
+    fn a_compact_summary_with_many_marked_moments_asks_for_fewer_highlights_not_a_cut_off_reply() {
+        struct Records(usize, Vec<(String, u32)>);
+        impl SummaryEngine for Records {
+            fn complete(&mut self, _p: &Prompt, schema: &str, max: u32, _c: &AtomicBool) -> Result<String, EngineError> {
+                self.1.push((schema.to_string(), max));
+                Ok(reply("Plan", "Planned."))
+            }
+            fn context_tokens(&self) -> usize {
+                self.0
+            }
+            fn label(&self) -> String {
+                "Records".into()
+            }
+        }
+        let mut m = short();
+        m.marks = (0..40).map(|i| crate::summarizer::prompt::tests::mark(&format!("k{i}"), 61_000 + i * 1_000, None)).collect();
+        for (context, max_items) in [(4_096usize, None), (8_192, Some(27))] {
+            let mut e = Records(context, vec![]);
+            let out = summarize(&m, &mut e, "en", &Options::default(), &AtomicBool::new(false), &mut |_| {}).unwrap();
+            let (schema, max) = &e.1[0];
+            let cap = (context * 4 / 10) as u32;
+            assert!(*max <= cap, "{max} > {cap}");
+            let v: serde_json::Value = serde_json::from_str(schema).unwrap();
+            // Only as many highlights as the room left holds; the rest come from the transcript.
+            match max_items {
+                Some(n) => assert_eq!(v["properties"]["highlights"]["maxItems"], n),
+                None => assert!(v["properties"].get("highlights").is_none()),
+            }
+            assert!(!out.summary.highlights.is_empty());
+        }
     }
 
     #[test]

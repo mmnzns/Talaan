@@ -1,9 +1,25 @@
 //! Crash recovery: a meeting still marked `recording` at launch was interrupted.
 
-use super::model::{MeetingStatus, ProcessingError};
+use super::model::{MeetingFile, MeetingStatus, ProcessingError};
 use super::paths::{is_valid_id, meetings_dir};
 use super::{Result, Storage};
 use std::fs;
+
+/// Which worker an attempt belongs to: each keeps its own count on the meeting.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Attempt {
+    Transcribe,
+    Summarize,
+}
+
+impl Attempt {
+    fn counter(self, f: &mut MeetingFile) -> &mut u32 {
+        match self {
+            Attempt::Transcribe => &mut f.attempts,
+            Attempt::Summarize => &mut f.summary_attempts,
+        }
+    }
+}
 
 impl Storage {
     /// Flips every `recording` meeting to `needs_recovery` and returns their ids.
@@ -29,16 +45,36 @@ impl Storage {
         Ok(flipped)
     }
 
-    /// A worker is starting on this meeting. A crash or a kill before `end_attempt` leaves the mark behind.
-    pub fn begin_attempt(&self, id: &str) {
-        let _ = self.update_meeting_file(id, |f| f.attempts = f.attempts.saturating_add(1));
+    /// A worker is starting on this meeting. A crash before `end_attempt` leaves the mark behind; quitting Talaan
+    /// clears it (`clear_attempts`), so only a real crash counts at the next launch.
+    pub fn begin_attempt(&self, id: &str, worker: Attempt) {
+        let _ = self.update_meeting_file(id, |f| {
+            let n = worker.counter(f);
+            *n = n.saturating_add(1);
+        });
     }
 
     /// The worker is done with this meeting, however it went (finished, failed, left for the next launch because
-    /// Talaan is quitting, or a panic that was caught): the next start is a fresh one.
-    pub fn end_attempt(&self, id: &str) {
-        if self.read_meeting_file(id).is_ok_and(|f| f.attempts > 0) {
-            let _ = self.update_meeting_file(id, |f| f.attempts = 0);
+    /// Talaan is quitting, or a panic that was caught): the next start is a fresh one. Only that worker's count.
+    pub fn end_attempt(&self, id: &str, worker: Attempt) {
+        if self.read_meeting_file(id).is_ok_and(|mut f| *worker.counter(&mut f) > 0) {
+            let _ = self.update_meeting_file(id, |f| *worker.counter(f) = 0);
+        }
+    }
+
+    /// Talaan is quitting: a meeting a worker was in the middle of is not a crash, it just resumes at the next launch.
+    /// Clears both workers' marks on every meeting (a worker that gives up on stopping, or one that is still running
+    /// while the process exits, would otherwise leave them behind).
+    pub fn clear_attempts(&self) {
+        for status in [MeetingStatus::Transcribing, MeetingStatus::Summarizing] {
+            for id in self.ids_with_status(status).unwrap_or_default() {
+                if self.read_meeting_file(&id).is_ok_and(|f| f.attempts > 0 || f.summary_attempts > 0) {
+                    let _ = self.update_meeting_file(&id, |f| {
+                        f.attempts = 0;
+                        f.summary_attempts = 0;
+                    });
+                }
+            }
         }
     }
 
@@ -52,17 +88,18 @@ impl Storage {
         for status in [MeetingStatus::Transcribing, MeetingStatus::Summarizing] {
             for id in self.ids_with_status(status).unwrap_or_default() {
                 let Ok(file) = self.read_meeting_file(&id) else { continue };
-                let attempts = file.attempts;
+                let transcribing = status == MeetingStatus::Transcribing;
+                let attempts = if transcribing { file.attempts } else { file.summary_attempts };
                 if attempts < max_attempts {
                     continue;
                 }
-                let transcribing = status == MeetingStatus::Transcribing;
                 let code = if transcribing { "interrupted" } else { "failed" };
                 let message = crate::i18n::tr(if transcribing { "error.transcribe_interrupted" } else { "error.summary_interrupted" });
                 let why = ProcessingError { code: code.into(), message, detail: None };
                 let restored = self.restore_retranscribe(&id, why.clone()).unwrap_or(false);
                 let saved = self.update_meeting_file(&id, |f| {
                     f.attempts = 0;
+                    f.summary_attempts = 0;
                     f.progress = None;
                     f.eta = None;
                     if !restored {
@@ -127,8 +164,9 @@ mod tests {
     fn stuck(s: &Storage, status: MeetingStatus, attempts: u32) -> String {
         let id = s.create_meeting("zoom", "Zoom", at("2026-10-14T09:00:00-07:00")).unwrap().id;
         s.update_meeting_file(&id, |f| {
-            f.status = status;
-            f.attempts = attempts;
+            f.status = status.clone();
+            f.attempts = if status == MeetingStatus::Transcribing { attempts } else { 0 };
+            f.summary_attempts = if status == MeetingStatus::Summarizing { attempts } else { 0 };
             f.progress = Some(0.4);
         })
         .unwrap();
@@ -170,11 +208,48 @@ mod tests {
     fn an_attempt_that_ends_cleanly_leaves_no_mark() {
         let (_d, s) = storage();
         let id = s.create_meeting("zoom", "Zoom", at("2026-10-14T09:00:00-07:00")).unwrap().id;
-        s.begin_attempt(&id);
-        s.begin_attempt(&id);
+        s.begin_attempt(&id, Attempt::Transcribe);
+        s.begin_attempt(&id, Attempt::Transcribe);
         assert_eq!(s.read_meeting_file(&id).unwrap().attempts, 2);
-        s.end_attempt(&id);
+        s.end_attempt(&id, Attempt::Transcribe);
         assert_eq!(s.read_meeting_file(&id).unwrap().attempts, 0);
+    }
+
+    #[test]
+    fn each_worker_counts_and_clears_only_its_own_attempts() {
+        let (_d, s) = storage();
+        let id = s.create_meeting("zoom", "Zoom", at("2026-10-14T09:00:00-07:00")).unwrap().id;
+        s.begin_attempt(&id, Attempt::Summarize);
+        s.begin_attempt(&id, Attempt::Summarize);
+        // The transcriber finishing (or starting) does not touch the summarizer's count.
+        s.begin_attempt(&id, Attempt::Transcribe);
+        s.end_attempt(&id, Attempt::Transcribe);
+        let f = s.read_meeting_file(&id).unwrap();
+        assert_eq!((f.attempts, f.summary_attempts), (0, 2));
+        s.end_attempt(&id, Attempt::Summarize);
+        assert_eq!(s.read_meeting_file(&id).unwrap().summary_attempts, 0);
+    }
+
+    #[test]
+    fn quitting_in_the_middle_of_a_job_twice_is_not_a_crash() {
+        let (_d, s) = storage();
+        let t = stuck(&s, MeetingStatus::Transcribing, 0);
+        let m = stuck(&s, MeetingStatus::Summarizing, 0);
+        // Launch 1 and launch 2: a worker starts, Talaan quits (workers may not even have stopped), marks cleared.
+        for _ in 0..2 {
+            s.begin_attempt(&t, Attempt::Transcribe);
+            s.begin_attempt(&m, Attempt::Summarize);
+            s.clear_attempts();
+            assert!(s.stop_crash_loops(2).is_empty());
+        }
+        assert_eq!(s.read_meeting_file(&t).unwrap().status, MeetingStatus::Transcribing);
+        assert_eq!(s.read_meeting_file(&m).unwrap().status, MeetingStatus::Summarizing);
+        // A summary that crashed twice is stopped without touching a transcription that crashed once.
+        s.begin_attempt(&m, Attempt::Summarize);
+        s.begin_attempt(&m, Attempt::Summarize);
+        s.begin_attempt(&t, Attempt::Transcribe);
+        assert_eq!(s.stop_crash_loops(2), vec![m.clone()]);
+        assert_eq!(s.read_meeting_file(&t).unwrap().status, MeetingStatus::Transcribing);
     }
 
     #[test]

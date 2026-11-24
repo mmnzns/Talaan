@@ -268,7 +268,7 @@ fn worker_loop(deps: Deps, queue: Arc<(Mutex<Queue>, Condvar)>, cancel: Arc<Atom
             }
         }
         // However it ended, the attempt is over: only a crash or a kill leaves the mark for the next launch to see.
-        deps.storage.lock().unwrap_or_else(|e| e.into_inner()).end_attempt(&id);
+        deps.storage.lock().unwrap_or_else(|e| e.into_inner()).end_attempt(&id, crate::storage::recovery::Attempt::Transcribe);
         busy.lock().unwrap_or_else(|e| e.into_inner()).clear();
         (deps.changed)();
     }
@@ -361,7 +361,7 @@ fn process(deps: &Deps, id: &str, loaded: &mut Option<Loaded>, cancel: &AtomicBo
             return;
         }
         let Ok(dir) = s.dir(id) else { return };
-        s.begin_attempt(id);
+        s.begin_attempt(id, crate::storage::recovery::Attempt::Transcribe);
         let config = config_for(&s, &file);
         let audio = audio_secs(&dir, &file);
         (dir, config, file.transcript_only, audio)

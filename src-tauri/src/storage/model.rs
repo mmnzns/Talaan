@@ -123,7 +123,8 @@ impl Summary {
     }
 
     /// The action items grouped by owner: the user's group first (`you`, their name as Your name, or `you_label` when
-    /// it is empty; "Me" and the name are the same person), then the other owners in the order they first appear (the
+    /// it is empty; "Me" (what the summary AI writes for the user), the name and a "You" written by an earlier build
+    /// are the same person), then the other owners in the order they first appear (the
     /// same person written in another case counts once), items without an owner last under `None`. Items keep their
     /// order within a group.
     pub fn next_steps_by_owner(&self, you: Option<&str>, you_label: &str) -> Vec<(Option<String>, Vec<&ActionItem>)> {
@@ -132,7 +133,7 @@ impl Summary {
         let mut groups: Vec<(Option<String>, Vec<&ActionItem>)> = vec![];
         for a in &self.action_items {
             let owner = a.owner.as_deref().map(str::trim).filter(|o| !o.is_empty());
-            let owner = owner.map(|o| if o.eq_ignore_ascii_case("me") || you.is_some_and(|y| y.to_lowercase() == o.to_lowercase()) { you_label } else { o });
+            let owner = owner.map(|o| if o.eq_ignore_ascii_case("me") || o.eq_ignore_ascii_case("you") || you.is_some_and(|y| y.to_lowercase() == o.to_lowercase()) { you_label } else { o });
             match groups.iter_mut().find(|(g, _)| g.as_deref().map(str::to_lowercase) == owner.map(str::to_lowercase)) {
                 Some((_, items)) => items.push(a),
                 None => groups.push((owner.map(str::to_string), vec![a])),
@@ -151,7 +152,11 @@ impl Summary {
 impl ActionItem {
     /// The task for putting a due date or a time after it: without the trailing period or space the summary AI often
     /// ends it with ("Confirm the estimate." would read "estimate., due Thursday"). Untouched when nothing follows.
-    pub fn text_before_suffix(&self) -> &str {
+    /// Only for the detailed layout: other summaries keep the text as written.
+    pub fn text_before_suffix(&self, detailed: bool) -> &str {
+        if !detailed {
+            return &self.text;
+        }
         let text = self.text.trim_end();
         if self.due.as_deref().is_some_and(|d| !d.trim().is_empty()) || self.at.is_some() {
             let cut = text.trim_end_matches(|c: char| c == '.' || c.is_whitespace());
@@ -304,10 +309,14 @@ pub struct MeetingFile {
     /// dismissed or the next run starts.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub retranscribe_error: Option<ProcessingError>,
-    /// How many times a worker started on this meeting without ending the attempt cleanly (a crash or a kill leaves it
-    /// above 0). A meeting that keeps crashing is stopped at launch instead of being retried for ever.
+    /// How many times the transcriber started on this meeting without ending the attempt cleanly (a crash leaves it
+    /// above 0; quitting Talaan clears it). A meeting that keeps crashing is stopped at launch instead of being
+    /// retried for ever.
     #[serde(default, skip_serializing_if = "is_zero")]
     pub attempts: u32,
+    /// The same for the summarizer, counted apart so one worker finishing never resets the other's count.
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub summary_attempts: u32,
     /// The copy written by "Also save each meeting to a folder" (`autosave.rs`): the only file Talaan ever replaces in
     /// that folder, and only while it still matches this.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -541,12 +550,22 @@ mod tests {
     }
 
     #[test]
+    fn next_steps_count_me_and_an_older_you_as_the_user_under_the_given_label() {
+        let s = summary_with(&[("a", Some("Dana")), ("b", Some("You")), ("c", Some("me")), ("d", Some("Vous"))]);
+        assert_eq!(shape(&s.next_steps_by_owner(None, "Vous")), vec![(Some("Vous"), vec!["b", "c", "d"]), (Some("Dana"), vec!["a"])]);
+        assert_eq!(shape(&s.next_steps_by_owner(Some("Miguel"), "Vous")), vec![(Some("Miguel"), vec!["b", "c"]), (Some("Dana"), vec!["a"]), (Some("Vous"), vec!["d"])]);
+    }
+
+    #[test]
     fn a_task_loses_its_trailing_period_only_when_something_goes_after_it() {
         let item = |text: &str, due: Option<&str>, at: Option<u64>| ActionItem { id: "a".into(), text: text.into(), at, owner: None, due: due.map(String::from), done: false };
-        assert_eq!(item("Confirm the estimate. ", Some("Thursday"), None).text_before_suffix(), "Confirm the estimate");
-        assert_eq!(item("Send it.", None, Some(5)).text_before_suffix(), "Send it");
-        assert_eq!(item("Send it.", None, None).text_before_suffix(), "Send it.");
-        assert_eq!(item("Send it.", Some("  "), None).text_before_suffix(), "Send it.");
-        assert_eq!(item("...", Some("Fri"), None).text_before_suffix(), "...");
+        assert_eq!(item("Confirm the estimate. ", Some("Thursday"), None).text_before_suffix(true), "Confirm the estimate");
+        assert_eq!(item("Send it.", None, Some(5)).text_before_suffix(true), "Send it");
+        assert_eq!(item("Send it.", None, None).text_before_suffix(true), "Send it.");
+        assert_eq!(item("Send it.", Some("  "), None).text_before_suffix(true), "Send it.");
+        assert_eq!(item("...", Some("Fri"), None).text_before_suffix(true), "...");
+        // Not a detailed summary: exactly as written.
+        assert_eq!(item("Confirm the estimate. ", Some("Thursday"), None).text_before_suffix(false), "Confirm the estimate. ");
+        assert_eq!(item("Send it.", None, Some(5)).text_before_suffix(false), "Send it.");
     }
 }

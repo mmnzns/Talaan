@@ -62,6 +62,11 @@ pub fn notify(app: &AppHandle, event: &str) {
 pub fn shutdown_helpers(app: &AppHandle) {
     use tauri::Manager;
     crate::quit::begin();
+    // Whatever a worker was in the middle of is not a crash: it resumes at the next launch. Cleared here, not by the
+    // workers, since stopping them may give up waiting and the process then exits with a job still running.
+    if let Some(s) = app.try_state::<AppState>() {
+        s.lock().clear_attempts();
+    }
     if let Some(t) = app.try_state::<transcriber::TranscriberState>() {
         t.worker.cancel_running();
     }

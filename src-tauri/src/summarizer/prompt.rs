@@ -108,6 +108,7 @@ const RULES: &str = "You write meeting summaries. You get the transcript of a ca
 - open_questions: questions raised and not answered, or topics left unresolved.
 - Times are the [mm:ss] or [h:mm:ss] stamps of transcript lines. Copy them exactly; empty if unsure.
 - Use only what is in the transcript. Never invent names, dates, numbers or facts. Empty lists are fine.
+- Never call the user \"the user\" (nor its translation, such as \"el usuario\" or \"l'utilisateur\"): address them directly, in the summary's language (tú in Spanish, vous in French).
 - Moments the user marked during the call matter most: make sure they are covered.";
 
 /// The General meeting's rules: a detailed summary in the order Purpose, Key takeaways, Topics, Decisions, Next steps,
@@ -124,13 +125,14 @@ const DETAILED_RULES: &str = "You write detailed meeting summaries. You get the 
 - Times are the [mm:ss] or [h:mm:ss] stamps of transcript lines. Copy them exactly; empty if unsure.
 - Use only what is in the transcript. Never invent names, dates, numbers or facts. Empty lists are fine.
 - The length follows the call: a short call has one topic and one or two takeaways. Never pad, and never say the same thing in two places.
+- Never call the user \"the user\" (nor its translation, such as \"el usuario\" or \"l'utilisateur\"): address them directly, in the summary's language (tú in Spanish, vous in French).
 - Moments the user marked during the call matter most: make sure they are covered.";
 
 /// How people are named, added to every meeting type's rules.
 const NAMES_RULE: &str = "- Names: use real names. The transcript labels people with a name the user set, or with \"Them\" / \"Speaker 1\" / \"Speaker 2\" (voices told apart automatically, not names). Work out who is who from the conversation itself (people addressing each other, introductions such as \"this is Kevin\") and from the invited names when the call has them, then write the real name everywhere, in the text and as owner. A name the user set in the transcript always wins. {me_rule} When a person's name never comes up and is not known, use a neutral role if the context makes it clear (\"the recruiter\", \"the client\"), otherwise keep the transcript label (\"Speaker 1\"). Never invent a name.";
 
 const ME_NAMED: &str = "The user is \"{me}\": write that name for them, never \"Me\".";
-const ME_UNNAMED: &str = "The user is labeled \"Me\" in the transcript, but \"Me\" is not a name: never write it. Write to the user in the second person (\"You will send the plan\", \"You asked about pricing\") and use \"You\" (in the summary's language) as owner.";
+const ME_UNNAMED: &str = "The user is labeled \"Me\" in the transcript, but \"Me\" is not a name: never write it in a sentence. Write to the user in the second person (\"You will send the plan\", \"You asked about pricing\"), in the summary's language, never as \"the user\". The one exception is owner: write exactly \"Me\" (not translated) as owner of the user's action items.";
 
 /// How this summary is written: the meeting type and the user's standing instructions.
 #[derive(Debug, Clone, Default, PartialEq)]
@@ -199,7 +201,7 @@ fn system(meeting: &Meeting, language: &str, opts: &Options) -> String {
     let name = user_name(meeting);
     let me = speaker_name(meeting, "me");
     let detailed = is_detailed(opts);
-    let mut s = if detailed { DETAILED_RULES } else { RULES }.replace("{me}", &me).replace("{owner_me}", name.as_deref().unwrap_or("You"));
+    let mut s = if detailed { DETAILED_RULES } else { RULES }.replace("{me}", &me).replace("{owner_me}", name.as_deref().unwrap_or("Me"));
     if detailed {
         let (takeaways, size) = if opts.compact {
             ("at most 3", "Keep it compact: at most 3 topics with at most 3 short bullets each, and at most 2 sub_bullets for a bullet.")
@@ -788,6 +790,22 @@ pub(crate) mod tests {
     }
 
     #[test]
+    fn the_user_is_addressed_directly_in_the_summary_language_never_as_the_user() {
+        let lines = vec![line("l0", 0, "me", "Hola.")];
+        let m = meeting(lines.clone());
+        for (code, name) in [("es", "Spanish"), ("fr", "French")] {
+            for opts in [general(), Options { template: "standup".into(), ..Default::default() }] {
+                let sys = summary_prompt(&m, &lines, code, None, &opts).system;
+                assert!(sys.contains("Never call the user \"the user\""), "{sys}");
+                assert!(sys.contains("tú in Spanish, vous in French"));
+                assert!(sys.contains("el usuario") && sys.contains("l'utilisateur"));
+                assert!(sys.contains("in the summary's language, never as \"the user\""));
+                assert!(sys.contains(&format!("Write everything in {name}.")));
+            }
+        }
+    }
+
+    #[test]
     fn your_name_is_how_the_summary_writes_the_user_and_without_it_the_summary_speaks_to_you() {
         let lines = vec![line("l0", 0, "me", "I'll send the deck."), line("l1", 4_000, "them:1", "Thanks.")];
         let mut m = meeting(lines.clone());
@@ -800,9 +818,10 @@ pub(crate) mod tests {
         // Your name empty: the transcript says Me, which is not a name.
         m.speakers.remove("me");
         let unnamed = summary_prompt(&m, &lines, "en", None, &general());
-        assert!(unnamed.system.contains("\"Me\" is not a name: never write it."));
+        assert!(unnamed.system.contains("\"Me\" is not a name: never write it in a sentence."));
         assert!(unnamed.system.contains("second person (\"You will send the plan\""));
-        assert!(unnamed.system.contains("(\"You\" for the user)"));
+        assert!(unnamed.system.contains("(\"Me\" for the user)"));
+        assert!(unnamed.system.contains("write exactly \"Me\" (not translated) as owner"));
         // The same for a meeting type, and for the merge step.
         let standup = Options { template: "standup".into(), ..Default::default() };
         assert!(summary_prompt(&m, &lines, "en", None, &standup).system.contains("second person"));
@@ -914,7 +933,7 @@ pub(crate) mod tests {
         let lines = vec![line("l0", 0, "me", "I'll send the deck.")];
         let mut m = meeting(lines.clone());
         let p = summary_prompt(&m, &lines, "en", None, &general());
-        assert!(p.system.contains("\"Me\" is the user") && p.system.contains("(\"You\" for the user)"));
+        assert!(p.system.contains("\"Me\" is the user") && p.system.contains("(\"Me\" for the user)"));
         m.speakers.insert("me".into(), "Miguel".into());
         let p = summary_prompt(&m, &lines, "en", None, &general());
         assert!(p.user.contains("[00:00] Miguel: I'll send the deck."));

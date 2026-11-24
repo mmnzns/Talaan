@@ -96,6 +96,7 @@ impl Storage {
                         retranscribe_model: None,
                         retranscribe_error: None,
                         attempts: 0,
+                        summary_attempts: 0,
                         exported_copy: None,
                         autosave_pending: None,
                         extra: Default::default(),

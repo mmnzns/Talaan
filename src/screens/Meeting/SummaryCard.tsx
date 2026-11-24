@@ -151,10 +151,10 @@ export function SummaryCard({ meeting, activeAt, editing, onJump }: Props) {
                     <ul className="m-0 flex list-none flex-col gap-2 p-0 text-[15px] leading-[23px]">
                       {summary.takeaways!.map((k, i) => (
                         <li key={i} className="[text-wrap:pretty]">
-                          {k.label.trim() && (
+                          {(k.label.trim() || editing) && (
                             <b>
-                              <Editable text={k.label} editing={editing} onCommit={(v) => setDetail({ takeaways: summary.takeaways!.map((x, j) => (j === i ? { ...x, label: v } : x)) })} />
-                              {": "}
+                              <Editable text={k.label} editing={editing} placeholder={t("meeting.addTakeawayLabel")} onCommit={(v) => setDetail({ takeaways: summary.takeaways!.map((x, j) => (j === i ? { ...x, label: v } : x)) })} />
+                              {k.label.trim() ? ": " : " "}
                             </b>
                           )}
                           <Editable text={k.text} editing={editing} onCommit={(v) => setDetail({ takeaways: summary.takeaways!.map((x, j) => (j === i ? { ...x, text: v } : x)) })} />

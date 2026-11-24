@@ -1,4 +1,5 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
+import { setLang } from "./i18n";
 import { seedMeetings } from "../data/mock/seed";
 import { detailedMeeting } from "./detailedSummary.fixture";
 import { MAILTO_LIMIT, safeFileName, toEmail, toEmailBody, toMailto, toCopyText, toMarkdown, toPlainText, toShareText } from "./share";
@@ -208,6 +209,33 @@ describe("a task with a due date", () => {
     for (const out of [toMarkdown(m, "summary"), toPlainText(m, "summary"), toShareText(m), toEmail(m)]) {
       expect(out).toContain("Confirm the estimate with engineering, due Thursday");
       expect(out).not.toContain("., due");
+    }
+  });
+});
+
+describe("an older summary's action items", () => {
+  it("keep their text as written in every export", () => {
+    const m = structuredClone(q4);
+    m.summary!.actionItems = [{ id: "z", text: "Confirm the estimate with engineering.", owner: "Dana", due: "Thursday", at: 5000, done: false }];
+    for (const out of [toMarkdown(m, "summary"), toPlainText(m, "summary"), toShareText(m), toEmail(m)]) {
+      expect(out).toContain("Confirm the estimate with engineering. — Dana, due Thursday");
+    }
+  });
+});
+
+describe("the user's next steps in another UI language", () => {
+  afterEach(() => setLang("en"));
+  it("read Vous under the owner token Me, and for a You from an earlier build", () => {
+    const m = detailedMeeting();
+    m.speakers = {} as never;
+    m.summary!.actionItems = [
+      { id: "a", text: "Send the plan.", owner: "Me", done: false },
+      { id: "b", text: "Call Dana.", owner: "You", done: false },
+    ];
+    setLang("fr");
+    for (const out of [toMarkdown(m, "summary"), toPlainText(m, "summary"), toShareText(m), toEmail(m)]) {
+      expect(out).toContain("Vous");
+      expect(out).not.toMatch(/Me|You/);
     }
   });
 });

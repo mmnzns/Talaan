@@ -84,6 +84,18 @@ describe("the detailed summary card", () => {
     expect(s.edited).toBe(true);
   });
 
+  it("a takeaway with no label can be given one while editing", () => {
+    const saved: Summary[] = [];
+    const m = { ...detailedMeeting(), status: "ready" as const };
+    m.summary = { ...m.summary!, takeaways: [{ label: "", text: "Two teams start in March." }] };
+    show(m, true, (s) => saved.push(s));
+    const box = screen.getAllByRole("textbox").find((b) => b.getAttribute("data-placeholder") === "Add a label")!;
+    box.textContent = "Scope";
+    fireEvent.blur(box);
+    expect(saved[0].takeaways).toEqual([{ label: "Scope", text: "Two teams start in March." }]);
+    expect(saved[0].recap).toContain("Scope: Two teams start in March.");
+  });
+
   it("editing a sub-bullet changes only that line", () => {
     const saved: Summary[] = [];
     show({ ...detailedMeeting(), status: "ready" }, true, (s) => saved.push(s));
