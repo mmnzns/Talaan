@@ -51,9 +51,11 @@ function EngineCard({ engine: e, on, onPick }: { engine: Engine; on: boolean; on
 
 const FORMAT: [string, MessageKey, MessageKey][] = [
   ["01", "settings.format_recap", "settings.format_recap_note"],
-  ["02", "settings.format_decisions", "settings.format_decisions_note"],
-  ["03", "settings.format_actions", "settings.format_actions_note"],
-  ["04", "settings.format_questions", "settings.format_questions_note"],
+  ["02", "settings.format_takeaways", "settings.format_takeaways_note"],
+  ["03", "settings.format_topics", "settings.format_topics_note"],
+  ["04", "settings.format_decisions", "settings.format_decisions_note"],
+  ["05", "settings.format_actions", "settings.format_actions_note"],
+  ["06", "settings.format_questions", "settings.format_questions_note"],
 ];
 
 export function SummaryAITab({ settings: s, update }: TabProps) {
@@ -92,9 +94,9 @@ export function SummaryAITab({ settings: s, update }: TabProps) {
           <Label>{t("settings.format_same")}</Label>
         </div>
         <Group>
-          <div className="grid grid-cols-2 divide-x divide-line min-[620px]:grid-cols-4">
+          <div className="grid grid-cols-2 gap-px bg-line min-[620px]:grid-cols-3">
             {FORMAT.map(([n, name, note]) => (
-              <div key={n} className="flex flex-col gap-0.5 px-4 py-3">
+              <div key={n} className="flex flex-col gap-0.5 bg-surface px-4 py-3">
                 <span className="font-mono text-[11px] text-subtle">{n}</span>
                 <span className="text-[13px] font-bold">{t(name)}</span>
                 <span className="text-xs text-subtle">{t(note)}</span>

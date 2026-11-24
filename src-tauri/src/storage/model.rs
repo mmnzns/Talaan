@@ -81,6 +81,15 @@ pub struct ActionItem {
 #[serde(rename_all = "camelCase")]
 pub struct Summary {
     pub recap: String,
+    /// One sentence on why the meeting happened (the detailed layout); none for older summaries.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub purpose: Option<String>,
+    /// 3 to 6 short bold-labeled points (the detailed layout).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub takeaways: Vec<Takeaway>,
+    /// One entry per main topic, each with bullets (the detailed layout); empty for older summaries and meeting types.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub topics: Vec<SummaryTopic>,
     pub decisions: Vec<SummaryItem>,
     pub action_items: Vec<ActionItem>,
     pub open_questions: Vec<SummaryItem>,
@@ -105,6 +114,82 @@ pub struct Summary {
     /// Computed on read (true when `summary.edited.json` exists). Never trust it from disk.
     #[serde(default)]
     pub edited: bool,
+}
+
+impl Summary {
+    /// Whether this is the detailed layout (purpose, takeaways, topics); older summaries and the other meeting types are not.
+    pub fn is_detailed(&self) -> bool {
+        self.purpose.as_deref().is_some_and(|p| !p.trim().is_empty()) || !self.takeaways.is_empty() || !self.topics.is_empty()
+    }
+
+    /// The action items grouped by owner: the user's group first (`you`, their name as Your name, or `you_label` when
+    /// it is empty; "Me" (what the summary AI writes for the user), the name and a "You" written by an earlier build
+    /// are the same person), then the other owners in the order they first appear (the
+    /// same person written in another case counts once), items without an owner last under `None`. Items keep their
+    /// order within a group.
+    pub fn next_steps_by_owner(&self, you: Option<&str>, you_label: &str) -> Vec<(Option<String>, Vec<&ActionItem>)> {
+        let you = you.map(str::trim).filter(|n| !n.is_empty() && *n != "Me");
+        let you_label = you.unwrap_or(you_label);
+        let mut groups: Vec<(Option<String>, Vec<&ActionItem>)> = vec![];
+        for a in &self.action_items {
+            let owner = a.owner.as_deref().map(str::trim).filter(|o| !o.is_empty());
+            let owner = owner.map(|o| if o.eq_ignore_ascii_case("me") || o.eq_ignore_ascii_case("you") || you.is_some_and(|y| y.to_lowercase() == o.to_lowercase()) { you_label } else { o });
+            match groups.iter_mut().find(|(g, _)| g.as_deref().map(str::to_lowercase) == owner.map(str::to_lowercase)) {
+                Some((_, items)) => items.push(a),
+                None => groups.push((owner.map(str::to_string), vec![a])),
+            }
+        }
+        // The user first, nobody last (stable: the other owners keep the order they came in).
+        groups.sort_by_key(|(o, _)| match o {
+            None => 2,
+            Some(o) if o == you_label => 0,
+            Some(_) => 1,
+        });
+        groups
+    }
+}
+
+impl ActionItem {
+    /// The task for putting a due date or a time after it: without the trailing period or space the summary AI often
+    /// ends it with ("Confirm the estimate." would read "estimate., due Thursday"). Untouched when nothing follows.
+    /// Only for the detailed layout: other summaries keep the text as written.
+    pub fn text_before_suffix(&self, detailed: bool) -> &str {
+        if !detailed {
+            return &self.text;
+        }
+        let text = self.text.trim_end();
+        if self.due.as_deref().is_some_and(|d| !d.trim().is_empty()) || self.at.is_some() {
+            let cut = text.trim_end_matches(|c: char| c == '.' || c.is_whitespace());
+            if !cut.is_empty() {
+                return cut;
+            }
+        }
+        text
+    }
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct Takeaway {
+    pub label: String,
+    pub text: String,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct SummaryTopic {
+    pub id: String,
+    pub title: String,
+    pub bullets: Vec<SummaryBullet>,
+}
+
+/// A topic's bullet, with sub-bullets one level down.
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct SummaryBullet {
+    pub text: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub sub_bullets: Vec<String>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
@@ -220,6 +305,18 @@ pub struct MeetingFile {
     /// "Transcribe again" with this speech model; cleared once the new transcript is saved.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub retranscribe_model: Option<String>,
+    /// Why the last "Transcribe again" didn't work; the previous transcript and summary were put back. Shown until
+    /// dismissed or the next run starts.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub retranscribe_error: Option<ProcessingError>,
+    /// How many times the transcriber started on this meeting without ending the attempt cleanly (a crash leaves it
+    /// above 0; quitting Talaan clears it). A meeting that keeps crashing is stopped at launch instead of being
+    /// retried for ever.
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub attempts: u32,
+    /// The same for the summarizer, counted apart so one worker finishing never resets the other's count.
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub summary_attempts: u32,
     /// The copy written by "Also save each meeting to a folder" (`autosave.rs`): the only file Talaan ever replaces in
     /// that folder, and only while it still matches this.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -230,6 +327,10 @@ pub struct MeetingFile {
     pub autosave_pending: Option<PendingCopy>,
     #[serde(flatten)]
     pub extra: Map<String, Value>,
+}
+
+fn is_zero(n: &u32) -> bool {
+    *n == 0
 }
 
 fn is_false(b: &bool) -> bool {
@@ -333,6 +434,9 @@ pub struct Meeting {
     /// Why there is no summary yet.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub summary_error: Option<ProcessingError>,
+    /// Why the last "Transcribe again" didn't work (the previous transcript and summary are back).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub retranscribe_error: Option<ProcessingError>,
     /// How the transcript was made (the speech model), once there is one.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub transcription: Option<TranscriptionInfo>,
@@ -386,5 +490,82 @@ mod tests {
     #[test]
     fn status_uses_snake_case_names() {
         assert_eq!(serde_json::to_string(&MeetingStatus::NeedsRecovery).unwrap(), "\"needs_recovery\"");
+    }
+
+    #[test]
+    fn the_detailed_fields_are_optional_and_round_trip_in_camel_case() {
+        let new = Summary {
+            recap: "R.".into(),
+            purpose: Some("P.".into()),
+            takeaways: vec![Takeaway { label: "L".into(), text: "T.".into() }],
+            topics: vec![SummaryTopic { id: "t0".into(), title: "Topic".into(), bullets: vec![SummaryBullet { text: "B.".into(), sub_bullets: vec!["S".into()] }, SummaryBullet { text: "C.".into(), sub_bullets: vec![] }] }],
+            decisions: vec![],
+            action_items: vec![],
+            open_questions: vec![],
+            sections: vec![],
+            highlights: vec![],
+            template: None,
+            language: None,
+            sections_missing: false,
+            engine: "x".into(),
+            edited: false,
+        };
+        let json = serde_json::to_string(&new).unwrap();
+        assert!(json.contains("\"subBullets\":[\"S\"]") && json.contains("\"purpose\":\"P.\""));
+        // A bullet without sub-bullets writes none.
+        assert!(json.contains("{\"text\":\"C.\"}"));
+        assert_eq!(serde_json::from_str::<Summary>(&json).unwrap(), new);
+        // A summary from before the detailed layout has none of them.
+        let old: Summary = serde_json::from_str(r#"{"recap":"R.","decisions":[],"actionItems":[],"openQuestions":[],"engine":"x"}"#).unwrap();
+        assert!(old.purpose.is_none() && old.takeaways.is_empty() && old.topics.is_empty() && !old.is_detailed());
+        assert!(!serde_json::to_string(&old).unwrap().contains("topics"));
+        assert!(new.is_detailed());
+    }
+
+    fn shape<'a>(groups: &'a [(Option<String>, Vec<&ActionItem>)]) -> Vec<(Option<&'a str>, Vec<&'a str>)> {
+        groups.iter().map(|(o, items)| (o.as_deref(), items.iter().map(|a| a.id.as_str()).collect())).collect()
+    }
+
+    fn summary_with(owners: &[(&str, Option<&str>)]) -> Summary {
+        let mut s: Summary = serde_json::from_str(r#"{"recap":"R.","decisions":[],"actionItems":[],"openQuestions":[],"engine":"x"}"#).unwrap();
+        s.action_items = owners.iter().map(|(id, owner)| ActionItem { id: (*id).into(), text: (*id).into(), at: None, owner: owner.map(String::from), due: None, done: false }).collect();
+        s
+    }
+
+    #[test]
+    fn next_steps_put_the_user_first_then_owners_in_order_of_first_appearance_with_nobody_last() {
+        let mut s = summary_with(&[("a", None), ("b", Some("Dana")), ("c", Some("Me")), ("d", Some(" dana ")), ("e", Some("")), ("f", Some("Me"))]);
+        // Your name empty: the group is "You".
+        assert_eq!(shape(&s.next_steps_by_owner(None, "You")), vec![(Some("You"), vec!["c", "f"]), (Some("Dana"), vec!["b", "d"]), (None, vec!["a", "e"])]);
+        s.action_items.clear();
+        assert!(s.next_steps_by_owner(None, "You").is_empty());
+    }
+
+    #[test]
+    fn next_steps_name_the_users_group_after_your_name_whether_the_summary_wrote_me_or_the_name() {
+        let s = summary_with(&[("a", Some("Rosa")), ("b", Some("miguel")), ("c", None), ("d", Some("Me")), ("e", Some("Dana"))]);
+        assert_eq!(shape(&s.next_steps_by_owner(Some(" Miguel "), "You")), vec![(Some("Miguel"), vec!["b", "d"]), (Some("Rosa"), vec!["a"]), (Some("Dana"), vec!["e"]), (None, vec!["c"])]);
+        // The stored default "Me" is not a name.
+        assert_eq!(shape(&s.next_steps_by_owner(Some("Me"), "You"))[0].0, Some("You"));
+    }
+
+    #[test]
+    fn next_steps_count_me_and_an_older_you_as_the_user_under_the_given_label() {
+        let s = summary_with(&[("a", Some("Dana")), ("b", Some("You")), ("c", Some("me")), ("d", Some("Vous"))]);
+        assert_eq!(shape(&s.next_steps_by_owner(None, "Vous")), vec![(Some("Vous"), vec!["b", "c", "d"]), (Some("Dana"), vec!["a"])]);
+        assert_eq!(shape(&s.next_steps_by_owner(Some("Miguel"), "Vous")), vec![(Some("Miguel"), vec!["b", "c"]), (Some("Dana"), vec!["a"]), (Some("Vous"), vec!["d"])]);
+    }
+
+    #[test]
+    fn a_task_loses_its_trailing_period_only_when_something_goes_after_it() {
+        let item = |text: &str, due: Option<&str>, at: Option<u64>| ActionItem { id: "a".into(), text: text.into(), at, owner: None, due: due.map(String::from), done: false };
+        assert_eq!(item("Confirm the estimate. ", Some("Thursday"), None).text_before_suffix(true), "Confirm the estimate");
+        assert_eq!(item("Send it.", None, Some(5)).text_before_suffix(true), "Send it");
+        assert_eq!(item("Send it.", None, None).text_before_suffix(true), "Send it.");
+        assert_eq!(item("Send it.", Some("  "), None).text_before_suffix(true), "Send it.");
+        assert_eq!(item("...", Some("Fri"), None).text_before_suffix(true), "...");
+        // Not a detailed summary: exactly as written.
+        assert_eq!(item("Confirm the estimate. ", Some("Thursday"), None).text_before_suffix(false), "Confirm the estimate. ");
+        assert_eq!(item("Send it.", None, Some(5)).text_before_suffix(false), "Send it.");
     }
 }

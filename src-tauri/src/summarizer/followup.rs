@@ -36,7 +36,20 @@ fn headings(language: &str) -> (String, String, bool) {
     (tr_in(l, "followup.decisions", &[]), tr_in(l, "followup.action_items", &[]), lang.is_some())
 }
 
-fn render_summary(s: &Summary) -> String {
+/// An action item's owner as the email should name them. The user (the token "Me", an older "You", or Your name) is
+/// "I" in an English email; in another language the summary card's word does not fit the email, so it is Your name
+/// when there is one, else "the sender" (the email's language is asked for in the prompt).
+fn owner_for_email(owner: &str, your_name: Option<&str>, english: bool) -> String {
+    let is_user = owner.eq_ignore_ascii_case("me") || owner.eq_ignore_ascii_case("you") || your_name.is_some_and(|n| n.eq_ignore_ascii_case(owner));
+    match (is_user, english, your_name) {
+        (false, _, _) => owner.to_string(),
+        (true, true, _) => "I".to_string(),
+        (true, false, Some(n)) => n.to_string(),
+        (true, false, None) => "the sender".to_string(),
+    }
+}
+
+fn render_summary(s: &Summary, your_name: Option<&str>, english: bool) -> String {
     let mut out = format!("Recap: {}\n", s.recap.trim());
     if !s.decisions.is_empty() {
         out.push_str("Decisions:\n");
@@ -48,7 +61,7 @@ fn render_summary(s: &Summary) -> String {
         out.push_str("Action items:\n");
         for a in &s.action_items {
             // Written the way the email should read: small models copy "| owner: X" labels into the email.
-            let owner = a.owner.as_deref().map(|o| o.trim()).filter(|o| !o.is_empty()).map(|o| format!("{o}: ")).unwrap_or_default();
+            let owner = a.owner.as_deref().map(|o| o.trim()).filter(|o| !o.is_empty()).map(|o| format!("{}: ", owner_for_email(o, your_name, english))).unwrap_or_default();
             let due = a.due.as_deref().map(|d| d.trim()).filter(|d| !d.is_empty()).map(|d| format!(" (by {d})")).unwrap_or_default();
             out.push_str(&format!("- {owner}{}{due}\n", a.text.trim()));
         }
@@ -91,7 +104,7 @@ pub fn prompt(meeting: &Meeting, summary: &Summary, language: &str) -> Prompt {
         user.push_str(&format!("Invited: {}.\n", ev.attendees.join(", ")));
     }
     user.push_str("\nSummary:\n");
-    user.push_str(&render_summary(summary));
+    user.push_str(&render_summary(summary, super::prompt::user_name(meeting).as_deref(), language.split(['-', '_']).next() == Some("en")));
     Prompt { system, user }
 }
 
@@ -218,7 +231,13 @@ mod tests {
         let p = prompt(&m, &summary(), "en");
         assert!(p.user.contains("Meeting: Q4 roadmap, 2026-10-14."));
         assert!(p.user.contains("Invited: Dana Reyes."));
-        assert!(p.user.contains("- Me: Send wireframes (by Friday)"));
+        assert!(p.user.contains("- I: Send wireframes (by Friday)"));
+        // Another language: not an English "I", and not the card's "Me" either.
+        let fr = prompt(&m, &summary(), "fr");
+        assert!(fr.user.contains("- the sender: Send wireframes (by Friday)") && !fr.user.contains("- I:"));
+        m.speakers.insert("me".into(), "Miguel".into());
+        assert!(prompt(&m, &summary(), "es").user.contains("- Miguel: Send wireframes"));
+        assert!(prompt(&m, &summary(), "en").user.contains("- I: Send wireframes"));
         assert!(!p.user.contains("| owner"));
         assert!(!p.user.contains("SECRET"));
         assert!(p.system.contains("\"Decisions:\"") && p.system.contains("Never invent"));

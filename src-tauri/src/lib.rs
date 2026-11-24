@@ -88,6 +88,8 @@ pub fn run() {
                 // Anything still marked "recording" was interrupted; expired audio goes now. Neither may keep Talaan
                 // from opening: a folder that can't be read is logged and the next launch tries again.
                 store.scan_for_interrupted().inspect_err(|e| log::warn!("couldn't scan for interrupted meetings: {}", e.for_log())).ok();
+                // A meeting that crashed its worker twice is stopped (Try again) instead of being retried at every launch.
+                store.stop_crash_loops(2);
                 store.apply_retention(chrono::Utc::now()).inspect_err(|e| log::warn!("couldn't apply retention at launch: {}", e.for_log())).ok();
                 Ok(store)
             };
@@ -196,6 +198,7 @@ pub fn run() {
             meetings::meetings_update_transcript_line,
             meetings::meetings_update_summary,
             meetings::meetings_revert_edits,
+            meetings::meetings_dismiss_retranscribe_error,
             meetings::meetings_rename_speaker,
             meetings::meetings_set_tags,
             meetings::meetings_set_transcript_only,

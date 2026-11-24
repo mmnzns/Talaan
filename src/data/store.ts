@@ -40,6 +40,8 @@ export interface MeetingStore {
   updateTranscriptLine(id: MeetingId, lineId: string, text: string): Promise<void>;
   updateSummary(id: MeetingId, summary: Summary): Promise<void>;
   revertEdits(id: MeetingId): Promise<void>;
+  /** Closes the notice that the last "Transcribe again" didn't work (the previous transcript and summary are back). */
+  dismissRetranscribeError(id: MeetingId): Promise<void>;
   /** Interrupted recording: keep what was saved and process it (M2 recovery). */
   recoverMeeting(id: MeetingId): Promise<void>;
   /** Failed processing: run transcription again. */

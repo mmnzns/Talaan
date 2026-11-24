@@ -1,5 +1,20 @@
 # Changelog
 
+## Unreleased
+
+**Much more detailed summaries**
+- **A fuller summary for every new meeting.** The default (General) summary now starts with the **purpose** of the call in one sentence, then **key takeaways** (a bold label and one sentence each), then **topics**: one entry per main subject, with the numbers, dates, systems and reasons that were mentioned, and sub-points where they help. After that come **decisions** with their time in the call, **next steps** and **open questions**. A short call still gets a short summary. Meeting types such as Stand-up keep their own sections.
+- **Next steps are grouped by person, you first.** Your own tasks come first (under Your name, or "You" when it is empty), then the others in the order they first come up, with the due date and the time in the call. Tasks nobody owns come last. A task no longer reads "…engineering., due Thursday": the full stop before a due date or time is dropped.
+- **Real names instead of "Me" and "Speaker 1".** The summary works out who is who from the conversation itself (people addressing each other, introductions) and from the calendar's guest list, and writes "Dana will send the plan". You appear under the name in Settings › General › Your name; if that is empty, the summary speaks to you ("You will send the plan"). When a person's name never comes up, it uses their role ("the recruiter") or keeps "Speaker 1". Names you set in the transcript always win.
+- **Everything uses the new layout:** the meeting view (editing and Revert keep the new parts), Copy as text, Export (Markdown, plain text, PDF), the Markdown file saved with each meeting, Save to a folder, the email you send from a meeting, and the Notion export.
+- **Small computers get a more compact version.** With 8 GB of memory the local AI writes fewer topics and shorter lists so the summary is never cut off..
+- Meetings you already have look exactly as before.
+
+**Safer processing**
+- **Transcribe again keeps a backup.** The previous transcript, your edits to it and the summary are only replaced once the new transcript (and its summary) are ready. If the new run fails, they come back exactly as they were and the meeting tells you why.
+- **Granite 4.2 3B writes summaries in your language.** It tended to answer in English for most other languages. When it is the local model, the summary instructions now say the language firmly, in English and in the language itself, and repeat it at the end. Other models are unchanged.
+- **No more stuck "Transcribing" or "Summarizing".** A problem on one call no longer holds up the calls after it. If Talaan closes unexpectedly twice while working on a call, that call shows Try again (or Generate summary) instead of being retried at every launch.
+
 ## 1.3.2 (2026-11-16)
 
 **Improvements**

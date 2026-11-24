@@ -1,5 +1,7 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
+import { setLang } from "./i18n";
 import { seedMeetings } from "../data/mock/seed";
+import { detailedMeeting } from "./detailedSummary.fixture";
 import { MAILTO_LIMIT, safeFileName, toEmail, toEmailBody, toMailto, toCopyText, toMarkdown, toPlainText, toShareText } from "./share";
 
 const q4 = seedMeetings(new Date("2026-10-14T20:00:00")).find((m) => m.id === "m-q4")!;
@@ -147,5 +149,93 @@ describe("export scope", () => {
     const only = toCopyText(q4, "transcript");
     expect(only).toContain(line(first));
     expect(only).not.toContain("Decisions");
+  });
+});
+
+describe("the detailed summary", () => {
+  const m = detailedMeeting();
+  const md = toMarkdown(m, "summary");
+
+  it("exports Purpose, Key takeaways, Topics, Decisions, Next steps by person and Open questions as Markdown", () => {
+    const order = ["**Purpose:** To plan the pilot", "### Key takeaways", "### Topics", "### Decisions", "### Next steps", "### Open questions"].map((x) => md.indexOf(x));
+    expect(order.every((i) => i >= 0)).toBe(true);
+    expect([...order].sort((a, b) => a - b)).toEqual(order);
+    expect(md).toContain("- **Pilot scope:** Two teams start in March.");
+    expect(md).toContain("#### Pilot plan\n\n- Two teams, about 25 people in total.\n  - Support team first\n  - Sales team in week 3\n- Review after six weeks.");
+    expect(md).toContain("#### Alex\n\n- [ ] Send the rollout plan, due Friday (00:40)\n- [x] Share the training slides (01:00)");
+    expect(md).toContain("#### Rosa Lim\n\n- [ ] Confirm the licence quote (00:50)");
+    expect(md).toContain("#### No owner\n\n- [ ] Book the kickoff room (00:55)");
+    // The tasks sit under their person, so the line itself has no owner.
+    expect(md).not.toContain("— Alex");
+  });
+
+  it("writes plain text without markup, keeping the nesting", () => {
+    const text = toPlainText(m, "summary");
+    expect(text).not.toMatch(/\*\*|#### /);
+    expect(text).toContain("Pilot scope: Two teams start in March.");
+    expect(text).toContain("Pilot plan\n\n- Two teams, about 25 people in total.\n  - Support team first");
+    expect(text).toContain("Next steps\n\nAlex\n\n- Send the rollout plan, due Friday");
+  });
+
+  it("copies the bulleted text with the same sections", () => {
+    const text = toShareText(m);
+    expect(text).toContain("\nKey takeaways\n• Pilot scope: Two teams start in March.");
+    expect(text).toContain("\nTopics\nPilot plan\n• Two teams, about 25 people in total.\n   – Support team first");
+    expect(text).toContain("\nNext steps\nAlex\n• ☐ Send the rollout plan, due Friday (00:40)");
+    expect(text).toContain("\nNo owner\n• ☐ Book the kickoff room (00:55)");
+  });
+
+  it("emails the purpose, takeaways, decisions and next steps by person", () => {
+    const body = toEmailBody(m);
+    expect(body).toContain("To plan the pilot of the new scheduling tool.");
+    expect(body).toContain("Key takeaways\n- Pilot scope: Two teams start in March.");
+    expect(body).toContain("Next steps\nAlex\n- Send the rollout plan, due Friday");
+    expect(toEmail(m)).toContain("Open questions");
+  });
+
+  it("leaves an older summary exactly as it was", () => {
+    const old = toMarkdown(q4, "summary");
+    expect(old).toContain("## Summary\n\n" + q4.summary!.recap);
+    expect(old).toContain("### Action items");
+    expect(old).not.toContain("### Next steps");
+    expect(old).not.toContain("Key takeaways");
+  });
+});
+
+describe("a task with a due date", () => {
+  it("never reads 'text., due …' in any export", () => {
+    const m = detailedMeeting();
+    m.summary!.actionItems = [{ id: "z", text: "Confirm the estimate with engineering. ", owner: "Alex", due: "Thursday", done: false }];
+    for (const out of [toMarkdown(m, "summary"), toPlainText(m, "summary"), toShareText(m), toEmail(m)]) {
+      expect(out).toContain("Confirm the estimate with engineering, due Thursday");
+      expect(out).not.toContain("., due");
+    }
+  });
+});
+
+describe("an older summary's action items", () => {
+  it("keep their text as written in every export", () => {
+    const m = structuredClone(q4);
+    m.summary!.actionItems = [{ id: "z", text: "Confirm the estimate with engineering.", owner: "Dana", due: "Thursday", at: 5000, done: false }];
+    for (const out of [toMarkdown(m, "summary"), toPlainText(m, "summary"), toShareText(m), toEmail(m)]) {
+      expect(out).toContain("Confirm the estimate with engineering. — Dana, due Thursday");
+    }
+  });
+});
+
+describe("the user's next steps in another UI language", () => {
+  afterEach(() => setLang("en"));
+  it("read Vous under the owner token Me, and for a You from an earlier build", () => {
+    const m = detailedMeeting();
+    m.speakers = {} as never;
+    m.summary!.actionItems = [
+      { id: "a", text: "Send the plan.", owner: "Me", done: false },
+      { id: "b", text: "Call Dana.", owner: "You", done: false },
+    ];
+    setLang("fr");
+    for (const out of [toMarkdown(m, "summary"), toPlainText(m, "summary"), toShareText(m), toEmail(m)]) {
+      expect(out).toContain("Vous");
+      expect(out).not.toMatch(/Me|You/);
+    }
   });
 });

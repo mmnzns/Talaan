@@ -88,6 +88,11 @@ pub fn meetings_update_summary(app: AppHandle, state: State<AppState>, id: Strin
 }
 
 #[tauri::command]
+pub fn meetings_dismiss_retranscribe_error(app: AppHandle, state: State<AppState>, id: String) -> CmdResult<()> {
+    changed(&app, state.lock().dismiss_retranscribe_error(&id))
+}
+
+#[tauri::command]
 pub fn meetings_revert_edits(app: AppHandle, state: State<AppState>, id: String) -> CmdResult<()> {
     edited(&app, &id, state.lock().revert_edits(&id))
 }

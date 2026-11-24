@@ -249,7 +249,26 @@ fn worker_loop(deps: Deps, queue: Arc<(Mutex<Queue>, Condvar)>, cancel: Arc<Atom
                 }
             }
         };
-        process(&deps, &id, &mut loaded.lock().unwrap_or_else(|e| e.into_inner()), &cancel, &busy);
+        {
+            let mut guard = loaded.lock().unwrap_or_else(|e| e.into_inner());
+            // A bug on one meeting must not stop every later one (the summarizer's worker does the same): a panic
+            // ends that job only, the meeting says so and offers Try again, and the loaded models are dropped since
+            // they may be half-way through something.
+            let ended = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| process(&deps, &id, &mut guard, &cancel, &busy)));
+            if ended.is_err() {
+                guard.take();
+                log::error!("the transcriber panicked on meeting {id}");
+                let status = deps.storage.lock().unwrap_or_else(|e| e.into_inner()).read_meeting_file(&id).map(|f| f.status);
+                match status {
+                    Ok(MeetingStatus::Transcribing) => fail(&deps, &id, "failed", crate::i18n::tr("error.transcribe_internal")),
+                    // The transcript was saved before it went wrong: the summary still has to start.
+                    Ok(MeetingStatus::Summarizing) => (deps.transcribed)(&id),
+                    _ => {}
+                }
+            }
+        }
+        // However it ended, the attempt is over: only a crash or a kill leaves the mark for the next launch to see.
+        deps.storage.lock().unwrap_or_else(|e| e.into_inner()).end_attempt(&id, crate::storage::recovery::Attempt::Transcribe);
         busy.lock().unwrap_or_else(|e| e.into_inner()).clear();
         (deps.changed)();
     }
@@ -267,7 +286,12 @@ fn fail(deps: &Deps, id: &str, code: &str, message: String) {
         return;
     }
     log::warn!("transcription failed: meeting {id} ({code}): {}", crate::logging::text(&message));
-    let _ = lock(&deps.storage).update_meeting_file(id, |f| {
+    let s = lock(&deps.storage);
+    // A "Transcribe again" that failed gives the previous transcript, edits and summary back and says why.
+    if s.restore_retranscribe(id, ProcessingError { code: code.into(), message: message.clone(), detail: None }).unwrap_or(false) {
+        return;
+    }
+    let _ = s.update_meeting_file(id, |f| {
         f.status = MeetingStatus::Failed;
         f.progress = None;
         f.eta = None;
@@ -337,6 +361,7 @@ fn process(deps: &Deps, id: &str, loaded: &mut Option<Loaded>, cancel: &AtomicBo
             return;
         }
         let Ok(dir) = s.dir(id) else { return };
+        s.begin_attempt(id, crate::storage::recovery::Attempt::Transcribe);
         let config = config_for(&s, &file);
         let audio = audio_secs(&dir, &file);
         (dir, config, file.transcript_only, audio)
@@ -488,6 +513,11 @@ fn process(deps: &Deps, id: &str, loaded: &mut Option<Loaded>, cancel: &AtomicBo
                     device: backend.as_ref().and_then(|b| b.device.clone()),
                 });
             });
+            // Nothing more will run on a transcript-only meeting: the new run is complete. Otherwise the backup waits
+            // for the summary (`summarizer::worker`).
+            if !summarize {
+                s.finish_retranscribe(id);
+            }
             drop(s);
             if summarize {
                 (deps.transcribed)(id);
@@ -857,6 +887,100 @@ mod tests {
         assert_eq!(f.status, MeetingStatus::Summarizing);
         assert_eq!(f.transcription.unwrap().model, "whisper-small");
         assert_eq!(f.retranscribe_model, None);
+    }
+
+    /// A meeting with an old transcript and summary, ready, then "Transcribe again" started on it.
+    fn start_again(storage: &Arc<Mutex<Storage>>, id: &str) {
+        use crate::storage::model::{SummaryItem, TranscriptLine};
+        let s = storage.lock().unwrap();
+        s.save_transcript(id, &[TranscriptLine { id: "old".into(), at: 0, end: 900, speaker: "me".into(), text: "Old transcript.".into(), edited: false }]).unwrap();
+        let mut summary: crate::storage::model::Summary = serde_json::from_str(r#"{"recap":"Old recap.","decisions":[],"actionItems":[],"openQuestions":[],"engine":"x"}"#).unwrap();
+        summary.decisions = vec![SummaryItem { id: "d".into(), text: "Old decision".into(), at: None }];
+        s.save_summary(id, &summary).unwrap();
+        s.update_meeting_file(id, |f| f.status = MeetingStatus::Ready).unwrap();
+        s.start_retranscribe(id, "whisper-small").unwrap();
+    }
+
+    #[test]
+    fn a_failed_transcribe_again_keeps_the_previous_transcript_and_summary_and_says_why() {
+        let (_d, storage, id, worker) = setup(true, "fail");
+        start_again(&storage, &id);
+        worker.enqueue(&id);
+        wait(&worker);
+        let s = storage.lock().unwrap();
+        let m = s.get_meeting(&id).unwrap();
+        assert_eq!(m.item.status, MeetingStatus::Ready);
+        assert_eq!(m.transcript[0].text, "Old transcript.");
+        assert_eq!(m.summary.unwrap().recap, "Old recap.");
+        assert!(m.error.is_none());
+        assert!(m.retranscribe_error.unwrap().message.contains("engine broke"));
+        assert!(!s.has_retranscribe_backup(&id));
+    }
+
+    #[test]
+    fn a_transcribe_again_on_a_transcript_only_meeting_is_complete_once_the_transcript_is_saved() {
+        let (_d, storage, id, worker) = setup(true, "Fresh words.");
+        start_again(&storage, &id);
+        storage.lock().unwrap().update_meeting_file(&id, |f| f.transcript_only = true).unwrap();
+        worker.enqueue(&id);
+        wait(&worker);
+        let s = storage.lock().unwrap();
+        let m = s.get_meeting(&id).unwrap();
+        assert_eq!((m.item.status, m.transcript[0].text.as_str()), (MeetingStatus::Ready, "Fresh words."));
+        assert!(m.summary.is_none() && m.retranscribe_error.is_none());
+        assert!(!s.has_retranscribe_backup(&id));
+    }
+
+    #[test]
+    fn a_transcribe_again_that_will_be_summarized_keeps_its_backup_until_the_summary_is_there() {
+        let (_d, storage, id, worker) = setup(true, "Fresh words.");
+        start_again(&storage, &id);
+        worker.enqueue(&id);
+        wait(&worker);
+        let s = storage.lock().unwrap();
+        assert_eq!(s.read_meeting_file(&id).unwrap().status, MeetingStatus::Summarizing);
+        assert!(s.has_retranscribe_backup(&id));
+    }
+
+    /// Panics on the first meeting it is asked about.
+    struct Panics;
+    impl Engine for Panics {
+        fn transcribe(&mut self, _s: &[f32], _l: Option<&str>) -> Result<ChunkResult, String> {
+            panic!("a bug in an engine");
+        }
+        fn label(&self) -> &str {
+            "Panics"
+        }
+        fn chunking(&self) -> Shape {
+            Shape { pad: 0, ..Shape::default() }
+        }
+    }
+
+    #[test]
+    fn a_panic_fails_that_meeting_only_and_the_worker_keeps_going() {
+        let loads = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let l2 = loads.clone();
+        let load: Box<EngineLoader> = Box::new(move |_, _, _| Ok(if l2.fetch_add(1, Ordering::SeqCst) == 0 { Box::new(Panics) as Box<dyn Engine> } else { Box::new(Echoes("Fine now.")) }));
+        let (_d, storage, id, worker, _) = setup_full(true, 1, load, Arc::new(|_, _| false));
+        worker.enqueue(&id);
+        wait(&worker);
+        {
+            let s = storage.lock().unwrap();
+            let f = s.read_meeting_file(&id).unwrap();
+            assert_eq!(f.status, MeetingStatus::Failed);
+            assert_eq!(f.error.unwrap().message, crate::i18n::tr("error.transcribe_internal"));
+            assert_eq!(f.attempts, 0, "a caught panic is not a crash for the next launch to count");
+            // Try again goes back into the queue as it does for any failed meeting.
+            s.update_meeting_file(&id, |f| {
+                f.status = MeetingStatus::Transcribing;
+                f.error = None;
+            })
+            .unwrap();
+        }
+        worker.enqueue(&id);
+        wait(&worker);
+        let f = storage.lock().unwrap().read_meeting_file(&id).unwrap();
+        assert_eq!(f.status, MeetingStatus::Summarizing, "the worker still works after a panic");
     }
 
     #[test]

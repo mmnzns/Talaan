@@ -34,6 +34,10 @@ export class TauriMeetingStore implements MeetingStore {
     return call<void>("meetings_update_summary", { id, summary });
   }
 
+  dismissRetranscribeError(id: MeetingId) {
+    return call<void>("meetings_dismiss_retranscribe_error", { id });
+  }
+
   revertEdits(id: MeetingId) {
     return call<void>("meetings_revert_edits", { id });
   }

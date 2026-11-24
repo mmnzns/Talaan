@@ -13,6 +13,7 @@ pub mod ops;
 pub mod paths;
 pub mod recovery;
 pub mod retention;
+pub mod retranscribe;
 pub mod settings;
 pub mod speed;
 pub mod store;

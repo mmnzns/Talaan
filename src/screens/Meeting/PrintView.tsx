@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import { useMeeting } from "../../data/hooks";
 import { speakerName } from "../../lib/transcript";
+import { isDetailed, nextStepsByOwner, taskText } from "../../lib/summaryLayout";
 import { formatDate, formatDuration, formatTime } from "../../lib/format";
 import { useT } from "../../lib/i18n/I18nProvider";
 import { inTauri } from "../../lib/windows";
@@ -27,6 +28,7 @@ export function PrintView({ id, scope }: { id: string; scope: ExportScope }) {
 
   if (!meeting) return null;
   const s = meeting.summary;
+  const detailed = !!s && isDetailed(s);
   const time = (at?: number) => (at === undefined ? null : <span className="mr-2 font-mono text-[11px] text-subtle">{formatTime(at)}</span>);
   const notes = (
     <Section
@@ -45,13 +47,52 @@ export function PrintView({ id, scope }: { id: string; scope: ExportScope }) {
       </header>
       {scope === "transcript" ? null : s ? (
         <>
-          <p className="m-0 mb-5 text-[15px] leading-[23px]">{s.recap}</p>
+          {detailed ? (
+            s.purpose?.trim() && <p className="m-0 mb-5 text-[15px] leading-[23px]">{s.purpose}</p>
+          ) : (
+            <p className="m-0 mb-5 text-[15px] leading-[23px]">{s.recap}</p>
+          )}
           {notes}
+          {detailed && (
+            <Section title={t("meeting.shKeyTakeaways")} items={(s.takeaways ?? []).map((k, i) => [`k${i}`, <>{k.label.trim() && <b>{k.label.trim().replace(/:$/, "")}: </b>}{k.text}</>])} />
+          )}
+          {detailed &&
+            (s.topics ?? []).map((topic) => (
+              <section key={topic.id} className="mb-5 [break-inside:avoid]">
+                <h2 className="mb-2 text-[13px] font-bold">{topic.title}</h2>
+                <ul className="m-0 list-disc pl-5">
+                  {topic.bullets.map((b, i) => (
+                    <li key={i} className="mb-1.5 text-[14px] leading-[20px]">
+                      {b.text}
+                      {(b.subBullets?.length ?? 0) > 0 && (
+                        <ul className="m-0 mt-1 list-[circle] pl-5">
+                          {b.subBullets!.map((sub, j) => (
+                            <li key={j} className="mb-1 text-[13px] leading-[19px]">
+                              {sub}
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            ))}
           <Section title={t("meeting.shDecisions")} items={s.decisions.map((d) => [d.id, <>{time(d.at)}{d.text}</>])} />
-          <Section
-            title={t("meeting.shActionItems")}
-            items={s.actionItems.map((a) => [a.id, <>{time(a.at)}{a.done ? "☑ " : "☐ "}{a.text}{a.owner ? ` — ${a.owner}` : ""}{a.due ? `, ${t("meeting.shDue", { date: a.due })}` : ""}</>])}
-          />
+          {detailed ? (
+            nextStepsByOwner(meeting, s.actionItems).map((g) => (
+              <Section
+                key={g.owner ?? ""}
+                title={`${t("meeting.shNextSteps")} · ${g.owner ?? t("meeting.shUnassigned")}`}
+                items={g.items.map((a) => [a.id, <>{time(a.at)}{a.done ? "☑ " : "☐ "}{taskText({ text: a.text, due: a.due }, true)}{a.due ? `, ${t("meeting.shDue", { date: a.due })}` : ""}</>])}
+              />
+            ))
+          ) : (
+            <Section
+              title={t("meeting.shActionItems")}
+              items={s.actionItems.map((a) => [a.id, <>{time(a.at)}{a.done ? "☑ " : "☐ "}{a.text}{a.owner ? ` — ${a.owner}` : ""}{a.due ? `, ${t("meeting.shDue", { date: a.due })}` : ""}</>])}
+            />
+          )}
           <Section title={t("meeting.shOpenQuestions")} items={s.openQuestions.map((q) => [q.id, <>{time(q.at)}{q.text}</>])} />
           {(s.sections ?? []).map((sec) => (
             <Section key={sec.id} title={sec.title} items={sec.items.map((i) => [i.id, <>{time(i.at)}{i.text}</>])} />
