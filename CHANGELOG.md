@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- **Newer cloud models for "Your own key".** OpenAI GPT-6.2 Sol is now the recommended OpenAI model (GPT-6.2 Astra is there too), Gemini 4 Neon joins the Gemini list, and OpenRouter gets GPT-6.2 Sol, Gemini 4 Neon, Claude Fable 5.2 and Mistral Large 4. Mistral Large is now the recommended Mistral model, because Mistral Medium 3.5 is being retired. Older GPT-6 and GPT-5.6 entries left the menu; if you already picked one, it keeps working.
+
 ## 1.4.1 (2026-11-24)
 
 - **Summaries with your own Gemini key work again.** 1.4.0 asked Gemini for a summary shape it couldn't handle and every summary failed with a "too many states" error. Gemini now gets a lighter request, and if any provider refuses the summary format as too complex, Talaan asks once more in plain JSON mode.

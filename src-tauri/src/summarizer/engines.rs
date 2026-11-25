@@ -43,23 +43,25 @@ pub enum Provider {
 pub fn catalog(provider: Provider) -> &'static [&'static str] {
     match provider {
         Provider::Claude => &["claude-sonnet-5-5", "claude-opus-5-5", "claude-fable-5-2", "claude-haiku-5-5"],
-        Provider::OpenAi => &["gpt-6.1-sol", "gpt-6.1-terra", "gpt-6-astra", "gpt-6-luna", "gpt-6-sol", "gpt-5.6-sol"],
-        Provider::Gemini => &["gemini-4-hydrogen", "gemini-4-argon", "gemini-4-carbon", "gemini-3.8-flash", "gemini-3.5-flash-lite"],
+        Provider::OpenAi => &["gpt-6.2-sol", "gpt-6.2-astra", "gpt-6.1-sol", "gpt-6.1-terra", "gpt-6-luna"],
+        Provider::Gemini => &["gemini-4-hydrogen", "gemini-4-neon", "gemini-4-argon", "gemini-4-carbon", "gemini-3.8-flash", "gemini-3.5-flash-lite"],
         Provider::Groq => &["openai/gpt-oss-120b", "openai/gpt-oss-20b", "qwen/qwen3.8-27b"],
         Provider::Cerebras => &["gpt-oss-120b", "qwen-3.8-27b"],
-        Provider::Mistral => &["mistral-medium-latest", "mistral-large-latest", "mistral-small-latest", "ministral-14b-latest", "ministral-8b-latest"],
+        Provider::Mistral => &["mistral-large-latest", "mistral-small-latest", "ministral-14b-latest", "ministral-8b-latest"],
         Provider::OpenRouter => &[
             "anthropic/claude-sonnet-5.5",
             "anthropic/claude-opus-5.5",
             "anthropic/claude-haiku-5.5",
-            "openai/gpt-6.1-sol",
+            "anthropic/claude-fable-5.2",
+            "openai/gpt-6.2-sol",
             "openai/gpt-6-luna",
             "openai/gpt-oss-120b",
             "google/gemini-4-hydrogen",
+            "google/gemini-4-neon",
             "google/gemini-3.8-flash",
             "deepseek/deepseek-v4.1-flash",
             "qwen/qwen3.8-flash",
-            "mistralai/mistral-medium-3-5",
+            "mistralai/mistral-large-4-0",
             "x-ai/grok-4.7",
             "meta-llama/llama-4-maverick",
         ],
@@ -317,7 +319,8 @@ fn chat_body(provider: Provider, model: &str, p: &Prompt, schema: &Value, max_to
         Provider::OpenAi => {
             // Reasoning models refuse `max_tokens` and any temperature but their own.
             body["max_completion_tokens"] = json!(max_tokens);
-            if m.starts_with("gpt-6-astra") || m.starts_with("gpt-6.1-sol") {
+            // GPT-6.2 (Sol, Astra), GPT-6.1 Sol and GPT-6 Astra reject effort `none`: lowest allowed is `low`.
+            if m.starts_with("gpt-6.2") || m.starts_with("gpt-6-astra") || m.starts_with("gpt-6.1-sol") {
                 body["reasoning_effort"] = json!("low");
             } else if m.starts_with("gpt-6") || m.starts_with("gpt-5.") {
                 body["reasoning_effort"] = json!("none");
@@ -550,7 +553,7 @@ pub fn recommended_model(provider: Provider, ids: &[String]) -> Option<String> {
             Provider::OpenAi => id.starts_with("gpt-") && (id.ends_with("-mini") || id.ends_with("-sol") || id.ends_with("-terra")) && !id.contains("audio") && !id.contains("realtime") && !id.contains("search"),
             Provider::Gemini => id.starts_with("gemini-") && (id.contains("flash") || id.contains("hydrogen")) && !id.contains("lite") && !id.contains("image") && !id.contains("tts") && !id.contains("live") && !id.contains("exp") && !id.contains("preview"),
             Provider::Groq | Provider::Cerebras | Provider::OpenRouter => id.contains("gpt-oss-120b"),
-            Provider::Mistral => id.starts_with("mistral-medium"),
+            Provider::Mistral => id.starts_with("mistral-large"),
             Provider::Compatible => !id.contains("embed"),
         }
     };
@@ -706,6 +709,11 @@ mod tests {
         assert_eq!(b["reasoning_effort"], "none");
         assert_eq!(chat(Provider::OpenAi, "gpt-6-astra")["reasoning_effort"], "low");
         assert_eq!(chat(Provider::OpenAi, "gpt-6.1-sol")["reasoning_effort"], "low");
+        // GPT-6.2 (Sol, Astra) rejects `none` and any temperature too.
+        for m in ["gpt-6.2-sol", "gpt-6.2-astra"] {
+            let b = chat(Provider::OpenAi, m);
+            assert_eq!((b["reasoning_effort"].as_str(), b.get("temperature"), b["max_completion_tokens"].as_u64()), (Some("low"), None, Some(1500)), "{m}");
+        }
         // 6.1 Terra takes `none`, like Luna.
         assert_eq!(chat(Provider::OpenAi, "gpt-6.1-terra")["reasoning_effort"], "none");
         assert!(chat(Provider::OpenAi, "gpt-6.1-terra").get("temperature").is_none());
@@ -723,7 +731,7 @@ mod tests {
         assert!(!c.to_string().contains("maxItems"));
         assert_eq!(chat(Provider::Cerebras, "qwen-3.8-27b")["reasoning_effort"], "none");
         // Mistral: the plain chat fields. OpenRouter: no temperature (it forwards to Claude, GPT-6...).
-        let m = chat(Provider::Mistral, "mistral-medium-latest");
+        let m = chat(Provider::Mistral, "mistral-large-latest");
         assert_eq!((m["max_tokens"].as_u64(), m["temperature"].as_f64()), (Some(1500), Some(0.2)));
         let o = HttpEngine { model: "anthropic/claude-sonnet-5.5".into(), ..engine(Provider::OpenRouter) }.request(&prompt(), SCHEMA, 1500);
         assert_eq!(o.url, "https://openrouter.ai/api/v1/chat/completions");
@@ -733,7 +741,7 @@ mod tests {
         // Gemini 3: a little thinking for 3.8 Flash and Pro, minimal for the rest, none for older models.
         let level = |m: &str| chat(Provider::Gemini, m)["generationConfig"]["thinkingConfig"]["thinkingLevel"].as_str().map(str::to_string);
         // Gemini 4 refuses `minimal` (400): low, and no temperature (fixed at 1.0).
-        for m in ["gemini-4-hydrogen", "gemini-4-argon", "gemini-4-carbon"] {
+        for m in ["gemini-4-hydrogen", "gemini-4-neon", "gemini-4-argon", "gemini-4-carbon"] {
             assert_eq!(level(m).as_deref(), Some("low"), "{m}");
             assert!(chat(Provider::Gemini, m)["generationConfig"].get("temperature").is_none(), "{m}");
         }
@@ -881,9 +889,13 @@ mod tests {
         let ids = |v: &[&str]| v.iter().map(|s| s.to_string()).collect::<Vec<_>>();
         assert_eq!(recommended_model(Provider::OpenAi, &ids(&["gpt-5.4-mini", "gpt-6-sol", "gpt-6-luna"])).as_deref(), Some("gpt-6-luna"));
         assert_eq!(recommended_model(Provider::OpenAi, &ids(&["gpt-5.4-mini", "gpt-6-sol", "gpt-6.1-sol"])).as_deref(), Some("gpt-6.1-sol"));
+        assert_eq!(recommended_model(Provider::OpenAi, &ids(&["gpt-6.1-sol", "gpt-6.2-astra", "gpt-6.2-sol"])).as_deref(), Some("gpt-6.2-sol"));
+        assert_eq!(recommended_model(Provider::Gemini, &ids(&["gemini-4-neon", "gemini-4-hydrogen"])).as_deref(), Some("gemini-4-hydrogen"));
         assert_eq!(recommended_model(Provider::Gemini, &ids(&["gemini-3.8-flash", "gemini-4-hydrogen"])).as_deref(), Some("gemini-4-hydrogen"));
         assert_eq!(recommended_model(Provider::Groq, &ids(&["llama-3.3-70b", "openai/gpt-oss-20b"])).as_deref(), Some("openai/gpt-oss-20b"));
-        assert_eq!(recommended_model(Provider::Mistral, &ids(&["mistral-small-latest", "mistral-medium-latest"])).as_deref(), Some("mistral-medium-latest"));
+        assert_eq!(recommended_model(Provider::Mistral, &ids(&["mistral-small-latest", "mistral-medium-latest", "mistral-large-latest"])).as_deref(), Some("mistral-large-latest"));
+        // Medium 3.5 is deprecated and no longer listed: a key with only Medium and Small gets Small.
+        assert_eq!(recommended_model(Provider::Mistral, &ids(&["mistral-small-latest", "mistral-medium-latest"])).as_deref(), Some("mistral-small-latest"));
         assert_eq!(recommended_model(Provider::OpenRouter, &ids(&["x-ai/grok-4.7", "anthropic/claude-sonnet-5.5"])).as_deref(), Some("anthropic/claude-sonnet-5.5"));
     }
 
